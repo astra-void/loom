@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "@lattice-ui/preview-engine/schemas/diagnostic",
+  "title": "PreviewDiagnostic",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["code", "entryId", "file", "phase", "relativeFile", "severity", "summary", "target"],
+  "properties": {
+    "blocking": {
+      "type": "boolean"
+    },
+    "code": {
+      "type": "string"
+    },
+    "details": {
+      "type": "string"
+    },
+    "entryId": {
+      "type": "string"
+    },
+    "file": {
+      "type": "string"
+    },
+    "importChain": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "phase": {
+      "enum": ["discovery", "layout", "runtime", "transform"]
+    },
+    "relativeFile": {
+      "type": "string"
+    },
+    "severity": {
+      "enum": ["error", "info", "warning"]
+    },
+    "summary": {
+      "type": "string"
+    },
+    "symbol": {
+      "type": "string"
+    },
+    "target": {
+      "type": "string"
+    }
+  }
+}

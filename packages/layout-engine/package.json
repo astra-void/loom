@@ -1,0 +1,32 @@
+{
+  "name": "@lattice-ui/layout-engine",
+  "version": "0.4.0",
+  "private": false,
+  "description": "WASM layout engine for Lattice UI previews.",
+  "main": "pkg/layout_engine.js",
+  "types": "pkg/layout_engine.d.ts",
+  "files": [
+    "pkg/layout_engine.d.ts",
+    "pkg/layout_engine.js",
+    "pkg/layout_engine_bg.js",
+    "pkg/layout_engine_bg.wasm",
+    "pkg/layout_engine_bg.wasm.d.ts"
+  ],
+  "scripts": {
+    "build": "PATH=\"$HOME/.cargo/bin:$PATH\" wasm-pack build --target web --out-dir pkg",
+    "build:release": "PATH=\"$HOME/.cargo/bin:$PATH\" wasm-pack build --release --target web --out-dir pkg",
+    "build:rust": "PATH=\"$HOME/.cargo/bin:$PATH\" cargo build",
+    "prepack": "pnpm run build:release",
+    "test": "PATH=\"$HOME/.cargo/bin:$PATH\" cargo test"
+  },
+  "exports": {
+    ".": {
+      "types": "./pkg/layout_engine.d.ts",
+      "import": "./pkg/layout_engine.js",
+      "default": "./pkg/layout_engine.js"
+    },
+    "./layout_engine_bg.wasm": "./pkg/layout_engine_bg.wasm"
+  },
+  "module": "pkg/layout_engine.js",
+  "type": "module"
+}

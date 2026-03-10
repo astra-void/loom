@@ -1,0 +1,13 @@
+{
+  "extends": "../../../packages/preview-runtime/tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": "../../..",
+    "baseUrl": "../../..",
+    "types": ["node", "vitest/globals"],
+    "paths": {
+      "@lattice-ui/preview-runtime": ["packages/preview-runtime/src/index.ts"]
+    }
+  },
+  "include": ["./**/*.ts", "./**/*.tsx"]
+}

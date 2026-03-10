@@ -1,0 +1,171 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "@lattice-ui/preview-runtime/schemas/layout-debug-payload",
+  "title": "PreviewLayoutDebugPayload",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["dirtyNodeIds", "roots", "viewport"],
+  "properties": {
+    "dirtyNodeIds": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "roots": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/debugNode"
+      }
+    },
+    "viewport": {
+      "$ref": "#/$defs/size"
+    }
+  },
+  "$defs": {
+    "size": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["height", "width"],
+      "properties": {
+        "height": {
+          "type": "number"
+        },
+        "width": {
+          "type": "number"
+        }
+      }
+    },
+    "rect": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["height", "width", "x", "y"],
+      "properties": {
+        "height": {
+          "type": "number"
+        },
+        "width": {
+          "type": "number"
+        },
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        }
+      }
+    },
+    "measuredNodeSize": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["height", "width"],
+      "properties": {
+        "height": {
+          "type": "number"
+        },
+        "width": {
+          "type": "number"
+        }
+      }
+    },
+    "styleHints": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "height": {
+          "type": "string"
+        },
+        "width": {
+          "type": "string"
+        }
+      }
+    },
+    "debugNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "children",
+        "id",
+        "intrinsicSize",
+        "kind",
+        "layoutSource",
+        "nodeType",
+        "parentConstraints",
+        "provenance",
+        "rect"
+      ],
+      "properties": {
+        "children": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/debugNode"
+          }
+        },
+        "debugLabel": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "intrinsicSize": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/measuredNodeSize"
+            }
+          ]
+        },
+        "kind": {
+          "enum": ["host", "layout", "root"]
+        },
+        "layoutSource": {
+          "enum": ["explicit-size", "intrinsic-size", "root-default"]
+        },
+        "nodeType": {
+          "type": "string"
+        },
+        "parentConstraints": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/rect"
+            }
+          ]
+        },
+        "parentId": {
+          "type": "string"
+        },
+        "provenance": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["detail", "source"],
+          "properties": {
+            "detail": {
+              "type": "string"
+            },
+            "source": {
+              "enum": ["fallback", "wasm"]
+            }
+          }
+        },
+        "rect": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/rect"
+            }
+          ]
+        },
+        "styleHints": {
+          "$ref": "#/$defs/styleHints"
+        }
+      }
+    }
+  }
+}

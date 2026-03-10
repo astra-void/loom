@@ -1,0 +1,41 @@
+{
+  "name": "@lattice-ui/compiler",
+  "version": "0.4.0",
+  "private": false,
+  "description": "Custom TSX compiler bridge using Rust, SWC, and NAPI-RS.",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "files": [
+    "index.js",
+    "index.d.ts"
+  ],
+  "scripts": {
+    "artifacts": "napi artifacts --output-dir ./artifacts --npm-dir ./npm",
+    "build": "napi build --platform",
+    "build:release": "napi build --platform --release",
+    "create-npm-dirs": "napi create-npm-dirs --npm-dir ./npm",
+    "prepack": "pnpm run build:release",
+    "prepublish:napi": "napi pre-publish --npm-dir ./npm",
+    "publish:napi": "pnpm run create-npm-dirs && pnpm run artifacts && pnpm run prepublish:napi",
+    "watch": "napi build --platform --watch"
+  },
+  "devDependencies": {
+    "@napi-rs/cli": "^3.5.1"
+  },
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "require": "./index.js",
+      "default": "./index.js"
+    }
+  },
+  "napi": {
+    "binaryName": "lattice_ui_compiler",
+    "targets": [
+      "x86_64-apple-darwin",
+      "aarch64-apple-darwin",
+      "x86_64-pc-windows-msvc",
+      "x86_64-unknown-linux-gnu"
+    ]
+  }
+}

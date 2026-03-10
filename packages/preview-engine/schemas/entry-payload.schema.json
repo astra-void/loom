@@ -1,0 +1,647 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "@lattice-ui/preview-engine/schemas/entry-payload",
+  "title": "PreviewEntryPayload",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["descriptor", "diagnostics", "graphTrace", "protocolVersion", "runtimeAdapter", "transform"],
+  "properties": {
+    "descriptor": {
+      "$ref": "#/$defs/entryDescriptor"
+    },
+    "diagnostics": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/diagnostic"
+      }
+    },
+    "graphTrace": {
+      "$ref": "#/$defs/graphTrace"
+    },
+    "propsMetadata": {
+      "$ref": "#/$defs/propsMetadata"
+    },
+    "protocolVersion": {
+      "const": 4
+    },
+    "runtimeAdapter": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "moduleId"],
+      "properties": {
+        "kind": {
+          "const": "react-dom"
+        },
+        "moduleId": {
+          "type": "string"
+        }
+      }
+    },
+    "transform": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "outcome"],
+      "properties": {
+        "mode": {
+          "enum": ["strict-fidelity", "compatibility", "mocked", "design-time"]
+        },
+        "outcome": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["fidelity", "kind"],
+          "properties": {
+            "fidelity": {
+              "enum": ["preserved", "degraded", "metadata-only"]
+            },
+            "kind": {
+              "enum": ["ready", "compatibility", "mocked", "blocked", "design-time"]
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "diagnostic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "entryId", "file", "phase", "relativeFile", "severity", "summary", "target"],
+      "properties": {
+        "blocking": {
+          "type": "boolean"
+        },
+        "code": {
+          "type": "string"
+        },
+        "details": {
+          "type": "string"
+        },
+        "entryId": {
+          "type": "string"
+        },
+        "file": {
+          "type": "string"
+        },
+        "importChain": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "phase": {
+          "enum": ["discovery", "layout", "runtime", "transform"]
+        },
+        "relativeFile": {
+          "type": "string"
+        },
+        "severity": {
+          "enum": ["error", "info", "warning"]
+        },
+        "summary": {
+          "type": "string"
+        },
+        "symbol": {
+          "type": "string"
+        },
+        "target": {
+          "type": "string"
+        }
+      }
+    },
+    "capabilities": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["supportsHotUpdate", "supportsLayoutDebug", "supportsPropsEditing", "supportsRuntimeMock"],
+      "properties": {
+        "supportsHotUpdate": {
+          "type": "boolean"
+        },
+        "supportsLayoutDebug": {
+          "type": "boolean"
+        },
+        "supportsPropsEditing": {
+          "type": "boolean"
+        },
+        "supportsRuntimeMock": {
+          "type": "boolean"
+        }
+      }
+    },
+    "diagnosticsSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["byPhase", "hasBlocking", "total"],
+      "properties": {
+        "byPhase": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["discovery", "layout", "runtime", "transform"],
+          "properties": {
+            "discovery": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "layout": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "runtime": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "transform": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        "hasBlocking": {
+          "type": "boolean"
+        },
+        "total": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "renderTarget": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["exportName", "kind", "usesPreviewProps"],
+          "properties": {
+            "exportName": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "component"
+            },
+            "usesPreviewProps": {
+              "type": "boolean"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["contract", "kind"],
+          "properties": {
+            "contract": {
+              "const": "preview.render"
+            },
+            "kind": {
+              "const": "harness"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "reason"],
+          "properties": {
+            "candidates": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "kind": {
+              "const": "none"
+            },
+            "reason": {
+              "enum": ["ambiguous-exports", "missing-explicit-contract", "no-component-export"]
+            }
+          }
+        }
+      ]
+    },
+    "selection": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["contract", "kind"],
+          "properties": {
+            "contract": {
+              "enum": ["preview.entry", "preview.render"]
+            },
+            "kind": {
+              "const": "explicit"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "reason"],
+          "properties": {
+            "kind": {
+              "const": "unresolved"
+            },
+            "reason": {
+              "enum": ["ambiguous-exports", "missing-explicit-contract", "no-component-export"]
+            }
+          }
+        }
+      ]
+    },
+    "entryDescriptor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "candidateExportNames",
+        "capabilities",
+        "diagnosticsSummary",
+        "hasDefaultExport",
+        "hasPreviewExport",
+        "id",
+        "packageName",
+        "relativePath",
+        "renderTarget",
+        "selection",
+        "sourceFilePath",
+        "status",
+        "statusDetails",
+        "targetName",
+        "title"
+      ],
+      "properties": {
+        "candidateExportNames": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "capabilities": {
+          "$ref": "#/$defs/capabilities"
+        },
+        "diagnosticsSummary": {
+          "$ref": "#/$defs/diagnosticsSummary"
+        },
+        "hasDefaultExport": {
+          "type": "boolean"
+        },
+        "hasPreviewExport": {
+          "type": "boolean"
+        },
+        "id": {
+          "type": "string"
+        },
+        "packageName": {
+          "type": "string"
+        },
+        "relativePath": {
+          "type": "string"
+        },
+        "renderTarget": {
+          "$ref": "#/$defs/renderTarget"
+        },
+        "selection": {
+          "$ref": "#/$defs/selection"
+        },
+        "sourceFilePath": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "ready",
+            "needs_harness",
+            "ambiguous",
+            "blocked_by_transform",
+            "blocked_by_runtime",
+            "blocked_by_layout"
+          ]
+        },
+        "statusDetails": {
+          "$ref": "#/$defs/statusDetails"
+        },
+        "targetName": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        }
+      }
+    },
+    "statusDetails": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind"],
+          "properties": {
+            "kind": {
+              "const": "ready"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "reason"],
+          "properties": {
+            "candidates": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "kind": {
+              "const": "needs_harness"
+            },
+            "reason": {
+              "enum": ["missing-explicit-contract", "no-component-export"]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["candidates", "kind", "reason"],
+          "properties": {
+            "candidates": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "kind": {
+              "const": "ambiguous"
+            },
+            "reason": {
+              "const": "ambiguous-exports"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["blockingCodes", "kind", "reason"],
+          "properties": {
+            "blockingCodes": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "kind": {
+              "const": "blocked_by_transform"
+            },
+            "reason": {
+              "const": "transform-diagnostics"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["issueCodes", "kind", "reason"],
+          "properties": {
+            "issueCodes": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "kind": {
+              "const": "blocked_by_runtime"
+            },
+            "reason": {
+              "const": "runtime-issues"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["issueCodes", "kind", "reason"],
+          "properties": {
+            "issueCodes": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "kind": {
+              "const": "blocked_by_layout"
+            },
+            "reason": {
+              "const": "layout-issues"
+            }
+          }
+        }
+      ]
+    },
+    "graphStopReason": {
+      "enum": ["declaration-only-boundary", "external-dependency", "graph-cycle", "unresolved-import"]
+    },
+    "graphImportEdge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["crossesPackageBoundary", "importerFile", "resolution", "specifier"],
+      "properties": {
+        "crossesPackageBoundary": {
+          "type": "boolean"
+        },
+        "importerFile": {
+          "type": "string"
+        },
+        "importerProjectConfigPath": {
+          "type": "string"
+        },
+        "originalResolvedFile": {
+          "type": "string"
+        },
+        "resolution": {
+          "enum": ["resolved", "stopped"]
+        },
+        "resolutionKind": {
+          "enum": [
+            "declaration-file",
+            "external-dependency",
+            "project-reference-source",
+            "source-file",
+            "workspace-package"
+          ]
+        },
+        "resolvedFile": {
+          "type": "string"
+        },
+        "resolvedProjectConfigPath": {
+          "type": "string"
+        },
+        "specifier": {
+          "type": "string"
+        },
+        "stopReason": {
+          "$ref": "#/$defs/graphStopReason"
+        }
+      }
+    },
+    "selectionTrace": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["importChain", "symbolChain"],
+      "properties": {
+        "contract": {
+          "enum": ["preview.entry", "preview.render"]
+        },
+        "importChain": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "requestedSymbol": {
+          "type": "string"
+        },
+        "resolvedExportName": {
+          "type": "string"
+        },
+        "symbolChain": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "graphTrace": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["boundaryHops", "imports", "selection"],
+      "properties": {
+        "boundaryHops": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["fromFile", "fromPackageRoot", "toFile", "toPackageRoot"],
+            "properties": {
+              "fromFile": {
+                "type": "string"
+              },
+              "fromPackageRoot": {
+                "type": "string"
+              },
+              "toFile": {
+                "type": "string"
+              },
+              "toPackageRoot": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "imports": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/graphImportEdge"
+          }
+        },
+        "selection": {
+          "$ref": "#/$defs/selectionTrace"
+        },
+        "stopReason": {
+          "$ref": "#/$defs/graphStopReason"
+        },
+        "traversedProjects": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["configPath", "packageRoot"],
+            "properties": {
+              "configPath": {
+                "type": "string"
+              },
+              "packageName": {
+                "type": "string"
+              },
+              "packageRoot": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "propMetadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "required", "type"],
+      "properties": {
+        "elementType": {
+          "$ref": "#/$defs/propMetadata"
+        },
+        "kind": {
+          "enum": [
+            "array",
+            "bigint",
+            "boolean",
+            "function",
+            "literal",
+            "number",
+            "object",
+            "react-element",
+            "react-node",
+            "string",
+            "union",
+            "unknown"
+          ]
+        },
+        "literal": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "properties": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/propMetadata"
+          }
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "type": {
+          "type": "string"
+        },
+        "unionTypes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/propMetadata"
+          }
+        }
+      }
+    },
+    "propsMetadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["componentName", "props"],
+      "properties": {
+        "componentName": {
+          "type": "string"
+        },
+        "props": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/propMetadata"
+          }
+        }
+      }
+    }
+  }
+}
