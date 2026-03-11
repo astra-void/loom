@@ -2,6 +2,15 @@ import { promises as fs } from "node:fs";
 import * as path from "node:path";
 
 export type CliPreviewTransformMode = "strict-fidelity" | "compatibility";
+export type CliBuildTransformMode =
+	| "strict-fidelity"
+	| "compatibility"
+	| "mocked"
+	| "design-time";
+export type CliPreviewBuildArtifactKind =
+	| "module"
+	| "entry-metadata"
+	| "layout-schema";
 
 export interface CliOutputWriter {
 	write(chunk: string): unknown;
@@ -41,6 +50,13 @@ export interface CliPreviewHeadlessSession {
 }
 
 export interface CliPreviewModule {
+	buildPreviewArtifacts(options?: {
+		artifactKinds?: CliPreviewBuildArtifactKind[];
+		configFile?: string;
+		cwd?: string;
+		outDir?: string;
+		transformMode?: CliBuildTransformMode;
+	}): Promise<unknown>;
 	createPreviewHeadlessSession(
 		options?: CliResolvedPreviewConfig,
 	): Promise<CliPreviewHeadlessSession>;
@@ -84,6 +100,14 @@ export interface SnapshotCommandOptions {
 export interface ConfigCommandOptions {
 	configFile?: string;
 	cwd?: string;
+}
+
+export interface BuildCommandOptions {
+	artifactKinds: CliPreviewBuildArtifactKind[];
+	configFile?: string;
+	cwd?: string;
+	outDir: string;
+	transformMode?: CliBuildTransformMode;
 }
 
 async function loadPreviewModule(): Promise<CliPreviewModule> {
@@ -181,6 +205,25 @@ export async function runSnapshotCommand(
 	} finally {
 		session.dispose();
 	}
+}
+
+export async function runBuildCommand(
+	options: BuildCommandOptions,
+	runtimeOverrides: Partial<CliCommandRuntime>,
+): Promise<void> {
+	const runtime = createRuntime(runtimeOverrides);
+	const previewModule = await runtime.loadPreviewModuleFn();
+	const result = await previewModule.buildPreviewArtifacts({
+		artifactKinds: options.artifactKinds,
+		...(options.configFile ? { configFile: options.configFile } : {}),
+		...(options.cwd ? { cwd: options.cwd } : {}),
+		outDir: options.outDir,
+		...(options.transformMode
+			? { transformMode: options.transformMode }
+			: {}),
+	});
+
+	writeJson(runtime.stdout, result);
 }
 
 export async function runConfigCommand(

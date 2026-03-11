@@ -17,6 +17,20 @@ export {
 	resolvePreviewConfigObject,
 } from "./config";
 export type {
+	BuildPreviewArtifactsOptions,
+	BuildPreviewArtifactsOverrides,
+	BuildPreviewModulesOptions,
+	BuildPreviewModulesResult,
+	PreviewBuildArtifactKind,
+	PreviewBuildResult,
+	PreviewBuildTarget,
+} from "./build";
+export {
+	PreviewBuildError,
+	buildPreviewArtifacts,
+	buildPreviewModules,
+} from "./build";
+export type {
 	CreatePreviewHeadlessSessionOptions,
 	PreviewHeadlessSession,
 	PreviewHeadlessSnapshot,

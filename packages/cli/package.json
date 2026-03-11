@@ -2,7 +2,7 @@
 	"name": "@loom-dev/cli",
 	"version": "0.1.0",
 	"private": false,
-	"description": "Preview-only CLI for Loom workspaces.",
+	"description": "CLI for the Loom preview and build toolchain.",
 	"main": "dist/index.js",
 	"types": "dist/index.d.ts",
 	"files": [

@@ -1,10 +1,10 @@
 # @loom-dev/preview
 
-Source-first preview config, server, and headless utilities for Loom workspaces.
+Source-first preview config, build, server, and headless utilities for Loom workspaces.
 
 `@loom-dev/preview-engine` owns workspace, entry, and build protocol types.  
 `@loom-dev/preview-runtime` owns runtime issues and layout debug payload types.  
-`@loom-dev/preview` layers config loading, preview server startup, and headless helpers on top.
+`@loom-dev/preview` layers config loading, artifact builds, preview server startup, and headless helpers on top.
 
 ## Install
 
@@ -53,10 +53,36 @@ The main exports are:
 
 - `definePreviewConfig`
 - `loadPreviewConfig`
+- `buildPreviewArtifacts`
+- `buildPreviewModules`
 - `startPreviewServer`
 - `createPreviewHeadlessSession`
 - `createPackageTargetDiscovery`
 - `createStaticTargetsDiscovery`
 - `createWorkspaceTargetsDiscovery`
 
-For the packaged CLI, install `@loom-dev/cli` and use `loom preview`, `loom config`, or `loom snapshot`.
+`buildPreviewModules` is the raw target-array, module-only wrapper and continues to reject `design-time`.
+
+`buildPreviewArtifacts` is the config-aware surface. It reuses `loadPreviewConfig()` / target discovery and can build metadata sidecars in `design-time`.
+
+```ts
+import { buildPreviewArtifacts } from "@loom-dev/preview";
+
+await buildPreviewArtifacts({
+  cwd: process.cwd(),
+  outDir: "./generated",
+});
+```
+
+```ts
+import { buildPreviewArtifacts } from "@loom-dev/preview";
+
+await buildPreviewArtifacts({
+  cwd: process.cwd(),
+  outDir: "./metadata-build",
+  artifactKinds: ["entry-metadata", "layout-schema"],
+  transformMode: "design-time",
+});
+```
+
+For the packaged CLI, install `@loom-dev/cli` and use `loom preview`, `loom build`, `loom config`, or `loom snapshot`.

@@ -59,6 +59,21 @@ export type LoadPreviewConfigOptions = {
 	cwd?: string;
 };
 
+type PreviewConfigLoadContext = {
+	command: "build" | "serve";
+	mode: "development" | "production";
+};
+
+const BUILD_PREVIEW_CONFIG_LOAD_CONTEXT = {
+	command: "build",
+	mode: "production",
+} satisfies PreviewConfigLoadContext;
+
+const SERVE_PREVIEW_CONFIG_LOAD_CONTEXT = {
+	command: "serve",
+	mode: "development",
+} satisfies PreviewConfigLoadContext;
+
 export type PreviewTargetDiscoveryFactoryOptions = {
 	exclude?: string[];
 	include?: string[];
@@ -359,7 +374,7 @@ async function resolvePreviewConfigValue(
 		cwd: options.cwd,
 		mode: options.configFilePath ? "config-file" : "config-file",
 		projectName: config.projectName ?? createDefaultProjectName(targets),
-		runtimeModule: resolveRuntimeModule(
+		runtimeModule: resolvePreviewRuntimeModule(
 			config.runtimeModule,
 			options.configDir,
 		),
@@ -389,7 +404,7 @@ function createDefaultProjectName(targets: PreviewSourceTarget[]) {
 	return DEFAULT_PROJECT_NAME;
 }
 
-function resolveRuntimeModule(
+export function resolvePreviewRuntimeModule(
 	runtimeModule: string | undefined,
 	baseDir: string,
 ) {
@@ -587,6 +602,25 @@ export function createWorkspaceTargetsDiscovery(
 export async function loadPreviewConfig(
 	options: LoadPreviewConfigOptions = {},
 ): Promise<ResolvedPreviewConfig> {
+	return loadPreviewConfigWithContext(
+		options,
+		SERVE_PREVIEW_CONFIG_LOAD_CONTEXT,
+	);
+}
+
+export async function loadPreviewBuildConfig(
+	options: LoadPreviewConfigOptions = {},
+): Promise<ResolvedPreviewConfig> {
+	return loadPreviewConfigWithContext(
+		options,
+		BUILD_PREVIEW_CONFIG_LOAD_CONTEXT,
+	);
+}
+
+async function loadPreviewConfigWithContext(
+	options: LoadPreviewConfigOptions,
+	context: PreviewConfigLoadContext,
+): Promise<ResolvedPreviewConfig> {
 	const cwd = path.resolve(options.cwd ?? process.cwd());
 	const explicitConfigPath = options.configFile
 		? path.resolve(options.configFile)
@@ -601,9 +635,9 @@ export async function loadPreviewConfig(
 	const configDir = path.dirname(configFilePath);
 	const loadedConfig = await loadConfigFromFile(
 		{
-			command: "serve",
+			command: context.command,
 			isPreview: false,
-			mode: "development",
+			mode: context.mode,
 		},
 		configFilePath,
 		configDir,

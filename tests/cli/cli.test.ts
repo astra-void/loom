@@ -77,6 +77,36 @@ function createResolvedConfig(
 
 function createPreviewModule(config = createResolvedConfig()) {
 	const dispose = vi.fn();
+	const buildResult = {
+		builtArtifacts: [
+			{
+				cacheKey: "artifact-cache-key",
+				diagnosticsSummary: {
+					byPhase: {
+						discovery: 0,
+						layout: 0,
+						runtime: 0,
+						transform: 0,
+					},
+					hasBlocking: false,
+					total: 0,
+				},
+				id: "preview:Button.tsx",
+				kind: "module",
+				materializedPath: "/repo/generated/preview/Button.tsx",
+				relativePath: "Button.tsx",
+				reusedFromCache: false,
+				sourceFilePath: "/repo/src/Button.tsx",
+				targetName: "preview",
+			},
+		],
+		cacheDir: "/repo/.loom-preview-cache",
+		diagnostics: [],
+		outDir: "/repo/generated",
+		removedFiles: [],
+		reusedArtifacts: [],
+		writtenFiles: ["/repo/generated/preview/Button.tsx"],
+	};
 	const snapshot = {
 		entries: {},
 		protocolVersion: "1",
@@ -88,6 +118,7 @@ function createPreviewModule(config = createResolvedConfig()) {
 	};
 
 	const previewModule: CliPreviewModule = {
+		buildPreviewArtifacts: vi.fn(async () => buildResult),
 		createPreviewHeadlessSession: vi.fn(async () => ({
 			dispose,
 			getSnapshot: () => snapshot,
@@ -97,6 +128,7 @@ function createPreviewModule(config = createResolvedConfig()) {
 	};
 
 	return {
+		buildResult,
 		dispose,
 		previewModule,
 		snapshot,
@@ -113,6 +145,7 @@ describe("loom cli", () => {
 
 		expect(helpOutput.read()).toContain("Loom CLI");
 		expect(helpOutput.read()).toContain("loom preview");
+		expect(helpOutput.read()).toContain("loom build");
 		expect(helpOutput.read()).toContain("loom snapshot");
 
 		const versionOutput = createWriter();
@@ -126,7 +159,7 @@ describe("loom cli", () => {
 
 	it("rejects unknown and legacy copied commands", async () => {
 		await expect(runCli(["doctor"])).rejects.toMatchObject({
-			message: expect.stringContaining("preview-only"),
+			message: expect.stringContaining("not supported"),
 		});
 		await expect(runCli(["wat"])).rejects.toMatchObject({
 			message: expect.stringContaining("Unknown command"),
@@ -180,6 +213,58 @@ describe("loom cli", () => {
 		});
 
 		expect(previewModule.startPreviewServer).toHaveBeenCalledTimes(1);
+	});
+
+	it("builds preview artifacts through the config-aware preview API", async () => {
+		const stdoutWriter = createWriter();
+		const { buildResult, previewModule } = createPreviewModule();
+
+		await runCli(
+			[
+				"build",
+				"--cwd",
+				"/workspace",
+				"--config",
+				"/workspace/loom.config.ts",
+				"--out-dir",
+				"/artifacts",
+				"--artifact-kind",
+				"entry-metadata",
+				"--artifact-kind",
+				"layout-schema",
+				"--transform-mode",
+				"design-time",
+			],
+			{
+				loadPreviewModuleFn: async () => previewModule,
+				stdout: stdoutWriter.writer,
+			},
+		);
+
+		expect(previewModule.buildPreviewArtifacts).toHaveBeenCalledWith({
+			artifactKinds: ["entry-metadata", "layout-schema"],
+			configFile: "/workspace/loom.config.ts",
+			cwd: "/workspace",
+			outDir: "/artifacts",
+			transformMode: "design-time",
+		});
+		expect(JSON.parse(stdoutWriter.read())).toEqual(buildResult);
+		expect(previewModule.loadPreviewConfig).not.toHaveBeenCalled();
+	});
+
+	it("defaults loom build to module artifacts when none are specified", async () => {
+		const stdoutWriter = createWriter();
+		const { previewModule } = createPreviewModule();
+
+		await runCli(["build", "--out-dir", "/artifacts"], {
+			loadPreviewModuleFn: async () => previewModule,
+			stdout: stdoutWriter.writer,
+		});
+
+		expect(previewModule.buildPreviewArtifacts).toHaveBeenCalledWith({
+			artifactKinds: ["module"],
+			outDir: "/artifacts",
+		});
 	});
 
 	it("prints resolved config JSON for explicit config and package-root fallback", async () => {
@@ -292,6 +377,51 @@ describe("loom cli", () => {
 			runCli(["preview", "--transform-mode", "mocked"]),
 		).rejects.toMatchObject({
 			message: expect.stringContaining("Invalid --transform-mode"),
+		});
+		await expect(runCli(["build"])).rejects.toMatchObject({
+			message: expect.stringContaining("requires --out-dir"),
+		});
+		await expect(
+			runCli(["build", "--out-dir", "/artifacts", "--artifact-kind", "wat"]),
+		).rejects.toMatchObject({
+			message: expect.stringContaining("Invalid --artifact-kind"),
+		});
+		await expect(
+			runCli([
+				"build",
+				"--out-dir",
+				"/artifacts",
+				"--artifact-kind",
+				"entry-metadata",
+				"--artifact-kind",
+				"entry-metadata",
+			]),
+		).rejects.toMatchObject({
+			message: expect.stringContaining("Duplicate --artifact-kind"),
+		});
+		await expect(
+			runCli([
+				"build",
+				"--out-dir",
+				"/artifacts",
+				"--transform-mode",
+				"design-time",
+			]),
+		).rejects.toMatchObject({
+			message: expect.stringContaining("Design-time builds do not support module artifacts"),
+		});
+		await expect(
+			runCli([
+				"build",
+				"--out-dir",
+				"/artifacts",
+				"--artifact-kind",
+				"module",
+				"--transform-mode",
+				"design-time",
+			]),
+		).rejects.toMatchObject({
+			message: expect.stringContaining("Design-time builds do not support module artifacts"),
 		});
 	});
 });

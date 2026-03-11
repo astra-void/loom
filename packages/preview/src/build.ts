@@ -1,10 +1,22 @@
 import fs from "node:fs";
 import path from "node:path";
 import {
-	buildPreviewArtifacts,
+	buildPreviewArtifacts as buildPreviewArtifactsFromEngine,
+	type PreviewBuildArtifactKind as EnginePreviewBuildArtifactKind,
 	type PreviewBuildDiagnostic,
+	type PreviewBuildResult as EnginePreviewBuildResult,
 	type PreviewExecutionMode,
 } from "@loom-dev/preview-engine";
+import type {
+	LoadPreviewConfigOptions,
+	PreviewConfig,
+	ResolvedPreviewConfig,
+} from "./config";
+import {
+	loadPreviewBuildConfig,
+	resolvePreviewConfigObject,
+	resolvePreviewRuntimeModule,
+} from "./config";
 import type { PreviewTransformDiagnostic } from "./transformTypes";
 
 export type PreviewBuildTarget = {
@@ -14,8 +26,23 @@ export type PreviewBuildTarget = {
 	sourceRoot: string;
 };
 
+export type PreviewBuildArtifactKind = EnginePreviewBuildArtifactKind;
+export type PreviewBuildResult = EnginePreviewBuildResult;
+
 export type UnsupportedPatternCode = PreviewTransformDiagnostic["code"];
 export type UnsupportedPatternError = PreviewTransformDiagnostic;
+
+export type BuildPreviewArtifactsOverrides = {
+	artifactKinds?: PreviewBuildArtifactKind[];
+	outDir?: string;
+	runtimeModule?: string;
+	transformMode?: PreviewExecutionMode;
+};
+
+export type BuildPreviewArtifactsOptions =
+	| (LoadPreviewConfigOptions & BuildPreviewArtifactsOverrides)
+	| (PreviewConfig & BuildPreviewArtifactsOverrides)
+	| (ResolvedPreviewConfig & BuildPreviewArtifactsOverrides);
 
 export type BuildPreviewModulesOptions = {
 	targets: PreviewBuildTarget[];
@@ -83,6 +110,60 @@ function isTransformDiagnostic(
 	);
 }
 
+function isResolvedPreviewConfig(
+	options: BuildPreviewArtifactsOptions,
+): options is ResolvedPreviewConfig & BuildPreviewArtifactsOverrides {
+	return (
+		typeof options === "object" &&
+		options !== null &&
+		"targets" in options &&
+		Array.isArray(options.targets)
+	);
+}
+
+function isPreviewConfig(
+	options: BuildPreviewArtifactsOptions,
+): options is PreviewConfig & BuildPreviewArtifactsOverrides {
+	return (
+		typeof options === "object" &&
+		options !== null &&
+		"targetDiscovery" in options
+	);
+}
+
+async function resolveBuildPreviewConfig(
+	options: BuildPreviewArtifactsOptions,
+): Promise<ResolvedPreviewConfig> {
+	if (isResolvedPreviewConfig(options)) {
+		return options;
+	}
+
+	if (isPreviewConfig(options)) {
+		return resolvePreviewConfigObject(options);
+	}
+
+	return loadPreviewBuildConfig(options);
+}
+
+export async function buildPreviewArtifacts(
+	options: BuildPreviewArtifactsOptions = {},
+): Promise<PreviewBuildResult> {
+	const resolvedConfig = await resolveBuildPreviewConfig(options);
+
+	return buildPreviewArtifactsFromEngine({
+		artifactKinds: options.artifactKinds ?? ["module"],
+		outDir: options.outDir,
+		projectName: resolvedConfig.projectName,
+		runtimeModule: resolvePreviewRuntimeModule(
+			options.runtimeModule ?? resolvedConfig.runtimeModule,
+			resolvedConfig.configDir,
+		),
+		targets: resolvedConfig.targets,
+		transformMode: options.transformMode ?? resolvedConfig.transformMode,
+		workspaceRoot: resolvedConfig.workspaceRoot,
+	});
+}
+
 export async function buildPreviewModules(
 	options: BuildPreviewModulesOptions,
 ): Promise<BuildPreviewModulesResult> {
@@ -97,7 +178,7 @@ export async function buildPreviewModules(
 		);
 	}
 
-	const result = await buildPreviewArtifacts({
+	const result = await buildPreviewArtifactsFromEngine({
 		artifactKinds: ["module"],
 		outDir,
 		projectName: "Preview Build",
