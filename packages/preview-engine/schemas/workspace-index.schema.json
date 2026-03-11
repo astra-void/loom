@@ -1,389 +1,402 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "@loom-dev/preview-engine/schemas/workspace-index",
-  "title": "PreviewWorkspaceIndex",
-  "type": "object",
-  "additionalProperties": false,
-  "required": ["entries", "projectName", "protocolVersion", "targets"],
-  "properties": {
-    "entries": {
-      "type": "array",
-      "items": {
-        "$ref": "#/$defs/entryDescriptor"
-      }
-    },
-    "projectName": {
-      "type": "string"
-    },
-    "protocolVersion": {
-      "const": 4
-    },
-    "targets": {
-      "type": "array",
-      "items": {
-        "$ref": "#/$defs/sourceTarget"
-      }
-    }
-  },
-  "$defs": {
-    "sourceTarget": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["name", "packageRoot", "sourceRoot"],
-      "properties": {
-        "name": {
-          "type": "string"
-        },
-        "packageName": {
-          "type": "string"
-        },
-        "packageRoot": {
-          "type": "string"
-        },
-        "sourceRoot": {
-          "type": "string"
-        }
-      }
-    },
-    "capabilities": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["supportsHotUpdate", "supportsLayoutDebug", "supportsPropsEditing", "supportsRuntimeMock"],
-      "properties": {
-        "supportsHotUpdate": {
-          "type": "boolean"
-        },
-        "supportsLayoutDebug": {
-          "type": "boolean"
-        },
-        "supportsPropsEditing": {
-          "type": "boolean"
-        },
-        "supportsRuntimeMock": {
-          "type": "boolean"
-        }
-      }
-    },
-    "diagnosticsSummary": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["byPhase", "hasBlocking", "total"],
-      "properties": {
-        "byPhase": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["discovery", "layout", "runtime", "transform"],
-          "properties": {
-            "discovery": {
-              "type": "integer",
-              "minimum": 0
-            },
-            "layout": {
-              "type": "integer",
-              "minimum": 0
-            },
-            "runtime": {
-              "type": "integer",
-              "minimum": 0
-            },
-            "transform": {
-              "type": "integer",
-              "minimum": 0
-            }
-          }
-        },
-        "hasBlocking": {
-          "type": "boolean"
-        },
-        "total": {
-          "type": "integer",
-          "minimum": 0
-        }
-      }
-    },
-    "renderTarget": {
-      "oneOf": [
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["exportName", "kind", "usesPreviewProps"],
-          "properties": {
-            "exportName": {
-              "type": "string"
-            },
-            "kind": {
-              "const": "component"
-            },
-            "usesPreviewProps": {
-              "type": "boolean"
-            }
-          }
-        },
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["contract", "kind"],
-          "properties": {
-            "contract": {
-              "const": "preview.render"
-            },
-            "kind": {
-              "const": "harness"
-            }
-          }
-        },
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["kind", "reason"],
-          "properties": {
-            "candidates": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
-            "kind": {
-              "const": "none"
-            },
-            "reason": {
-              "enum": ["ambiguous-exports", "missing-explicit-contract", "no-component-export"]
-            }
-          }
-        }
-      ]
-    },
-    "selection": {
-      "oneOf": [
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["contract", "kind"],
-          "properties": {
-            "contract": {
-              "enum": ["preview.entry", "preview.render"]
-            },
-            "kind": {
-              "const": "explicit"
-            }
-          }
-        },
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["kind", "reason"],
-          "properties": {
-            "kind": {
-              "const": "unresolved"
-            },
-            "reason": {
-              "enum": ["ambiguous-exports", "missing-explicit-contract", "no-component-export"]
-            }
-          }
-        }
-      ]
-    },
-    "entryDescriptor": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "candidateExportNames",
-        "capabilities",
-        "diagnosticsSummary",
-        "hasDefaultExport",
-        "hasPreviewExport",
-        "id",
-        "packageName",
-        "relativePath",
-        "renderTarget",
-        "selection",
-        "sourceFilePath",
-        "status",
-        "statusDetails",
-        "targetName",
-        "title"
-      ],
-      "properties": {
-        "candidateExportNames": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        },
-        "capabilities": {
-          "$ref": "#/$defs/capabilities"
-        },
-        "diagnosticsSummary": {
-          "$ref": "#/$defs/diagnosticsSummary"
-        },
-        "hasDefaultExport": {
-          "type": "boolean"
-        },
-        "hasPreviewExport": {
-          "type": "boolean"
-        },
-        "id": {
-          "type": "string"
-        },
-        "packageName": {
-          "type": "string"
-        },
-        "relativePath": {
-          "type": "string"
-        },
-        "renderTarget": {
-          "$ref": "#/$defs/renderTarget"
-        },
-        "selection": {
-          "$ref": "#/$defs/selection"
-        },
-        "sourceFilePath": {
-          "type": "string"
-        },
-        "status": {
-          "enum": [
-            "ready",
-            "needs_harness",
-            "ambiguous",
-            "blocked_by_transform",
-            "blocked_by_runtime",
-            "blocked_by_layout"
-          ]
-        },
-        "statusDetails": {
-          "$ref": "#/$defs/statusDetails"
-        },
-        "targetName": {
-          "type": "string"
-        },
-        "title": {
-          "type": "string"
-        }
-      }
-    },
-    "statusDetails": {
-      "oneOf": [
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["kind"],
-          "properties": {
-            "degradedTargets": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
-            "fidelity": {
-              "enum": ["preserved", "degraded"]
-            },
-            "kind": {
-              "const": "ready"
-            },
-            "warningCodes": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            }
-          }
-        },
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["kind", "reason"],
-          "properties": {
-            "candidates": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
-            "kind": {
-              "const": "needs_harness"
-            },
-            "reason": {
-              "enum": ["missing-explicit-contract", "no-component-export"]
-            }
-          }
-        },
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["candidates", "kind", "reason"],
-          "properties": {
-            "candidates": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
-            "kind": {
-              "const": "ambiguous"
-            },
-            "reason": {
-              "const": "ambiguous-exports"
-            }
-          }
-        },
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["blockingCodes", "kind", "reason"],
-          "properties": {
-            "blockingCodes": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
-            "kind": {
-              "const": "blocked_by_transform"
-            },
-            "reason": {
-              "const": "transform-diagnostics"
-            }
-          }
-        },
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["issueCodes", "kind", "reason"],
-          "properties": {
-            "issueCodes": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
-            "kind": {
-              "const": "blocked_by_runtime"
-            },
-            "reason": {
-              "const": "runtime-issues"
-            }
-          }
-        },
-        {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["issueCodes", "kind", "reason"],
-          "properties": {
-            "issueCodes": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
-            "kind": {
-              "const": "blocked_by_layout"
-            },
-            "reason": {
-              "const": "layout-issues"
-            }
-          }
-        }
-      ]
-    }
-  }
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "@loom-dev/preview-engine/schemas/workspace-index",
+	"title": "PreviewWorkspaceIndex",
+	"type": "object",
+	"additionalProperties": false,
+	"required": ["entries", "projectName", "protocolVersion", "targets"],
+	"properties": {
+		"entries": {
+			"type": "array",
+			"items": {
+				"$ref": "#/$defs/entryDescriptor"
+			}
+		},
+		"projectName": {
+			"type": "string"
+		},
+		"protocolVersion": {
+			"const": 4
+		},
+		"targets": {
+			"type": "array",
+			"items": {
+				"$ref": "#/$defs/sourceTarget"
+			}
+		}
+	},
+	"$defs": {
+		"sourceTarget": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["name", "packageRoot", "sourceRoot"],
+			"properties": {
+				"name": {
+					"type": "string"
+				},
+				"packageName": {
+					"type": "string"
+				},
+				"packageRoot": {
+					"type": "string"
+				},
+				"sourceRoot": {
+					"type": "string"
+				}
+			}
+		},
+		"capabilities": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": [
+				"supportsHotUpdate",
+				"supportsLayoutDebug",
+				"supportsPropsEditing",
+				"supportsRuntimeMock"
+			],
+			"properties": {
+				"supportsHotUpdate": {
+					"type": "boolean"
+				},
+				"supportsLayoutDebug": {
+					"type": "boolean"
+				},
+				"supportsPropsEditing": {
+					"type": "boolean"
+				},
+				"supportsRuntimeMock": {
+					"type": "boolean"
+				}
+			}
+		},
+		"diagnosticsSummary": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["byPhase", "hasBlocking", "total"],
+			"properties": {
+				"byPhase": {
+					"type": "object",
+					"additionalProperties": false,
+					"required": ["discovery", "layout", "runtime", "transform"],
+					"properties": {
+						"discovery": {
+							"type": "integer",
+							"minimum": 0
+						},
+						"layout": {
+							"type": "integer",
+							"minimum": 0
+						},
+						"runtime": {
+							"type": "integer",
+							"minimum": 0
+						},
+						"transform": {
+							"type": "integer",
+							"minimum": 0
+						}
+					}
+				},
+				"hasBlocking": {
+					"type": "boolean"
+				},
+				"total": {
+					"type": "integer",
+					"minimum": 0
+				}
+			}
+		},
+		"renderTarget": {
+			"oneOf": [
+				{
+					"type": "object",
+					"additionalProperties": false,
+					"required": ["exportName", "kind", "usesPreviewProps"],
+					"properties": {
+						"exportName": {
+							"type": "string"
+						},
+						"kind": {
+							"const": "component"
+						},
+						"usesPreviewProps": {
+							"type": "boolean"
+						}
+					}
+				},
+				{
+					"type": "object",
+					"additionalProperties": false,
+					"required": ["contract", "kind"],
+					"properties": {
+						"contract": {
+							"const": "preview.render"
+						},
+						"kind": {
+							"const": "harness"
+						}
+					}
+				},
+				{
+					"type": "object",
+					"additionalProperties": false,
+					"required": ["kind", "reason"],
+					"properties": {
+						"candidates": {
+							"type": "array",
+							"items": {
+								"type": "string"
+							}
+						},
+						"kind": {
+							"const": "none"
+						},
+						"reason": {
+							"enum": [
+								"ambiguous-exports",
+								"missing-explicit-contract",
+								"no-component-export"
+							]
+						}
+					}
+				}
+			]
+		},
+		"selection": {
+			"oneOf": [
+				{
+					"type": "object",
+					"additionalProperties": false,
+					"required": ["contract", "kind"],
+					"properties": {
+						"contract": {
+							"enum": ["preview.entry", "preview.render"]
+						},
+						"kind": {
+							"const": "explicit"
+						}
+					}
+				},
+				{
+					"type": "object",
+					"additionalProperties": false,
+					"required": ["kind", "reason"],
+					"properties": {
+						"kind": {
+							"const": "unresolved"
+						},
+						"reason": {
+							"enum": [
+								"ambiguous-exports",
+								"missing-explicit-contract",
+								"no-component-export"
+							]
+						}
+					}
+				}
+			]
+		},
+		"entryDescriptor": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": [
+				"candidateExportNames",
+				"capabilities",
+				"diagnosticsSummary",
+				"hasDefaultExport",
+				"hasPreviewExport",
+				"id",
+				"packageName",
+				"relativePath",
+				"renderTarget",
+				"selection",
+				"sourceFilePath",
+				"status",
+				"statusDetails",
+				"targetName",
+				"title"
+			],
+			"properties": {
+				"candidateExportNames": {
+					"type": "array",
+					"items": {
+						"type": "string"
+					}
+				},
+				"capabilities": {
+					"$ref": "#/$defs/capabilities"
+				},
+				"diagnosticsSummary": {
+					"$ref": "#/$defs/diagnosticsSummary"
+				},
+				"hasDefaultExport": {
+					"type": "boolean"
+				},
+				"hasPreviewExport": {
+					"type": "boolean"
+				},
+				"id": {
+					"type": "string"
+				},
+				"packageName": {
+					"type": "string"
+				},
+				"relativePath": {
+					"type": "string"
+				},
+				"renderTarget": {
+					"$ref": "#/$defs/renderTarget"
+				},
+				"selection": {
+					"$ref": "#/$defs/selection"
+				},
+				"sourceFilePath": {
+					"type": "string"
+				},
+				"status": {
+					"enum": [
+						"ready",
+						"needs_harness",
+						"ambiguous",
+						"blocked_by_transform",
+						"blocked_by_runtime",
+						"blocked_by_layout"
+					]
+				},
+				"statusDetails": {
+					"$ref": "#/$defs/statusDetails"
+				},
+				"targetName": {
+					"type": "string"
+				},
+				"title": {
+					"type": "string"
+				}
+			}
+		},
+		"statusDetails": {
+			"oneOf": [
+				{
+					"type": "object",
+					"additionalProperties": false,
+					"required": ["kind"],
+					"properties": {
+						"degradedTargets": {
+							"type": "array",
+							"items": {
+								"type": "string"
+							}
+						},
+						"fidelity": {
+							"enum": ["preserved", "degraded"]
+						},
+						"kind": {
+							"const": "ready"
+						},
+						"warningCodes": {
+							"type": "array",
+							"items": {
+								"type": "string"
+							}
+						}
+					}
+				},
+				{
+					"type": "object",
+					"additionalProperties": false,
+					"required": ["kind", "reason"],
+					"properties": {
+						"candidates": {
+							"type": "array",
+							"items": {
+								"type": "string"
+							}
+						},
+						"kind": {
+							"const": "needs_harness"
+						},
+						"reason": {
+							"enum": ["missing-explicit-contract", "no-component-export"]
+						}
+					}
+				},
+				{
+					"type": "object",
+					"additionalProperties": false,
+					"required": ["candidates", "kind", "reason"],
+					"properties": {
+						"candidates": {
+							"type": "array",
+							"items": {
+								"type": "string"
+							}
+						},
+						"kind": {
+							"const": "ambiguous"
+						},
+						"reason": {
+							"const": "ambiguous-exports"
+						}
+					}
+				},
+				{
+					"type": "object",
+					"additionalProperties": false,
+					"required": ["blockingCodes", "kind", "reason"],
+					"properties": {
+						"blockingCodes": {
+							"type": "array",
+							"items": {
+								"type": "string"
+							}
+						},
+						"kind": {
+							"const": "blocked_by_transform"
+						},
+						"reason": {
+							"const": "transform-diagnostics"
+						}
+					}
+				},
+				{
+					"type": "object",
+					"additionalProperties": false,
+					"required": ["issueCodes", "kind", "reason"],
+					"properties": {
+						"issueCodes": {
+							"type": "array",
+							"items": {
+								"type": "string"
+							}
+						},
+						"kind": {
+							"const": "blocked_by_runtime"
+						},
+						"reason": {
+							"const": "runtime-issues"
+						}
+					}
+				},
+				{
+					"type": "object",
+					"additionalProperties": false,
+					"required": ["issueCodes", "kind", "reason"],
+					"properties": {
+						"issueCodes": {
+							"type": "array",
+							"items": {
+								"type": "string"
+							}
+						},
+						"kind": {
+							"const": "blocked_by_layout"
+						},
+						"reason": {
+							"const": "layout-issues"
+						}
+					}
+				}
+			]
+		}
+	}
 }

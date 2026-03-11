@@ -1,57 +1,66 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "@loom-dev/preview-runtime/schemas/runtime-issue",
-  "title": "PreviewRuntimeIssue",
-  "type": "object",
-  "additionalProperties": false,
-  "required": ["code", "entryId", "file", "kind", "phase", "relativeFile", "summary", "target"],
-  "properties": {
-    "code": {
-      "type": "string"
-    },
-    "codeFrame": {
-      "type": "string"
-    },
-    "details": {
-      "type": "string"
-    },
-    "entryId": {
-      "type": "string"
-    },
-    "file": {
-      "type": "string"
-    },
-    "importChain": {
-      "type": "array",
-      "items": {
-        "type": "string"
-      }
-    },
-    "kind": {
-      "enum": [
-        "ModuleLoadError",
-        "TransformExecutionError",
-        "TransformValidationError",
-        "UnsupportedPatternError",
-        "RuntimeMockError",
-        "LayoutExecutionError",
-        "LayoutValidationError"
-      ]
-    },
-    "phase": {
-      "enum": ["transform", "runtime", "layout"]
-    },
-    "relativeFile": {
-      "type": "string"
-    },
-    "summary": {
-      "type": "string"
-    },
-    "symbol": {
-      "type": "string"
-    },
-    "target": {
-      "type": "string"
-    }
-  }
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "@loom-dev/preview-runtime/schemas/runtime-issue",
+	"title": "PreviewRuntimeIssue",
+	"type": "object",
+	"additionalProperties": false,
+	"required": [
+		"code",
+		"entryId",
+		"file",
+		"kind",
+		"phase",
+		"relativeFile",
+		"summary",
+		"target"
+	],
+	"properties": {
+		"code": {
+			"type": "string"
+		},
+		"codeFrame": {
+			"type": "string"
+		},
+		"details": {
+			"type": "string"
+		},
+		"entryId": {
+			"type": "string"
+		},
+		"file": {
+			"type": "string"
+		},
+		"importChain": {
+			"type": "array",
+			"items": {
+				"type": "string"
+			}
+		},
+		"kind": {
+			"enum": [
+				"ModuleLoadError",
+				"TransformExecutionError",
+				"TransformValidationError",
+				"UnsupportedPatternError",
+				"RuntimeMockError",
+				"LayoutExecutionError",
+				"LayoutValidationError"
+			]
+		},
+		"phase": {
+			"enum": ["transform", "runtime", "layout"]
+		},
+		"relativeFile": {
+			"type": "string"
+		},
+		"summary": {
+			"type": "string"
+		},
+		"symbol": {
+			"type": "string"
+		},
+		"target": {
+			"type": "string"
+		}
+	}
 }

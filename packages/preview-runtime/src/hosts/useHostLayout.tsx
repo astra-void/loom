@@ -1,187 +1,208 @@
 import * as React from "react";
 import { normalizePreviewNodeId } from "../internal/robloxValues";
-import { LayoutNodeParentProvider, useLayoutDebugState, useRobloxLayout } from "../layout/context";
+import {
+	LayoutNodeParentProvider,
+	useLayoutDebugState,
+	useRobloxLayout,
+} from "../layout/context";
 import { publishPreviewRuntimeIssue } from "../runtime/runtimeError";
 import {
-  domPresentationAdapter,
-  type LayoutDebugState,
-  type PreviewHostNode,
-  patchPreviewHostNodeDomProps,
+	domPresentationAdapter,
+	type LayoutDebugState,
+	type PreviewHostNode,
+	patchPreviewHostNodeDomProps,
 } from "./domAdapter";
 import { isDegradedPreviewHost } from "./metadata";
-import { type LayoutHostName, type PreviewDomProps } from "./types";
+import type { LayoutHostName, PreviewDomProps } from "./types";
 
 let previewNodeIdCounter = 0;
 
 function getStringValue(value: unknown): string | undefined {
-  return typeof value === "string" ? value : undefined;
+	return typeof value === "string" ? value : undefined;
 }
 
 function getLayoutParentId(props: PreviewDomProps) {
-  const source = props as Record<string, unknown>;
-  return getStringValue(source.ParentId ?? source.parentId);
+	const source = props as Record<string, unknown>;
+	return getStringValue(source.ParentId ?? source.parentId);
 }
 
 function useGeneratedPreviewNodeId(): string {
-  const idRef = React.useRef<string | null>(null);
-  if (idRef.current === null) {
-    previewNodeIdCounter += 1;
-    idRef.current = `preview-node-${previewNodeIdCounter}`;
-  }
+	const idRef = React.useRef<string | null>(null);
+	if (idRef.current === null) {
+		previewNodeIdCounter += 1;
+		idRef.current = `preview-node-${previewNodeIdCounter}`;
+	}
 
-  return idRef.current;
+	return idRef.current;
 }
 
 function resolveNodeId(generatedId: string, props: PreviewDomProps): string {
-  const source = props as Record<string, unknown>;
-  const explicitId = getStringValue(source.Id ?? source.id);
-  return normalizePreviewNodeId(explicitId) ?? generatedId;
+	const source = props as Record<string, unknown>;
+	const explicitId = getStringValue(source.Id ?? source.id);
+	return normalizePreviewNodeId(explicitId) ?? generatedId;
 }
 
-function useMeasurementRevision(elementRef: React.RefObject<HTMLElement | null>, enabled: boolean) {
-  const [revision, setRevision] = React.useState(0);
+function useMeasurementRevision(
+	elementRef: React.RefObject<HTMLElement | null>,
+	enabled: boolean,
+) {
+	const [revision, setRevision] = React.useState(0);
 
-  React.useLayoutEffect(() => {
-    if (!enabled) {
-      return;
-    }
+	React.useLayoutEffect(() => {
+		if (!enabled) {
+			return;
+		}
 
-    const element = elementRef.current;
-    if (!element) {
-      return;
-    }
+		const element = elementRef.current;
+		if (!element) {
+			return;
+		}
 
-    let lastWidth = element.getBoundingClientRect().width;
-    let lastHeight = element.getBoundingClientRect().height;
-    setRevision((previous) => previous + 1);
+		let lastWidth = element.getBoundingClientRect().width;
+		let lastHeight = element.getBoundingClientRect().height;
+		setRevision((previous) => previous + 1);
 
-    const notifyIfChanged = () => {
-      const rect = element.getBoundingClientRect();
-      if (lastWidth === rect.width && lastHeight === rect.height) {
-        return;
-      }
+		const notifyIfChanged = () => {
+			const rect = element.getBoundingClientRect();
+			if (lastWidth === rect.width && lastHeight === rect.height) {
+				return;
+			}
 
-      lastWidth = rect.width;
-      lastHeight = rect.height;
-      setRevision((previous) => previous + 1);
-    };
+			lastWidth = rect.width;
+			lastHeight = rect.height;
+			setRevision((previous) => previous + 1);
+		};
 
-    if (typeof ResizeObserver !== "undefined") {
-      const observer = new ResizeObserver(() => {
-        notifyIfChanged();
-      });
-      observer.observe(element);
-      return () => {
-        observer.disconnect();
-      };
-    }
+		if (typeof ResizeObserver !== "undefined") {
+			const observer = new ResizeObserver(() => {
+				notifyIfChanged();
+			});
+			observer.observe(element);
+			return () => {
+				observer.disconnect();
+			};
+		}
 
-    const handleResize = () => {
-      notifyIfChanged();
-    };
+		const handleResize = () => {
+			notifyIfChanged();
+		};
 
-    globalThis.addEventListener?.("resize", handleResize);
-    return () => {
-      globalThis.removeEventListener?.("resize", handleResize);
-    };
-  }, [elementRef, enabled]);
+		globalThis.addEventListener?.("resize", handleResize);
+		return () => {
+			globalThis.removeEventListener?.("resize", handleResize);
+		};
+	}, [elementRef, enabled]);
 
-  return revision;
+	return revision;
 }
 
 function useDegradedHostIssue(hostNode: PreviewHostNode) {
-  const publishedIssueKeyRef = React.useRef<string | null>(null);
+	const publishedIssueKeyRef = React.useRef<string | null>(null);
 
-  React.useEffect(() => {
-    if (!isDegradedPreviewHost(hostNode.host)) {
-      return;
-    }
+	React.useEffect(() => {
+		if (!isDegradedPreviewHost(hostNode.host)) {
+			return;
+		}
 
-    const issueKey = `${hostNode.host}:${hostNode.id}`;
-    if (publishedIssueKeyRef.current === issueKey) {
-      return;
-    }
+		const issueKey = `${hostNode.host}:${hostNode.id}`;
+		if (publishedIssueKeyRef.current === issueKey) {
+			return;
+		}
 
-    publishedIssueKeyRef.current = issueKey;
-    publishPreviewRuntimeIssue({
-      blocking: false,
-      code: "DEGRADED_HOST_RENDER",
-      details: `${hostNode.nodeType} is rendered as a preview placeholder with fallback sizing.`,
-      entryId: "preview-runtime",
-      file: "<runtime>",
-      kind: "RuntimeMockError",
-      phase: "runtime",
-      relativeFile: "<runtime>",
-      severity: "warning",
-      summary: `${hostNode.nodeType} rendered with degraded preview behavior.`,
-      symbol: hostNode.id,
-      target: hostNode.nodeType,
-    });
-  }, [hostNode.host, hostNode.id, hostNode.nodeType]);
+		publishedIssueKeyRef.current = issueKey;
+		publishPreviewRuntimeIssue({
+			blocking: false,
+			code: "DEGRADED_HOST_RENDER",
+			details: `${hostNode.nodeType} is rendered as a preview placeholder with fallback sizing.`,
+			entryId: "preview-runtime",
+			file: "<runtime>",
+			kind: "RuntimeMockError",
+			phase: "runtime",
+			relativeFile: "<runtime>",
+			severity: "warning",
+			summary: `${hostNode.nodeType} rendered with degraded preview behavior.`,
+			symbol: hostNode.id,
+			target: hostNode.nodeType,
+		});
+	}, [hostNode.host, hostNode.id, hostNode.nodeType]);
 }
 
 export function useHostLayout(host: LayoutHostName, props: PreviewDomProps) {
-  const elementRef = React.useRef<HTMLElement | null>(null);
-  const generatedId = useGeneratedPreviewNodeId();
-  const nodeId = React.useMemo(() => resolveNodeId(generatedId, props), [generatedId, props]);
-  const normalizedParentId = React.useMemo(() => normalizePreviewNodeId(getLayoutParentId(props)), [props]);
+	const elementRef = React.useRef<HTMLElement | null>(null);
+	const generatedId = useGeneratedPreviewNodeId();
+	const nodeId = React.useMemo(
+		() => resolveNodeId(generatedId, props),
+		[generatedId, props],
+	);
+	const normalizedParentId = React.useMemo(
+		() => normalizePreviewNodeId(getLayoutParentId(props)),
+		[props],
+	);
 
-  const normalizedNode = React.useMemo(
-    () =>
-      domPresentationAdapter.normalize({
-        host,
-        nodeId,
-        parentId: normalizedParentId,
-        props,
-      }),
-    [host, nodeId, normalizedParentId, props],
-  );
+	const normalizedNode = React.useMemo(
+		() =>
+			domPresentationAdapter.normalize({
+				host,
+				nodeId,
+				parentId: normalizedParentId,
+				props,
+			}),
+		[host, nodeId, normalizedParentId, props],
+	);
 
-  const measurementVersion = useMeasurementRevision(elementRef, normalizedNode.measurementEnabled);
-  const intrinsicSize = React.useMemo(
-    () => domPresentationAdapter.measure(normalizedNode, elementRef.current),
-    [measurementVersion, normalizedNode],
-  );
+	const _measurementVersion = useMeasurementRevision(
+		elementRef,
+		normalizedNode.measurementEnabled,
+	);
+	const intrinsicSize = React.useMemo(
+		() => domPresentationAdapter.measure(normalizedNode, elementRef.current),
+		[normalizedNode],
+	);
 
-  const layoutNode = React.useMemo<PreviewHostNode>(
-    () => ({
-      ...normalizedNode,
-      intrinsicSize,
-    }),
-    [intrinsicSize, normalizedNode],
-  );
+	const layoutNode = React.useMemo<PreviewHostNode>(
+		() => ({
+			...normalizedNode,
+			intrinsicSize,
+		}),
+		[intrinsicSize, normalizedNode],
+	);
 
-  const computed = useRobloxLayout(layoutNode);
-  const diagnostics = useLayoutDebugState(nodeId) as LayoutDebugState;
+	const computed = useRobloxLayout(layoutNode);
+	const diagnostics = useLayoutDebugState(nodeId) as LayoutDebugState;
 
-  const hostNode = React.useMemo(
-    () => ({
-      ...layoutNode,
-      computed,
-      layoutDebug: diagnostics,
-    }),
-    [computed, diagnostics, layoutNode],
-  );
+	const hostNode = React.useMemo(
+		() => ({
+			...layoutNode,
+			computed,
+			layoutDebug: diagnostics,
+		}),
+		[computed, diagnostics, layoutNode],
+	);
 
-  useDegradedHostIssue(hostNode);
+	useDegradedHostIssue(hostNode);
 
-  return {
-    computed,
-    diagnostics,
-    elementRef,
-    hostNode,
-    nodeId,
-    patchDomProps: React.useCallback(
-      (domProps: PreviewHostNode["presentationHints"]["domProps"]) => patchPreviewHostNodeDomProps(hostNode, domProps),
-      [hostNode],
-    ),
-  };
+	return {
+		computed,
+		diagnostics,
+		elementRef,
+		hostNode,
+		nodeId,
+		patchDomProps: React.useCallback(
+			(domProps: PreviewHostNode["presentationHints"]["domProps"]) =>
+				patchPreviewHostNodeDomProps(hostNode, domProps),
+			[hostNode],
+		),
+	};
 }
 
-export function withNodeParent(nodeId: string, rect: ReturnType<typeof useRobloxLayout>, children: React.ReactNode) {
-  return (
-    <LayoutNodeParentProvider nodeId={nodeId} rect={rect}>
-      {children}
-    </LayoutNodeParentProvider>
-  );
+export function withNodeParent(
+	nodeId: string,
+	rect: ReturnType<typeof useRobloxLayout>,
+	children: React.ReactNode,
+) {
+	return (
+		<LayoutNodeParentProvider nodeId={nodeId} rect={rect}>
+			{children}
+		</LayoutNodeParentProvider>
+	);
 }

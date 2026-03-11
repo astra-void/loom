@@ -1,12 +1,12 @@
 export function DialogRoot() {
-  return <frame />;
+	return <frame />;
 }
 
 export const preview = {
-  render: () => (
-    <frame>
-      <textlabel Text="Harnessed Dialog" />
-    </frame>
-  ),
-  title: "Dialog Root",
+	render: () => (
+		<frame>
+			<textlabel Text="Harnessed Dialog" />
+		</frame>
+	),
+	title: "Dialog Root",
 };

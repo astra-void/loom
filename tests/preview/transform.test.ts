@@ -6,8 +6,8 @@ import { describe, expect, it } from "vitest";
 import { buildPreviewModules } from "../../packages/preview/src/build";
 
 describe("preview source transform", () => {
-  it("rewrites supported imports, enums, host elements, and DOM-facing types", () => {
-    const source = `
+	it("rewrites supported imports, enums, host elements, and DOM-facing types", () => {
+		const source = `
       import { React, Slot } from "@loom-dev/core";
       import type { LayerInteractEvent } from "@loom-dev/layer";
       import type ReactTypes from "@rbxts/react";
@@ -54,38 +54,44 @@ describe("preview source transform", () => {
       }
     `;
 
-    const result = transformPreviewSource(source, {
-      filePath: "/virtual/example.tsx",
-      mode: "compatibility",
-      runtimeModule: "@loom-dev/preview-runtime",
-      target: "rich-hosts",
-    });
+		const result = transformPreviewSource(source, {
+			filePath: "/virtual/example.tsx",
+			mode: "compatibility",
+			runtimeModule: "@loom-dev/preview-runtime",
+			target: "rich-hosts",
+		});
 
-    expect(result.diagnostics).toHaveLength(0);
-    expect(result.code).toContain('from "@loom-dev/preview-runtime"');
-    expect(result.code).toContain('from "react"');
-    expect(result.code).toContain("MutableRefObject<HTMLElement | null | undefined>");
-    expect(result.code).toContain("container?: HTMLElement | null");
-    expect(result.code).toContain("surface?: HTMLElement | null");
-    expect(result.code).toContain("<TextLabel");
-    expect(result.code).toContain("<ImageButton");
-    expect(result.code).toContain("<CanvasGroup");
-    expect(result.code).toContain("<ViewportFrame");
-    expect(result.code).toContain("<VideoFrame");
-    expect(result.code).toContain("<SurfaceGui");
-    expect(result.code).toContain("<BillboardGui");
-    expect(result.code).toContain("<UIPadding");
-    expect(result.code).toContain("<UIScale");
-    expect(result.code).toContain('isPreviewElement(host, "ViewportFrame")');
-    expect(result.code).toContain('isPreviewElement(button, "GuiButton")');
-    expect(result.code).toContain('isPreviewElement(label, "GuiLabel")');
-    expect(result.code).toContain('isPreviewElement(props.layer, "LayerCollector")');
-    expect(result.code).toContain('isPreviewElement(props.container, "BasePlayerGui")');
-    expect(result.code).toContain('"left"');
-  });
+		expect(result.diagnostics).toHaveLength(0);
+		expect(result.code).toContain('from "@loom-dev/preview-runtime"');
+		expect(result.code).toContain('from "react"');
+		expect(result.code).toContain(
+			"MutableRefObject<HTMLElement | null | undefined>",
+		);
+		expect(result.code).toContain("container?: HTMLElement | null");
+		expect(result.code).toContain("surface?: HTMLElement | null");
+		expect(result.code).toContain("<TextLabel");
+		expect(result.code).toContain("<ImageButton");
+		expect(result.code).toContain("<CanvasGroup");
+		expect(result.code).toContain("<ViewportFrame");
+		expect(result.code).toContain("<VideoFrame");
+		expect(result.code).toContain("<SurfaceGui");
+		expect(result.code).toContain("<BillboardGui");
+		expect(result.code).toContain("<UIPadding");
+		expect(result.code).toContain("<UIScale");
+		expect(result.code).toContain('isPreviewElement(host, "ViewportFrame")');
+		expect(result.code).toContain('isPreviewElement(button, "GuiButton")');
+		expect(result.code).toContain('isPreviewElement(label, "GuiLabel")');
+		expect(result.code).toContain(
+			'isPreviewElement(props.layer, "LayerCollector")',
+		);
+		expect(result.code).toContain(
+			'isPreviewElement(props.container, "BasePlayerGui")',
+		);
+		expect(result.code).toContain('"left"');
+	});
 
-  it("rewrites expanded preview-safe enum literals and keeps unsupported enum roots mocked", () => {
-    const source = `
+	it("rewrites expanded preview-safe enum literals and keeps unsupported enum roots mocked", () => {
+		const source = `
       export const inputMode = Enum.UserInputType.MouseButton1;
       export const horizontal = Enum.HorizontalAlignment.Center;
       export const vertical = Enum.VerticalAlignment.Bottom;
@@ -96,26 +102,28 @@ describe("preview source transform", () => {
       export const host = <frame />;
     `;
 
-    const result = transformPreviewSource(source, {
-      filePath: "/virtual/enum-passthrough.tsx",
-      mode: "compatibility",
-      runtimeModule: "@loom-dev/preview-runtime",
-      target: "enum-passthrough",
-    });
+		const result = transformPreviewSource(source, {
+			filePath: "/virtual/enum-passthrough.tsx",
+			mode: "compatibility",
+			runtimeModule: "@loom-dev/preview-runtime",
+			target: "enum-passthrough",
+		});
 
-    expect(result.diagnostics).toHaveLength(0);
-    expect(result.code).toContain('"MouseButton1"');
-    expect(result.code).toContain('"center"');
-    expect(result.code).toContain('"bottom"');
-    expect(result.code).toContain('"Tab"');
-    expect(result.code).toContain('"a"');
-    expect(result.code).toContain('"0"');
-    expect(result.code).toContain('__previewGlobal("Enum").PlaybackState.Completed');
-    expect(result.code).toContain("<Frame");
-  });
+		expect(result.diagnostics).toHaveLength(0);
+		expect(result.code).toContain('"MouseButton1"');
+		expect(result.code).toContain('"center"');
+		expect(result.code).toContain('"bottom"');
+		expect(result.code).toContain('"Tab"');
+		expect(result.code).toContain('"a"');
+		expect(result.code).toContain('"0"');
+		expect(result.code).toContain(
+			'__previewGlobal("Enum").PlaybackState.Completed',
+		);
+		expect(result.code).toContain("<Frame");
+	});
 
-  it("merges rewritten runtime imports without duplicate bindings", () => {
-    const source = `
+	it("merges rewritten runtime imports without duplicate bindings", () => {
+		const source = `
       import { React, Slot } from "@loom-dev/core";
       import { FocusScope } from "@loom-dev/focus";
       import type { LayerInteractEvent } from "@loom-dev/layer";
@@ -130,62 +138,68 @@ describe("preview source transform", () => {
       }
     `;
 
-    const result = transformPreviewSource(source, {
-      filePath: "/virtual/merged-imports.tsx",
-      mode: "compatibility",
-      runtimeModule: "@loom-dev/preview-runtime",
-      target: "merged-imports",
-    });
+		const result = transformPreviewSource(source, {
+			filePath: "/virtual/merged-imports.tsx",
+			mode: "compatibility",
+			runtimeModule: "@loom-dev/preview-runtime",
+			target: "merged-imports",
+		});
 
-    expect(result.diagnostics).toHaveLength(0);
-    expect(result.code.match(/from "@loom-dev\/preview-runtime"/g) ?? []).toHaveLength(1);
-    expect(result.code).toContain("React");
-    expect(result.code).toContain("Slot");
-    expect(result.code).toContain("FocusScope");
-    expect(result.code).toContain("LayerInteractEvent");
-  });
+		expect(result.diagnostics).toHaveLength(0);
+		expect(
+			result.code.match(/from "@loom-dev\/preview-runtime"/g) ?? [],
+		).toHaveLength(1);
+		expect(result.code).toContain("React");
+		expect(result.code).toContain("Slot");
+		expect(result.code).toContain("FocusScope");
+		expect(result.code).toContain("LayerInteractEvent");
+	});
 
-  it("passes Roblox globals through to the runtime fallback and still reports unsupported host elements", () => {
-    const source = `
+	it("passes Roblox globals through to the runtime fallback and still reports unsupported host elements", () => {
+		const source = `
       export const value = game.GetService("Players");
       export const tween = new TweenInfo(0.1);
       export const host = <part />;
     `;
 
-    const result = transformPreviewSource(source, {
-      filePath: "/virtual/bad.tsx",
-      mode: "compatibility",
-      runtimeModule: "@loom-dev/preview-runtime",
-      target: "broken",
-    });
+		const result = transformPreviewSource(source, {
+			filePath: "/virtual/bad.tsx",
+			mode: "compatibility",
+			runtimeModule: "@loom-dev/preview-runtime",
+			target: "broken",
+		});
 
-    expect(result.diagnostics.map((item) => item.code)).toEqual(["UNSUPPORTED_HOST_ELEMENT"]);
-    expect(result.outcome.kind).toBe("compatibility");
-    expect(result.code).toContain('__previewGlobal("game")');
-    expect(result.code).toContain('__previewGlobal("TweenInfo")');
-  });
+		expect(result.diagnostics.map((item) => item.code)).toEqual([
+			"UNSUPPORTED_HOST_ELEMENT",
+		]);
+		expect(result.outcome.kind).toBe("compatibility");
+		expect(result.code).toContain('__previewGlobal("game")');
+		expect(result.code).toContain('__previewGlobal("TweenInfo")');
+	});
 
-  it("transforms fixture-driven runtime service trees without dropping preview globals", () => {
-    const source = fs.readFileSync(
-      path.resolve(__dirname, "fixtures/mock-runtime-tree/src/index.tsx"),
-      "utf8",
-    );
+	it("transforms fixture-driven runtime service trees without dropping preview globals", () => {
+		const source = fs.readFileSync(
+			path.resolve(__dirname, "fixtures/mock-runtime-tree/src/index.tsx"),
+			"utf8",
+		);
 
-    const result = transformPreviewSource(source, {
-      filePath: "/virtual/mock-runtime-tree.tsx",
-      mode: "compatibility",
-      runtimeModule: "@loom-dev/preview-runtime",
-      target: "mock-runtime-tree",
-    });
+		const result = transformPreviewSource(source, {
+			filePath: "/virtual/mock-runtime-tree.tsx",
+			mode: "compatibility",
+			runtimeModule: "@loom-dev/preview-runtime",
+			target: "mock-runtime-tree",
+		});
 
-    expect(result.diagnostics).toHaveLength(0);
-    expect(result.code).toContain('__previewGlobal("game").GetService("UserInputService")');
-    expect(result.code).toContain("<TextLabel");
-    expect(result.code).toContain("<Frame");
-  });
+		expect(result.diagnostics).toHaveLength(0);
+		expect(result.code).toContain(
+			'__previewGlobal("game").GetService("UserInputService")',
+		);
+		expect(result.code).toContain("<TextLabel");
+		expect(result.code).toContain("<Frame");
+	});
 
-  it("parses decorated Flamework classes without failing preview discovery", () => {
-    const source = `
+	it("parses decorated Flamework classes without failing preview discovery", () => {
+		const source = `
       import { Controller } from "@flamework/core";
 
       @Controller()
@@ -196,253 +210,285 @@ describe("preview source transform", () => {
       }
     `;
 
-    const result = transformPreviewSource(source, {
-      filePath: "/virtual/decorated-controller.tsx",
-      mode: "compatibility",
-      runtimeModule: "@loom-dev/preview-runtime",
-      target: "decorators",
-    });
+		const result = transformPreviewSource(source, {
+			filePath: "/virtual/decorated-controller.tsx",
+			mode: "compatibility",
+			runtimeModule: "@loom-dev/preview-runtime",
+			target: "decorators",
+		});
 
-    expect(result.diagnostics).toHaveLength(0);
-    expect(() => compile_tsx(result.code ?? "")).not.toThrow();
-  });
+		expect(result.diagnostics).toHaveLength(0);
+		expect(() => compile_tsx(result.code ?? "")).not.toThrow();
+	});
 });
 
 describe("buildPreviewModules", () => {
-  it("writes generated sources for arbitrary targets", async () => {
-    const outDir = fs.mkdtempSync(path.join(os.tmpdir(), "loom-preview-"));
+	it("writes generated sources for arbitrary targets", async () => {
+		const outDir = fs.mkdtempSync(path.join(os.tmpdir(), "loom-preview-"));
 
-    const result = await buildPreviewModules({
-      targets: [
-        {
-          name: "rich-hosts",
-          sourceRoot: path.resolve(__dirname, "fixtures/rich-hosts/src"),
-        },
-      ],
-      outDir,
-    });
+		const result = await buildPreviewModules({
+			targets: [
+				{
+					name: "rich-hosts",
+					sourceRoot: path.resolve(__dirname, "fixtures/rich-hosts/src"),
+				},
+			],
+			outDir,
+		});
 
-    expect(result.writtenFiles.some((filePath) => filePath.endsWith(path.join("rich-hosts", "index.tsx")))).toBe(true);
-    const generatedIndex = path.join(outDir, "rich-hosts/index.tsx");
-    expect(fs.existsSync(generatedIndex)).toBe(true);
-    expect(fs.readFileSync(generatedIndex, "utf8")).toContain("Generated by @loom-dev/preview");
-  });
+		expect(
+			result.writtenFiles.some((filePath) =>
+				filePath.endsWith(path.join("rich-hosts", "index.tsx")),
+			),
+		).toBe(true);
+		const generatedIndex = path.join(outDir, "rich-hosts/index.tsx");
+		expect(fs.existsSync(generatedIndex)).toBe(true);
+		expect(fs.readFileSync(generatedIndex, "utf8")).toContain(
+			"Generated by @loom-dev/preview",
+		);
+	});
 
-  it("defaults buildPreviewModules to strict-fidelity and blocks unsupported hosts", async () => {
-    const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), "loom-preview-strict-default-"));
-    const sourceRoot = path.join(fixtureRoot, "src");
-    const outDir = path.join(fixtureRoot, "generated");
+	it("defaults buildPreviewModules to strict-fidelity and blocks unsupported hosts", async () => {
+		const fixtureRoot = fs.mkdtempSync(
+			path.join(os.tmpdir(), "loom-preview-strict-default-"),
+		);
+		const sourceRoot = path.join(fixtureRoot, "src");
+		const outDir = path.join(fixtureRoot, "generated");
 
-    fs.mkdirSync(sourceRoot, { recursive: true });
-    fs.writeFileSync(
-      path.join(sourceRoot, "index.tsx"),
-      "export function Broken() { return <part />; }\n",
-      "utf8",
-    );
+		fs.mkdirSync(sourceRoot, { recursive: true });
+		fs.writeFileSync(
+			path.join(sourceRoot, "index.tsx"),
+			"export function Broken() { return <part />; }\n",
+			"utf8",
+		);
 
-    await expect(
-      buildPreviewModules({
-        targets: [
-          {
-            name: "strict-default",
-            sourceRoot,
-          },
-        ],
-        outDir,
-      }),
-    ).rejects.toMatchObject({
-      name: "PreviewBuildError",
-    });
-  });
+		await expect(
+			buildPreviewModules({
+				targets: [
+					{
+						name: "strict-default",
+						sourceRoot,
+					},
+				],
+				outDir,
+			}),
+		).rejects.toMatchObject({
+			name: "PreviewBuildError",
+		});
+	});
 
-  it("maps deprecated failOnUnsupported=false to compatibility mode", async () => {
-    const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), "loom-preview-compat-build-"));
-    const sourceRoot = path.join(fixtureRoot, "src");
-    const outDir = path.join(fixtureRoot, "generated");
+	it("maps deprecated failOnUnsupported=false to compatibility mode", async () => {
+		const fixtureRoot = fs.mkdtempSync(
+			path.join(os.tmpdir(), "loom-preview-compat-build-"),
+		);
+		const sourceRoot = path.join(fixtureRoot, "src");
+		const outDir = path.join(fixtureRoot, "generated");
 
-    fs.mkdirSync(sourceRoot, { recursive: true });
-    fs.writeFileSync(
-      path.join(sourceRoot, "index.tsx"),
-      "export function Broken() { return <part />; }\n",
-      "utf8",
-    );
+		fs.mkdirSync(sourceRoot, { recursive: true });
+		fs.writeFileSync(
+			path.join(sourceRoot, "index.tsx"),
+			"export function Broken() { return <part />; }\n",
+			"utf8",
+		);
 
-    const result = await buildPreviewModules({
-      failOnUnsupported: false,
-      targets: [
-        {
-          name: "compat-build",
-          sourceRoot,
-        },
-      ],
-      outDir,
-    });
+		const result = await buildPreviewModules({
+			failOnUnsupported: false,
+			targets: [
+				{
+					name: "compat-build",
+					sourceRoot,
+				},
+			],
+			outDir,
+		});
 
-    expect(result.writtenFiles.some((filePath) => filePath.endsWith(path.join("compat-build", "index.tsx")))).toBe(
-      true,
-    );
-  });
+		expect(
+			result.writtenFiles.some((filePath) =>
+				filePath.endsWith(path.join("compat-build", "index.tsx")),
+			),
+		).toBe(true);
+	});
 
-  it("continues to reject design-time module builds from the wrapper", async () => {
-    const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), "loom-preview-design-time-build-"));
-    const sourceRoot = path.join(fixtureRoot, "src");
-    const outDir = path.join(fixtureRoot, "generated");
+	it("continues to reject design-time module builds from the wrapper", async () => {
+		const fixtureRoot = fs.mkdtempSync(
+			path.join(os.tmpdir(), "loom-preview-design-time-build-"),
+		);
+		const sourceRoot = path.join(fixtureRoot, "src");
+		const outDir = path.join(fixtureRoot, "generated");
 
-    fs.mkdirSync(sourceRoot, { recursive: true });
-    fs.writeFileSync(path.join(sourceRoot, "index.tsx"), "export function MetaOnly() { return <frame />; }\n", "utf8");
+		fs.mkdirSync(sourceRoot, { recursive: true });
+		fs.writeFileSync(
+			path.join(sourceRoot, "index.tsx"),
+			"export function MetaOnly() { return <frame />; }\n",
+			"utf8",
+		);
 
-    await expect(
-      buildPreviewModules({
-        targets: [
-          {
-            name: "design-time-build",
-            sourceRoot,
-          },
-        ],
-        outDir,
-        transformMode: "design-time",
-      }),
-    ).rejects.toThrow(/does not support design-time/i);
-  });
+		await expect(
+			buildPreviewModules({
+				targets: [
+					{
+						name: "design-time-build",
+						sourceRoot,
+					},
+				],
+				outDir,
+				transformMode: "design-time",
+			}),
+		).rejects.toThrow(/does not support design-time/i);
+	});
 
-  it("skips declaration files when generating preview modules", async () => {
-    const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), "loom-preview-declarations-"));
-    const sourceRoot = path.join(fixtureRoot, "src");
-    const outDir = fs.mkdtempSync(path.join(os.tmpdir(), "loom-preview-out-"));
+	it("skips declaration files when generating preview modules", async () => {
+		const fixtureRoot = fs.mkdtempSync(
+			path.join(os.tmpdir(), "loom-preview-declarations-"),
+		);
+		const sourceRoot = path.join(fixtureRoot, "src");
+		const outDir = fs.mkdtempSync(path.join(os.tmpdir(), "loom-preview-out-"));
 
-    fs.mkdirSync(sourceRoot, { recursive: true });
-    fs.writeFileSync(
-      path.join(sourceRoot, "index.tsx"),
-      'export function DeclarationSafe() { return <frame Text="ready" />; }\n',
-      "utf8",
-    );
-    fs.writeFileSync(
-      path.join(sourceRoot, "ambient.d.ts"),
-      'declare module "virtual:fixture" { export const value: string; }\n',
-      "utf8",
-    );
+		fs.mkdirSync(sourceRoot, { recursive: true });
+		fs.writeFileSync(
+			path.join(sourceRoot, "index.tsx"),
+			'export function DeclarationSafe() { return <frame Text="ready" />; }\n',
+			"utf8",
+		);
+		fs.writeFileSync(
+			path.join(sourceRoot, "ambient.d.ts"),
+			'declare module "virtual:fixture" { export const value: string; }\n',
+			"utf8",
+		);
 
-    const result = await buildPreviewModules({
-      targets: [
-        {
-          name: "ambient-safe",
-          sourceRoot,
-        },
-      ],
-      outDir,
-    });
+		const result = await buildPreviewModules({
+			targets: [
+				{
+					name: "ambient-safe",
+					sourceRoot,
+				},
+			],
+			outDir,
+		});
 
-    expect(result.writtenFiles.some((filePath) => filePath.endsWith(path.join("ambient-safe", "index.tsx")))).toBe(
-      true,
-    );
-    expect(result.writtenFiles.some((filePath) => filePath.endsWith(".d.ts"))).toBe(false);
-  });
+		expect(
+			result.writtenFiles.some((filePath) =>
+				filePath.endsWith(path.join("ambient-safe", "index.tsx")),
+			),
+		).toBe(true);
+		expect(
+			result.writtenFiles.some((filePath) => filePath.endsWith(".d.ts")),
+		).toBe(false);
+	});
 
-  it("rejects unsafe target names and overlapping output directories", async () => {
-    const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), "loom-preview-unsafe-"));
-    const sourceRoot = path.join(fixtureRoot, "src");
+	it("rejects unsafe target names and overlapping output directories", async () => {
+		const fixtureRoot = fs.mkdtempSync(
+			path.join(os.tmpdir(), "loom-preview-unsafe-"),
+		);
+		const sourceRoot = path.join(fixtureRoot, "src");
 
-    fs.mkdirSync(sourceRoot, { recursive: true });
-    fs.writeFileSync(
-      path.join(sourceRoot, "index.tsx"),
-      "export function UnsafeFixture() { return <frame />; }\n",
-      "utf8",
-    );
+		fs.mkdirSync(sourceRoot, { recursive: true });
+		fs.writeFileSync(
+			path.join(sourceRoot, "index.tsx"),
+			"export function UnsafeFixture() { return <frame />; }\n",
+			"utf8",
+		);
 
-    await expect(
-      buildPreviewModules({
-        targets: [
-          {
-            name: "../escape",
-            sourceRoot,
-          },
-        ],
-        outDir: path.join(fixtureRoot, "generated"),
-      }),
-    ).rejects.toThrow(/safe path segment/i);
+		await expect(
+			buildPreviewModules({
+				targets: [
+					{
+						name: "../escape",
+						sourceRoot,
+					},
+				],
+				outDir: path.join(fixtureRoot, "generated"),
+			}),
+		).rejects.toThrow(/safe path segment/i);
 
-    await expect(
-      buildPreviewModules({
-        targets: [
-          {
-            name: "unsafe",
-            sourceRoot,
-          },
-        ],
-        outDir: sourceRoot,
-      }),
-    ).rejects.toThrow(/overlaps the source tree/i);
-  });
+		await expect(
+			buildPreviewModules({
+				targets: [
+					{
+						name: "unsafe",
+						sourceRoot,
+					},
+				],
+				outDir: sourceRoot,
+			}),
+		).rejects.toThrow(/overlaps the source tree/i);
+	});
 
-  it("skips unchanged files and removes stale manifest-owned outputs incrementally", async () => {
-    const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), "loom-preview-incremental-"));
-    const sourceRoot = path.join(fixtureRoot, "src");
-    const outDir = path.join(fixtureRoot, "generated");
+	it("skips unchanged files and removes stale manifest-owned outputs incrementally", async () => {
+		const fixtureRoot = fs.mkdtempSync(
+			path.join(os.tmpdir(), "loom-preview-incremental-"),
+		);
+		const sourceRoot = path.join(fixtureRoot, "src");
+		const outDir = path.join(fixtureRoot, "generated");
 
-    fs.mkdirSync(sourceRoot, { recursive: true });
-    fs.writeFileSync(
-      path.join(sourceRoot, "index.tsx"),
-      "export function RootFixture() { return <frame />; }\n",
-      "utf8",
-    );
-    fs.writeFileSync(
-      path.join(sourceRoot, "Extra.tsx"),
-      "export function ExtraFixture() { return <frame />; }\n",
-      "utf8",
-    );
+		fs.mkdirSync(sourceRoot, { recursive: true });
+		fs.writeFileSync(
+			path.join(sourceRoot, "index.tsx"),
+			"export function RootFixture() { return <frame />; }\n",
+			"utf8",
+		);
+		fs.writeFileSync(
+			path.join(sourceRoot, "Extra.tsx"),
+			"export function ExtraFixture() { return <frame />; }\n",
+			"utf8",
+		);
 
-    const initialResult = await buildPreviewModules({
-      targets: [
-        {
-          name: "incremental",
-          sourceRoot,
-        },
-      ],
-      outDir,
-    });
+		const initialResult = await buildPreviewModules({
+			targets: [
+				{
+					name: "incremental",
+					sourceRoot,
+				},
+			],
+			outDir,
+		});
 
-    const generatedExtra = path.join(outDir, "incremental/Extra.tsx");
-    const generatedIndex = path.join(outDir, "incremental/index.tsx");
-    expect(initialResult.writtenFiles).toEqual(expect.arrayContaining([generatedExtra, generatedIndex]));
-    expect(fs.existsSync(path.join(outDir, ".loom-preview-manifest.json"))).toBe(true);
+		const generatedExtra = path.join(outDir, "incremental/Extra.tsx");
+		const generatedIndex = path.join(outDir, "incremental/index.tsx");
+		expect(initialResult.writtenFiles).toEqual(
+			expect.arrayContaining([generatedExtra, generatedIndex]),
+		);
+		expect(
+			fs.existsSync(path.join(outDir, ".loom-preview-manifest.json")),
+		).toBe(true);
 
-    const secondResult = await buildPreviewModules({
-      targets: [
-        {
-          name: "incremental",
-          sourceRoot,
-        },
-      ],
-      outDir,
-    });
-    expect(secondResult.writtenFiles).toEqual([]);
+		const secondResult = await buildPreviewModules({
+			targets: [
+				{
+					name: "incremental",
+					sourceRoot,
+				},
+			],
+			outDir,
+		});
+		expect(secondResult.writtenFiles).toEqual([]);
 
-    fs.writeFileSync(
-      path.join(sourceRoot, "index.tsx"),
-      'export function RootFixture() { return <textlabel Text="updated" />; }\n',
-      "utf8",
-    );
-    const thirdResult = await buildPreviewModules({
-      targets: [
-        {
-          name: "incremental",
-          sourceRoot,
-        },
-      ],
-      outDir,
-    });
-    expect(thirdResult.writtenFiles).toEqual([generatedIndex]);
+		fs.writeFileSync(
+			path.join(sourceRoot, "index.tsx"),
+			'export function RootFixture() { return <textlabel Text="updated" />; }\n',
+			"utf8",
+		);
+		const thirdResult = await buildPreviewModules({
+			targets: [
+				{
+					name: "incremental",
+					sourceRoot,
+				},
+			],
+			outDir,
+		});
+		expect(thirdResult.writtenFiles).toEqual([generatedIndex]);
 
-    fs.rmSync(path.join(sourceRoot, "Extra.tsx"));
-    await buildPreviewModules({
-      targets: [
-        {
-          name: "incremental",
-          sourceRoot,
-        },
-      ],
-      outDir,
-    });
-    expect(fs.existsSync(generatedExtra)).toBe(false);
-  });
+		fs.rmSync(path.join(sourceRoot, "Extra.tsx"));
+		await buildPreviewModules({
+			targets: [
+				{
+					name: "incremental",
+					sourceRoot,
+				},
+			],
+			outDir,
+		});
+		expect(fs.existsSync(generatedExtra)).toBe(false);
+	});
 });

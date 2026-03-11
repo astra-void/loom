@@ -10,17 +10,20 @@ installPreviewBrowserGlobals();
 const rootElement = document.getElementById("root");
 
 if (!rootElement) {
-  throw new Error("Preview root element is missing.");
+	throw new Error("Preview root element is missing.");
 }
 
-const searchParams = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : undefined;
+const searchParams =
+	typeof window !== "undefined"
+		? new URLSearchParams(window.location.search)
+		: undefined;
 const shouldRenderWasmTest = searchParams?.get("mode") === "wasm";
 const ShellApp = shouldRenderWasmTest ? WasmTestApp : PreviewWorkspaceApp;
 
 ReactDOM.createRoot(rootElement).render(
-  <React.StrictMode>
-    <PreviewThemeProvider>
-      <ShellApp />
-    </PreviewThemeProvider>
-  </React.StrictMode>,
+	<React.StrictMode>
+		<PreviewThemeProvider>
+			<ShellApp />
+		</PreviewThemeProvider>
+	</React.StrictMode>,
 );

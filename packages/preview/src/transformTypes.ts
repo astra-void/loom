@@ -1,33 +1,38 @@
 import type { TransformPreviewSourceResult as CompilerTransformPreviewSourceResult } from "@loom-dev/compiler";
 
-export type PreviewTransformMode = "strict-fidelity" | "compatibility" | "mocked" | "design-time";
+export type PreviewTransformMode =
+	| "strict-fidelity"
+	| "compatibility"
+	| "mocked"
+	| "design-time";
 export type PreviewTransformSeverity = "error" | "info" | "warning";
 
 export type PreviewTransformDiagnostic = {
-  blocking: boolean;
-  code: string;
-  details?: string;
-  file: string;
-  line: number;
-  column: number;
-  severity: PreviewTransformSeverity;
-  summary: string;
-  symbol?: string;
-  target: string;
+	blocking: boolean;
+	code: string;
+	details?: string;
+	file: string;
+	line: number;
+	column: number;
+	severity: PreviewTransformSeverity;
+	summary: string;
+	symbol?: string;
+	target: string;
 };
 
 export type PreviewTransformOutcome = {
-  fidelity: "preserved" | "degraded" | "metadata-only";
-  kind: "ready" | "compatibility" | "mocked" | "blocked" | "design-time";
+	fidelity: "preserved" | "degraded" | "metadata-only";
+	kind: "ready" | "compatibility" | "mocked" | "blocked" | "design-time";
 };
 
-export type TransformPreviewSourceResult = CompilerTransformPreviewSourceResult & {
-  diagnostics?: PreviewTransformDiagnostic[];
-  outcome?: PreviewTransformOutcome;
-};
+export type TransformPreviewSourceResult =
+	CompilerTransformPreviewSourceResult & {
+		diagnostics?: PreviewTransformDiagnostic[];
+		outcome?: PreviewTransformOutcome;
+	};
 
 export type NormalizedTransformPreviewSourceResult = {
-  code?: string;
-  diagnostics: PreviewTransformDiagnostic[];
-  outcome: PreviewTransformOutcome;
+	code?: string;
+	diagnostics: PreviewTransformDiagnostic[];
+	outcome: PreviewTransformOutcome;
 };

@@ -8,5 +8,5 @@ const packageRoot = path.resolve(__dirname, "..");
 const distDir = path.join(packageRoot, "dist");
 
 if (fs.existsSync(distDir)) {
-  fs.rmSync(distDir, { force: true, recursive: true });
+	fs.rmSync(distDir, { force: true, recursive: true });
 }

@@ -3,43 +3,52 @@ import { previewRuntime } from "@loom-dev/preview-runtime";
 import { describe, expect, it } from "vitest";
 import entryPayloadSchema from "../../packages/preview-engine/schemas/entry-payload.schema.json";
 import workspaceIndexSchema from "../../packages/preview-engine/schemas/workspace-index.schema.json";
+import {
+	supportedIsaNames,
+	supportedTypeRewriteNames,
+} from "../../packages/preview-runtime/src/hosts/metadata";
 import previewHostMetadata from "../../packages/preview-runtime/src/hosts/metadata.json";
-import { supportedIsaNames, supportedTypeRewriteNames } from "../../packages/preview-runtime/src/hosts/metadata";
 import { layoutHostNodeType } from "../../packages/preview-runtime/src/hosts/types";
 import { normalizePreviewLayoutResult } from "../../packages/preview-runtime/src/layout/model";
 
 const previewHostRecords = previewHostMetadata.hosts;
 
 function countMatches(source: string, pattern: RegExp) {
-  return [...source.matchAll(pattern)].length;
+	return [...source.matchAll(pattern)].length;
 }
 
 describe("preview host metadata invariants", () => {
-  it("keeps runtime exports and layout host maps aligned with shared metadata", () => {
-    const metadataRuntimeNames = previewHostRecords.map((record) => record.runtimeName).sort();
-    const exportedRuntimeNames = Object.keys(previewRuntime.hosts).sort();
-    const metadataLayoutJsxNames = previewHostRecords
-      .filter((record) => record.participatesInLayout)
-      .map((record) => record.jsxName)
-      .sort();
-    const metadataLayoutRuntimeNames = previewHostRecords
-      .filter((record) => record.participatesInLayout)
-      .map((record) => record.runtimeName)
-      .sort();
+	it("keeps runtime exports and layout host maps aligned with shared metadata", () => {
+		const metadataRuntimeNames = previewHostRecords
+			.map((record) => record.runtimeName)
+			.sort();
+		const exportedRuntimeNames = Object.keys(previewRuntime.hosts).sort();
+		const metadataLayoutJsxNames = previewHostRecords
+			.filter((record) => record.participatesInLayout)
+			.map((record) => record.jsxName)
+			.sort();
+		const metadataLayoutRuntimeNames = previewHostRecords
+			.filter((record) => record.participatesInLayout)
+			.map((record) => record.runtimeName)
+			.sort();
 
-    expect(exportedRuntimeNames).toEqual(metadataRuntimeNames);
-    expect(Object.keys(layoutHostNodeType).sort()).toEqual(metadataLayoutJsxNames);
-    expect(Object.values(layoutHostNodeType).sort()).toEqual(metadataLayoutRuntimeNames);
-  });
+		expect(exportedRuntimeNames).toEqual(metadataRuntimeNames);
+		expect(Object.keys(layoutHostNodeType).sort()).toEqual(
+			metadataLayoutJsxNames,
+		);
+		expect(Object.values(layoutHostNodeType).sort()).toEqual(
+			metadataLayoutRuntimeNames,
+		);
+	});
 
-  it("accepts the shared metadata host set without unsupported-host drift", () => {
-    const nestedHosts = previewHostRecords
-      .filter((record) => record.jsxName !== "frame")
-      .map((record) => `      <${record.jsxName} />`)
-      .join("\n");
+	it("accepts the shared metadata host set without unsupported-host drift", () => {
+		const nestedHosts = previewHostRecords
+			.filter((record) => record.jsxName !== "frame")
+			.map((record) => `      <${record.jsxName} />`)
+			.join("\n");
 
-    const result = transformPreviewSource(
-      `
+		const result = transformPreviewSource(
+			`
         import { React } from "@loom-dev/core";
 
         export function Example() {
@@ -50,25 +59,32 @@ ${nestedHosts}
           );
         }
       `,
-      {
-        filePath: "/virtual/preview-host-invariants.tsx",
-        mode: "compatibility",
-        runtimeModule: "@loom-dev/preview-runtime",
-        target: "preview-host-invariants",
-      },
-    );
+			{
+				filePath: "/virtual/preview-host-invariants.tsx",
+				mode: "compatibility",
+				runtimeModule: "@loom-dev/preview-runtime",
+				target: "preview-host-invariants",
+			},
+		);
 
-    expect(result.diagnostics).toHaveLength(0);
-  });
+		expect(result.diagnostics).toHaveLength(0);
+	});
 
-  it("keeps metadata-derived type and IsA support aligned with compiler rewrites", () => {
-    const typeAliases = supportedTypeRewriteNames
-      .map((typeName, index) => `type Ref${index} = ReactTypes.MutableRefObject<${typeName} | undefined>;`)
-      .join("\n");
-    const isaChecks = supportedIsaNames.map((typeName, index) => `  const check${index} = host.IsA("${typeName}");`).join("\n");
+	it("keeps metadata-derived type and IsA support aligned with compiler rewrites", () => {
+		const typeAliases = supportedTypeRewriteNames
+			.map(
+				(typeName, index) =>
+					`type Ref${index} = ReactTypes.MutableRefObject<${typeName} | undefined>;`,
+			)
+			.join("\n");
+		const isaChecks = supportedIsaNames
+			.map(
+				(typeName, index) => `  const check${index} = host.IsA("${typeName}");`,
+			)
+			.join("\n");
 
-    const result = transformPreviewSource(
-      `
+		const result = transformPreviewSource(
+			`
         import { React } from "@loom-dev/core";
         import type ReactTypes from "@rbxts/react";
 
@@ -79,82 +95,91 @@ ${isaChecks}
           return <frame />;
         }
       `,
-      {
-        filePath: "/virtual/preview-type-invariants.tsx",
-        mode: "compatibility",
-        runtimeModule: "@loom-dev/preview-runtime",
-        target: "preview-type-invariants",
-      },
-    );
+			{
+				filePath: "/virtual/preview-type-invariants.tsx",
+				mode: "compatibility",
+				runtimeModule: "@loom-dev/preview-runtime",
+				target: "preview-type-invariants",
+			},
+		);
 
-    expect(result.diagnostics).toHaveLength(0);
-    expect(countMatches(result.code ?? "", /MutableRefObject<HTMLElement \| null \| undefined>/g)).toBe(
-      supportedTypeRewriteNames.length,
-    );
-    expect(countMatches(result.code ?? "", /isPreviewElement\(host, "/g)).toBe(supportedIsaNames.length);
-  });
+		expect(result.diagnostics).toHaveLength(0);
+		expect(
+			countMatches(
+				result.code ?? "",
+				/MutableRefObject<HTMLElement \| null \| undefined>/g,
+			),
+		).toBe(supportedTypeRewriteNames.length);
+		expect(countMatches(result.code ?? "", /isPreviewElement\(host, "/g)).toBe(
+			supportedIsaNames.length,
+		);
+	});
 
-  it("accepts full-size-default layout debug payloads and ready warning schema fields", () => {
-    const normalized = normalizePreviewLayoutResult(
-      {
-        debug: {
-          dirtyNodeIds: ["viewport"],
-          roots: [
-            {
-              children: [],
-              id: "viewport",
-              intrinsicSize: null,
-              kind: "host",
-              layoutSource: "full-size-default",
-              nodeType: "ViewportFrame",
-              parentConstraints: null,
-              provenance: {
-                detail: "computed by preview-runtime fallback solver",
-                source: "fallback",
-              },
-              rect: {
-                height: 480,
-                width: 640,
-                x: 0,
-                y: 0,
-              },
-            },
-          ],
-          viewport: {
-            height: 480,
-            width: 640,
-          },
-        },
-        dirtyNodeIds: ["viewport"],
-        rects: {
-          viewport: {
-            height: 480,
-            width: 640,
-            x: 0,
-            y: 0,
-          },
-        },
-      },
-      { height: 480, width: 640 },
-    );
+	it("accepts full-size-default layout debug payloads and ready warning schema fields", () => {
+		const normalized = normalizePreviewLayoutResult(
+			{
+				debug: {
+					dirtyNodeIds: ["viewport"],
+					roots: [
+						{
+							children: [],
+							id: "viewport",
+							intrinsicSize: null,
+							kind: "host",
+							layoutSource: "full-size-default",
+							nodeType: "ViewportFrame",
+							parentConstraints: null,
+							provenance: {
+								detail: "computed by preview-runtime fallback solver",
+								source: "fallback",
+							},
+							rect: {
+								height: 480,
+								width: 640,
+								x: 0,
+								y: 0,
+							},
+						},
+					],
+					viewport: {
+						height: 480,
+						width: 640,
+					},
+				},
+				dirtyNodeIds: ["viewport"],
+				rects: {
+					viewport: {
+						height: 480,
+						width: 640,
+						x: 0,
+						y: 0,
+					},
+				},
+			},
+			{ height: 480, width: 640 },
+		);
 
-    expect(normalized.debug.roots[0]?.layoutSource).toBe("full-size-default");
-    const readyEntryStatusDetails = (entryPayloadSchema as any).$defs.statusDetails.oneOf.find(
-      (variant: any) => variant.properties?.kind?.const === "ready",
-    );
-    const readyWorkspaceStatusDetails = (workspaceIndexSchema as any).$defs.statusDetails.oneOf.find(
-      (variant: any) => variant.properties?.kind?.const === "ready",
-    );
+		expect(normalized.debug.roots[0]?.layoutSource).toBe("full-size-default");
+		const readyEntryStatusDetails = (
+			entryPayloadSchema as any
+		).$defs.statusDetails.oneOf.find(
+			(variant: any) => variant.properties?.kind?.const === "ready",
+		);
+		const readyWorkspaceStatusDetails = (
+			workspaceIndexSchema as any
+		).$defs.statusDetails.oneOf.find(
+			(variant: any) => variant.properties?.kind?.const === "ready",
+		);
 
-    expect(readyEntryStatusDetails?.properties).toMatchObject({
-      degradedTargets: expect.any(Object),
-      fidelity: expect.any(Object),
-      warningCodes: expect.any(Object),
-    });
-    expect(readyWorkspaceStatusDetails?.properties).toMatchObject({
-      degradedTargets: expect.any(Object),
-      fidelity: expect.any(Object),
-      warningCodes: expect.any(Object),
-    });
-  });
+		expect(readyEntryStatusDetails?.properties).toMatchObject({
+			degradedTargets: expect.any(Object),
+			fidelity: expect.any(Object),
+			warningCodes: expect.any(Object),
+		});
+		expect(readyWorkspaceStatusDetails?.properties).toMatchObject({
+			degradedTargets: expect.any(Object),
+			fidelity: expect.any(Object),
+			warningCodes: expect.any(Object),
+		});
+	});
 });

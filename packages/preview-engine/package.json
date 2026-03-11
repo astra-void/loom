@@ -1,39 +1,39 @@
 {
-  "name": "@loom-dev/preview-engine",
-  "version": "0.1.0",
-  "private": false,
-  "description": "Core preview engine protocols, discovery, and invalidation for Loom.",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
-  "files": [
-    "dist",
-    "schemas",
-    "README.md"
-  ],
-  "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "prebuild": "node ./scripts/clean-dist.mjs",
-    "prepack": "pnpm run build",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
-    "watch": "tsc -p tsconfig.json -w"
-  },
-  "dependencies": {
-    "@loom-dev/compiler": "workspace:*",
-    "@loom-dev/preview-runtime": "workspace:*",
-    "typescript": "5.9.3"
-  },
-  "devDependencies": {
-    "@types/react": "^19.2.14"
-  },
-  "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js",
-      "default": "./dist/index.js"
-    },
-    "./schemas/diagnostic": "./schemas/diagnostic.schema.json",
-    "./schemas/entry-payload": "./schemas/entry-payload.schema.json",
-    "./schemas/workspace-index": "./schemas/workspace-index.schema.json"
-  },
-  "module": "dist/index.js"
+	"name": "@loom-dev/preview-engine",
+	"version": "0.1.0",
+	"private": false,
+	"description": "Core preview engine protocols, discovery, and invalidation for Loom.",
+	"main": "dist/index.js",
+	"types": "dist/index.d.ts",
+	"files": [
+		"dist",
+		"schemas",
+		"README.md"
+	],
+	"scripts": {
+		"build": "tsc -p tsconfig.json",
+		"prebuild": "node ./scripts/clean-dist.mjs",
+		"prepack": "pnpm run build",
+		"typecheck": "tsc -p tsconfig.json --noEmit",
+		"watch": "tsc -p tsconfig.json -w"
+	},
+	"dependencies": {
+		"@loom-dev/compiler": "workspace:*",
+		"@loom-dev/preview-runtime": "workspace:*",
+		"typescript": "5.9.3"
+	},
+	"devDependencies": {
+		"@types/react": "^19.2.14"
+	},
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js",
+			"default": "./dist/index.js"
+		},
+		"./schemas/diagnostic": "./schemas/diagnostic.schema.json",
+		"./schemas/entry-payload": "./schemas/entry-payload.schema.json",
+		"./schemas/workspace-index": "./schemas/workspace-index.schema.json"
+	},
+	"module": "dist/index.js"
 }

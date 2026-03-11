@@ -12,56 +12,67 @@ import { createPreviewVitePlugin } from "../../packages/preview/src/source/plugi
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const workspaceRoot = path.resolve(__dirname, "../..");
-const previewEngineEntry = path.resolve(workspaceRoot, "packages/preview-engine/src/index.ts");
-const previewRuntimeEntry = path.resolve(workspaceRoot, "packages/preview-runtime/src/index.ts");
+const previewEngineEntry = path.resolve(
+	workspaceRoot,
+	"packages/preview-engine/src/index.ts",
+);
+const previewRuntimeEntry = path.resolve(
+	workspaceRoot,
+	"packages/preview-runtime/src/index.ts",
+);
 const previewConfig = await loadPreviewConfig({ cwd: __dirname });
 const previewConfigRecord = previewConfig as Record<string, unknown>;
 
 function isPreviewExecutionMode(value: unknown): value is PreviewExecutionMode {
-  return value === "strict-fidelity" || value === "compatibility" || value === "mocked" || value === "design-time";
+	return (
+		value === "strict-fidelity" ||
+		value === "compatibility" ||
+		value === "mocked" ||
+		value === "design-time"
+	);
 }
 
 const transformMode = isPreviewExecutionMode(previewConfigRecord.transformMode)
-  ? previewConfigRecord.transformMode
-  : undefined;
+	? previewConfigRecord.transformMode
+	: undefined;
 
 export default defineConfig({
-  resolve: {
-    alias: [
-      {
-        find: "@loom-dev/preview-engine",
-        replacement: previewEngineEntry,
-      },
-      {
-        find: "@loom-dev/preview-runtime",
-        replacement: previewConfig.runtimeModule ?? previewRuntimeEntry,
-      },
-    ],
-  },
-  plugins: [
-    createAutoMockPropsPlugin({
-      targets: previewConfig.targets,
-    }),
-    createPreviewVitePlugin({
-      projectName: previewConfig.projectName,
-      runtimeModule: previewConfig.runtimeModule ?? previewRuntimeEntry,
-      targets: previewConfig.targets,
-      transformMode,
-    }),
-    react(),
-    wasm(),
-    topLevelAwait(),
-  ],
-  assetsInclude: ["**/*.wasm"],
-  optimizeDeps: {
-    exclude: ["@loom-dev/layout-engine", "layout-engine"],
-  },
-  server: {
-    fs: {
-      allow: previewConfig.server.fsAllow,
-    },
-    host: previewConfig.server.host,
-    open: previewConfig.server.open,
-    port: previewConfig.server.port,
-  },
+	resolve: {
+		alias: [
+			{
+				find: "@loom-dev/preview-engine",
+				replacement: previewEngineEntry,
+			},
+			{
+				find: "@loom-dev/preview-runtime",
+				replacement: previewConfig.runtimeModule ?? previewRuntimeEntry,
+			},
+		],
+	},
+	plugins: [
+		createAutoMockPropsPlugin({
+			targets: previewConfig.targets,
+		}),
+		createPreviewVitePlugin({
+			projectName: previewConfig.projectName,
+			runtimeModule: previewConfig.runtimeModule ?? previewRuntimeEntry,
+			targets: previewConfig.targets,
+			transformMode,
+		}),
+		react(),
+		wasm(),
+		topLevelAwait(),
+	],
+	assetsInclude: ["**/*.wasm"],
+	optimizeDeps: {
+		exclude: ["@loom-dev/layout-engine", "layout-engine"],
+	},
+	server: {
+		fs: {
+			allow: previewConfig.server.fsAllow,
+		},
+		host: previewConfig.server.host,
+		open: previewConfig.server.open,
+		port: previewConfig.server.port,
+	},
 });

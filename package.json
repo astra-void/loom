@@ -1,30 +1,34 @@
 {
-  "name": "loom-monorepo",
-  "version": "0.1.0",
-  "private": true,
-  "description": "Loom preview workspace.",
-  "scripts": {
-    "build:native": "pnpm --filter @loom-dev/layout-engine build && pnpm --filter @loom-dev/compiler build",
-    "build:packages": "pnpm --filter @loom-dev/preview-runtime build && pnpm --filter @loom-dev/preview-engine build && pnpm --filter @loom-dev/preview build && pnpm --filter @loom-dev/cli build",
-    "build": "pnpm run build:native && pnpm run build:packages && pnpm --filter @loom-dev/preview-harness build",
-    "dev": "pnpm run build:native && pnpm --filter @loom-dev/preview-harness dev",
-    "typecheck": "pnpm run build:native && pnpm --filter @loom-dev/preview-runtime build && pnpm --filter @loom-dev/preview-engine build && pnpm --filter @loom-dev/preview-runtime typecheck && pnpm --filter @loom-dev/preview-engine typecheck && pnpm --filter @loom-dev/preview typecheck && pnpm --filter @loom-dev/cli typecheck && pnpm exec tsc -p apps/preview-harness/tsconfig.json --noEmit",
-    "test": "pnpm run build:native && pnpm exec vitest run"
-  },
-  "license": "MIT",
-  "packageManager": "pnpm@10.32.0",
-  "devDependencies": {
-    "@testing-library/react": "^16.0.0",
-    "@testing-library/user-event": "^14.0.0",
-    "@types/node": "^24.0.0",
-    "@types/react": "^19.2.14",
-    "@types/react-dom": "^19.2.3",
-    "jsdom": "^26.0.0",
-    "react": "^19.2.4",
-    "react-dom": "^19.2.4",
-    "typescript": "5.9.3",
-    "vite-plugin-top-level-await": "^1.6.0",
-    "vite-plugin-wasm": "^3.5.0",
-    "vitest": "^3.0.0"
-  }
+	"name": "loom-monorepo",
+	"version": "0.1.0",
+	"private": true,
+	"description": "Loom preview workspace.",
+	"scripts": {
+		"build:native": "pnpm --filter @loom-dev/layout-engine build && pnpm --filter @loom-dev/compiler build",
+		"build:packages": "pnpm --filter @loom-dev/preview-runtime build && pnpm --filter @loom-dev/preview-engine build && pnpm --filter @loom-dev/preview build && pnpm --filter @loom-dev/cli build",
+		"build": "pnpm run build:native && pnpm run build:packages && pnpm --filter @loom-dev/preview-harness build",
+		"dev": "pnpm run build:native && pnpm --filter @loom-dev/preview-harness dev",
+		"typecheck": "pnpm run build:native && pnpm --filter @loom-dev/preview-runtime build && pnpm --filter @loom-dev/preview-engine build && pnpm --filter @loom-dev/preview-runtime typecheck && pnpm --filter @loom-dev/preview-engine typecheck && pnpm --filter @loom-dev/preview typecheck && pnpm --filter @loom-dev/cli typecheck && pnpm exec tsc -p apps/preview-harness/tsconfig.json --noEmit",
+		"test": "pnpm run build:native && pnpm exec vitest run",
+		"format": "pnpm biome format --write",
+		"lint": "pnpm biome check",
+		"lint:fix": "pnpm biome check --write --unsafe"
+	},
+	"license": "MIT",
+	"devDependencies": {
+		"@biomejs/biome": "2.4.6",
+		"@testing-library/react": "^16.0.0",
+		"@testing-library/user-event": "^14.0.0",
+		"@types/node": "^24.0.0",
+		"@types/react": "^19.2.14",
+		"@types/react-dom": "^19.2.3",
+		"jsdom": "^26.0.0",
+		"react": "^19.2.4",
+		"react-dom": "^19.2.4",
+		"typescript": "5.9.3",
+		"vite-plugin-top-level-await": "^1.6.0",
+		"vite-plugin-wasm": "^3.5.0",
+		"vitest": "^3.0.0"
+	},
+	"packageManager": "pnpm@10.32.1"
 }

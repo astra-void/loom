@@ -1,44 +1,44 @@
 {
-  "name": "@loom-dev/preview",
-  "version": "0.1.0",
-  "private": false,
-  "description": "Loom source-first preview server and runtime.",
-  "main": "dist/index.mjs",
-  "types": "dist/index.d.ts",
-  "files": [
-    "dist",
-    "README.md"
-  ],
-  "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "postbuild": "node ./scripts/copy-assets.mjs",
-    "prebuild": "node ./scripts/clean-dist.mjs",
-    "prepack": "pnpm run build",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
-    "watch": "tsc -p tsconfig.json -w"
-  },
-  "dependencies": {
-    "@loom-dev/compiler": "workspace:*",
-    "@loom-dev/layout-engine": "workspace:*",
-    "@loom-dev/preview-engine": "workspace:*",
-    "@loom-dev/preview-runtime": "workspace:*",
-    "@vitejs/plugin-react": "^5.1.4",
-    "react": "^19.2.4",
-    "react-dom": "^19.2.4",
-    "vite": "^7.3.1",
-    "vite-plugin-top-level-await": "^1.6.0",
-    "vite-plugin-wasm": "^3.5.0"
-  },
-  "devDependencies": {
-    "@types/react": "^19.2.14",
-    "@types/react-dom": "^19.2.3",
-    "esbuild": "^0.27.0"
-  },
-  "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.mjs",
-      "default": "./dist/index.mjs"
-    }
-  }
+	"name": "@loom-dev/preview",
+	"version": "0.1.0",
+	"private": false,
+	"description": "Loom source-first preview server and runtime.",
+	"main": "dist/index.mjs",
+	"types": "dist/index.d.ts",
+	"files": [
+		"dist",
+		"README.md"
+	],
+	"scripts": {
+		"build": "tsc -p tsconfig.json",
+		"postbuild": "node ./scripts/copy-assets.mjs",
+		"prebuild": "node ./scripts/clean-dist.mjs",
+		"prepack": "pnpm run build",
+		"typecheck": "tsc -p tsconfig.json --noEmit",
+		"watch": "tsc -p tsconfig.json -w"
+	},
+	"dependencies": {
+		"@loom-dev/compiler": "workspace:*",
+		"@loom-dev/layout-engine": "workspace:*",
+		"@loom-dev/preview-engine": "workspace:*",
+		"@loom-dev/preview-runtime": "workspace:*",
+		"@vitejs/plugin-react": "^5.1.4",
+		"react": "^19.2.4",
+		"react-dom": "^19.2.4",
+		"vite": "^7.3.1",
+		"vite-plugin-top-level-await": "^1.6.0",
+		"vite-plugin-wasm": "^3.5.0"
+	},
+	"devDependencies": {
+		"@types/react": "^19.2.14",
+		"@types/react-dom": "^19.2.3",
+		"esbuild": "^0.27.0"
+	},
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.mjs",
+			"default": "./dist/index.mjs"
+		}
+	}
 }

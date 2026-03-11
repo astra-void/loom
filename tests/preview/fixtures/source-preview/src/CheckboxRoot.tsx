@@ -1,3 +1,3 @@
 export function CheckboxRoot() {
-  return <textbutton Text="Checkbox" />;
+	return <textbutton Text="Checkbox" />;
 }

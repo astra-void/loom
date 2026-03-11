@@ -1,47 +1,47 @@
 {
-  "name": "@loom-dev/compiler",
-  "version": "0.1.0",
-  "private": false,
-  "description": "Custom TSX compiler bridge using Rust, SWC, and NAPI-RS.",
-  "main": "wrapper.js",
-  "types": "wrapper.d.ts",
-  "files": [
-    "*.node",
-    "wrapper.js",
-    "wrapper.d.ts",
-    "wrapper.mjs",
-    "index.js",
-    "index.d.ts"
-  ],
-  "scripts": {
-    "artifacts": "napi artifacts --output-dir ./artifacts --npm-dir ./npm",
-    "build": "napi build --platform",
-    "build:release": "napi build --platform --release",
-    "create-npm-dirs": "napi create-npm-dirs --npm-dir ./npm",
-    "prepack": "pnpm run build:release",
-    "prepublish:napi": "napi pre-publish --npm-dir ./npm",
-    "publish:napi": "pnpm run create-npm-dirs && pnpm run artifacts && pnpm run prepublish:napi",
-    "watch": "napi build --platform --watch"
-  },
-  "devDependencies": {
-    "@napi-rs/cli": "^3.5.1"
-  },
-  "exports": {
-    ".": {
-      "types": "./wrapper.d.ts",
-      "import": "./wrapper.mjs",
-      "require": "./wrapper.js",
-      "default": "./wrapper.mjs"
-    }
-  },
-  "module": "wrapper.mjs",
-  "napi": {
-    "binaryName": "loom_compiler",
-    "targets": [
-      "x86_64-apple-darwin",
-      "aarch64-apple-darwin",
-      "x86_64-pc-windows-msvc",
-      "x86_64-unknown-linux-gnu"
-    ]
-  }
+	"name": "@loom-dev/compiler",
+	"version": "0.1.0",
+	"private": false,
+	"description": "Custom TSX compiler bridge using Rust, SWC, and NAPI-RS.",
+	"main": "wrapper.js",
+	"types": "wrapper.d.ts",
+	"files": [
+		"*.node",
+		"wrapper.js",
+		"wrapper.d.ts",
+		"wrapper.mjs",
+		"index.js",
+		"index.d.ts"
+	],
+	"scripts": {
+		"artifacts": "napi artifacts --output-dir ./artifacts --npm-dir ./npm",
+		"build": "napi build --platform",
+		"build:release": "napi build --platform --release",
+		"create-npm-dirs": "napi create-npm-dirs --npm-dir ./npm",
+		"prepack": "pnpm run build:release",
+		"prepublish:napi": "napi pre-publish --npm-dir ./npm",
+		"publish:napi": "pnpm run create-npm-dirs && pnpm run artifacts && pnpm run prepublish:napi",
+		"watch": "napi build --platform --watch"
+	},
+	"devDependencies": {
+		"@napi-rs/cli": "^3.5.1"
+	},
+	"exports": {
+		".": {
+			"types": "./wrapper.d.ts",
+			"import": "./wrapper.mjs",
+			"require": "./wrapper.js",
+			"default": "./wrapper.mjs"
+		}
+	},
+	"module": "wrapper.mjs",
+	"napi": {
+		"binaryName": "loom_compiler",
+		"targets": [
+			"x86_64-apple-darwin",
+			"aarch64-apple-darwin",
+			"x86_64-pc-windows-msvc",
+			"x86_64-unknown-linux-gnu"
+		]
+	}
 }

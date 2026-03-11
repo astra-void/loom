@@ -1,6 +1,6 @@
 {
-  "rust-analyzer.linkedProjects": [
-    "packages/layout-engine/Cargo.toml",
-    "packages/compiler/Cargo.toml"
-  ]
+	"rust-analyzer.linkedProjects": [
+		"packages/layout-engine/Cargo.toml",
+		"packages/compiler/Cargo.toml"
+	]
 }

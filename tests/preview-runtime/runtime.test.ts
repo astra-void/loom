@@ -1,372 +1,417 @@
 ﻿// @vitest-environment jsdom
 
 import {
-  Enum,
-  game,
-  RunService,
-  type SetupRobloxEnvironmentTarget,
-  setupRobloxEnvironment,
-  task,
-  TweenInfo,
-  workspace,
+	Enum,
+	game,
+	RunService,
+	type SetupRobloxEnvironmentTarget,
+	setupRobloxEnvironment,
+	TweenInfo,
+	task,
+	workspace,
 } from "@loom-dev/preview-runtime";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 class RafController {
-  private readonly callbacks = new Map<number, FrameRequestCallback>();
-  private readonly originalCancelAnimationFrame = globalThis.cancelAnimationFrame;
-  private readonly originalRequestAnimationFrame = globalThis.requestAnimationFrame;
-  private readonly performanceNowMock = vi.spyOn(performance, "now").mockImplementation(() => this.now);
-  private nextHandle = 1;
-  private now = 0;
+	private readonly callbacks = new Map<number, FrameRequestCallback>();
+	private readonly originalCancelAnimationFrame =
+		globalThis.cancelAnimationFrame;
+	private readonly originalRequestAnimationFrame =
+		globalThis.requestAnimationFrame;
+	private readonly performanceNowMock = vi
+		.spyOn(performance, "now")
+		.mockImplementation(() => this.now);
+	private nextHandle = 1;
+	private now = 0;
 
-  public constructor() {
-    globalThis.requestAnimationFrame = (callback: FrameRequestCallback) => {
-      const handle = this.nextHandle++;
-      this.callbacks.set(handle, callback);
-      return handle;
-    };
+	public constructor() {
+		globalThis.requestAnimationFrame = (callback: FrameRequestCallback) => {
+			const handle = this.nextHandle++;
+			this.callbacks.set(handle, callback);
+			return handle;
+		};
 
-    globalThis.cancelAnimationFrame = (handle: number) => {
-      this.callbacks.delete(handle);
-    };
-  }
+		globalThis.cancelAnimationFrame = (handle: number) => {
+			this.callbacks.delete(handle);
+		};
+	}
 
-  public get pendingCount() {
-    return this.callbacks.size;
-  }
+	public get pendingCount() {
+		return this.callbacks.size;
+	}
 
-  public async step(milliseconds: number) {
-    this.now += milliseconds;
+	public async step(milliseconds: number) {
+		this.now += milliseconds;
 
-    const callbacks = [...this.callbacks.values()];
-    this.callbacks.clear();
+		const callbacks = [...this.callbacks.values()];
+		this.callbacks.clear();
 
-    for (const callback of callbacks) {
-      callback(this.now);
-    }
+		for (const callback of callbacks) {
+			callback(this.now);
+		}
 
-    await Promise.resolve();
-  }
+		await Promise.resolve();
+	}
 
-  public restore() {
-    this.performanceNowMock.mockRestore();
-    globalThis.requestAnimationFrame = this.originalRequestAnimationFrame;
-    globalThis.cancelAnimationFrame = this.originalCancelAnimationFrame;
-  }
+	public restore() {
+		this.performanceNowMock.mockRestore();
+		globalThis.requestAnimationFrame = this.originalRequestAnimationFrame;
+		globalThis.cancelAnimationFrame = this.originalCancelAnimationFrame;
+	}
 }
 
 let rafController: RafController | undefined;
 
 afterEach(() => {
-  rafController?.restore();
-  rafController = undefined;
-  document.body.innerHTML = "";
-  vi.restoreAllMocks();
+	rafController?.restore();
+	rafController = undefined;
+	document.body.innerHTML = "";
+	vi.restoreAllMocks();
 });
 
 describe.sequential("@loom-dev/preview-runtime", () => {
-  it("provides a deep Enum proxy with stable Name and Value access", () => {
-    const previewEnum = Enum as Record<string, any>;
+	it("provides a deep Enum proxy with stable Name and Value access", () => {
+		const previewEnum = Enum as Record<string, any>;
 
-    expect(previewEnum.KeyCode.Return.Name).toBe("Return");
-    expect(previewEnum.KeyCode.Return.EnumType.Name).toBe("KeyCode");
-    expect(previewEnum.TextXAlignment.Center.Name).toBe("Center");
-    expect(previewEnum.TextXAlignment.FromName("Left").Name).toBe("Left");
-    expect(previewEnum.TextXAlignment.FromValue(7).Value).toBe(7);
-    expect(String(previewEnum.KeyCode.Return)).toBe("Enum.KeyCode.Return");
-    expect(previewEnum.KeyCode.Return.Value).toBeTypeOf("number");
-  });
+		expect(previewEnum.KeyCode.Return.Name).toBe("Return");
+		expect(previewEnum.KeyCode.Return.EnumType.Name).toBe("KeyCode");
+		expect(previewEnum.TextXAlignment.Center.Name).toBe("Center");
+		expect(previewEnum.TextXAlignment.FromName("Left").Name).toBe("Left");
+		expect(previewEnum.TextXAlignment.FromValue(7).Value).toBe(7);
+		expect(String(previewEnum.KeyCode.Return)).toBe("Enum.KeyCode.Return");
+		expect(previewEnum.KeyCode.Return.Value).toBeTypeOf("number");
+	});
 
-  it("shares one RAF loop between task.wait and RunService listeners", async () => {
-    rafController = new RafController();
+	it("shares one RAF loop between task.wait and RunService listeners", async () => {
+		rafController = new RafController();
 
-    const renderStepped = vi.fn();
-    const connection = RunService.RenderStepped.Connect(renderStepped);
-    const waitPromise = task.wait(0.03);
+		const renderStepped = vi.fn();
+		const connection = RunService.RenderStepped.Connect(renderStepped);
+		const waitPromise = task.wait(0.03);
 
-    expect(rafController.pendingCount).toBe(1);
+		expect(rafController.pendingCount).toBe(1);
 
-    await rafController.step(16);
+		await rafController.step(16);
 
-    expect(renderStepped).toHaveBeenCalledWith(0.016);
-    expect(rafController.pendingCount).toBe(1);
+		expect(renderStepped).toHaveBeenCalledWith(0.016);
+		expect(rafController.pendingCount).toBe(1);
 
-    await rafController.step(18);
+		await rafController.step(18);
 
-    await expect(waitPromise).resolves.toBeCloseTo(0.034, 3);
+		await expect(waitPromise).resolves.toBeCloseTo(0.034, 3);
 
-    connection.Disconnect();
+		connection.Disconnect();
 
-    expect(rafController.pendingCount).toBe(0);
-  });
+		expect(rafController.pendingCount).toBe(0);
+	});
 
-  it("fires RenderStepped, Stepped, and Heartbeat every frame with delta time", async () => {
-    rafController = new RafController();
+	it("fires RenderStepped, Stepped, and Heartbeat every frame with delta time", async () => {
+		rafController = new RafController();
 
-    const order: string[] = [];
-    const renderConnection = RunService.RenderStepped.Connect((deltaTime: number) => {
-      order.push(`render:${deltaTime.toFixed(3)}`);
-    });
-    const steppedConnection = RunService.Stepped.Connect((time: number, deltaTime: number) => {
-      order.push(`stepped:${time.toFixed(3)}:${deltaTime.toFixed(3)}`);
-    });
-    const heartbeatConnection = RunService.Heartbeat.Connect((deltaTime: number) => {
-      order.push(`heartbeat:${deltaTime.toFixed(3)}`);
-    });
+		const order: string[] = [];
+		const renderConnection = RunService.RenderStepped.Connect(
+			(deltaTime: number) => {
+				order.push(`render:${deltaTime.toFixed(3)}`);
+			},
+		);
+		const steppedConnection = RunService.Stepped.Connect(
+			(time: number, deltaTime: number) => {
+				order.push(`stepped:${time.toFixed(3)}:${deltaTime.toFixed(3)}`);
+			},
+		);
+		const heartbeatConnection = RunService.Heartbeat.Connect(
+			(deltaTime: number) => {
+				order.push(`heartbeat:${deltaTime.toFixed(3)}`);
+			},
+		);
 
-    await rafController.step(20);
+		await rafController.step(20);
 
-    expect(order).toEqual(["render:0.020", "stepped:0.020:0.020", "heartbeat:0.020"]);
-    expect(RunService.IsClient()).toBe(true);
-    expect(RunService.IsServer()).toBe(false);
+		expect(order).toEqual([
+			"render:0.020",
+			"stepped:0.020:0.020",
+			"heartbeat:0.020",
+		]);
+		expect(RunService.IsClient()).toBe(true);
+		expect(RunService.IsServer()).toBe(false);
 
-    renderConnection.Disconnect();
-    steppedConnection.Disconnect();
-    heartbeatConnection.Disconnect();
-  });
+		renderConnection.Disconnect();
+		steppedConnection.Disconnect();
+		heartbeatConnection.Disconnect();
+	});
 
-  it("uses RAF timing for task.wait and keeps spawn and defer isolated", async () => {
-    rafController = new RafController();
+	it("uses RAF timing for task.wait and keeps spawn and defer isolated", async () => {
+		rafController = new RafController();
 
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-    const events: string[] = [];
+		const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+		const events: string[] = [];
 
-    const waitPromise = task.wait();
+		const waitPromise = task.wait();
 
-    task.spawn((label: string) => {
-      events.push(label);
-    }, "spawned");
-    task.spawn(() => {
-      throw new Error("spawn failure");
-    });
-    task.defer((label: string) => {
-      events.push(label);
-    }, "deferred");
+		task.spawn((label: string) => {
+			events.push(label);
+		}, "spawned");
+		task.spawn(() => {
+			throw new Error("spawn failure");
+		});
+		task.defer((label: string) => {
+			events.push(label);
+		}, "deferred");
 
-    expect(events).toEqual(["spawned"]);
+		expect(events).toEqual(["spawned"]);
 
-    await Promise.resolve();
+		await Promise.resolve();
 
-    expect(events).toEqual(["spawned", "deferred"]);
+		expect(events).toEqual(["spawned", "deferred"]);
 
-    await rafController.step(16);
+		await rafController.step(16);
 
-    await expect(waitPromise).resolves.toBeCloseTo(0.016, 3);
-    expect(events).toEqual(["spawned", "deferred"]);
-    expect(errorSpy).toHaveBeenCalledOnce();
-  });
+		await expect(waitPromise).resolves.toBeCloseTo(0.016, 3);
+		expect(events).toEqual(["spawned", "deferred"]);
+		expect(errorSpy).toHaveBeenCalledOnce();
+	});
 
-  it("uses window timers for task.delay and lets task.cancel abort pending callbacks", () => {
-    vi.useFakeTimers();
+	it("uses window timers for task.delay and lets task.cancel abort pending callbacks", () => {
+		vi.useFakeTimers();
 
-    const delayed = vi.fn();
-    const cancelled = vi.fn();
+		const delayed = vi.fn();
+		const cancelled = vi.fn();
 
-    task.delay(0.025, delayed, "delayed");
-    const cancelledHandle = task.delay(0.05, cancelled, "cancelled");
-    task.cancel(cancelledHandle);
+		task.delay(0.025, delayed, "delayed");
+		const cancelledHandle = task.delay(0.05, cancelled, "cancelled");
+		task.cancel(cancelledHandle);
 
-    vi.advanceTimersByTime(24);
-    expect(delayed).not.toHaveBeenCalled();
-    expect(cancelled).not.toHaveBeenCalled();
+		vi.advanceTimersByTime(24);
+		expect(delayed).not.toHaveBeenCalled();
+		expect(cancelled).not.toHaveBeenCalled();
 
-    vi.advanceTimersByTime(1);
-    expect(delayed).toHaveBeenCalledWith("delayed");
-    expect(cancelled).not.toHaveBeenCalled();
-  });
+		vi.advanceTimersByTime(1);
+		expect(delayed).toHaveBeenCalledWith("delayed");
+		expect(cancelled).not.toHaveBeenCalled();
+	});
 
-  it("setupRobloxEnvironment installs globals without overwriting an existing target", () => {
-    const existingTask = {} as typeof task;
-    const target: SetupRobloxEnvironmentTarget = {
-      task: existingTask,
-    };
+	it("setupRobloxEnvironment installs globals without overwriting an existing target", () => {
+		const existingTask = {} as typeof task;
+		const target: SetupRobloxEnvironmentTarget = {
+			task: existingTask,
+		};
 
-    setupRobloxEnvironment(target);
+		setupRobloxEnvironment(target);
 
-    expect(target.Enum).toBe(Enum);
-    expect(target.RunService).toBe(RunService);
-    expect(target.task).toBe(existingTask);
-    expect(target.game).toBe(game);
-    expect(target.TweenInfo).toBe(TweenInfo);
-    expect(target.workspace).toBe(workspace);
-  });
+		expect(target.Enum).toBe(Enum);
+		expect(target.RunService).toBe(RunService);
+		expect(target.task).toBe(existingTask);
+		expect(target.game).toBe(game);
+		expect(target.TweenInfo).toBe(TweenInfo);
+		expect(target.workspace).toBe(workspace);
+	});
 
-  it("provides focused GetService semantics for common preview services", () => {
-    setupRobloxEnvironment();
+	it("provides focused GetService semantics for common preview services", () => {
+		setupRobloxEnvironment();
 
-    const players = game.GetService("Players") as {
-      GetPlayers(): unknown[];
-      LocalPlayer: { Name: string };
-    };
-    const userInputService = game.GetService("UserInputService") as {
-      GetFocusedTextBox(): HTMLElement | null;
-      GetLastInputType(): string;
-      KeyboardEnabled: boolean;
-      MouseEnabled: boolean;
-    };
-    const guiService = game.GetService("GuiService") as {
-      GetGuiInset(): readonly [{ X: number; Y: number }, { X: number; Y: number }];
-      IsTenFootInterface(): boolean;
-    };
-    const unknownService = game.GetService("AnalyticsService");
-    const input = document.createElement("input");
-    input.dataset.previewHost = "textbox";
-    document.body.append(input);
-    input.focus();
+		const players = game.GetService("Players") as {
+			GetPlayers(): unknown[];
+			LocalPlayer: { Name: string };
+		};
+		const userInputService = game.GetService("UserInputService") as {
+			GetFocusedTextBox(): HTMLElement | null;
+			GetLastInputType(): string;
+			KeyboardEnabled: boolean;
+			MouseEnabled: boolean;
+		};
+		const guiService = game.GetService("GuiService") as {
+			GetGuiInset(): readonly [
+				{ X: number; Y: number },
+				{ X: number; Y: number },
+			];
+			IsTenFootInterface(): boolean;
+		};
+		const unknownService = game.GetService("AnalyticsService");
+		const input = document.createElement("input");
+		input.dataset.previewHost = "textbox";
+		document.body.append(input);
+		input.focus();
 
-    expect(game.GetService("RunService")).toBe(RunService);
-    expect(players.LocalPlayer.Name).toBe("LocalPlayer");
-    expect(players.GetPlayers()).toEqual([players.LocalPlayer]);
-    expect(userInputService.KeyboardEnabled).toBe(true);
-    expect(userInputService.MouseEnabled).toBe(true);
-    expect(userInputService.GetLastInputType()).toBe("MouseButton1");
-    expect(userInputService.GetFocusedTextBox()).toBe(input);
-    expect(guiService.GetGuiInset()).toEqual([
-      { X: 0, Y: 0 },
-      { X: 0, Y: 0 },
-    ]);
-    expect(guiService.IsTenFootInterface()).toBe(false);
-    expect(game.GetService("AnalyticsService")).toBe(unknownService);
-    expect(workspace).toBe(game.GetService("Workspace"));
-  });
+		expect(game.GetService("RunService")).toBe(RunService);
+		expect(players.LocalPlayer.Name).toBe("LocalPlayer");
+		expect(players.GetPlayers()).toEqual([players.LocalPlayer]);
+		expect(userInputService.KeyboardEnabled).toBe(true);
+		expect(userInputService.MouseEnabled).toBe(true);
+		expect(userInputService.GetLastInputType()).toBe("MouseButton1");
+		expect(userInputService.GetFocusedTextBox()).toBe(input);
+		expect(guiService.GetGuiInset()).toEqual([
+			{ X: 0, Y: 0 },
+			{ X: 0, Y: 0 },
+		]);
+		expect(guiService.IsTenFootInterface()).toBe(false);
+		expect(game.GetService("AnalyticsService")).toBe(unknownService);
+		expect(workspace).toBe(game.GetService("Workspace"));
+	});
 
-  it("emits deterministic focus and input signals for UserInputService", () => {
-    setupRobloxEnvironment();
+	it("emits deterministic focus and input signals for UserInputService", () => {
+		setupRobloxEnvironment();
 
-    const userInputService = game.GetService("UserInputService") as {
-      InputBegan: { Connect(listener: (event: Event) => void): void };
-      LastInputTypeChanged: { Connect(listener: (inputType: string) => void): void };
-      TextBoxFocusReleased: { Connect(listener: (element: HTMLElement | null) => void): void };
-      TextBoxFocused: { Connect(listener: (element: HTMLElement | null) => void): void };
-    };
-    const inputEvents: string[] = [];
-    const lastInputTypes: string[] = [];
-    const focusEvents: string[] = [];
-    const textbox = document.createElement("input");
-    textbox.dataset.previewHost = "textbox";
-    document.body.append(textbox);
+		const userInputService = game.GetService("UserInputService") as {
+			InputBegan: { Connect(listener: (event: Event) => void): void };
+			LastInputTypeChanged: {
+				Connect(listener: (inputType: string) => void): void;
+			};
+			TextBoxFocusReleased: {
+				Connect(listener: (element: HTMLElement | null) => void): void;
+			};
+			TextBoxFocused: {
+				Connect(listener: (element: HTMLElement | null) => void): void;
+			};
+		};
+		const inputEvents: string[] = [];
+		const lastInputTypes: string[] = [];
+		const focusEvents: string[] = [];
+		const textbox = document.createElement("input");
+		textbox.dataset.previewHost = "textbox";
+		document.body.append(textbox);
 
-    userInputService.InputBegan.Connect((event) => {
-      inputEvents.push(event.type);
-    });
-    userInputService.LastInputTypeChanged.Connect((inputType) => {
-      lastInputTypes.push(inputType);
-    });
-    userInputService.TextBoxFocused.Connect((element) => {
-      focusEvents.push(`focused:${element?.tagName ?? "null"}`);
-    });
-    userInputService.TextBoxFocusReleased.Connect((element) => {
-      focusEvents.push(`released:${element?.tagName ?? "null"}`);
-    });
+		userInputService.InputBegan.Connect((event) => {
+			inputEvents.push(event.type);
+		});
+		userInputService.LastInputTypeChanged.Connect((inputType) => {
+			lastInputTypes.push(inputType);
+		});
+		userInputService.TextBoxFocused.Connect((element) => {
+			focusEvents.push(`focused:${element?.tagName ?? "null"}`);
+		});
+		userInputService.TextBoxFocusReleased.Connect((element) => {
+			focusEvents.push(`released:${element?.tagName ?? "null"}`);
+		});
 
-    textbox.focus();
-    textbox.blur();
-    window.dispatchEvent(new MouseEvent("mousedown", { button: 0 }));
-    window.dispatchEvent(new KeyboardEvent("keydown", { key: "A" }));
+		textbox.focus();
+		textbox.blur();
+		window.dispatchEvent(new MouseEvent("mousedown", { button: 0 }));
+		window.dispatchEvent(new KeyboardEvent("keydown", { key: "A" }));
 
-    expect(focusEvents).toEqual(["focused:INPUT", "released:INPUT"]);
-    expect(inputEvents).toEqual(["mousedown", "keydown"]);
-    expect(lastInputTypes.slice(-1)).toEqual(["Keyboard"]);
-  });
+		expect(focusEvents).toEqual(["focused:INPUT", "released:INPUT"]);
+		expect(inputEvents).toEqual(["mousedown", "keydown"]);
+		expect(lastInputTypes.slice(-1)).toEqual(["Keyboard"]);
+	});
 
-  it("applies tween goals immediately and fires Completed on preview tweens", () => {
-    setupRobloxEnvironment();
+	it("applies tween goals immediately and fires Completed on preview tweens", () => {
+		setupRobloxEnvironment();
 
-    const tweenService = game.GetService("TweenService") as {
-      Create(instance: unknown, tweenInfo: TweenInfo, goal: Record<string, unknown>): {
-        Completed: { Connect(listener: (state: unknown) => void): void };
-        PlaybackState: unknown;
-        Play(): void;
-      };
-    };
-    const target = {
-      Position: 1,
-      Visible: false,
-    };
-    const tweenInfo = new TweenInfo(0.15);
-    const completed = vi.fn();
-    const tween = tweenService.Create(target, tweenInfo, {
-      Position: 2,
-      Visible: true,
-    });
+		const tweenService = game.GetService("TweenService") as {
+			Create(
+				instance: unknown,
+				tweenInfo: TweenInfo,
+				goal: Record<string, unknown>,
+			): {
+				Completed: { Connect(listener: (state: unknown) => void): void };
+				PlaybackState: unknown;
+				Play(): void;
+			};
+		};
+		const target = {
+			Position: 1,
+			Visible: false,
+		};
+		const tweenInfo = new TweenInfo(0.15);
+		const completed = vi.fn();
+		const tween = tweenService.Create(target, tweenInfo, {
+			Position: 2,
+			Visible: true,
+		});
 
-    tween.Completed.Connect((state) => {
-      completed(String(state));
-    });
-    tween.Play();
+		tween.Completed.Connect((state) => {
+			completed(String(state));
+		});
+		tween.Play();
 
-    expect(tweenInfo.Time).toBe(0.15);
-    expect(target).toEqual({
-      Position: 2,
-      Visible: true,
-    });
-    expect(String(tween.PlaybackState)).toBe("Enum.PlaybackState.Completed");
-    expect(completed).toHaveBeenCalledWith("Enum.PlaybackState.Completed");
-  });
+		expect(tweenInfo.Time).toBe(0.15);
+		expect(target).toEqual({
+			Position: 2,
+			Visible: true,
+		});
+		expect(String(tween.PlaybackState)).toBe("Enum.PlaybackState.Completed");
+		expect(completed).toHaveBeenCalledWith("Enum.PlaybackState.Completed");
+	});
 
-  it("keeps preview tweens stateful and idempotent", () => {
-    setupRobloxEnvironment();
+	it("keeps preview tweens stateful and idempotent", () => {
+		setupRobloxEnvironment();
 
-    const tweenService = game.GetService("TweenService") as {
-      Create(instance: unknown, tweenInfo: TweenInfo, goal: Record<string, unknown>): {
-        Cancel(): void;
-        Completed: { Connect(listener: (state: unknown) => void): void };
-        Destroy(): void;
-        Pause(): void;
-        PlaybackState: unknown;
-        Play(): void;
-      };
-    };
-    const cancelledTarget = {
-      Position: 1,
-    };
-    const destroyedTarget = {
-      Position: 3,
-    };
-    const cancelled = vi.fn();
-    const destroyed = vi.fn();
-    const cancelledTween = tweenService.Create(cancelledTarget, new TweenInfo(0.1), {
-      Position: 2,
-    });
-    const destroyedTween = tweenService.Create(destroyedTarget, new TweenInfo(0.1), {
-      Position: 4,
-    });
+		const tweenService = game.GetService("TweenService") as {
+			Create(
+				instance: unknown,
+				tweenInfo: TweenInfo,
+				goal: Record<string, unknown>,
+			): {
+				Cancel(): void;
+				Completed: { Connect(listener: (state: unknown) => void): void };
+				Destroy(): void;
+				Pause(): void;
+				PlaybackState: unknown;
+				Play(): void;
+			};
+		};
+		const cancelledTarget = {
+			Position: 1,
+		};
+		const destroyedTarget = {
+			Position: 3,
+		};
+		const cancelled = vi.fn();
+		const destroyed = vi.fn();
+		const cancelledTween = tweenService.Create(
+			cancelledTarget,
+			new TweenInfo(0.1),
+			{
+				Position: 2,
+			},
+		);
+		const destroyedTween = tweenService.Create(
+			destroyedTarget,
+			new TweenInfo(0.1),
+			{
+				Position: 4,
+			},
+		);
 
-    cancelledTween.Completed.Connect((state) => {
-      cancelled(String(state));
-    });
-    destroyedTween.Completed.Connect((state) => {
-      destroyed(String(state));
-    });
+		cancelledTween.Completed.Connect((state) => {
+			cancelled(String(state));
+		});
+		destroyedTween.Completed.Connect((state) => {
+			destroyed(String(state));
+		});
 
-    cancelledTween.Pause();
-    expect(String(cancelledTween.PlaybackState)).toBe("Enum.PlaybackState.Paused");
-    cancelledTween.Cancel();
-    cancelledTween.Play();
+		cancelledTween.Pause();
+		expect(String(cancelledTween.PlaybackState)).toBe(
+			"Enum.PlaybackState.Paused",
+		);
+		cancelledTween.Cancel();
+		cancelledTween.Play();
 
-    destroyedTween.Destroy();
-    destroyedTween.Play();
+		destroyedTween.Destroy();
+		destroyedTween.Play();
 
-    expect(cancelledTarget.Position).toBe(1);
-    expect(destroyedTarget.Position).toBe(3);
-    expect(String(cancelledTween.PlaybackState)).toBe("Enum.PlaybackState.Cancelled");
-    expect(String(destroyedTween.PlaybackState)).toBe("Enum.PlaybackState.Cancelled");
-    expect(cancelled).not.toHaveBeenCalled();
-    expect(destroyed).not.toHaveBeenCalled();
-  });
+		expect(cancelledTarget.Position).toBe(1);
+		expect(destroyedTarget.Position).toBe(3);
+		expect(String(cancelledTween.PlaybackState)).toBe(
+			"Enum.PlaybackState.Cancelled",
+		);
+		expect(String(destroyedTween.PlaybackState)).toBe(
+			"Enum.PlaybackState.Cancelled",
+		);
+		expect(cancelled).not.toHaveBeenCalled();
+		expect(destroyed).not.toHaveBeenCalled();
+	});
 
-  it("installs Luau-style globals and prototype helpers", () => {
-    setupRobloxEnvironment();
-    const previewGlobal = globalThis as typeof globalThis & {
-      print?: (...args: unknown[]) => void;
-      tostring?: (value: unknown) => string;
-    };
+	it("installs Luau-style globals and prototype helpers", () => {
+		setupRobloxEnvironment();
+		const previewGlobal = globalThis as typeof globalThis & {
+			print?: (...args: unknown[]) => void;
+			tostring?: (value: unknown) => string;
+		};
 
-    expect(previewGlobal.tostring?.(1)).toBe("1");
-    expect("Spell".size()).toBe(5);
-    expect("Spell".sub(2, 4)).toBe("pel");
-    expect([1, 2, 3].size()).toBe(3);
-    expect(typeof previewGlobal.print).toBe("function");
-  });
+		expect(previewGlobal.tostring?.(1)).toBe("1");
+		expect("Spell".size()).toBe(5);
+		expect("Spell".sub(2, 4)).toBe("pel");
+		expect([1, 2, 3].size()).toBe(3);
+		expect(typeof previewGlobal.print).toBe("function");
+	});
 });

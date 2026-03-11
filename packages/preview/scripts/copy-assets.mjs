@@ -15,47 +15,56 @@ const distShellIndexHtml = path.join(distShellRoot, "index.html");
 const distShellStyles = path.join(distShellRoot, "styles.css");
 const distShellEntry = path.join(distShellRoot, "main.js");
 const distPreviewEntry = path.join(packageRoot, "dist/index.mjs");
-const previewRuntimeSourceEntry = path.resolve(packageRoot, "../preview-runtime/src/index.ts");
+const previewRuntimeSourceEntry = path.resolve(
+	packageRoot,
+	"../preview-runtime/src/index.ts",
+);
 
 if (!fs.existsSync(sourceShellIndexHtml)) {
-  throw new Error(`Missing preview shell index: ${sourceShellIndexHtml}`);
+	throw new Error(`Missing preview shell index: ${sourceShellIndexHtml}`);
 }
 
 if (!fs.existsSync(sourceShellStyles)) {
-  throw new Error(`Missing preview shell stylesheet: ${sourceShellStyles}`);
+	throw new Error(`Missing preview shell stylesheet: ${sourceShellStyles}`);
 }
 
 fs.mkdirSync(distShellRoot, { recursive: true });
 
 await build({
-  alias: {
-    "@loom-dev/preview-runtime": previewRuntimeSourceEntry,
-  },
-  assetNames: "assets/[name]-[hash]",
-  bundle: true,
-  entryPoints: [path.join(sourceShellRoot, "main.tsx")],
-  external: [
-    "react",
-    "react-dom",
-    "react-dom/client",
-    "virtual:loom-preview-registry",
-    "virtual:loom-preview-workspace-index",
-  ],
-  format: "esm",
-  jsx: "automatic",
-  loader: {
-    ".wasm": "file",
-  },
-  outfile: distShellEntry,
-  platform: "browser",
-  sourcemap: false,
-  target: "es2021",
+	alias: {
+		"@loom-dev/preview-runtime": previewRuntimeSourceEntry,
+	},
+	assetNames: "assets/[name]-[hash]",
+	bundle: true,
+	entryPoints: [path.join(sourceShellRoot, "main.tsx")],
+	external: [
+		"react",
+		"react-dom",
+		"react-dom/client",
+		"virtual:loom-preview-registry",
+		"virtual:loom-preview-workspace-index",
+	],
+	format: "esm",
+	jsx: "automatic",
+	loader: {
+		".wasm": "file",
+	},
+	outfile: distShellEntry,
+	platform: "browser",
+	sourcemap: false,
+	target: "es2021",
 });
 
 fs.copyFileSync(sourceShellStyles, distShellStyles);
 fs.writeFileSync(
-  distShellIndexHtml,
-  fs.readFileSync(sourceShellIndexHtml, "utf8").replace("./main.tsx", "./main.js"),
-  "utf8",
+	distShellIndexHtml,
+	fs
+		.readFileSync(sourceShellIndexHtml, "utf8")
+		.replace("./main.tsx", "./main.js"),
+	"utf8",
 );
-fs.writeFileSync(distPreviewEntry, ['export * from "./index.js";', ""].join("\n"), "utf8");
+fs.writeFileSync(
+	distPreviewEntry,
+	['export * from "./index.js";', ""].join("\n"),
+	"utf8",
+);

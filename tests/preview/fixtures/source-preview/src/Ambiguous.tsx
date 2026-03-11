@@ -1,7 +1,7 @@
 export function Alpha() {
-  return <frame />;
+	return <frame />;
 }
 
 export function Beta() {
-  return <frame />;
+	return <frame />;
 }

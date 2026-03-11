@@ -1,15 +1,15 @@
 {
-  "extends": "../../tsconfig.base.json",
-  "compilerOptions": {
-    "baseUrl": ".",
-    "module": "CommonJS",
-    "moduleResolution": "Node",
-    "rootDir": "src",
-    "outDir": "dist",
-    "declaration": true,
-    "jsx": "react-jsx",
-    "lib": ["ES2021", "DOM", "DOM.Iterable"],
-    "types": ["node", "react", "react-dom"]
-  },
-  "include": ["src/**/*.ts", "src/**/*.tsx", "src/**/*.d.ts"]
+	"extends": "../../tsconfig.base.json",
+	"compilerOptions": {
+		"baseUrl": ".",
+		"module": "CommonJS",
+		"moduleResolution": "Node",
+		"rootDir": "src",
+		"outDir": "dist",
+		"declaration": true,
+		"jsx": "react-jsx",
+		"lib": ["ES2021", "DOM", "DOM.Iterable"],
+		"types": ["node", "react", "react-dom"]
+	},
+	"include": ["src/**/*.ts", "src/**/*.tsx", "src/**/*.d.ts"]
 }

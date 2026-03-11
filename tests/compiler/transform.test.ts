@@ -1,9 +1,9 @@
-import { compile_tsx, transformPreviewSource } from "@loom-dev/compiler";
+import { transformPreviewSource } from "@loom-dev/compiler";
 import { describe, expect, it } from "vitest";
 
 describe("@loom-dev/compiler preview transform", () => {
-  it("returns preview transform results with rewritten runtime imports and DOM-facing types", () => {
-    const source = `
+	it("returns preview transform results with rewritten runtime imports and DOM-facing types", () => {
+		const source = `
       import { React, Slot } from "@loom-dev/core";
       import type ReactTypes from "@rbxts/react";
 
@@ -32,30 +32,36 @@ describe("@loom-dev/compiler preview transform", () => {
       }
     `;
 
-    const result = transformPreviewSource(source, {
-      filePath: "/virtual/compiler-transform.tsx",
-      mode: "compatibility",
-      runtimeModule: "@loom-dev/preview-runtime",
-      target: "compiler-transform",
-    });
+		const result = transformPreviewSource(source, {
+			filePath: "/virtual/compiler-transform.tsx",
+			mode: "compatibility",
+			runtimeModule: "@loom-dev/preview-runtime",
+			target: "compiler-transform",
+		});
 
-    expect(result.diagnostics).toHaveLength(0);
-    expect(result.outcome).toEqual({
-      fidelity: "preserved",
-      kind: "ready",
-    });
-    expect(result.code).toContain('from "@loom-dev/preview-runtime"');
-    expect(result.code).toContain('from "react"');
-    expect(result.code).toContain("MutableRefObject<HTMLElement | null | undefined>");
-    expect(result.code).toContain('isPreviewElement(button, "GuiButton")');
-    expect(result.code).toContain('isPreviewElement(label, "GuiLabel")');
-    expect(result.code).toContain('isPreviewElement(props.layer, "LayerCollector")');
-    expect(result.code).toContain('isPreviewElement(props.container, "BasePlayerGui")');
-    expect(result.code).toContain("<TextLabel");
-  });
+		expect(result.diagnostics).toHaveLength(0);
+		expect(result.outcome).toEqual({
+			fidelity: "preserved",
+			kind: "ready",
+		});
+		expect(result.code).toContain('from "@loom-dev/preview-runtime"');
+		expect(result.code).toContain('from "react"');
+		expect(result.code).toContain(
+			"MutableRefObject<HTMLElement | null | undefined>",
+		);
+		expect(result.code).toContain('isPreviewElement(button, "GuiButton")');
+		expect(result.code).toContain('isPreviewElement(label, "GuiLabel")');
+		expect(result.code).toContain(
+			'isPreviewElement(props.layer, "LayerCollector")',
+		);
+		expect(result.code).toContain(
+			'isPreviewElement(props.container, "BasePlayerGui")',
+		);
+		expect(result.code).toContain("<TextLabel");
+	});
 
-  it("accepts the new preview-safe host batch across JSX, type, and IsA rewrites", () => {
-    const source = `
+	it("accepts the new preview-safe host batch across JSX, type, and IsA rewrites", () => {
+		const source = `
       import { React } from "@loom-dev/core";
       import type ReactTypes from "@rbxts/react";
 
@@ -82,100 +88,111 @@ describe("@loom-dev/compiler preview transform", () => {
       }
     `;
 
-    const result = transformPreviewSource(source, {
-      filePath: "/virtual/new-host-batch.tsx",
-      mode: "compatibility",
-      runtimeModule: "@loom-dev/preview-runtime",
-      target: "new-host-batch",
-    });
+		const result = transformPreviewSource(source, {
+			filePath: "/virtual/new-host-batch.tsx",
+			mode: "compatibility",
+			runtimeModule: "@loom-dev/preview-runtime",
+			target: "new-host-batch",
+		});
 
-    expect(result.diagnostics).toHaveLength(0);
-    expect(result.outcome).toEqual({
-      fidelity: "preserved",
-      kind: "ready",
-    });
-    expect(result.code).toContain("MutableRefObject<HTMLElement | null | undefined>");
-    expect(result.code).toContain("surface?: HTMLElement | null");
-    expect(result.code).toContain("video?: HTMLElement | null");
-    expect(result.code).toContain("<ImageButton");
-    expect(result.code).toContain("<CanvasGroup");
-    expect(result.code).toContain("<ViewportFrame");
-    expect(result.code).toContain("<VideoFrame");
-    expect(result.code).toContain("<SurfaceGui");
-    expect(result.code).toContain("<BillboardGui");
-    expect(result.code).toContain('isPreviewElement(host, "ViewportFrame")');
-  });
+		expect(result.diagnostics).toHaveLength(0);
+		expect(result.outcome).toEqual({
+			fidelity: "preserved",
+			kind: "ready",
+		});
+		expect(result.code).toContain(
+			"MutableRefObject<HTMLElement | null | undefined>",
+		);
+		expect(result.code).toContain("surface?: HTMLElement | null");
+		expect(result.code).toContain("video?: HTMLElement | null");
+		expect(result.code).toContain("<ImageButton");
+		expect(result.code).toContain("<CanvasGroup");
+		expect(result.code).toContain("<ViewportFrame");
+		expect(result.code).toContain("<VideoFrame");
+		expect(result.code).toContain("<SurfaceGui");
+		expect(result.code).toContain("<BillboardGui");
+		expect(result.code).toContain('isPreviewElement(host, "ViewportFrame")');
+	});
 
-  it("keeps unsupported-host diagnostics as non-blocking warnings in compatibility mode", () => {
-    const transformed = transformPreviewSource(`export const host = <part BackgroundTransparency={1} />;`, {
-      filePath: "/virtual/fallback.tsx",
-      mode: "compatibility",
-      runtimeModule: "@loom-dev/preview-runtime",
-      target: "fallback",
-    });
+	it("keeps unsupported-host diagnostics as non-blocking warnings in compatibility mode", () => {
+		const transformed = transformPreviewSource(
+			`export const host = <part BackgroundTransparency={1} />;`,
+			{
+				filePath: "/virtual/fallback.tsx",
+				mode: "compatibility",
+				runtimeModule: "@loom-dev/preview-runtime",
+				target: "fallback",
+			},
+		);
 
-    expect(transformed.diagnostics).toEqual([
-      expect.objectContaining({
-        blocking: false,
-        code: "UNSUPPORTED_HOST_ELEMENT",
-        severity: "warning",
-      }),
-    ]);
-    expect(transformed.outcome).toEqual({
-      fidelity: "degraded",
-      kind: "compatibility",
-    });
-    expect(transformed.code).toContain("<part");
-  });
+		expect(transformed.diagnostics).toEqual([
+			expect.objectContaining({
+				blocking: false,
+				code: "UNSUPPORTED_HOST_ELEMENT",
+				severity: "warning",
+			}),
+		]);
+		expect(transformed.outcome).toEqual({
+			fidelity: "degraded",
+			kind: "compatibility",
+		});
+		expect(transformed.code).toContain("<part");
+	});
 
-  it("blocks unsupported-host fallback in strict-fidelity mode", () => {
-    const transformed = transformPreviewSource(`export const host = <part BackgroundTransparency={1} />;`, {
-      filePath: "/virtual/strict-fallback.tsx",
-      mode: "strict-fidelity",
-      runtimeModule: "@loom-dev/preview-runtime",
-      target: "strict-fallback",
-    });
+	it("blocks unsupported-host fallback in strict-fidelity mode", () => {
+		const transformed = transformPreviewSource(
+			`export const host = <part BackgroundTransparency={1} />;`,
+			{
+				filePath: "/virtual/strict-fallback.tsx",
+				mode: "strict-fidelity",
+				runtimeModule: "@loom-dev/preview-runtime",
+				target: "strict-fallback",
+			},
+		);
 
-    expect(transformed.code).toBeNull();
-    expect(transformed.outcome).toEqual({
-      fidelity: "degraded",
-      kind: "blocked",
-    });
-    expect(transformed.diagnostics).toEqual([
-      expect.objectContaining({
-        blocking: true,
-        code: "UNSUPPORTED_HOST_ELEMENT",
-        severity: "error",
-      }),
-    ]);
-  });
+		expect(transformed.code).toBeNull();
+		expect(transformed.outcome).toEqual({
+			fidelity: "degraded",
+			kind: "blocked",
+		});
+		expect(transformed.diagnostics).toEqual([
+			expect.objectContaining({
+				blocking: true,
+				code: "UNSUPPORTED_HOST_ELEMENT",
+				severity: "error",
+			}),
+		]);
+	});
 
-  it("emits mock-backed diagnostics in mocked mode", () => {
-    const transformed = transformPreviewSource(`export const value = game.GetService("Players");`, {
-      filePath: "/virtual/mocked-global.tsx",
-      mode: "mocked",
-      runtimeModule: "@loom-dev/preview-runtime",
-      target: "mocked-global",
-    });
+	it("emits mock-backed diagnostics in mocked mode", () => {
+		const transformed = transformPreviewSource(
+			`export const value = game.GetService("Players");`,
+			{
+				filePath: "/virtual/mocked-global.tsx",
+				mode: "mocked",
+				runtimeModule: "@loom-dev/preview-runtime",
+				target: "mocked-global",
+			},
+		);
 
-    expect(transformed.outcome).toEqual({
-      fidelity: "degraded",
-      kind: "mocked",
-    });
-    expect(transformed.diagnostics).toEqual([
-      expect.objectContaining({
-        blocking: false,
-        code: "RUNTIME_MOCK_GLOBAL",
-        severity: "warning",
-        symbol: "game",
-      }),
-    ]);
-    expect(transformed.code).toContain('__previewGlobal("game")');
-  });
+		expect(transformed.outcome).toEqual({
+			fidelity: "degraded",
+			kind: "mocked",
+		});
+		expect(transformed.diagnostics).toEqual([
+			expect.objectContaining({
+				blocking: false,
+				code: "RUNTIME_MOCK_GLOBAL",
+				severity: "warning",
+				symbol: "game",
+			}),
+		]);
+		expect(transformed.code).toContain('__previewGlobal("game")');
+	});
 
-  it("rewrites expanded enum literal surfaces for preview-friendly comparisons", () => {
-    const transformed = transformPreviewSource(
-      `
+	it("rewrites expanded enum literal surfaces for preview-friendly comparisons", () => {
+		const transformed = transformPreviewSource(
+			`
         export const horizontal = Enum.HorizontalAlignment.Center;
         export const vertical = Enum.VerticalAlignment.Bottom;
         export const inputMode = Enum.UserInputType.MouseButton1;
@@ -184,37 +201,42 @@ describe("@loom-dev/compiler preview transform", () => {
         export const keyDigit = Enum.KeyCode.Nine;
         export const playback = Enum.PlaybackState.Completed;
       `,
-      {
-        filePath: "/virtual/enum-surface.tsx",
-        mode: "compatibility",
-        runtimeModule: "@loom-dev/preview-runtime",
-        target: "enum-surface",
-      },
-    );
+			{
+				filePath: "/virtual/enum-surface.tsx",
+				mode: "compatibility",
+				runtimeModule: "@loom-dev/preview-runtime",
+				target: "enum-surface",
+			},
+		);
 
-    expect(transformed.diagnostics).toHaveLength(0);
-    expect(transformed.code).toContain('"center"');
-    expect(transformed.code).toContain('"bottom"');
-    expect(transformed.code).toContain('"MouseButton1"');
-    expect(transformed.code).toContain('"Tab"');
-    expect(transformed.code).toContain('"z"');
-    expect(transformed.code).toContain('"9"');
-    expect(transformed.code).toContain('__previewGlobal("Enum").PlaybackState.Completed');
-  });
+		expect(transformed.diagnostics).toHaveLength(0);
+		expect(transformed.code).toContain('"center"');
+		expect(transformed.code).toContain('"bottom"');
+		expect(transformed.code).toContain('"MouseButton1"');
+		expect(transformed.code).toContain('"Tab"');
+		expect(transformed.code).toContain('"z"');
+		expect(transformed.code).toContain('"9"');
+		expect(transformed.code).toContain(
+			'__previewGlobal("Enum").PlaybackState.Completed',
+		);
+	});
 
-  it("returns metadata-only outcomes in design-time mode", () => {
-    const transformed = transformPreviewSource(`export const host = <frame />;`, {
-      filePath: "/virtual/design-time.tsx",
-      mode: "design-time",
-      runtimeModule: "@loom-dev/preview-runtime",
-      target: "design-time",
-    });
+	it("returns metadata-only outcomes in design-time mode", () => {
+		const transformed = transformPreviewSource(
+			`export const host = <frame />;`,
+			{
+				filePath: "/virtual/design-time.tsx",
+				mode: "design-time",
+				runtimeModule: "@loom-dev/preview-runtime",
+				target: "design-time",
+			},
+		);
 
-    expect(transformed.code).toBeNull();
-    expect(transformed.outcome).toEqual({
-      fidelity: "metadata-only",
-      kind: "design-time",
-    });
-    expect(transformed.diagnostics).toHaveLength(0);
-  });
+		expect(transformed.code).toBeNull();
+		expect(transformed.outcome).toEqual({
+			fidelity: "metadata-only",
+			kind: "design-time",
+		});
+		expect(transformed.diagnostics).toHaveLength(0);
+	});
 });

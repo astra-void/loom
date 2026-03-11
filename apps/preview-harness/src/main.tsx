@@ -9,11 +9,11 @@ installPreviewBrowserGlobals();
 const rootElement = document.getElementById("root");
 
 if (!rootElement) {
-  throw new Error("Preview root element is missing.");
+	throw new Error("Preview root element is missing.");
 }
 
 ReactDOM.createRoot(rootElement).render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>,
+	<React.StrictMode>
+		<App />
+	</React.StrictMode>,
 );
