@@ -1,10 +1,10 @@
 import * as React from "react";
-import { FULL_SIZE_UDIM2, normalizePreviewNodeId, serializeUDim2 } from "../internal/robloxValues";
+import { normalizePreviewNodeId, serializeUDim2 } from "../internal/robloxValues";
 import { adaptRobloxNodeInput, type ComputedRect, type PreviewLayoutNode } from "../layout/model";
-import { isDegradedPreviewHost } from "./metadata";
+import { getPreviewHostMetadataByJsxName, isDegradedPreviewHost } from "./metadata";
 import { applyHoistedModifierStyles, extractHoistedChildren } from "./modifiers";
 import { applyComputedLayoutStyle, type ResolvedPreviewDomProps, resolvePreviewDomProps } from "./resolveProps";
-import { fullSizeLayoutHostNames, type LayoutHostName, layoutHostNodeType, type PreviewDomProps } from "./types";
+import { type LayoutHostName, layoutHostNodeType, type PreviewDomProps } from "./types";
 
 export type LayoutDebugState = {
   debugNode: {
@@ -49,14 +49,6 @@ export interface PresentationAdapter {
   measure(node: PreviewHostNode, element: HTMLElement | null): { height: number; width: number } | null;
   normalize(source: SourceHostDescriptor): PreviewHostNode;
   render(node: PreviewHostNode, children: React.ReactNode, ref: React.Ref<HTMLElement>): React.ReactElement;
-}
-
-function getDefaultSize(host: LayoutHostName) {
-  if ((fullSizeLayoutHostNames as readonly string[]).includes(host)) {
-    return FULL_SIZE_UDIM2;
-  }
-
-  return undefined;
 }
 
 function renderDegradedHostLabel(node: PreviewHostNode) {
@@ -237,18 +229,26 @@ function createHostNode(source: SourceHostDescriptor): PreviewHostNode {
     host: source.host,
     nodeId,
   });
+  const hostMetadata = getPreviewHostMetadataByJsxName(source.host);
   const style = resolved.domProps.style as React.CSSProperties | undefined;
 
   const layoutNode = adaptRobloxNodeInput(
     {
       anchorPoint: source.props.AnchorPoint ?? (rawProps.anchorPoint as PreviewDomProps["AnchorPoint"] | undefined),
       debugLabel: source.props.Name ? String(source.props.Name) : nodeId,
+      hostMetadata:
+        hostMetadata === undefined
+          ? undefined
+          : {
+              degraded: hostMetadata.degraded,
+              fullSizeDefault: hostMetadata.fullSizeDefault,
+            },
       id: nodeId,
       kind: source.host === "screengui" && parentId === undefined ? "root" : "host",
       nodeType: layoutHostNodeType[source.host],
       parentId,
       position: source.props.Position ?? (rawProps.position as PreviewDomProps["Position"] | undefined),
-      size: serializeUDim2(source.props.Size ?? rawProps.size, getDefaultSize(source.host)) ?? undefined,
+      size: serializeUDim2(source.props.Size ?? rawProps.size, undefined) ?? undefined,
       styleHints: {
         height: typeof style?.height === "string" ? style.height : undefined,
         width: typeof style?.width === "string" ? style.width : undefined,

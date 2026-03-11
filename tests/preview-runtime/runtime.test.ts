@@ -231,12 +231,52 @@ describe.sequential("@loom-dev/preview-runtime", () => {
     expect(workspace).toBe(game.GetService("Workspace"));
   });
 
+  it("emits deterministic focus and input signals for UserInputService", () => {
+    setupRobloxEnvironment();
+
+    const userInputService = game.GetService("UserInputService") as {
+      InputBegan: { Connect(listener: (event: Event) => void): void };
+      LastInputTypeChanged: { Connect(listener: (inputType: string) => void): void };
+      TextBoxFocusReleased: { Connect(listener: (element: HTMLElement | null) => void): void };
+      TextBoxFocused: { Connect(listener: (element: HTMLElement | null) => void): void };
+    };
+    const inputEvents: string[] = [];
+    const lastInputTypes: string[] = [];
+    const focusEvents: string[] = [];
+    const textbox = document.createElement("input");
+    textbox.dataset.previewHost = "textbox";
+    document.body.append(textbox);
+
+    userInputService.InputBegan.Connect((event) => {
+      inputEvents.push(event.type);
+    });
+    userInputService.LastInputTypeChanged.Connect((inputType) => {
+      lastInputTypes.push(inputType);
+    });
+    userInputService.TextBoxFocused.Connect((element) => {
+      focusEvents.push(`focused:${element?.tagName ?? "null"}`);
+    });
+    userInputService.TextBoxFocusReleased.Connect((element) => {
+      focusEvents.push(`released:${element?.tagName ?? "null"}`);
+    });
+
+    textbox.focus();
+    textbox.blur();
+    window.dispatchEvent(new MouseEvent("mousedown", { button: 0 }));
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "A" }));
+
+    expect(focusEvents).toEqual(["focused:INPUT", "released:INPUT"]);
+    expect(inputEvents).toEqual(["mousedown", "keydown"]);
+    expect(lastInputTypes.slice(-1)).toEqual(["Keyboard"]);
+  });
+
   it("applies tween goals immediately and fires Completed on preview tweens", () => {
     setupRobloxEnvironment();
 
     const tweenService = game.GetService("TweenService") as {
       Create(instance: unknown, tweenInfo: TweenInfo, goal: Record<string, unknown>): {
         Completed: { Connect(listener: (state: unknown) => void): void };
+        PlaybackState: unknown;
         Play(): void;
       };
     };
@@ -261,7 +301,59 @@ describe.sequential("@loom-dev/preview-runtime", () => {
       Position: 2,
       Visible: true,
     });
+    expect(String(tween.PlaybackState)).toBe("Enum.PlaybackState.Completed");
     expect(completed).toHaveBeenCalledWith("Enum.PlaybackState.Completed");
+  });
+
+  it("keeps preview tweens stateful and idempotent", () => {
+    setupRobloxEnvironment();
+
+    const tweenService = game.GetService("TweenService") as {
+      Create(instance: unknown, tweenInfo: TweenInfo, goal: Record<string, unknown>): {
+        Cancel(): void;
+        Completed: { Connect(listener: (state: unknown) => void): void };
+        Destroy(): void;
+        Pause(): void;
+        PlaybackState: unknown;
+        Play(): void;
+      };
+    };
+    const cancelledTarget = {
+      Position: 1,
+    };
+    const destroyedTarget = {
+      Position: 3,
+    };
+    const cancelled = vi.fn();
+    const destroyed = vi.fn();
+    const cancelledTween = tweenService.Create(cancelledTarget, new TweenInfo(0.1), {
+      Position: 2,
+    });
+    const destroyedTween = tweenService.Create(destroyedTarget, new TweenInfo(0.1), {
+      Position: 4,
+    });
+
+    cancelledTween.Completed.Connect((state) => {
+      cancelled(String(state));
+    });
+    destroyedTween.Completed.Connect((state) => {
+      destroyed(String(state));
+    });
+
+    cancelledTween.Pause();
+    expect(String(cancelledTween.PlaybackState)).toBe("Enum.PlaybackState.Paused");
+    cancelledTween.Cancel();
+    cancelledTween.Play();
+
+    destroyedTween.Destroy();
+    destroyedTween.Play();
+
+    expect(cancelledTarget.Position).toBe(1);
+    expect(destroyedTarget.Position).toBe(3);
+    expect(String(cancelledTween.PlaybackState)).toBe("Enum.PlaybackState.Cancelled");
+    expect(String(destroyedTween.PlaybackState)).toBe("Enum.PlaybackState.Cancelled");
+    expect(cancelled).not.toHaveBeenCalled();
+    expect(destroyed).not.toHaveBeenCalled();
   });
 
   it("installs Luau-style globals and prototype helpers", () => {

@@ -164,6 +164,7 @@ export class LayoutController {
     nodeId: string,
     parentConstraints: { height: number; width: number; x: number; y: number } | null,
     provenance: "fallback" | "wasm",
+    layoutSourcesById?: ReadonlyMap<string, PreviewLayoutDebugNode["layoutSource"]>,
   ): PreviewLayoutDebugNode | null {
     const node = this.nodes.get(nodeId);
     if (!node) {
@@ -175,13 +176,15 @@ export class LayoutController {
 
     return {
       children: childIds
-        .map((childId) => this.buildDebugTree(childId, rect, provenance))
+        .map((childId) => this.buildDebugTree(childId, rect, provenance, layoutSourcesById))
         .filter((child): child is PreviewLayoutDebugNode => child !== null),
       debugLabel: node.debugLabel,
       id: node.id,
       intrinsicSize: node.intrinsicSize ?? null,
       kind: node.kind,
-      layoutSource: node.kind === "root" ? "root-default" : node.layout.size ? "explicit-size" : "intrinsic-size",
+      layoutSource:
+        layoutSourcesById?.get(node.id) ??
+        (node.kind === "root" ? "root-default" : node.layout.size ? "explicit-size" : "intrinsic-size"),
       nodeType: node.nodeType,
       parentConstraints,
       parentId: node.parentId,
@@ -221,13 +224,14 @@ export class LayoutController {
     }
 
     const viewportRect = createViewportRect(this.viewport.width, this.viewport.height);
+    const layoutSourcesById = new Map<string, PreviewLayoutDebugNode["layoutSource"]>();
 
     for (const rootId of dirtyRootIds) {
       for (const affectedId of this.collectSubtreeIds(rootId)) {
         delete nextRects[affectedId];
       }
 
-      this.computeFallbackSubtree(rootId, viewportRect, nextRects);
+      this.computeFallbackSubtree(rootId, viewportRect, nextRects, layoutSourcesById);
     }
 
     const provisionalResult: PreviewLayoutResult = {
@@ -242,7 +246,7 @@ export class LayoutController {
       debug: {
         dirtyNodeIds: provisionalResult.dirtyNodeIds,
         roots: this.rootIds
-          .map((rootId) => this.buildDebugTree(rootId, viewportRect, "fallback"))
+          .map((rootId) => this.buildDebugTree(rootId, viewportRect, "fallback", layoutSourcesById))
           .filter((node): node is PreviewLayoutDebugNode => node !== null),
         viewport: cloneViewport(this.viewport),
       },
@@ -255,18 +259,20 @@ export class LayoutController {
     nodeId: string,
     parentRect: { height: number; width: number; x: number; y: number },
     output: Record<string, { height: number; width: number; x: number; y: number }>,
+    layoutSourcesById: Map<string, PreviewLayoutDebugNode["layoutSource"]>,
   ) {
     const node = this.nodes.get(nodeId);
     if (!node) {
       return;
     }
 
-    const { rect } = computeNodeRect(node, parentRect);
+    const { layoutSource, rect } = computeNodeRect(node, parentRect);
     output[node.id] = rect;
+    layoutSourcesById.set(node.id, layoutSource);
 
     const childIds = this.childIdsByParent.get(nodeId) ?? [];
     for (const childId of childIds) {
-      this.computeFallbackSubtree(childId, rect, output);
+      this.computeFallbackSubtree(childId, rect, output, layoutSourcesById);
     }
   }
 

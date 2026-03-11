@@ -1,17 +1,17 @@
 {
   "name": "loom-monorepo",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "private": true,
   "description": "Loom preview workspace.",
   "scripts": {
     "build:native": "pnpm --filter @loom-dev/layout-engine build && pnpm --filter @loom-dev/compiler build",
-    "build:packages": "pnpm --filter @loom-dev/preview-runtime build && pnpm --filter @loom-dev/preview-engine build && pnpm --filter @loom-dev/preview build",
+    "build:packages": "pnpm --filter @loom-dev/preview-runtime build && pnpm --filter @loom-dev/preview-engine build && pnpm --filter @loom-dev/preview build && pnpm --filter @loom-dev/cli build",
     "build": "pnpm run build:native && pnpm run build:packages && pnpm --filter @loom-dev/preview-harness build",
     "dev": "pnpm run build:native && pnpm --filter @loom-dev/preview-harness dev",
-    "typecheck": "pnpm run build:native && pnpm --filter @loom-dev/preview-runtime build && pnpm --filter @loom-dev/preview-engine build && pnpm --filter @loom-dev/preview-runtime typecheck && pnpm --filter @loom-dev/preview-engine typecheck && pnpm --filter @loom-dev/preview typecheck && pnpm exec tsc -p apps/preview-harness/tsconfig.json --noEmit",
+    "typecheck": "pnpm run build:native && pnpm --filter @loom-dev/preview-runtime build && pnpm --filter @loom-dev/preview-engine build && pnpm --filter @loom-dev/preview-runtime typecheck && pnpm --filter @loom-dev/preview-engine typecheck && pnpm --filter @loom-dev/preview typecheck && pnpm --filter @loom-dev/cli typecheck && pnpm exec tsc -p apps/preview-harness/tsconfig.json --noEmit",
     "test": "pnpm run build:native && pnpm exec vitest run"
   },
-  "license": "ISC",
+  "license": "MIT",
   "packageManager": "pnpm@10.32.0",
   "devDependencies": {
     "@testing-library/react": "^16.0.0",

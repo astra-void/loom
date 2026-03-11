@@ -42,6 +42,7 @@ type PreviewCanvasProps = {
   isDebugMode: boolean;
   module: PreviewModule;
   onRenderError: (error: unknown | null) => void;
+  warningState: PreviewReadyWarningState;
 };
 
 type PreviewNodeRendererProps = {
@@ -56,6 +57,12 @@ type PreviewErrorBoundaryProps = {
 
 type PreviewErrorBoundaryState = {
   errorMessage: string | null;
+};
+
+type PreviewReadyWarningState = {
+  degradedTargets: string[];
+  fidelity: "degraded" | "preserved" | null;
+  warningCodes: string[];
 };
 
 type LoadedPreviewEntry = {
@@ -216,6 +223,54 @@ function getStatusLabel(status: PreviewEntryStatus) {
 
 function formatCandidateExports(candidates: string[]) {
   return candidates.join(", ");
+}
+
+function uniqueSorted(values: Iterable<string>) {
+  return [...new Set(values)].sort((left, right) => left.localeCompare(right));
+}
+
+function isBlockingIssue(issue: Pick<PreviewDiagnostic, "blocking" | "severity"> | Pick<PreviewRuntimeIssue, "blocking" | "severity">) {
+  return issue.blocking ?? issue.severity !== "warning";
+}
+
+function getReadyWarningState(
+  statusDetails: PreviewEntryDescriptor["statusDetails"] | undefined,
+  diagnostics: PreviewDiagnostic[],
+  runtimeIssues: PreviewRuntimeIssue[],
+): PreviewReadyWarningState {
+  const payloadWarningCodes = statusDetails?.kind === "ready" ? (statusDetails.warningCodes ?? []) : [];
+  const payloadDegradedTargets = statusDetails?.kind === "ready" ? (statusDetails.degradedTargets ?? []) : [];
+  const fidelity = statusDetails?.kind === "ready" ? (statusDetails.fidelity ?? null) : null;
+  const warningDiagnostics = diagnostics.filter((diagnostic) => !isBlockingIssue(diagnostic));
+  const warningRuntimeIssues = runtimeIssues.filter((issue) => !isBlockingIssue(issue));
+  const degradedTargets = uniqueSorted([
+    ...payloadDegradedTargets,
+    ...warningRuntimeIssues
+      .filter((issue) => issue.code === "DEGRADED_HOST_RENDER")
+      .map((issue) => issue.target),
+  ]);
+
+  return {
+    degradedTargets,
+    fidelity: fidelity ?? (degradedTargets.length > 0 ? "degraded" : null),
+    warningCodes: uniqueSorted([
+      ...payloadWarningCodes,
+      ...warningDiagnostics.map((diagnostic) => diagnostic.code),
+      ...warningRuntimeIssues.map((issue) => issue.code),
+    ]),
+  };
+}
+
+function describeWarningState(warningState: PreviewReadyWarningState) {
+  if (warningState.degradedTargets.length > 0) {
+    return `Placeholder hosts: ${warningState.degradedTargets.join(", ")}.`;
+  }
+
+  if (warningState.warningCodes.length > 0) {
+    return `Warnings: ${warningState.warningCodes.join(", ")}.`;
+  }
+
+  return "This preview stays renderable, but fidelity is reduced.";
 }
 
 function getPrimaryDiscoveryDiagnostic(discoveryDiagnostics: PreviewDiagnostic[]) {
@@ -440,6 +495,13 @@ function PreviewCanvas(props: PreviewCanvasProps) {
           <p className="meta-value">{preview?.title ?? props.entry.title}</p>
         </div>
       </div>
+      {props.warningState.fidelity === "degraded" || props.warningState.warningCodes.length > 0 ? (
+        <div className="preview-warning" role="status">
+          <p className="preview-warning-eyebrow">Fidelity warning</p>
+          <p className="preview-warning-title">Rendered with degraded fidelity.</p>
+          <p className="preview-warning-body">{describeWarningState(props.warningState)}</p>
+        </div>
+      ) : undefined}
       <div className="preview-stage">
         <div
           className="preview-stage-viewport"
@@ -478,7 +540,21 @@ export function PreviewApp(props: PreviewAppProps) {
   const selectedEntryDiagnostics =
     selectedEntryPayload?.diagnostics.filter((diagnostic) => diagnostic.phase !== "discovery") ?? [];
   const selectedEntryBlockingDiagnostics = selectedEntryDiagnostics.filter(
-    (diagnostic) => diagnostic.blocking ?? diagnostic.severity !== "warning",
+    (diagnostic) => isBlockingIssue(diagnostic),
+  );
+  const selectedEntryWarningState = React.useMemo(
+    () =>
+      getReadyWarningState(
+        selectedEntryPayload?.descriptor.statusDetails ?? selectedEntry?.statusDetails,
+        selectedEntryDiagnostics,
+        runtimeIssues,
+      ),
+    [runtimeIssues, selectedEntry?.statusDetails, selectedEntryDiagnostics, selectedEntryPayload?.descriptor.statusDetails],
+  );
+  const selectedEntryRuntimeWarningCount = runtimeIssues.filter((issue) => !isBlockingIssue(issue)).length;
+  const selectedEntryWarningCount = Math.max(
+    selectedEntryWarningState.warningCodes.length,
+    selectedEntryDiagnostics.filter((diagnostic) => !isBlockingIssue(diagnostic)).length + selectedEntryRuntimeWarningCount,
   );
   const emptyState = selectedEntry ? getEntryEmptyState(selectedEntry, selectedEntryDiscoveryDiagnostics) : undefined;
 
@@ -579,7 +655,13 @@ export function PreviewApp(props: PreviewAppProps) {
               onClick={() => React.startTransition(() => setSelectedId(entry.id))}
               type="button"
             >
-              <span className={`status-pill status-${entry.status}`}>{getStatusLabel(entry.status)}</span>
+              <span className="sidebar-item-badges">
+                <span className={`status-pill status-${entry.status}`}>{getStatusLabel(entry.status)}</span>
+                {entry.statusDetails.kind === "ready" &&
+                (entry.statusDetails.fidelity === "degraded" || (entry.statusDetails.warningCodes?.length ?? 0) > 0) ? (
+                  <span className="status-pill status-warning">warning</span>
+                ) : undefined}
+              </span>
               <span className="sidebar-item-copy">
                 <span className="sidebar-item-title">{entry.title}</span>
                 <span className="sidebar-item-target">{entry.targetName}</span>
@@ -597,6 +679,9 @@ export function PreviewApp(props: PreviewAppProps) {
               <div>
                 <p className="section-eyebrow">Selected file</p>
                 <h2>{selectedEntry.title}</h2>
+                {selectedEntryWarningState.fidelity === "degraded" || selectedEntryWarningState.warningCodes.length > 0 ? (
+                  <p className="header-warning-copy">{describeWarningState(selectedEntryWarningState)}</p>
+                ) : undefined}
               </div>
               <div className="header-controls">
                 <PreviewThemeControl />
@@ -652,6 +737,7 @@ export function PreviewApp(props: PreviewAppProps) {
                           ),
                         );
                       }}
+                      warningState={selectedEntryWarningState}
                     />
                   )
                 ) : loadIssue ? (
@@ -711,11 +797,12 @@ export function PreviewApp(props: PreviewAppProps) {
                 <div className="diagnostics-summary">
                   <span>
                     {selectedEntryBlockingDiagnostics.length +
-                      runtimeIssues.length +
+                      runtimeIssues.filter((issue) => isBlockingIssue(issue)).length +
                       (renderIssue ? 1 : 0) +
                       (loadIssue ? 1 : 0)}{" "}
                     blocking issue(s)
                   </span>
+                  <span>{selectedEntryWarningCount} warning(s)</span>
                   <span>{selectedEntryDiscoveryDiagnostics.length} discover note(s)</span>
                   {renderIssue ? <span>render error</span> : undefined}
                   {loadIssue ? <span>load error</span> : undefined}
@@ -751,7 +838,9 @@ export function PreviewApp(props: PreviewAppProps) {
                   ))}
                   {runtimeIssues.map((issue, index) => (
                     <article
-                      className="diagnostic-item diagnostic-item-runtime"
+                      className={`diagnostic-item diagnostic-item-runtime ${
+                        isBlockingIssue(issue) ? "" : "diagnostic-item-warning"
+                      }`.trim()}
                       key={`${issue.code}:${issue.kind}:${issue.relativeFile}:${index}`}
                     >
                       <p className="diagnostic-code">{issue.code}</p>

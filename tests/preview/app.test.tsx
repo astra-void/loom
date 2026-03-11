@@ -54,6 +54,11 @@ function createEntryDescriptor(
       } as const),
     sourceFilePath: overrides.sourceFilePath ?? `/virtual/${overrides.id}`,
     status: overrides.status ?? "ready",
+    statusDetails:
+      overrides.statusDetails ??
+      ({
+        kind: "ready",
+      } as const),
     targetName: overrides.targetName ?? "fixture",
     title: overrides.title,
     ...overrides,
@@ -250,6 +255,55 @@ describe("preview shell", () => {
 
     expect(await screen.findByRole("button", { name: "Broken preview" })).toBeTruthy();
     expect(screen.getByText("UNSUPPORTED_GLOBAL")).toBeTruthy();
+  });
+
+  it("surfaces ready-state degraded fidelity warnings in the shell", async () => {
+    const warningEntry = createEntryDescriptor({
+      id: "Viewport.tsx",
+      relativePath: "Viewport.tsx",
+      statusDetails: {
+        degradedTargets: ["ViewportFrame"],
+        fidelity: "degraded",
+        kind: "ready",
+        warningCodes: ["DEGRADED_HOST_RENDER"],
+      },
+      title: "Viewport",
+    });
+
+    renderPreviewApp(
+      <PreviewApp
+        entries={[warningEntry]}
+        initialSelectedId="Viewport.tsx"
+        loadEntry={() =>
+          createLoadedEntry(
+            warningEntry,
+            {
+              default: () => <button type="button">Viewport preview</button>,
+            },
+            [
+              createDiagnostic({
+                blocking: false,
+                code: "DEGRADED_HOST_RENDER",
+                entryId: warningEntry.id,
+                file: "/virtual/Viewport.tsx",
+                phase: "runtime",
+                relativeFile: "src/Viewport.tsx",
+                severity: "warning",
+                summary: "ViewportFrame rendered with degraded preview behavior.",
+                target: "ViewportFrame",
+              }),
+            ],
+          )
+        }
+        projectName="@loom-dev/preview-smoke"
+      />,
+    );
+
+    expect(await screen.findByRole("button", { name: "Viewport preview" })).toBeTruthy();
+    expect(screen.getByText("Rendered with degraded fidelity.")).toBeTruthy();
+    expect(screen.getAllByText("warning").length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Placeholder hosts: ViewportFrame\./).length).toBeGreaterThan(0);
+    expect(screen.getByText("1 warning(s)")).toBeTruthy();
   });
 
   it("shows blocked-by-transform guidance without rendering the canvas", async () => {

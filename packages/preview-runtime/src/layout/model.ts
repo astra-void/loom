@@ -45,6 +45,11 @@ export type PreviewLayoutAxisConstraints = {
   min?: number;
 };
 
+export type PreviewLayoutHostMetadata = {
+  degraded: boolean;
+  fullSizeDefault: boolean;
+};
+
 export type PreviewLayoutConstraints = {
   height?: PreviewLayoutAxisConstraints;
   width?: PreviewLayoutAxisConstraints;
@@ -52,7 +57,7 @@ export type PreviewLayoutConstraints = {
 
 export type PreviewLayoutPositionMode = "absolute";
 export type PreviewLayoutNodeKind = "host" | "layout" | "root";
-export type PreviewLayoutSource = "explicit-size" | "intrinsic-size" | "root-default";
+export type PreviewLayoutSource = "explicit-size" | "full-size-default" | "intrinsic-size" | "root-default";
 
 export type PreviewLayoutStyleHints = {
   height?: string;
@@ -69,6 +74,7 @@ export type PreviewLayoutNodeLayout = {
 
 export type PreviewLayoutNode = {
   debugLabel?: string;
+  hostMetadata?: PreviewLayoutHostMetadata;
   id: string;
   intrinsicSize?: MeasuredNodeSize | null;
   kind: PreviewLayoutNodeKind;
@@ -126,6 +132,7 @@ export type RobloxLayoutNodeInput = {
 export type RobloxLayoutRegistrationInput = RobloxLayoutNodeInput & {
   canMeasure?: boolean;
   debugLabel?: string;
+  hostMetadata?: PreviewLayoutHostMetadata;
   intrinsicSize?: MeasuredNodeSize | null;
   measure?: () => MeasuredNodeSize | null;
   measurementVersion?: number;
@@ -223,6 +230,17 @@ function normalizeStyleHints(hints: PreviewLayoutStyleHints | undefined): Previe
   return { height, width };
 }
 
+function normalizeHostMetadata(metadata: PreviewLayoutHostMetadata | null | undefined): PreviewLayoutHostMetadata | undefined {
+  if (!metadata) {
+    return undefined;
+  }
+
+  return {
+    degraded: metadata.degraded === true,
+    fullSizeDefault: metadata.fullSizeDefault === true,
+  };
+}
+
 export function createViewportRect(width: number, height: number): ComputedRect {
   return {
     height,
@@ -308,6 +326,7 @@ export function adaptRobloxNodeInput(
 
   const nextNode: PreviewLayoutNode = {
     debugLabel: input.debugLabel,
+    hostMetadata: normalizeHostMetadata(input.hostMetadata),
     id: normalizedId,
     intrinsicSize: measuredSize,
     kind: input.kind ?? (normalizedParentId === undefined && input.nodeType === "ScreenGui" ? "root" : "host"),
@@ -329,6 +348,8 @@ export function adaptRobloxNodeInput(
 export function areNodesEqual(a: PreviewLayoutNode, b: PreviewLayoutNode): boolean {
   return (
     a.debugLabel === b.debugLabel &&
+    a.hostMetadata?.degraded === b.hostMetadata?.degraded &&
+    a.hostMetadata?.fullSizeDefault === b.hostMetadata?.fullSizeDefault &&
     a.id === b.id &&
     (a.intrinsicSize?.width ?? 0) === (b.intrinsicSize?.width ?? 0) &&
     (a.intrinsicSize?.height ?? 0) === (b.intrinsicSize?.height ?? 0) &&
@@ -356,14 +377,17 @@ export function areNodesEqual(a: PreviewLayoutNode, b: PreviewLayoutNode): boole
 }
 
 export function computeRectFromParentRect(
-  node: Pick<PreviewLayoutNode, "intrinsicSize" | "layout">,
+  node: Pick<PreviewLayoutNode, "hostMetadata" | "intrinsicSize" | "layout">,
   parentRect: ComputedRect,
 ): { layoutSource: PreviewLayoutSource; rect: ComputedRect } {
   let layoutSource: PreviewLayoutSource = "explicit-size";
   let resolvedSize = node.layout.size;
 
   if (!resolvedSize) {
-    if (node.intrinsicSize) {
+    if (node.hostMetadata?.fullSizeDefault) {
+      layoutSource = "full-size-default";
+      resolvedSize = toLayoutSize(FULL_SIZE_UDIM2);
+    } else if (node.intrinsicSize) {
       layoutSource = "intrinsic-size";
       resolvedSize = createMeasuredSizeLayout(node.intrinsicSize);
     } else {
@@ -473,6 +497,7 @@ function normalizeDebugNode(raw: unknown): PreviewLayoutDebugNode | null {
     kind: record.kind === "layout" || record.kind === "root" || record.kind === "host" ? record.kind : "host",
     layoutSource:
       record.layoutSource === "explicit-size" ||
+      record.layoutSource === "full-size-default" ||
       record.layoutSource === "intrinsic-size" ||
       record.layoutSource === "root-default"
         ? record.layoutSource

@@ -102,6 +102,7 @@ export interface PreviewGuiService {
 export interface PreviewTween {
   readonly Completed: RBXScriptSignal<[playbackState: unknown]>;
   readonly Instance: unknown;
+  readonly PlaybackState: unknown;
   readonly TweenInfo: TweenInfo;
   Cancel(): void;
   Destroy(): void;
@@ -298,11 +299,19 @@ function getFocusedTextBox() {
   }
 
   const activeElement = document.activeElement;
-  if (!(activeElement instanceof HTMLElement)) {
-    return null;
-  }
+  return isTextBoxElement(activeElement) ? activeElement : null;
+}
 
-  return activeElement.dataset.previewHost === "textbox" || activeElement.tagName === "INPUT" ? activeElement : null;
+function isTextBoxElement(value: unknown): value is HTMLElement {
+  return (
+    typeof HTMLElement !== "undefined" &&
+    value instanceof HTMLElement &&
+    (value.dataset.previewHost === "textbox" || value.tagName === "INPUT" || value.tagName === "TEXTAREA")
+  );
+}
+
+function getTextBoxFromEventTarget(target: EventTarget | null) {
+  return isTextBoxElement(target) ? target : null;
 }
 
 function createPlayersService(localPlayer: PreviewPlayer): PreviewPlayersService {
@@ -332,13 +341,27 @@ function createUserInputService(): PreviewUserInputService {
   const inputEnded = new Signal<[event: Event]>();
   const textBoxFocused = new Signal<[element: HTMLElement | null]>();
   const textBoxFocusReleased = new Signal<[element: HTMLElement | null]>();
+  let focusedTextBox = getFocusedTextBox();
 
   if (typeof globalThis.addEventListener === "function") {
-    globalThis.addEventListener("focusin", () => {
-      textBoxFocused.fire(getFocusedTextBox());
+    globalThis.addEventListener("focusin", (event) => {
+      const nextFocusedTextBox = getTextBoxFromEventTarget(event.target) ?? getFocusedTextBox();
+      if (nextFocusedTextBox === focusedTextBox) {
+        return;
+      }
+
+      focusedTextBox = nextFocusedTextBox;
+      textBoxFocused.fire(focusedTextBox);
     });
-    globalThis.addEventListener("focusout", () => {
-      textBoxFocusReleased.fire(getFocusedTextBox());
+    globalThis.addEventListener("focusout", (event) => {
+      const releasedTextBox = getTextBoxFromEventTarget(event.target);
+      if (releasedTextBox === null) {
+        focusedTextBox = getFocusedTextBox();
+        return;
+      }
+
+      focusedTextBox = null;
+      textBoxFocusReleased.fire(releasedTextBox);
     });
     globalThis.addEventListener("keydown", (event) => {
       inputBegan.fire(event);
@@ -431,16 +454,59 @@ function applyTweenGoal(target: unknown, goal: Record<string, unknown>) {
 
 function createTween(instance: unknown, tweenInfo: TweenInfo, goal: Record<string, unknown>): PreviewTween {
   const completed = new Signal<[playbackState: unknown]>();
+  let playbackState = previewEnum.PlaybackState.Begin;
+  let destroyed = false;
 
   return withRobloxFallback({
     Completed: completed,
     Instance: instance,
+    get PlaybackState() {
+      return playbackState;
+    },
     TweenInfo: tweenInfo,
-    Cancel() {},
-    Destroy() {},
-    Pause() {},
+    Cancel() {
+      if (
+        destroyed ||
+        playbackState === previewEnum.PlaybackState.Cancelled ||
+        playbackState === previewEnum.PlaybackState.Completed
+      ) {
+        return;
+      }
+
+      playbackState = previewEnum.PlaybackState.Cancelled;
+    },
+    Destroy() {
+      if (destroyed) {
+        return;
+      }
+
+      destroyed = true;
+      if (playbackState !== previewEnum.PlaybackState.Completed) {
+        playbackState = previewEnum.PlaybackState.Cancelled;
+      }
+    },
+    Pause() {
+      if (
+        destroyed ||
+        playbackState === previewEnum.PlaybackState.Cancelled ||
+        playbackState === previewEnum.PlaybackState.Completed
+      ) {
+        return;
+      }
+
+      playbackState = previewEnum.PlaybackState.Paused;
+    },
     Play() {
+      if (destroyed || playbackState === previewEnum.PlaybackState.Completed) {
+        return;
+      }
+
+      if (playbackState === previewEnum.PlaybackState.Cancelled) {
+        return;
+      }
+
       applyTweenGoal(instance, goal);
+      playbackState = previewEnum.PlaybackState.Completed;
       completed.fire(previewEnum.PlaybackState.Completed);
     },
   });

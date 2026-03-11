@@ -43,6 +43,10 @@ type LayoutDebugPayload = {
   };
 };
 type LayoutNode = {
+  hostMetadata?: {
+    degraded: boolean;
+    fullSizeDefault: boolean;
+  };
   id: string;
   intrinsicSize?: { height: number; width: number } | null;
   kind?: string;
@@ -372,7 +376,7 @@ describe("preview runtime host mapping", () => {
     expect(isPreviewElement(label, "LayerCollector")).toBe(false);
   });
 
-  it("registers frame-like placeholder hosts with full-size fallback layout", async () => {
+  it("registers frame-like placeholder hosts with metadata-driven full-size fallback layout", async () => {
     render(
       <LayoutProvider debounceMs={0} viewportHeight={480} viewportWidth={640}>
         <ScreenGui>
@@ -399,48 +403,38 @@ describe("preview runtime host mapping", () => {
     const [nodes] = lastCall;
 
     expect(findNode(nodes, "preview-canvasgroup")).toMatchObject({
-      layout: {
-        size: {
-          x: { offset: 0, scale: 1 },
-          y: { offset: 0, scale: 1 },
-        },
+      hostMetadata: {
+        degraded: false,
+        fullSizeDefault: true,
       },
       nodeType: "CanvasGroup",
       parentId: expect.any(String),
     });
     expect(findNode(nodes, "preview-viewportframe")).toMatchObject({
-      layout: {
-        size: {
-          x: { offset: 0, scale: 1 },
-          y: { offset: 0, scale: 1 },
-        },
+      hostMetadata: {
+        degraded: true,
+        fullSizeDefault: true,
       },
       nodeType: "ViewportFrame",
     });
     expect(findNode(nodes, "preview-videoframe")).toMatchObject({
-      layout: {
-        size: {
-          x: { offset: 0, scale: 1 },
-          y: { offset: 0, scale: 1 },
-        },
+      hostMetadata: {
+        degraded: true,
+        fullSizeDefault: true,
       },
       nodeType: "VideoFrame",
     });
     expect(findNode(nodes, "preview-surfacegui")).toMatchObject({
-      layout: {
-        size: {
-          x: { offset: 0, scale: 1 },
-          y: { offset: 0, scale: 1 },
-        },
+      hostMetadata: {
+        degraded: true,
+        fullSizeDefault: true,
       },
       nodeType: "SurfaceGui",
     });
     expect(findNode(nodes, "preview-billboardgui")).toMatchObject({
-      layout: {
-        size: {
-          x: { offset: 0, scale: 1 },
-          y: { offset: 0, scale: 1 },
-        },
+      hostMetadata: {
+        degraded: true,
+        fullSizeDefault: true,
       },
       nodeType: "BillboardGui",
     });
@@ -466,6 +460,12 @@ describe("preview runtime host mapping", () => {
           .sort(),
       ).toEqual(["BillboardGui", "SurfaceGui", "VideoFrame", "ViewportFrame"]);
     });
+
+    expect(
+      getPreviewRuntimeIssues()
+        .filter((issue) => issue.code === "DEGRADED_HOST_RENDER")
+        .every((issue) => issue.blocking === false && issue.severity === "warning"),
+    ).toBe(true);
 
     expect(
       [...document.querySelectorAll("[data-preview-degraded-label]")]
@@ -675,7 +675,29 @@ describe("preview runtime host mapping", () => {
       getBoundingClientRectSpy.mockRestore();
     }
   });
-  it("serializes frame defaults and textlabel layout props before calling Wasm", async () => {
+
+  it("uses metadata-driven full-size defaults for degraded hosts when Wasm is unavailable", async () => {
+    layoutEngineMocks.init.mockRejectedValueOnce(new Error("init failed"));
+
+    render(
+      <LayoutProvider viewportHeight={480} viewportWidth={640}>
+        <ScreenGui>
+          <ViewportFrame Id="fallback-viewportframe" />
+        </ScreenGui>
+      </LayoutProvider>,
+    );
+
+    const viewportFrame = document.querySelector('[data-preview-node-id="fallback-viewportframe"]') as HTMLElement;
+
+    await waitFor(() => {
+      expect(viewportFrame.style.left).toBe("0px");
+      expect(viewportFrame.style.top).toBe("0px");
+      expect(viewportFrame.style.width).toBe("640px");
+      expect(viewportFrame.style.height).toBe("480px");
+    });
+  });
+
+  it("serializes frame metadata defaults and textlabel layout props before calling Wasm", async () => {
     layoutEngineMocks.computeDirty.mockImplementation((nodes, viewportWidth, viewportHeight) => {
       expect(viewportWidth).toBe(800);
       expect(viewportHeight).toBe(600);
@@ -685,15 +707,15 @@ describe("preview runtime host mapping", () => {
         nodeType: "ScreenGui",
       });
       expect(findNode(nodes, "preview-node-frame")).toMatchObject({
+        hostMetadata: {
+          degraded: false,
+          fullSizeDefault: true,
+        },
         id: "preview-node-frame",
         layout: {
           position: {
             x: { offset: 0, scale: 0 },
             y: { offset: 0, scale: 0 },
-          },
-          size: {
-            x: { offset: 0, scale: 1 },
-            y: { offset: 0, scale: 1 },
           },
         },
         nodeType: "Frame",
@@ -714,6 +736,7 @@ describe("preview runtime host mapping", () => {
         },
         nodeType: "TextLabel",
       });
+      expect(findNode(nodes, "preview-node-frame")?.layout?.size).toBeUndefined();
 
       return createSessionResult(
         {
@@ -913,13 +936,19 @@ describe("preview runtime host mapping", () => {
     );
 
     expect(issue).toEqual({
+      blocking: true,
       code: "LAYOUT_VALIDATION_ERROR",
+      codeFrame: undefined,
+      details: undefined,
       entryId: "fixture:Broken.tsx",
       file: "/virtual/Broken.tsx",
+      importChain: undefined,
       kind: "LayoutValidationError",
       phase: "layout",
       relativeFile: "src/Broken.tsx",
+      severity: "error",
       summary: "Unexpected layout session result type: string",
+      symbol: undefined,
       target: "fixture",
     });
   });

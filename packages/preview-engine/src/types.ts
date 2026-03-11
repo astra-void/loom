@@ -61,10 +61,15 @@ export type PreviewEntryStatus =
   | "blocked_by_runtime"
   | "blocked_by_layout";
 
+export type PreviewReadyStatusDetails = {
+  degradedTargets?: string[];
+  fidelity?: "degraded" | "preserved";
+  kind: "ready";
+  warningCodes?: string[];
+};
+
 export type PreviewEntryStatusDetails =
-  | {
-      kind: "ready";
-    }
+  | PreviewReadyStatusDetails
   | {
       candidates?: string[];
       kind: "needs_harness";

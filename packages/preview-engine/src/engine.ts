@@ -16,6 +16,7 @@ import type {
   PreviewEntryStatus,
   PreviewEntryStatusDetails,
   PreviewExecutionMode,
+  PreviewReadyStatusDetails,
   PreviewSourceTarget,
   PreviewTransformDiagnostic,
   PreviewTransformOutcome,
@@ -202,7 +203,7 @@ function toTransformDiagnostic(
 
 function toRuntimeDiagnostic(issue: PreviewRuntimeIssue): PreviewDiagnostic {
   return {
-    blocking: true,
+    blocking: issue.blocking ?? issue.severity !== "warning",
     code: issue.code,
     ...(issue.codeFrame || issue.details
       ? {
@@ -214,10 +215,47 @@ function toRuntimeDiagnostic(issue: PreviewRuntimeIssue): PreviewDiagnostic {
     ...(issue.importChain ? { importChain: issue.importChain } : {}),
     phase: issue.phase,
     relativeFile: issue.relativeFile,
-    severity: "error",
+    severity: issue.severity ?? "error",
     summary: issue.summary,
     ...(issue.symbol ? { symbol: issue.symbol } : {}),
     target: issue.target,
+  };
+}
+
+function isBlockingDiagnostic(diagnostic: PreviewDiagnostic) {
+  return diagnostic.blocking ?? diagnostic.severity === "error";
+}
+
+function getWarningDiagnostics(diagnostics: PreviewDiagnostic[]) {
+  return diagnostics.filter((diagnostic) => !isBlockingDiagnostic(diagnostic));
+}
+
+function createReadyStatusDetails(
+  transform: PreviewTransformState,
+  transformDiagnostics: PreviewDiagnostic[],
+  runtimeDiagnostics: PreviewDiagnostic[],
+): PreviewReadyStatusDetails {
+  const warningDiagnostics = getWarningDiagnostics([...transformDiagnostics, ...runtimeDiagnostics]);
+  const warningCodes = [...new Set(warningDiagnostics.map((diagnostic) => diagnostic.code))].sort((left, right) =>
+    left.localeCompare(right),
+  );
+  const degradedTargets = [
+    ...new Set(
+      runtimeDiagnostics
+        .filter((diagnostic) => diagnostic.code === "DEGRADED_HOST_RENDER" && !isBlockingDiagnostic(diagnostic))
+        .map((diagnostic) => diagnostic.target),
+    ),
+  ].sort((left, right) => left.localeCompare(right));
+
+  return {
+    ...(degradedTargets.length > 0 ? { degradedTargets } : {}),
+    ...(
+      transform.outcome.fidelity === "degraded" || degradedTargets.length > 0
+        ? { fidelity: "degraded" as const }
+        : {}
+    ),
+    kind: "ready",
+    ...(warningCodes.length > 0 ? { warningCodes } : {}),
   };
 }
 
@@ -408,24 +446,28 @@ function resolvePayloadStatus(
     };
   }
 
-  const runtimeIssues = runtimeDiagnostics.filter((diagnostic) => diagnostic.phase === "runtime");
-  if (runtimeIssues.length > 0) {
+  const blockingRuntimeIssues = runtimeDiagnostics.filter(
+    (diagnostic) => diagnostic.phase === "runtime" && isBlockingDiagnostic(diagnostic),
+  );
+  if (blockingRuntimeIssues.length > 0) {
     return {
       status: "blocked_by_runtime",
       statusDetails: {
-        issueCodes: runtimeIssues.map((diagnostic) => diagnostic.code),
+        issueCodes: blockingRuntimeIssues.map((diagnostic) => diagnostic.code),
         kind: "blocked_by_runtime",
         reason: "runtime-issues",
       },
     };
   }
 
-  const layoutIssues = runtimeDiagnostics.filter((diagnostic) => diagnostic.phase === "layout");
-  if (layoutIssues.length > 0) {
+  const blockingLayoutIssues = runtimeDiagnostics.filter(
+    (diagnostic) => diagnostic.phase === "layout" && isBlockingDiagnostic(diagnostic),
+  );
+  if (blockingLayoutIssues.length > 0) {
     return {
       status: "blocked_by_layout",
       statusDetails: {
-        issueCodes: layoutIssues.map((diagnostic) => diagnostic.code),
+        issueCodes: blockingLayoutIssues.map((diagnostic) => diagnostic.code),
         kind: "blocked_by_layout",
         reason: "layout-issues",
       },
@@ -434,9 +476,7 @@ function resolvePayloadStatus(
 
   return {
     status: "ready",
-    statusDetails: {
-      kind: "ready",
-    },
+    statusDetails: createReadyStatusDetails(transform, transformDiagnostics, runtimeDiagnostics),
   };
 }
 

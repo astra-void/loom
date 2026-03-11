@@ -1,9 +1,12 @@
 import { transformPreviewSource } from "@loom-dev/compiler";
 import { previewRuntime } from "@loom-dev/preview-runtime";
 import { describe, expect, it } from "vitest";
+import entryPayloadSchema from "../../packages/preview-engine/schemas/entry-payload.schema.json";
+import workspaceIndexSchema from "../../packages/preview-engine/schemas/workspace-index.schema.json";
 import previewHostMetadata from "../../packages/preview-runtime/src/hosts/metadata.json";
 import { supportedIsaNames, supportedTypeRewriteNames } from "../../packages/preview-runtime/src/hosts/metadata";
 import { layoutHostNodeType } from "../../packages/preview-runtime/src/hosts/types";
+import { normalizePreviewLayoutResult } from "../../packages/preview-runtime/src/layout/model";
 
 const previewHostRecords = previewHostMetadata.hosts;
 
@@ -89,5 +92,69 @@ ${isaChecks}
       supportedTypeRewriteNames.length,
     );
     expect(countMatches(result.code ?? "", /isPreviewElement\(host, "/g)).toBe(supportedIsaNames.length);
+  });
+
+  it("accepts full-size-default layout debug payloads and ready warning schema fields", () => {
+    const normalized = normalizePreviewLayoutResult(
+      {
+        debug: {
+          dirtyNodeIds: ["viewport"],
+          roots: [
+            {
+              children: [],
+              id: "viewport",
+              intrinsicSize: null,
+              kind: "host",
+              layoutSource: "full-size-default",
+              nodeType: "ViewportFrame",
+              parentConstraints: null,
+              provenance: {
+                detail: "computed by preview-runtime fallback solver",
+                source: "fallback",
+              },
+              rect: {
+                height: 480,
+                width: 640,
+                x: 0,
+                y: 0,
+              },
+            },
+          ],
+          viewport: {
+            height: 480,
+            width: 640,
+          },
+        },
+        dirtyNodeIds: ["viewport"],
+        rects: {
+          viewport: {
+            height: 480,
+            width: 640,
+            x: 0,
+            y: 0,
+          },
+        },
+      },
+      { height: 480, width: 640 },
+    );
+
+    expect(normalized.debug.roots[0]?.layoutSource).toBe("full-size-default");
+    const readyEntryStatusDetails = (entryPayloadSchema as any).$defs.statusDetails.oneOf.find(
+      (variant: any) => variant.properties?.kind?.const === "ready",
+    );
+    const readyWorkspaceStatusDetails = (workspaceIndexSchema as any).$defs.statusDetails.oneOf.find(
+      (variant: any) => variant.properties?.kind?.const === "ready",
+    );
+
+    expect(readyEntryStatusDetails?.properties).toMatchObject({
+      degradedTargets: expect.any(Object),
+      fidelity: expect.any(Object),
+      warningCodes: expect.any(Object),
+    });
+    expect(readyWorkspaceStatusDetails?.properties).toMatchObject({
+      degradedTargets: expect.any(Object),
+      fidelity: expect.any(Object),
+      warningCodes: expect.any(Object),
+    });
   });
 });

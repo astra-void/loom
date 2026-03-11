@@ -120,7 +120,64 @@ declare module "@loom-dev/preview-runtime" {
     x: number;
     y: number;
   };
+  export type PreviewLayoutHostMetadata = {
+    degraded: boolean;
+    fullSizeDefault: boolean;
+  };
   export type PreviewLayoutNodeKind = "host" | "layout" | "root";
+  export type PreviewLayoutNode = {
+    debugLabel?: string;
+    hostMetadata?: PreviewLayoutHostMetadata;
+    id: string;
+    intrinsicSize?: {
+      height: number;
+      width: number;
+    } | null;
+    kind: PreviewLayoutNodeKind;
+    layout: {
+      anchorPoint: {
+        x: number;
+        y: number;
+      };
+      constraints?: {
+        height?: {
+          max?: number;
+          min?: number;
+        };
+        width?: {
+          max?: number;
+          min?: number;
+        };
+      };
+      position: {
+        x: {
+          offset: number;
+          scale: number;
+        };
+        y: {
+          offset: number;
+          scale: number;
+        };
+      };
+      positionMode: "absolute";
+      size?: {
+        x: {
+          offset: number;
+          scale: number;
+        };
+        y: {
+          offset: number;
+          scale: number;
+        };
+      };
+    };
+    nodeType: string;
+    parentId?: string;
+    styleHints?: {
+      height?: string;
+      width?: string;
+    };
+  };
   export type PreviewLayoutDebugNode = {
     children: PreviewLayoutDebugNode[];
     debugLabel?: string;
@@ -130,7 +187,7 @@ declare module "@loom-dev/preview-runtime" {
       width: number;
     } | null;
     kind: PreviewLayoutNodeKind;
-    layoutSource: "explicit-size" | "intrinsic-size" | "root-default";
+    layoutSource: "explicit-size" | "full-size-default" | "intrinsic-size" | "root-default";
     nodeType: string;
     parentConstraints: ComputedRect | null;
     parentId?: string;
@@ -161,13 +218,16 @@ declare module "@loom-dev/preview-runtime" {
     | "LayoutExecutionError"
     | "LayoutValidationError";
   export type PreviewRuntimeIssuePhase = "transform" | "runtime" | "layout";
+  export type PreviewRuntimeIssueSeverity = "error" | "info" | "warning";
   export type PreviewRuntimeIssue = {
+    blocking?: boolean;
     code: string;
     entryId: string;
     file: string;
     kind: PreviewRuntimeIssueKind;
     phase: PreviewRuntimeIssuePhase;
     relativeFile: string;
+    severity?: PreviewRuntimeIssueSeverity;
     summary: string;
     target: string;
     codeFrame?: string;
@@ -236,7 +296,10 @@ declare module "@loom-dev/preview-engine" {
     | "blocked_by_layout";
   export type PreviewEntryStatusDetails =
     | {
+        degradedTargets?: string[];
+        fidelity?: "degraded" | "preserved";
         kind: "ready";
+        warningCodes?: string[];
       }
     | {
         candidates?: string[];

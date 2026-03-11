@@ -2,6 +2,7 @@ const PREFIX = "@loom-dev/preview-runtime";
 const REPORTER_KEY = Symbol.for("loom-dev.preview-runtime.reporter");
 
 export type PreviewExecutionMode = "strict-fidelity" | "compatibility" | "mocked" | "design-time";
+export type PreviewRuntimeIssueSeverity = "error" | "info" | "warning";
 export type PreviewRuntimeIssueKind =
   | "ModuleLoadError"
   | "TransformExecutionError"
@@ -13,12 +14,14 @@ export type PreviewRuntimeIssueKind =
 export type PreviewRuntimeIssuePhase = "transform" | "runtime" | "layout";
 
 export type PreviewRuntimeIssue = {
+  blocking?: boolean;
   code: string;
   entryId: string;
   file: string;
   kind: PreviewRuntimeIssueKind;
   phase: PreviewRuntimeIssuePhase;
   relativeFile: string;
+  severity?: PreviewRuntimeIssueSeverity;
   summary: string;
   target: string;
   codeFrame?: string;
@@ -91,6 +94,14 @@ function defaultCodeForKind(kind: PreviewRuntimeIssueKind) {
   }
 }
 
+function defaultSeverityForKind(_kind: PreviewRuntimeIssueKind): PreviewRuntimeIssueSeverity {
+  return "error";
+}
+
+function defaultBlockingForSeverity(severity: PreviewRuntimeIssueSeverity) {
+  return severity === "error";
+}
+
 function normalizeContext(context?: PreviewRuntimeIssueContext | null) {
   return context ?? {};
 }
@@ -104,7 +115,9 @@ export class PreviewRuntimeError extends Error {
   public readonly kind: PreviewRuntimeIssueKind;
   public readonly phase: PreviewRuntimeIssuePhase;
   public readonly relativeFile?: string;
+  public readonly severity: PreviewRuntimeIssueSeverity;
   public readonly summary: string;
+  public readonly blocking: boolean;
   public readonly symbol?: string;
   public readonly target?: string;
   public readonly codeFrame?: string;
@@ -118,6 +131,8 @@ export class PreviewRuntimeError extends Error {
     this.kind = kind;
     this.phase = options.phase ?? defaultPhaseForKind(kind);
     this.code = options.code ?? defaultCodeForKind(kind);
+    this.severity = options.severity ?? defaultSeverityForKind(kind);
+    this.blocking = options.blocking ?? defaultBlockingForSeverity(this.severity);
     this.summary = options.summary;
     this.entryId = options.entryId;
     this.file = options.file;
@@ -133,6 +148,7 @@ export class PreviewRuntimeError extends Error {
     const normalized = normalizeContext(context);
 
     return {
+      blocking: normalized.blocking ?? this.blocking,
       code: normalized.code ?? this.code,
       codeFrame: normalized.codeFrame ?? this.codeFrame,
       details: normalized.details ?? this.details,
@@ -142,6 +158,7 @@ export class PreviewRuntimeError extends Error {
       kind: normalized.kind ?? this.kind,
       phase: normalized.phase ?? this.phase,
       relativeFile: normalized.relativeFile ?? this.relativeFile ?? "<runtime>",
+      severity: normalized.severity ?? this.severity,
       summary: normalized.summary ?? this.summary,
       symbol: normalized.symbol ?? this.symbol,
       target: normalized.target ?? this.target ?? "preview-runtime",
@@ -233,6 +250,17 @@ class PreviewRuntimeReporterStore implements PreviewRuntimeReporter {
   public publish(issue: PreviewRuntimeIssue) {
     this.issues = [...this.issues, issue];
     this.emit();
+    const blocking = issue.blocking ?? issue.severity !== "warning";
+    if (!blocking && issue.severity === "info") {
+      console.info(`${PREFIX}:${issue.kind}`, issue);
+      return;
+    }
+
+    if (!blocking) {
+      console.warn(`${PREFIX}:${issue.kind}`, issue);
+      return;
+    }
+
     console.error(`${PREFIX}:${issue.kind}`, issue);
   }
 

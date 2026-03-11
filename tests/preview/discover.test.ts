@@ -94,10 +94,10 @@ function writeInlinePreviewConfig(
 }
 
 describe("preview bootstrap config", () => {
-  it("prefers the nearest loom.preview.config.ts over zero-config package-root mode", async () => {
+  it("prefers the nearest loom.config.ts over zero-config package-root mode", async () => {
     const workspaceRoot = createTempRoot("loom-preview-config-");
     const target = createPackage(workspaceRoot, "packages/button", "@fixtures/button");
-    writeInlinePreviewConfig(path.join(workspaceRoot, "loom.preview.config.ts"), {
+    writeInlinePreviewConfig(path.join(workspaceRoot, "loom.config.ts"), {
       packageName: target.packageName,
       packageRoot: target.packageRoot,
       projectName: "Workspace Preview",
@@ -149,7 +149,7 @@ describe("preview bootstrap config", () => {
     const workspaceRoot = createTempRoot("loom-preview-explicit-config-");
     const primaryTarget = createPackage(workspaceRoot, "packages/primary", "@fixtures/primary");
     const secondaryTarget = createPackage(workspaceRoot, "packages/secondary", "@fixtures/secondary");
-    writeInlinePreviewConfig(path.join(workspaceRoot, "loom.preview.config.ts"), {
+    writeInlinePreviewConfig(path.join(workspaceRoot, "loom.config.ts"), {
       packageName: primaryTarget.packageName,
       packageRoot: primaryTarget.packageRoot,
       projectName: "Primary Preview",
@@ -159,7 +159,7 @@ describe("preview bootstrap config", () => {
 
     const alternateConfigDir = path.join(workspaceRoot, "configs");
     fs.mkdirSync(alternateConfigDir, { recursive: true });
-    const explicitConfigPath = path.join(alternateConfigDir, "explicit.preview.config.ts");
+    const explicitConfigPath = path.join(alternateConfigDir, "explicit.loom.config.ts");
     writeInlinePreviewConfig(explicitConfigPath, {
       packageName: secondaryTarget.packageName,
       packageRoot: secondaryTarget.packageRoot,

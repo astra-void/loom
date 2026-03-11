@@ -1,4 +1,6 @@
-﻿import { describe, expect, it } from "vitest";
+﻿import fs from "node:fs";
+import path from "node:path";
+import { describe, expect, it } from "vitest";
 import {
   createUnresolvedPackageMockResolvePlugin,
   createUnresolvedPackageMockTransformPlugin,
@@ -55,6 +57,26 @@ describe("unresolved package mock plugin", () => {
     expect(code).toContain("export const ReDependency = __loomUnresolvedEnvMock.Dependency;");
     expect(code).toContain("const required = __loomUnresolvedModuleMock;");
     expect(code).toContain("const lazy = Promise.resolve(__loomUnresolvedModuleMock);");
+  });
+
+  it("rewrites fixture-driven unresolved package trees to the shared mock module", async () => {
+    const plugin = createUnresolvedPackageMockTransformPlugin();
+    const source = fs.readFileSync(path.resolve(__dirname, "fixtures/mock-runtime-tree/src/index.tsx"), "utf8");
+    const transform = getHookHandler(plugin.transform);
+    const result = await transform?.call(
+      {
+        async resolve() {
+          return null;
+        },
+      } as never,
+      source,
+      "/virtual/mock-runtime-tree.tsx",
+    );
+    const code = typeof result === "string" ? result : (result?.code ?? "");
+
+    expect(code).toContain(`from "${UNRESOLVED_MOCK_MODULE_ID}"`);
+    expect(code).toContain("const MissingLabel = __loomUnresolvedEnvMock.MissingLabel;");
+    expect(code).toContain("export { MissingLabel };");
   });
 
   it("resolves bare packages with non-browser module entries to the virtual mock", async () => {

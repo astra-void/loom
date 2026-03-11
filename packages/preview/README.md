@@ -29,7 +29,7 @@ The local preview harness loads static targets from:
 
 ## Config File
 
-Add `loom.preview.config.ts` to a package or workspace root:
+Add `loom.config.ts` to a package or workspace root:
 
 ```ts
 import { createStaticTargetsDiscovery, definePreviewConfig } from "@loom-dev/preview";
@@ -59,4 +59,4 @@ The main exports are:
 - `createStaticTargetsDiscovery`
 - `createWorkspaceTargetsDiscovery`
 
-This repository does not include a CLI package. Consume the preview APIs directly or use `apps/preview-harness` for local development.
+For the packaged CLI, install `@loom-dev/cli` and use `loom preview`, `loom config`, or `loom snapshot`.

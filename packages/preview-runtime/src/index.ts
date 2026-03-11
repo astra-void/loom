@@ -165,6 +165,7 @@ export type {
   PreviewRuntimeIssueContext,
   PreviewRuntimeIssueKind,
   PreviewRuntimeIssuePhase,
+  PreviewRuntimeIssueSeverity,
   PreviewRuntimeReporter,
   PreviewTween,
   PreviewTweenService,
@@ -233,7 +234,12 @@ export {
 } from "./layout";
 export { DismissableLayer, FocusScope, Portal, PortalProvider, Presence, usePortalContext } from "./react";
 export { __previewGlobal, Color3, UDim, UDim2, Vector2, typeIs, pairs, error, game, isPreviewElement, TweenInfo, workspace };
-export type { PreviewLayoutDebugNode, PreviewLayoutDebugPayload } from "./layout";
+export type {
+  PreviewLayoutDebugNode,
+  PreviewLayoutDebugPayload,
+  PreviewLayoutHostMetadata,
+  PreviewLayoutNode,
+} from "./layout";
 export type { PreviewComponentPropsMetadata, PreviewPropMetadata } from "./preview";
 export type { LayerInteractEvent } from "./react";
 export {

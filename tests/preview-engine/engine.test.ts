@@ -508,14 +508,18 @@ describe("createPreviewEngine", () => {
       relativePath: "Broken.tsx",
       status: "ready",
       statusDetails: {
+        fidelity: "degraded",
         kind: "ready",
+        warningCodes: ["UNSUPPORTED_HOST_ELEMENT"],
       },
     });
     expect(engine.getEntryPayload("fixture:Broken.tsx")).toMatchObject({
       descriptor: {
         status: "ready",
         statusDetails: {
+          fidelity: "degraded",
           kind: "ready",
+          warningCodes: ["UNSUPPORTED_HOST_ELEMENT"],
         },
       },
       transform: {
@@ -524,6 +528,68 @@ describe("createPreviewEngine", () => {
           kind: "compatibility",
         },
       },
+    });
+  });
+
+  it("keeps degraded runtime warnings in ready status details", () => {
+    const { packageRoot, sourceRoot } = createTempPreviewPackage({
+      "src/Runtime.tsx": `
+        export function Runtime() {
+          return <viewportframe />;
+        }
+
+        export const preview = {
+          entry: Runtime,
+        };
+      `,
+    });
+
+    const engine = createEngineForPackage(packageRoot, sourceRoot, "compatibility");
+    const issues: PreviewRuntimeIssue[] = [
+      {
+        blocking: false,
+        code: "DEGRADED_HOST_RENDER",
+        entryId: "fixture:Runtime.tsx",
+        file: path.join(sourceRoot, "Runtime.tsx"),
+        kind: "RuntimeMockError",
+        phase: "runtime",
+        relativeFile: "src/Runtime.tsx",
+        severity: "warning",
+        summary: "ViewportFrame rendered with degraded preview behavior.",
+        target: "ViewportFrame",
+      },
+    ];
+
+    engine.replaceRuntimeIssues(issues);
+
+    expect(engine.getWorkspaceIndex().entries[0]).toMatchObject({
+      relativePath: "Runtime.tsx",
+      status: "ready",
+      statusDetails: {
+        degradedTargets: ["ViewportFrame"],
+        fidelity: "degraded",
+        kind: "ready",
+        warningCodes: ["DEGRADED_HOST_RENDER"],
+      },
+    });
+    expect(engine.getEntryPayload("fixture:Runtime.tsx")).toMatchObject({
+      descriptor: {
+        status: "ready",
+        statusDetails: {
+          degradedTargets: ["ViewportFrame"],
+          fidelity: "degraded",
+          kind: "ready",
+          warningCodes: ["DEGRADED_HOST_RENDER"],
+        },
+      },
+      diagnostics: [
+        expect.objectContaining({
+          blocking: false,
+          code: "DEGRADED_HOST_RENDER",
+          phase: "runtime",
+          severity: "warning",
+        }),
+      ],
     });
   });
 

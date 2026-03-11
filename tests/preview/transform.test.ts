@@ -165,6 +165,25 @@ describe("preview source transform", () => {
     expect(result.code).toContain('__previewGlobal("TweenInfo")');
   });
 
+  it("transforms fixture-driven runtime service trees without dropping preview globals", () => {
+    const source = fs.readFileSync(
+      path.resolve(__dirname, "fixtures/mock-runtime-tree/src/index.tsx"),
+      "utf8",
+    );
+
+    const result = transformPreviewSource(source, {
+      filePath: "/virtual/mock-runtime-tree.tsx",
+      mode: "compatibility",
+      runtimeModule: "@loom-dev/preview-runtime",
+      target: "mock-runtime-tree",
+    });
+
+    expect(result.diagnostics).toHaveLength(0);
+    expect(result.code).toContain('__previewGlobal("game").GetService("UserInputService")');
+    expect(result.code).toContain("<TextLabel");
+    expect(result.code).toContain("<Frame");
+  });
+
   it("parses decorated Flamework classes without failing preview discovery", () => {
     const source = `
       import { Controller } from "@flamework/core";

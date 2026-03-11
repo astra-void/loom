@@ -21,9 +21,18 @@ This repository is a `pnpm` monorepo for the Loom preview toolchain and local pr
 `pnpm build:native` builds the native artifacts used by `@loom-dev/layout-engine` and `@loom-dev/compiler`.
 `pnpm dev` starts `apps/preview-harness` after those native artifacts are ready.
 
+## CLI
+
+After building the workspace packages, the packaged CLI entrypoints are:
+
+- `pnpm --filter @loom-dev/cli exec loom preview --cwd apps/preview-harness`
+- `pnpm --filter @loom-dev/cli exec loom config --cwd packages/preview`
+- `pnpm --filter @loom-dev/cli exec loom snapshot --cwd packages/preview --output ./preview-snapshot.json`
+
 ## Workspace Packages
 
 - `@loom-dev/compiler`
+- `@loom-dev/cli`
 - `@loom-dev/layout-engine`
 - `@loom-dev/preview-runtime`
 - `@loom-dev/preview-engine`

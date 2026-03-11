@@ -1,0 +1,28 @@
+{
+  "name": "@loom-dev/cli",
+  "version": "0.1.0",
+  "private": false,
+  "description": "Preview-only CLI for Loom workspaces.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "bin": {
+    "loom": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "prebuild": "node ./scripts/clean-dist.mjs",
+    "prepack": "pnpm run build",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "watch": "tsc -p tsconfig.json -w"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@loom-dev/preview": "workspace:*"
+  }
+}

@@ -5,3 +5,9 @@ out
 .loom-preview-cache
 tests/preview/.generated-preview
 tests/preview/.generated-components-preview
+
+.DS_Store
+*.log
+*.tmp
+*.temp
+*.tsbuildinfo

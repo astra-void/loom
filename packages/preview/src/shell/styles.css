@@ -319,6 +319,11 @@ code {
   min-width: 0;
 }
 
+.sidebar-item-badges {
+  display: grid;
+  gap: 6px;
+}
+
 .sidebar-item-title {
   font-size: 0.95rem;
   font-weight: 600;
@@ -356,6 +361,11 @@ code {
 .status-needs-harness {
   background: var(--warning-background);
   color: var(--warning-ink);
+}
+
+.status-warning {
+  background: rgba(245, 158, 11, 0.18);
+  color: #92400e;
 }
 
 .status-error {
@@ -401,6 +411,12 @@ code {
 
 .header-meta {
   font-size: 0.82rem;
+}
+
+.header-warning-copy {
+  color: var(--warning-ink);
+  margin: 6px 0 0;
+  max-width: 38rem;
 }
 
 .theme-control {
@@ -497,6 +513,40 @@ code {
   min-height: 0;
 }
 
+.preview-warning {
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.24);
+  border-radius: 14px;
+  color: var(--ink);
+  margin-bottom: 12px;
+  padding: 12px 14px;
+}
+
+.preview-warning-eyebrow,
+.preview-warning-title,
+.preview-warning-body {
+  margin: 0;
+}
+
+.preview-warning-eyebrow {
+  color: var(--warning-ink);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.preview-warning-title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  margin-top: 4px;
+}
+
+.preview-warning-body {
+  color: var(--muted);
+  margin-top: 4px;
+}
+
 .preview-stage,
 .wasm-stage {
   background: var(--stage-background);
@@ -591,6 +641,11 @@ code {
 
 .diagnostic-item-runtime {
   border-color: var(--error-border);
+}
+
+.diagnostic-item-warning {
+  background: rgba(245, 158, 11, 0.08);
+  border-color: rgba(245, 158, 11, 0.24);
 }
 
 .diagnostic-item-discovery {

@@ -66,11 +66,22 @@ pub struct MeasuredNodeSize {
     pub width: f32,
 }
 
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PreviewHostMetadata {
+    #[serde(default)]
+    pub degraded: bool,
+    #[serde(default)]
+    pub full_size_default: bool,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct PreviewLayoutNode {
     #[serde(default)]
     pub debug_label: Option<String>,
+    #[serde(default)]
+    pub host_metadata: Option<PreviewHostMetadata>,
     pub id: String,
     #[serde(default)]
     pub intrinsic_size: Option<MeasuredNodeSize>,
@@ -257,6 +268,26 @@ fn normalize_root_node(node: &PreviewLayoutNode) -> PreviewLayoutNode {
     normalized
 }
 
+fn resolve_layout_source(node: &PreviewLayoutNode) -> &'static str {
+    if node.kind == "root" {
+        return "root-default";
+    }
+
+    if node.layout.size.is_some() {
+        return "explicit-size";
+    }
+
+    if node
+        .host_metadata
+        .as_ref()
+        .is_some_and(|metadata| metadata.full_size_default)
+    {
+        return "full-size-default";
+    }
+
+    "intrinsic-size"
+}
+
 fn compute_node_rect(node: &PreviewLayoutNode, parent_rect: &ComputedRect) -> (ComputedRect, &'static str) {
     if node.kind == "root" {
         return (
@@ -270,12 +301,19 @@ fn compute_node_rect(node: &PreviewLayoutNode, parent_rect: &ComputedRect) -> (C
         );
     }
 
-    let (resolved_size, layout_source) = if let Some(size) = node.layout.size {
-        (size, "explicit-size")
+    let layout_source = resolve_layout_source(node);
+    let resolved_size = if let Some(size) = node.layout.size {
+        size
+    } else if node
+        .host_metadata
+        .as_ref()
+        .is_some_and(|metadata| metadata.full_size_default)
+    {
+        full_size()
     } else if let Some(intrinsic_size) = node.intrinsic_size {
-        (create_measured_size_layout(intrinsic_size), "intrinsic-size")
+        create_measured_size_layout(intrinsic_size)
     } else {
-        (zero_size(), "intrinsic-size")
+        zero_size()
     };
 
     let width = clamp_axis(
@@ -309,6 +347,7 @@ fn legacy_to_preview_nodes(
 ) {
     let preview_node = normalize_root_node(&PreviewLayoutNode {
         debug_label: Some(node.node_type.clone()),
+        host_metadata: None,
         id: node.id.clone(),
         intrinsic_size: None,
         kind: if parent_id.is_none() && node.node_type == "ScreenGui" {
@@ -494,13 +533,7 @@ impl LayoutSession {
             id: node.id.clone(),
             intrinsic_size: node.intrinsic_size,
             kind: node.kind.clone(),
-            layout_source: if node.kind == "root" {
-                "root-default".to_owned()
-            } else if node.layout.size.is_some() {
-                "explicit-size".to_owned()
-            } else {
-                "intrinsic-size".to_owned()
-            },
+            layout_source: resolve_layout_source(node).to_owned(),
             node_type: node.node_type.clone(),
             parent_constraints,
             parent_id: node.parent_id.clone(),
@@ -741,6 +774,7 @@ mod tests {
     fn node(id: &str, parent_id: Option<&str>, kind: &str, node_type: &str) -> PreviewLayoutNode {
         PreviewLayoutNode {
             debug_label: Some(id.to_owned()),
+            host_metadata: None,
             id: id.to_owned(),
             intrinsic_size: None,
             kind: kind.to_owned(),
@@ -831,6 +865,47 @@ mod tests {
                 .and_then(|root| root.children.first())
                 .map(|node| node.layout_source.as_str()),
             Some("intrinsic-size")
+        );
+    }
+
+    #[test]
+    fn uses_full_size_default_when_explicit_size_is_missing() {
+        let mut session = LayoutSession::new();
+        session.apply_preview_nodes(vec![
+            node("screen", None, "root", "ScreenGui"),
+            PreviewLayoutNode {
+                host_metadata: Some(PreviewHostMetadata {
+                    degraded: true,
+                    full_size_default: true,
+                }),
+                layout: PreviewNodeLayout {
+                    anchor_point: zero_vector(),
+                    constraints: None,
+                    position: zero_size(),
+                    position_mode: default_position_mode(),
+                    size: None,
+                },
+                ..node("viewport", Some("screen"), "host", "ViewportFrame")
+            },
+        ]);
+        session.set_viewport_internal(Viewport {
+            height: 480.0,
+            width: 640.0,
+        });
+
+        let result = session.compute_dirty_internal().expect("layout should compute");
+
+        let viewport = result.rects.get("viewport").expect("viewport should exist");
+        assert_close(viewport.width, 640.0);
+        assert_close(viewport.height, 480.0);
+        assert_eq!(
+            result
+                .debug
+                .roots
+                .first()
+                .and_then(|root| root.children.first())
+                .map(|node| node.layout_source.as_str()),
+            Some("full-size-default")
         );
     }
 
