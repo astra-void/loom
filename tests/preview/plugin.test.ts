@@ -320,7 +320,7 @@ describe("createPreviewVitePlugin", () => {
       sourceFile,
       `
         export function Broken() {
-          return <viewportframe />;
+          return <part />;
         }
 
         export const preview = {

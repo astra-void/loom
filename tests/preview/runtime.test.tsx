@@ -1,10 +1,14 @@
 // @vitest-environment jsdom
 
 import {
+  BillboardGui,
+  CanvasGroup,
   Color3,
   clearPreviewRuntimeIssues,
   Frame,
   getPreviewRuntimeIssues,
+  ImageButton,
+  isPreviewElement,
   LayoutProvider,
   normalizePreviewRuntimeError,
   type PreviewRuntimeIssue,
@@ -12,6 +16,7 @@ import {
   ScreenGui,
   Slot,
   subscribePreviewRuntimeIssues,
+  SurfaceGui,
   TextLabel,
   UDim2,
   UICorner,
@@ -19,6 +24,8 @@ import {
   UIPadding,
   UIScale,
   UIStroke,
+  VideoFrame,
+  ViewportFrame,
 } from "@loom-dev/preview-runtime";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -317,6 +324,109 @@ describe("preview runtime host mapping", () => {
     expect(document.querySelector('[data-preview-host="uiscale"]')).toBeNull();
     expect(document.querySelector("[filldirection]")).toBeNull();
     expect(document.querySelector("[scale]")).toBeNull();
+  });
+
+  it("renders image buttons as clickable preview buttons with visible images", async () => {
+    const user = userEvent.setup();
+    const activated = vi.fn();
+
+    render(
+      <ImageButton
+        Event={{ Activated: () => activated() }}
+        Image="https://example.com/preview-button.png"
+        Size={UDim2.fromOffset(96, 48)}
+      />,
+    );
+
+    const button = document.querySelector('[data-preview-host="imagebutton"]') as HTMLButtonElement;
+    const image = button.querySelector("img") as HTMLImageElement;
+
+    expect(button.tagName).toBe("BUTTON");
+    expect(image.getAttribute("src")).toBe("https://example.com/preview-button.png");
+    expect(isPreviewElement(button, "ImageButton")).toBe(true);
+
+    await user.click(button);
+    expect(activated).toHaveBeenCalledTimes(1);
+  });
+
+  it("registers frame-like placeholder hosts with full-size fallback layout", async () => {
+    render(
+      <LayoutProvider debounceMs={0} viewportHeight={480} viewportWidth={640}>
+        <ScreenGui>
+          <CanvasGroup Id="preview-canvasgroup" />
+          <ViewportFrame Id="preview-viewportframe" />
+          <VideoFrame Id="preview-videoframe" />
+          <SurfaceGui Id="preview-surfacegui" />
+          <BillboardGui Id="preview-billboardgui" />
+        </ScreenGui>
+      </LayoutProvider>,
+    );
+
+    await waitFor(() => {
+      expect(layoutEngineMocks.computeDirty).toHaveBeenCalled();
+    });
+
+    const calls = layoutEngineMocks.computeDirty.mock.calls;
+    const lastCall = calls[calls.length - 1];
+    expect(lastCall).toBeDefined();
+    if (!lastCall) {
+      throw new Error("Expected computeDirty to have been called.");
+    }
+
+    const [nodes] = lastCall;
+
+    expect(findNode(nodes, "preview-canvasgroup")).toMatchObject({
+      layout: {
+        size: {
+          x: { offset: 0, scale: 1 },
+          y: { offset: 0, scale: 1 },
+        },
+      },
+      nodeType: "CanvasGroup",
+      parentId: expect.any(String),
+    });
+    expect(findNode(nodes, "preview-viewportframe")).toMatchObject({
+      layout: {
+        size: {
+          x: { offset: 0, scale: 1 },
+          y: { offset: 0, scale: 1 },
+        },
+      },
+      nodeType: "ViewportFrame",
+    });
+    expect(findNode(nodes, "preview-videoframe")).toMatchObject({
+      layout: {
+        size: {
+          x: { offset: 0, scale: 1 },
+          y: { offset: 0, scale: 1 },
+        },
+      },
+      nodeType: "VideoFrame",
+    });
+    expect(findNode(nodes, "preview-surfacegui")).toMatchObject({
+      layout: {
+        size: {
+          x: { offset: 0, scale: 1 },
+          y: { offset: 0, scale: 1 },
+        },
+      },
+      nodeType: "SurfaceGui",
+    });
+    expect(findNode(nodes, "preview-billboardgui")).toMatchObject({
+      layout: {
+        size: {
+          x: { offset: 0, scale: 1 },
+          y: { offset: 0, scale: 1 },
+        },
+      },
+      nodeType: "BillboardGui",
+    });
+
+    expect(document.querySelector('[data-preview-host="canvasgroup"]')).toBeTruthy();
+    expect(document.querySelector('[data-preview-host="viewportframe"]')).toBeTruthy();
+    expect(document.querySelector('[data-preview-host="videoframe"]')).toBeTruthy();
+    expect(document.querySelector('[data-preview-host="surfacegui"]')).toBeTruthy();
+    expect(document.querySelector('[data-preview-host="billboardgui"]')).toBeTruthy();
   });
 
   it("maps Roblox fonts and scales text into the host bounds", async () => {

@@ -493,7 +493,7 @@ describe("createPreviewEngine", () => {
     const { packageRoot, sourceRoot } = createTempPreviewPackage({
       "src/Broken.tsx": `
         export function Broken() {
-          return <viewportframe />;
+          return <part />;
         }
 
         export const preview = {
@@ -531,7 +531,7 @@ describe("createPreviewEngine", () => {
     const { packageRoot, sourceRoot } = createTempPreviewPackage({
       "src/Broken.tsx": `
         export function Broken() {
-          return <viewportframe />;
+          return <part />;
         }
 
         export const preview = {

@@ -83,7 +83,24 @@ export const TextButton = React.forwardRef<HTMLElement, PreviewDomProps>((props,
 });
 TextButton.displayName = "PreviewTextButton";
 
+export const ImageButton = React.forwardRef<HTMLElement, PreviewDomProps>((props, forwardedRef) => {
+  const { computed, elementRef, hostNode, nodeId } = useHostLayout("imagebutton", props);
+  const mergedRef = useMergedRefs(
+    forwardedRef as React.Ref<HTMLButtonElement>,
+    elementRef as React.Ref<HTMLButtonElement>,
+  );
+
+  return domPresentationAdapter.render(
+    hostNode,
+    renderChildren(nodeId, computed, props.children as React.ReactNode),
+    mergedRef,
+  );
+});
+ImageButton.displayName = "PreviewImageButton";
+
 export const ScreenGui = createSimpleHost("screengui", "PreviewScreenGui");
+export const SurfaceGui = createSimpleHost("surfacegui", "PreviewSurfaceGui");
+export const BillboardGui = createSimpleHost("billboardgui", "PreviewBillboardGui");
 
 export const TextLabel = React.forwardRef<HTMLElement, PreviewDomProps>((props, forwardedRef) => {
   const { computed, elementRef, hostNode, nodeId, patchDomProps } = useHostLayout("textlabel", props);
@@ -169,3 +186,6 @@ export const ImageLabel = React.forwardRef<HTMLElement, PreviewDomProps>((props,
 ImageLabel.displayName = "PreviewImageLabel";
 
 export const ScrollingFrame = createSimpleHost("scrollingframe", "PreviewScrollingFrame");
+export const CanvasGroup = createSimpleHost("canvasgroup", "PreviewCanvasGroup");
+export const ViewportFrame = createSimpleHost("viewportframe", "PreviewViewportFrame");
+export const VideoFrame = createSimpleHost("videoframe", "PreviewVideoFrame");

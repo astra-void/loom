@@ -279,7 +279,7 @@ describe("preview shell", () => {
           phase: "transform",
           relativeFile: "src/Blocked.tsx",
           severity: "error",
-          summary: "Host element viewportframe is not supported by preview generation.",
+          summary: "Host element part is not supported by preview generation.",
         }),
       ]),
     );

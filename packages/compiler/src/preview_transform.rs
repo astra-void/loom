@@ -40,27 +40,171 @@ const RUNTIME_HELPER_NAMES: [&str; 9] = [
     "error",
     "isPreviewElement",
 ];
-const RUNTIME_HOST_NAMES: [&str; 20] = [
-    "Frame",
-    "TextButton",
-    "ScreenGui",
-    "TextLabel",
-    "TextBox",
-    "ImageLabel",
-    "ScrollingFrame",
-    "UICorner",
-    "UIPadding",
-    "UIListLayout",
-    "UIGridLayout",
-    "UIStroke",
-    "UIScale",
-    "UIGradient",
-    "UIPageLayout",
-    "UITableLayout",
-    "UISizeConstraint",
-    "UITextSizeConstraint",
-    "UIAspectRatioConstraint",
-    "UIFlexItem",
+
+struct PreviewHostSpec {
+    jsx_name: &'static str,
+    runtime_name: &'static str,
+    supports_isa: bool,
+    supports_type_rewrite: bool,
+}
+
+const PREVIEW_HOST_SPECS: [PreviewHostSpec; 26] = [
+    PreviewHostSpec {
+        jsx_name: "frame",
+        runtime_name: "Frame",
+        supports_isa: true,
+        supports_type_rewrite: true,
+    },
+    PreviewHostSpec {
+        jsx_name: "textbutton",
+        runtime_name: "TextButton",
+        supports_isa: true,
+        supports_type_rewrite: true,
+    },
+    PreviewHostSpec {
+        jsx_name: "imagebutton",
+        runtime_name: "ImageButton",
+        supports_isa: true,
+        supports_type_rewrite: true,
+    },
+    PreviewHostSpec {
+        jsx_name: "screengui",
+        runtime_name: "ScreenGui",
+        supports_isa: true,
+        supports_type_rewrite: true,
+    },
+    PreviewHostSpec {
+        jsx_name: "surfacegui",
+        runtime_name: "SurfaceGui",
+        supports_isa: true,
+        supports_type_rewrite: true,
+    },
+    PreviewHostSpec {
+        jsx_name: "billboardgui",
+        runtime_name: "BillboardGui",
+        supports_isa: true,
+        supports_type_rewrite: true,
+    },
+    PreviewHostSpec {
+        jsx_name: "textlabel",
+        runtime_name: "TextLabel",
+        supports_isa: true,
+        supports_type_rewrite: true,
+    },
+    PreviewHostSpec {
+        jsx_name: "textbox",
+        runtime_name: "TextBox",
+        supports_isa: true,
+        supports_type_rewrite: true,
+    },
+    PreviewHostSpec {
+        jsx_name: "imagelabel",
+        runtime_name: "ImageLabel",
+        supports_isa: true,
+        supports_type_rewrite: true,
+    },
+    PreviewHostSpec {
+        jsx_name: "scrollingframe",
+        runtime_name: "ScrollingFrame",
+        supports_isa: true,
+        supports_type_rewrite: true,
+    },
+    PreviewHostSpec {
+        jsx_name: "canvasgroup",
+        runtime_name: "CanvasGroup",
+        supports_isa: true,
+        supports_type_rewrite: true,
+    },
+    PreviewHostSpec {
+        jsx_name: "viewportframe",
+        runtime_name: "ViewportFrame",
+        supports_isa: true,
+        supports_type_rewrite: true,
+    },
+    PreviewHostSpec {
+        jsx_name: "videoframe",
+        runtime_name: "VideoFrame",
+        supports_isa: true,
+        supports_type_rewrite: true,
+    },
+    PreviewHostSpec {
+        jsx_name: "uicorner",
+        runtime_name: "UICorner",
+        supports_isa: false,
+        supports_type_rewrite: false,
+    },
+    PreviewHostSpec {
+        jsx_name: "uipadding",
+        runtime_name: "UIPadding",
+        supports_isa: false,
+        supports_type_rewrite: false,
+    },
+    PreviewHostSpec {
+        jsx_name: "uilistlayout",
+        runtime_name: "UIListLayout",
+        supports_isa: false,
+        supports_type_rewrite: false,
+    },
+    PreviewHostSpec {
+        jsx_name: "uigridlayout",
+        runtime_name: "UIGridLayout",
+        supports_isa: false,
+        supports_type_rewrite: false,
+    },
+    PreviewHostSpec {
+        jsx_name: "uistroke",
+        runtime_name: "UIStroke",
+        supports_isa: false,
+        supports_type_rewrite: false,
+    },
+    PreviewHostSpec {
+        jsx_name: "uiscale",
+        runtime_name: "UIScale",
+        supports_isa: false,
+        supports_type_rewrite: false,
+    },
+    PreviewHostSpec {
+        jsx_name: "uigradient",
+        runtime_name: "UIGradient",
+        supports_isa: false,
+        supports_type_rewrite: false,
+    },
+    PreviewHostSpec {
+        jsx_name: "uipagelayout",
+        runtime_name: "UIPageLayout",
+        supports_isa: false,
+        supports_type_rewrite: false,
+    },
+    PreviewHostSpec {
+        jsx_name: "uitablelayout",
+        runtime_name: "UITableLayout",
+        supports_isa: false,
+        supports_type_rewrite: false,
+    },
+    PreviewHostSpec {
+        jsx_name: "uisizeconstraint",
+        runtime_name: "UISizeConstraint",
+        supports_isa: false,
+        supports_type_rewrite: false,
+    },
+    PreviewHostSpec {
+        jsx_name: "uitextsizeconstraint",
+        runtime_name: "UITextSizeConstraint",
+        supports_isa: false,
+        supports_type_rewrite: false,
+    },
+    PreviewHostSpec {
+        jsx_name: "uiaspectratioconstraint",
+        runtime_name: "UIAspectRatioConstraint",
+        supports_isa: false,
+        supports_type_rewrite: false,
+    },
+    PreviewHostSpec {
+        jsx_name: "uiflexitem",
+        runtime_name: "UIFlexItem",
+        supports_isa: false,
+        supports_type_rewrite: false,
+    },
 ];
 
 #[allow(non_snake_case)]
@@ -530,8 +674,9 @@ pub fn transform_preview_source(
 fn runtime_binding_names() -> HashSet<String> {
     RUNTIME_HELPER_NAMES
         .iter()
-        .chain(RUNTIME_HOST_NAMES.iter())
-        .map(|value| (*value).to_owned())
+        .copied()
+        .chain(PREVIEW_HOST_SPECS.iter().map(|spec| spec.runtime_name))
+        .map(ToOwned::to_owned)
         .collect()
 }
 
@@ -542,60 +687,30 @@ fn is_preview_runtime_alias_source(module_name: &str) -> bool {
     )
 }
 
+fn preview_host_spec_for_jsx_name(host_name: &str) -> Option<&'static PreviewHostSpec> {
+    PREVIEW_HOST_SPECS
+        .iter()
+        .find(|spec| spec.jsx_name == host_name)
+}
+
+fn preview_host_spec_for_runtime_name(runtime_name: &str) -> Option<&'static PreviewHostSpec> {
+    PREVIEW_HOST_SPECS
+        .iter()
+        .find(|spec| spec.runtime_name == runtime_name)
+}
+
 fn supported_host_mapping(host_name: &str) -> Option<&'static str> {
-    match host_name {
-        "frame" => Some("Frame"),
-        "textbutton" => Some("TextButton"),
-        "screengui" => Some("ScreenGui"),
-        "textlabel" => Some("TextLabel"),
-        "textbox" => Some("TextBox"),
-        "imagelabel" => Some("ImageLabel"),
-        "scrollingframe" => Some("ScrollingFrame"),
-        "uicorner" => Some("UICorner"),
-        "uipadding" => Some("UIPadding"),
-        "uilistlayout" => Some("UIListLayout"),
-        "uigridlayout" => Some("UIGridLayout"),
-        "uistroke" => Some("UIStroke"),
-        "uiscale" => Some("UIScale"),
-        "uigradient" => Some("UIGradient"),
-        "uipagelayout" => Some("UIPageLayout"),
-        "uitablelayout" => Some("UITableLayout"),
-        "uisizeconstraint" => Some("UISizeConstraint"),
-        "uitextsizeconstraint" => Some("UITextSizeConstraint"),
-        "uiaspectratioconstraint" => Some("UIAspectRatioConstraint"),
-        "uiflexitem" => Some("UIFlexItem"),
-        _ => None,
-    }
+    preview_host_spec_for_jsx_name(host_name).map(|spec| spec.runtime_name)
 }
 
 fn is_supported_type_name(type_name: &str) -> bool {
-    matches!(
-        type_name,
-        "GuiObject"
-            | "BasePlayerGui"
-            | "Instance"
-            | "Frame"
-            | "ScreenGui"
-            | "TextButton"
-            | "TextLabel"
-            | "TextBox"
-            | "ImageLabel"
-            | "ScrollingFrame"
-    )
+    matches!(type_name, "GuiObject" | "BasePlayerGui" | "Instance")
+        || preview_host_spec_for_runtime_name(type_name).is_some_and(|spec| spec.supports_type_rewrite)
 }
 
 fn is_supported_isa_type(type_name: &str) -> bool {
-    matches!(
-        type_name,
-        "GuiObject"
-            | "Frame"
-            | "ScreenGui"
-            | "TextButton"
-            | "TextLabel"
-            | "TextBox"
-            | "ImageLabel"
-            | "ScrollingFrame"
-    )
+    type_name == "GuiObject"
+        || preview_host_spec_for_runtime_name(type_name).is_some_and(|spec| spec.supports_isa)
 }
 fn resolve_supported_enum_value(value: &str) -> Option<&'static str> {
     match value {
@@ -713,9 +828,9 @@ fn merge_runtime_imports(body: Vec<ModuleItem>, runtime_module: &str) -> Vec<Mod
         specifiers.push(create_runtime_named_import_specifier(helper_name));
     }
 
-    for host_name in RUNTIME_HOST_NAMES {
-        specifier_indices.insert(host_name.to_owned(), specifiers.len());
-        specifiers.push(create_runtime_named_import_specifier(host_name));
+    for host_spec in PREVIEW_HOST_SPECS {
+        specifier_indices.insert(host_spec.runtime_name.to_owned(), specifiers.len());
+        specifiers.push(create_runtime_named_import_specifier(host_spec.runtime_name));
     }
 
     let mut remaining_items = Vec::with_capacity(body.len() + 1);

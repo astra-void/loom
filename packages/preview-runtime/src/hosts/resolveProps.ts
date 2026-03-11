@@ -252,7 +252,12 @@ export function resolvePreviewDomProps(props: PreviewDomProps, options: ResolveO
   if (TextWrapped) {
     computedStyle.whiteSpace = "pre-wrap";
     computedStyle.overflowWrap = "break-word";
-  } else if (options.host === "textbutton" || options.host === "textlabel" || options.host === "textbox") {
+  } else if (
+    options.host === "textbutton" ||
+    options.host === "textlabel" ||
+    options.host === "textbox" ||
+    options.host === "imagebutton"
+  ) {
     computedStyle.whiteSpace = "pre";
   }
 
@@ -267,13 +272,17 @@ export function resolvePreviewDomProps(props: PreviewDomProps, options: ResolveO
     computedStyle.textAlign = toTextAlign(TextXAlignment);
   }
 
-  if (options.host === "textbutton" || options.host === "textbox") {
+  if (options.host === "textbutton" || options.host === "textbox" || options.host === "imagebutton") {
     computedStyle.appearance = computedStyle.appearance ?? "none";
     computedStyle.backgroundClip = computedStyle.backgroundClip ?? "padding-box";
   }
 
   if (options.host === "imagelabel") {
     computedStyle.objectFit = "cover";
+  }
+
+  if (options.host === "imagebutton") {
+    computedStyle.overflow = computedStyle.overflow ?? "hidden";
   }
 
   if (options.host === "scrollingframe") {
@@ -309,7 +318,10 @@ export function resolvePreviewDomProps(props: PreviewDomProps, options: ResolveO
 
   return {
     children,
-    disabled: options.host === "textbutton" ? props.Active === false : TextEditable === false,
+    disabled:
+      options.host === "textbutton" || options.host === "imagebutton"
+        ? props.Active === false
+        : TextEditable === false,
     domProps: {
       ...forwarded,
       "data-preview-host": options.host,

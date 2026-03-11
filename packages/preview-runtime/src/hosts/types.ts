@@ -11,38 +11,55 @@ export type ForwardedDomProps = React.HTMLAttributes<HTMLElement> &
   React.InputHTMLAttributes<HTMLInputElement> &
   React.ImgHTMLAttributes<HTMLImageElement>;
 
-export type HostModifierName = "uicorner" | "uiscale" | "uistroke";
+export const hostModifierNames = ["uicorner", "uiscale", "uistroke"] as const;
+export type HostModifierName = (typeof hostModifierNames)[number];
 
-export type HostName =
-  | "frame"
-  | "textbutton"
-  | "screengui"
-  | "textlabel"
-  | "textbox"
-  | "imagelabel"
-  | "scrollingframe"
-  | "uicorner"
-  | "uipadding"
-  | "uilistlayout"
-  | "uigridlayout"
-  | "uistroke"
-  | "uiscale"
-  | "uigradient"
-  | "uipagelayout"
-  | "uitablelayout"
-  | "uisizeconstraint"
-  | "uitextsizeconstraint"
-  | "uiaspectratioconstraint"
-  | "uiflexitem";
+export const decoratorHostNames = [
+  "uicorner",
+  "uipadding",
+  "uilistlayout",
+  "uigridlayout",
+  "uistroke",
+  "uiscale",
+  "uigradient",
+  "uipagelayout",
+  "uitablelayout",
+  "uisizeconstraint",
+  "uitextsizeconstraint",
+  "uiaspectratioconstraint",
+  "uiflexitem",
+] as const;
+export type DecoratorHostName = (typeof decoratorHostNames)[number];
 
-export type LayoutHostName =
-  | "frame"
-  | "textbutton"
-  | "screengui"
-  | "textlabel"
-  | "textbox"
-  | "imagelabel"
-  | "scrollingframe";
+export const layoutHostNodeType = {
+  frame: "Frame",
+  textbutton: "TextButton",
+  imagebutton: "ImageButton",
+  screengui: "ScreenGui",
+  surfacegui: "SurfaceGui",
+  billboardgui: "BillboardGui",
+  textlabel: "TextLabel",
+  textbox: "TextBox",
+  imagelabel: "ImageLabel",
+  scrollingframe: "ScrollingFrame",
+  canvasgroup: "CanvasGroup",
+  viewportframe: "ViewportFrame",
+  videoframe: "VideoFrame",
+} as const;
+
+export type LayoutHostName = keyof typeof layoutHostNodeType;
+export type HostName = LayoutHostName | DecoratorHostName;
+
+export const buttonLikeHostNames = ["textbutton", "imagebutton"] as const;
+export const frameLikeHostNames = [
+  "frame",
+  "canvasgroup",
+  "viewportframe",
+  "videoframe",
+  "surfacegui",
+  "billboardgui",
+] as const;
+export const fullSizeLayoutHostNames = [...frameLikeHostNames, "screengui"] as const;
 
 export type PreviewDomProps = {
   Active?: boolean;
@@ -101,13 +118,3 @@ export type PreviewDomProps = {
   style?: React.CSSProperties;
   [key: string]: unknown;
 } & ForwardedDomProps;
-
-export const layoutHostNodeType: Record<LayoutHostName, string> = {
-  frame: "Frame",
-  textbutton: "TextButton",
-  screengui: "ScreenGui",
-  textlabel: "TextLabel",
-  textbox: "TextBox",
-  imagelabel: "ImageLabel",
-  scrollingframe: "ScrollingFrame",
-};

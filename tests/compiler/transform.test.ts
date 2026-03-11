@@ -35,8 +35,60 @@ describe("@loom-dev/compiler preview transform", () => {
     expect(result.code).toContain("<TextLabel");
   });
 
+  it("accepts the new preview-safe host batch across JSX, type, and IsA rewrites", () => {
+    const source = `
+      import { React } from "@loom-dev/core";
+      import type ReactTypes from "@rbxts/react";
+
+      type Props = {
+        imageRef: ReactTypes.MutableRefObject<ImageButton | undefined>;
+        surface?: SurfaceGui;
+        video?: VideoFrame;
+      };
+
+      export function Example(props: Props) {
+        const ref = React.useRef<ViewportFrame>();
+        const host = ref.current;
+
+        return (
+          <surfacegui>
+            <imagebutton Image="preview://button" ref={props.imageRef} />
+            <canvasgroup />
+            <viewportframe ref={ref} />
+            <videoframe />
+            <billboardgui />
+            {host && host.IsA("ViewportFrame") ? <frame /> : null}
+          </surfacegui>
+        );
+      }
+    `;
+
+    const result = transformPreviewSource(source, {
+      filePath: "/virtual/new-host-batch.tsx",
+      mode: "compatibility",
+      runtimeModule: "@loom-dev/preview-runtime",
+      target: "new-host-batch",
+    });
+
+    expect(result.diagnostics).toHaveLength(0);
+    expect(result.outcome).toEqual({
+      fidelity: "preserved",
+      kind: "ready",
+    });
+    expect(result.code).toContain("MutableRefObject<HTMLElement | null | undefined>");
+    expect(result.code).toContain("surface?: HTMLElement | null");
+    expect(result.code).toContain("video?: HTMLElement | null");
+    expect(result.code).toContain("<ImageButton");
+    expect(result.code).toContain("<CanvasGroup");
+    expect(result.code).toContain("<ViewportFrame");
+    expect(result.code).toContain("<VideoFrame");
+    expect(result.code).toContain("<SurfaceGui");
+    expect(result.code).toContain("<BillboardGui");
+    expect(result.code).toContain('isPreviewElement(host, "ViewportFrame")');
+  });
+
   it("keeps unsupported-host diagnostics as non-blocking warnings in compatibility mode", () => {
-    const transformed = transformPreviewSource(`export const host = <viewportframe BackgroundTransparency={1} />;`, {
+    const transformed = transformPreviewSource(`export const host = <part BackgroundTransparency={1} />;`, {
       filePath: "/virtual/fallback.tsx",
       mode: "compatibility",
       runtimeModule: "@loom-dev/preview-runtime",
@@ -54,15 +106,11 @@ describe("@loom-dev/compiler preview transform", () => {
       fidelity: "degraded",
       kind: "compatibility",
     });
-
-    const compiled = compile_tsx(transformed.code ?? "");
-    expect(compiled).toContain('data-rbx="viewportframe"');
-    expect(compiled).toContain("__rbxStyle");
-    expect(compiled).toContain("BackgroundTransparency: 1");
+    expect(transformed.code).toContain("<part");
   });
 
   it("blocks unsupported-host fallback in strict-fidelity mode", () => {
-    const transformed = transformPreviewSource(`export const host = <viewportframe BackgroundTransparency={1} />;`, {
+    const transformed = transformPreviewSource(`export const host = <part BackgroundTransparency={1} />;`, {
       filePath: "/virtual/strict-fallback.tsx",
       mode: "strict-fidelity",
       runtimeModule: "@loom-dev/preview-runtime",

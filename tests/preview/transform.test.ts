@@ -15,20 +15,31 @@ describe("preview source transform", () => {
       type Props = {
         triggerRef: ReactTypes.MutableRefObject<GuiObject | undefined>;
         container?: BasePlayerGui;
+        surface?: SurfaceGui;
+        viewportRef: ReactTypes.MutableRefObject<ViewportFrame | undefined>;
         event?: LayerInteractEvent;
       };
 
       export function Example(props: Props) {
         const ref = React.useRef<TextLabel>();
+        const host = props.viewportRef.current;
         return (
-          <textlabel
-            Text="Preview"
-            TextXAlignment={Enum.TextXAlignment.Left}
-            ref={ref}
-          >
-            <uipadding PaddingLeft={new UDim(0, 10)} />
-            <uiscale Scale={1.25} />
-          </textlabel>
+          <surfacegui>
+            <imagebutton Image="preview://button" />
+            <canvasgroup />
+            <viewportframe />
+            <videoframe />
+            <billboardgui />
+            <textlabel
+              Text="Preview"
+              TextXAlignment={Enum.TextXAlignment.Left}
+              ref={ref}
+            >
+              <uipadding PaddingLeft={new UDim(0, 10)} />
+              <uiscale Scale={1.25} />
+            </textlabel>
+            {host && host.IsA("ViewportFrame") ? <frame /> : null}
+          </surfacegui>
         );
       }
     `;
@@ -45,9 +56,17 @@ describe("preview source transform", () => {
     expect(result.code).toContain('from "react"');
     expect(result.code).toContain("MutableRefObject<HTMLElement | null | undefined>");
     expect(result.code).toContain("container?: HTMLElement | null");
+    expect(result.code).toContain("surface?: HTMLElement | null");
     expect(result.code).toContain("<TextLabel");
+    expect(result.code).toContain("<ImageButton");
+    expect(result.code).toContain("<CanvasGroup");
+    expect(result.code).toContain("<ViewportFrame");
+    expect(result.code).toContain("<VideoFrame");
+    expect(result.code).toContain("<SurfaceGui");
+    expect(result.code).toContain("<BillboardGui");
     expect(result.code).toContain("<UIPadding");
     expect(result.code).toContain("<UIScale");
+    expect(result.code).toContain('isPreviewElement(host, "ViewportFrame")');
     expect(result.code).toContain('"left"');
   });
 
@@ -104,7 +123,7 @@ describe("preview source transform", () => {
     const source = `
       export const value = game.GetService("Players");
       export const tween = new TweenInfo(0.1);
-      export const host = <viewportframe />;
+      export const host = <part />;
     `;
 
     const result = transformPreviewSource(source, {
@@ -172,7 +191,7 @@ describe("buildPreviewModules", () => {
     fs.mkdirSync(sourceRoot, { recursive: true });
     fs.writeFileSync(
       path.join(sourceRoot, "index.tsx"),
-      "export function Broken() { return <viewportframe />; }\n",
+      "export function Broken() { return <part />; }\n",
       "utf8",
     );
 
@@ -199,7 +218,7 @@ describe("buildPreviewModules", () => {
     fs.mkdirSync(sourceRoot, { recursive: true });
     fs.writeFileSync(
       path.join(sourceRoot, "index.tsx"),
-      "export function Broken() { return <viewportframe />; }\n",
+      "export function Broken() { return <part />; }\n",
       "utf8",
     );
 

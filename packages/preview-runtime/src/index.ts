@@ -1,9 +1,13 @@
 import * as React from "react";
 import {
+  BillboardGui,
+  CanvasGroup,
   Frame,
   ImageLabel,
+  ImageButton,
   ScreenGui,
   ScrollingFrame,
+  SurfaceGui,
   TextBox,
   TextButton,
   TextLabel,
@@ -20,6 +24,8 @@ import {
   UIStroke,
   UITableLayout,
   UITextSizeConstraint,
+  VideoFrame,
+  ViewportFrame,
 } from "./hosts";
 import { LayoutProvider, useLayoutEngineStatus, useRobloxLayout } from "./layout";
 import {
@@ -75,10 +81,14 @@ export function setupRobloxEnvironment(
 }
 
 const previewRuntimeHosts = {
+  BillboardGui,
+  CanvasGroup,
   Frame,
   ImageLabel,
+  ImageButton,
   ScreenGui,
   ScrollingFrame,
+  SurfaceGui,
   TextBox,
   TextButton,
   TextLabel,
@@ -95,6 +105,8 @@ const previewRuntimeHosts = {
   UIStroke,
   UITableLayout,
   UITextSizeConstraint,
+  VideoFrame,
+  ViewportFrame,
 };
 
 const previewRuntimeHelpers = {
@@ -164,10 +176,14 @@ export {
 export { React };
 export { createStrictContext, useControllableState, Slot };
 export {
+  BillboardGui,
+  CanvasGroup,
   Frame,
   ImageLabel,
+  ImageButton,
   ScreenGui,
   ScrollingFrame,
+  SurfaceGui,
   TextBox,
   TextButton,
   TextLabel,
@@ -184,6 +200,8 @@ export {
   UIStroke,
   UITableLayout,
   UITextSizeConstraint,
+  VideoFrame,
+  ViewportFrame,
 } from "./hosts";
 export {
   areViewportsEqual,

@@ -1,1 +1,1 @@
-export const nestedLabel = game.IsA("ViewportFrame") ? "Players" : "Unknown";
+export const nestedLabel = game.IsA("Part") ? "Players" : "Unknown";

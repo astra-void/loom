@@ -3,7 +3,7 @@ import { FULL_SIZE_UDIM2, normalizePreviewNodeId, serializeUDim2 } from "../inte
 import { adaptRobloxNodeInput, type ComputedRect, type PreviewLayoutNode } from "../layout/model";
 import { applyHoistedModifierStyles, extractHoistedChildren } from "./modifiers";
 import { applyComputedLayoutStyle, type ResolvedPreviewDomProps, resolvePreviewDomProps } from "./resolveProps";
-import { type LayoutHostName, layoutHostNodeType, type PreviewDomProps } from "./types";
+import { fullSizeLayoutHostNames, type LayoutHostName, layoutHostNodeType, type PreviewDomProps } from "./types";
 
 export type LayoutDebugState = {
   debugNode: {
@@ -51,7 +51,7 @@ export interface PresentationAdapter {
 }
 
 function getDefaultSize(host: LayoutHostName) {
-  if (host === "frame" || host === "screengui") {
+  if ((fullSizeLayoutHostNames as readonly string[]).includes(host)) {
     return FULL_SIZE_UDIM2;
   }
 
@@ -76,12 +76,40 @@ function renderHostText(text: string | undefined) {
   );
 }
 
+function renderHostImage(image: unknown) {
+  if (typeof image !== "string" || image.length === 0) {
+    return undefined;
+  }
+
+  return (
+    <img
+      alt=""
+      aria-hidden="true"
+      className="preview-host-image"
+      src={image}
+      style={{
+        display: "block",
+        height: "100%",
+        objectFit: "cover",
+        pointerEvents: "none",
+        width: "100%",
+      }}
+    />
+  );
+}
+
 function shouldMeasureHost(host: LayoutHostName, props: PreviewDomProps) {
   if (props.Size !== undefined || props.size !== undefined) {
     return false;
   }
 
-  return host === "imagelabel" || host === "textbutton" || host === "textlabel" || host === "textbox";
+  return (
+    host === "imagelabel" ||
+    host === "imagebutton" ||
+    host === "textbutton" ||
+    host === "textlabel" ||
+    host === "textbox"
+  );
 }
 
 function readMeasuredSize(element: HTMLElement | null) {
@@ -233,6 +261,18 @@ export const domPresentationAdapter: PresentationAdapter = {
             {children}
           </button>
         );
+      case "imagebutton":
+        return (
+          <button
+            {...rendered.domProps}
+            disabled={node.presentationHints.disabled}
+            ref={ref as React.Ref<HTMLButtonElement>}
+            type="button"
+          >
+            {renderHostImage(node.presentationHints.image)}
+            {children}
+          </button>
+        );
       case "textbox":
         return (
           <input
@@ -253,19 +293,11 @@ export const domPresentationAdapter: PresentationAdapter = {
           />
         );
       default: {
-        const Tag =
-          node.host === "textlabel" ||
-          node.host === "frame" ||
-          node.host === "screengui" ||
-          node.host === "scrollingframe"
-            ? "div"
-            : "div";
-
         return (
-          <Tag {...rendered.domProps} ref={ref as React.Ref<HTMLDivElement>}>
+          <div {...rendered.domProps} ref={ref as React.Ref<HTMLDivElement>}>
             {(node.host === "textlabel" || node.host === "frame") && renderHostText(node.presentationHints.text)}
             {children}
-          </Tag>
+          </div>
         );
       }
     }

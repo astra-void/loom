@@ -17,47 +17,44 @@ use swc_core::{
 };
 
 #[derive(Default)]
-struct LoomPreviewTransformer;        
+struct LoomPreviewTransformer;
 
 const RBX_STYLE_HELPER_NAME: &str = "__rbxStyle";
 
+const RBX_HOST_TAG_MAPPINGS: [(&str, &str); 26] = [
+    ("textbutton", "button"),
+    ("imagebutton", "button"),
+    ("textbox", "input"),
+    ("textlabel", "span"),
+    ("frame", "div"),
+    ("scrollingframe", "div"),
+    ("canvasgroup", "div"),
+    ("imagelabel", "div"),
+    ("viewportframe", "div"),
+    ("videoframe", "div"),
+    ("screengui", "div"),
+    ("surfacegui", "div"),
+    ("billboardgui", "div"),
+    ("uicorner", "div"),
+    ("uipadding", "div"),
+    ("uilistlayout", "div"),
+    ("uigridlayout", "div"),
+    ("uistroke", "div"),
+    ("uigradient", "div"),
+    ("uipagelayout", "div"),
+    ("uitablelayout", "div"),
+    ("uiscale", "div"),
+    ("uisizeconstraint", "div"),
+    ("uitextsizeconstraint", "div"),
+    ("uiaspectratioconstraint", "div"),
+    ("uiflexitem", "div"),
+];
+
 fn map_roblox_host_tag(tag: &str) -> Option<&'static str> {
-    match tag {
-        // Buttons
-        "textbutton" | "imagebutton" => Some("button"),
-
-        // Text input
-        "textbox" => Some("input"),
-
-        // Text display
-        "textlabel" => Some("span"),
-
-        // Container/decorator/layout/gui hosts
-        "frame"
-        | "scrollingframe"
-        | "canvasgroup"
-        | "imagelabel"
-        | "viewportframe"
-        | "videoframe"
-        | "screengui"
-        | "surfacegui"
-        | "billboardgui"
-        | "uicorner"
-        | "uipadding"
-        | "uilistlayout"
-        | "uigridlayout"
-        | "uistroke"
-        | "uigradient"
-        | "uipagelayout"
-        | "uitablelayout"
-        | "uiscale"
-        | "uisizeconstraint"
-        | "uitextsizeconstraint"
-        | "uiaspectratioconstraint"
-        | "uiflexitem" => Some("div"),
-
-        _ => None,
-    }
+    RBX_HOST_TAG_MAPPINGS
+        .iter()
+        .find(|(host_tag, _)| *host_tag == tag)
+        .map(|(_, mapped_tag)| *mapped_tag)
 }
 
 fn is_roblox_style_prop(name: &str) -> bool {

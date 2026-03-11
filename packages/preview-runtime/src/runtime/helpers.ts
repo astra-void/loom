@@ -124,6 +124,8 @@ export function isPreviewElement(value: unknown, typeName: string): value is HTM
       return previewHost === "screengui";
     case "TextButton":
       return previewHost === "textbutton";
+    case "ImageButton":
+      return previewHost === "imagebutton";
     case "TextLabel":
       return previewHost === "textlabel";
     case "TextBox":
@@ -132,6 +134,16 @@ export function isPreviewElement(value: unknown, typeName: string): value is HTM
       return previewHost === "imagelabel";
     case "ScrollingFrame":
       return previewHost === "scrollingframe";
+    case "CanvasGroup":
+      return previewHost === "canvasgroup";
+    case "ViewportFrame":
+      return previewHost === "viewportframe";
+    case "VideoFrame":
+      return previewHost === "videoframe";
+    case "SurfaceGui":
+      return previewHost === "surfacegui";
+    case "BillboardGui":
+      return previewHost === "billboardgui";
     default:
       return true;
   }
