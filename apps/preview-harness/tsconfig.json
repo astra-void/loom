@@ -17,7 +17,7 @@
     "src/**/*.ts",
     "src/**/*.tsx",
     "src/**/*.d.ts",
-    "loom.preview.config.ts",
+    "loom.config.ts",
     "vite.config.ts",
     "../../packages/preview/src/source/virtual-modules.d.ts"
   ],

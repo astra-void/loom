@@ -3,7 +3,7 @@ import path from "node:path";
 import type { PreviewExecutionMode, PreviewSourceTarget } from "@loom-dev/preview-engine";
 import { loadConfigFromFile, searchForWorkspaceRoot } from "vite";
 
-const DEFAULT_CONFIG_FILE_NAME = "loom.preview.config.ts";
+const DEFAULT_CONFIG_FILE_NAME = "loom.config.ts";
 const DEFAULT_PREVIEW_PORT = 4174;
 const DEFAULT_SOURCE_DIR_NAME = "src";
 const DEFAULT_PROJECT_NAME = "Loom Preview";
