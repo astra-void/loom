@@ -1,9 +1,9 @@
 import { createHash } from "node:crypto";
 import fs from "node:fs";
-import { transformPreviewSource } from "@lattice-ui/compiler";
-import type { PreviewRuntimeIssue } from "@lattice-ui/preview-runtime";
+import { transformPreviewSource } from "@loom-dev/compiler";
+import type { PreviewRuntimeIssue } from "@loom-dev/preview-runtime";
 import { type DiscoveredEntryState, discoverWorkspaceState, type WorkspaceDiscoverySnapshot } from "./discover";
-import { isFilePathUnderRoot, resolveFilePath, resolveRealFilePath } from "./pathUtils";
+import { isFilePathIncludedByTarget, isFilePathUnderRoot, resolveFilePath, resolveRealFilePath } from "./pathUtils";
 import { normalizeTransformPreviewSourceResult } from "./transformResult";
 import type {
   CreatePreviewEngineOptions,
@@ -318,6 +318,7 @@ function computeTransformState(
             const result = normalizeTransformPreviewSourceResult(
               transformPreviewSource(sourceText, {
                 filePath: dependencyPath,
+                mode,
                 runtimeModule,
                 target: entryState.target.targetName,
               }),
@@ -532,7 +533,7 @@ class PreviewEngineImpl implements PreviewEngine {
     const transform = computeTransformState(
       entryState,
       entryId,
-      this.options.runtimeModule ?? "virtual:lattice-preview-runtime",
+      this.options.runtimeModule ?? "virtual:loom-preview-runtime",
       this.options.transformMode ?? "strict-fidelity",
       this.transformCache,
     );
@@ -560,7 +561,7 @@ class PreviewEngineImpl implements PreviewEngine {
       protocolVersion: PREVIEW_ENGINE_PROTOCOL_VERSION,
       runtimeAdapter: {
         kind: "react-dom",
-        moduleId: this.options.runtimeModule ?? "virtual:lattice-preview-runtime",
+        moduleId: this.options.runtimeModule ?? "virtual:loom-preview-runtime",
       },
       transform: {
         mode: this.options.transformMode ?? "strict-fidelity",
@@ -596,7 +597,7 @@ class PreviewEngineImpl implements PreviewEngine {
     }
 
     return this.normalizedTargets.some((target) =>
-      comparablePaths.some((candidatePath) => isFilePathUnderRoot(target.sourceRoot, candidatePath)),
+      comparablePaths.some((candidatePath) => isFilePathIncludedByTarget(target, candidatePath)),
     );
   }
 
@@ -616,7 +617,7 @@ class PreviewEngineImpl implements PreviewEngine {
     const affectedTargets = this.normalizedTargets.filter((target) =>
       normalizedPaths.some(
         (filePath) =>
-          isFilePathUnderRoot(target.sourceRoot, filePath) ||
+          isFilePathIncludedByTarget(target, filePath) ||
           this.targetSnapshots.get(createTargetKey(target))?.trackedFilePaths.has(filePath),
       ),
     );

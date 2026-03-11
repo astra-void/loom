@@ -4,4 +4,4 @@ export {
   robloxMock,
   robloxMock as default,
   robloxModuleMock,
-} from "@lattice-ui/preview-runtime";
+} from "@loom-dev/preview-runtime";

@@ -19,7 +19,7 @@ import {
   UIPadding,
   UIScale,
   UIStroke,
-} from "@lattice-ui/preview-runtime";
+} from "@loom-dev/preview-runtime";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import React from "react";
@@ -103,7 +103,7 @@ const layoutEngineMocks = vi.hoisted(() => ({
   init: vi.fn<() => Promise<void>>(() => Promise.resolve(undefined)),
 }));
 
-vi.mock("@lattice-ui/layout-engine", () => ({
+vi.mock("@loom-dev/layout-engine", () => ({
   createLayoutSession: layoutEngineMocks.createLayoutSession,
   default: layoutEngineMocks.init,
 }));

@@ -1,102 +1,53 @@
 // @vitest-environment jsdom
 
+import fs from "node:fs";
 import path from "node:path";
 import { cleanup, render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
-import React from "react";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
-import { ensurePreviewGenerated } from "./ensureGenerated";
+import { ensurePreviewGenerated, GENERATED_COMPONENT_TARGET } from "./ensureGenerated";
 
 afterEach(() => {
   cleanup();
 });
 
-let generatedOutDir = "";
+let generatedPreview: Awaited<ReturnType<typeof ensurePreviewGenerated>>;
 
 beforeAll(async () => {
-  generatedOutDir = await ensurePreviewGenerated();
+  generatedPreview = await ensurePreviewGenerated();
 });
 
 function toRelativeSpecifier(filePath: string) {
   const relativePath = path.relative(__dirname, filePath).split(path.sep).join("/");
-  return relativePath.startsWith(".") ? relativePath : `./${relativePath}`;
+  return relativePath.startsWith("./") || relativePath.startsWith("../") ? relativePath : `./${relativePath}`;
 }
 
-const generatedImports = {
-  checkboxRoot: () =>
-    import(/* @vite-ignore */ toRelativeSpecifier(path.join(generatedOutDir, "checkbox/Checkbox/CheckboxRoot.tsx"))),
-  dialog: () => import(/* @vite-ignore */ toRelativeSpecifier(path.join(generatedOutDir, "dialog/index.ts"))),
-  switch: () => import(/* @vite-ignore */ toRelativeSpecifier(path.join(generatedOutDir, "switch/index.ts"))),
-};
+function findGeneratedFile(relativePath: string) {
+  const generatedFilePath = path.join(generatedPreview.outDir, GENERATED_COMPONENT_TARGET, relativePath);
+  if (!fs.existsSync(generatedFilePath)) {
+    throw new Error(`Missing generated preview file for ${relativePath}.`);
+  }
+
+  return generatedFilePath;
+}
 
 describe("generated preview components", () => {
-  it("updates checkbox controlled state", async () => {
-    const user = userEvent.setup();
-    const { CheckboxRoot } = await generatedImports.checkboxRoot();
+  it("renders generated source components from the fixture package", async () => {
+    const { CheckboxRoot } = await import(
+      /* @vite-ignore */ toRelativeSpecifier(findGeneratedFile("CheckboxRoot.tsx"))
+    );
 
-    function Example() {
-      const [checked, setChecked] = React.useState<boolean | "indeterminate">("indeterminate");
+    render(<CheckboxRoot />);
 
-      return <CheckboxRoot checked={checked} onCheckedChange={setChecked} />;
-    }
-
-    render(<Example />);
-
-    const button = screen.getByRole("button");
-    expect(button.textContent).toContain("Indeterminate");
-
-    await user.click(button);
-    expect(button.textContent).toContain("Checked");
+    expect(screen.getByRole("button", { name: /checkbox/i })).toBeTruthy();
   });
 
-  it("toggles switch state and restores focus after dialog close", async () => {
-    const user = userEvent.setup();
-    const [{ Switch }, { Dialog }] = await Promise.all([generatedImports.switch(), generatedImports.dialog()]);
+  it("renders generated preview contracts from the fixture package", async () => {
+    const dialogModule = await import(/* @vite-ignore */ toRelativeSpecifier(findGeneratedFile("DialogRoot.tsx")));
 
-    function DialogExample() {
-      const [open, setOpen] = React.useState(false);
+    expect(typeof dialogModule.preview?.render).toBe("function");
 
-      return (
-        <>
-          <Switch.Root defaultChecked={false} />
-          <Dialog.Root open={open} onOpenChange={setOpen}>
-            <Dialog.Trigger asChild>
-              <button type="button">Open dialog</button>
-            </Dialog.Trigger>
-            <Dialog.Portal>
-              <Dialog.Content>
-                <Dialog.Overlay asChild>
-                  <button aria-label="Dismiss overlay" tabIndex={-1} type="button" />
-                </Dialog.Overlay>
-                <div role="dialog">
-                  <button type="button">Focusable action</button>
-                  <Dialog.Close asChild>
-                    <button type="button">Close dialog</button>
-                  </Dialog.Close>
-                </div>
-              </Dialog.Content>
-            </Dialog.Portal>
-          </Dialog.Root>
-        </>
-      );
-    }
+    render(dialogModule.preview.render());
 
-    render(<DialogExample />);
-
-    const switchButton = screen.getByRole("button", { name: /off/i });
-    await user.click(switchButton);
-    expect(screen.getByRole("button", { name: /on/i })).toBeTruthy();
-
-    const trigger = screen.getByRole("button", { name: "Open dialog" });
-    trigger.focus();
-    await user.click(trigger);
-
-    const dialog = await screen.findByRole("dialog");
-    expect(dialog).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Focusable action" })).toBe(document.activeElement);
-
-    await user.keyboard("{Escape}");
-    expect(screen.queryByRole("dialog")).toBeNull();
-    expect(document.activeElement).toBe(trigger);
+    expect(screen.getByText("Harnessed Dialog")).toBeTruthy();
   });
 });

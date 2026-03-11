@@ -4,7 +4,7 @@ import { type ComputedRect } from "../layout/model";
 import { toCssColor } from "../runtime/helpers";
 import { type HostModifierName, type HostName, type PreviewDomProps } from "./types";
 
-const PREVIEW_DECORATOR_HOST_MARKER = Symbol.for("lattice.preview.decoratorHost");
+const PREVIEW_DECORATOR_HOST_MARKER = Symbol.for("loom.preview.decoratorHost");
 
 type HoistedModifierState = {
   cornerRadius?: string;

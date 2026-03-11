@@ -1,16 +1,16 @@
 import fs from "node:fs";
 import path from "node:path";
-import type { PreviewExecutionMode, PreviewSourceTarget } from "@lattice-ui/preview-engine";
+import type { PreviewExecutionMode, PreviewSourceTarget } from "@loom-dev/preview-engine";
 import { loadConfigFromFile, searchForWorkspaceRoot } from "vite";
 
-const DEFAULT_CONFIG_FILE_NAME = "lattice.preview.config.ts";
+const DEFAULT_CONFIG_FILE_NAME = "loom.preview.config.ts";
 const DEFAULT_PREVIEW_PORT = 4174;
 const DEFAULT_SOURCE_DIR_NAME = "src";
-const DEFAULT_PROJECT_NAME = "Lattice Preview";
+const DEFAULT_PROJECT_NAME = "Loom Preview";
 const PACKAGE_JSON_FILE_NAME = "package.json";
 const PACKAGE_SCAN_SKIP_DIRS = new Set([
   ".git",
-  ".lattice-preview-cache",
+  ".loom-preview-cache",
   ".next",
   ".turbo",
   "build",
@@ -53,6 +53,8 @@ export type LoadPreviewConfigOptions = {
 };
 
 export type PreviewTargetDiscoveryFactoryOptions = {
+  exclude?: string[];
+  include?: string[];
   name?: string;
   packageName?: string;
   packageRoot?: string;
@@ -132,6 +134,8 @@ function normalizePreviewTarget(target: PreviewSourceTarget, baseDir: string): P
   const packageRoot = path.resolve(resolveMaybeRelativePath(target.packageRoot, baseDir));
   const sourceRoot = path.resolve(resolveMaybeRelativePath(target.sourceRoot, baseDir));
   return {
+    ...(target.exclude ? { exclude: target.exclude } : {}),
+    ...(target.include ? { include: target.include } : {}),
     name: target.name,
     packageName: target.packageName,
     packageRoot,
@@ -354,7 +358,7 @@ function normalizePackageRootFallback(cwd: string): ResolvedPreviewConfig {
 
   if (!fs.existsSync(packageJsonPath)) {
     throw new Error(
-      `lattice preview must be run from a package root or a directory with ${DEFAULT_CONFIG_FILE_NAME}: ${packageRoot}`,
+      `preview config must be loaded from a package root or a directory with ${DEFAULT_CONFIG_FILE_NAME}: ${packageRoot}`,
     );
   }
 
@@ -426,6 +430,8 @@ export function createPackageTargetDiscovery(
 
       return [
         {
+          ...(options.exclude ? { exclude: options.exclude } : {}),
+          ...(options.include ? { include: options.include } : {}),
           name: options.name ?? packageName ?? path.basename(packageRoot),
           packageName,
           packageRoot,

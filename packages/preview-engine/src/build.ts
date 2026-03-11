@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { transformPreviewSource } from "@lattice-ui/compiler";
+import { transformPreviewSource } from "@loom-dev/compiler";
 import ts from "typescript";
 import { createPreviewEngine } from "./engine";
 import { resolveRealFilePath } from "./pathUtils";
@@ -26,9 +26,9 @@ import { PREVIEW_ENGINE_PROTOCOL_VERSION } from "./types";
 import { normalizeTransformPreviewSourceResult } from "./transformResult";
 import { createWorkspaceGraphService } from "./workspaceGraph";
 
-const BUILD_MANIFEST_FILE = ".lattice-preview-manifest.json";
+const BUILD_MANIFEST_FILE = ".loom-preview-manifest.json";
 const BUILD_MANIFEST_VERSION = 2;
-const DEFAULT_RUNTIME_MODULE = "@lattice-ui/preview-runtime";
+const DEFAULT_RUNTIME_MODULE = "@loom-dev/preview-runtime";
 const CACHE_NAMESPACES = ["transform", "entry-metadata", "layout-schema", "manifests"] as const;
 
 type CacheNamespace = (typeof CACHE_NAMESPACES)[number];
@@ -529,6 +529,8 @@ function createBuildManifestKey(options: {
       artifactKinds: options.artifactKinds,
       projectName: options.projectName,
       targets: options.targets.map((target) => ({
+        exclude: target.exclude,
+        include: target.include,
         name: target.name,
         packageRoot: target.packageRoot,
         sourceRoot: target.sourceRoot,
@@ -641,7 +643,7 @@ export async function buildPreviewArtifacts(options: PreviewBuildOptions): Promi
   const workspaceRoot = resolveRealFilePath(
     options.workspaceRoot ?? findWorkspaceRoot(targets.map((target) => target.packageRoot)),
   );
-  const cacheDir = resolveRealFilePath(options.cacheDir ?? path.join(workspaceRoot, ".lattice-preview-cache"));
+  const cacheDir = resolveRealFilePath(options.cacheDir ?? path.join(workspaceRoot, ".loom-preview-cache"));
   const concurrency = options.concurrency ?? Math.max(1, (os.availableParallelism?.() ?? os.cpus().length) - 1);
   const artifactKinds = [...options.artifactKinds];
 
@@ -692,6 +694,7 @@ export async function buildPreviewArtifacts(options: PreviewBuildOptions): Promi
         transformed = normalizeTransformPreviewSourceResult(
           transformPreviewSource(sourceText, {
             filePath: record.sourceFilePath,
+            mode: transformMode,
             runtimeModule,
             target: record.target.name,
           }),

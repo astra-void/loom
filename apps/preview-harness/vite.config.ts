@@ -1,6 +1,6 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { PreviewExecutionMode } from "@lattice-ui/preview-engine";
+import type { PreviewExecutionMode } from "@loom-dev/preview-engine";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 import topLevelAwait from "vite-plugin-top-level-await";
@@ -12,6 +12,7 @@ import { createPreviewVitePlugin } from "../../packages/preview/src/source/plugi
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const workspaceRoot = path.resolve(__dirname, "../..");
+const previewEngineEntry = path.resolve(workspaceRoot, "packages/preview-engine/src/index.ts");
 const previewRuntimeEntry = path.resolve(workspaceRoot, "packages/preview-runtime/src/index.ts");
 const previewConfig = await loadPreviewConfig({ cwd: __dirname });
 const previewConfigRecord = previewConfig as Record<string, unknown>;
@@ -28,7 +29,11 @@ export default defineConfig({
   resolve: {
     alias: [
       {
-        find: "@lattice-ui/preview-runtime",
+        find: "@loom-dev/preview-engine",
+        replacement: previewEngineEntry,
+      },
+      {
+        find: "@loom-dev/preview-runtime",
         replacement: previewConfig.runtimeModule ?? previewRuntimeEntry,
       },
     ],
@@ -49,7 +54,7 @@ export default defineConfig({
   ],
   assetsInclude: ["**/*.wasm"],
   optimizeDeps: {
-    exclude: ["@lattice-ui/layout-engine", "layout-engine"],
+    exclude: ["@loom-dev/layout-engine", "layout-engine"],
   },
   server: {
     fs: {

@@ -1,6 +1,6 @@
-﻿# @lattice-ui/preview-runtime
+﻿# @loom-dev/preview-runtime
 
-High-precision browser polyfills for the Roblox runtime APIs that Lattice UI previews commonly need.
+High-precision browser polyfills for the Roblox runtime APIs that Loom previews commonly need.
 
 ## Surface
 
@@ -14,7 +14,7 @@ High-precision browser polyfills for the Roblox runtime APIs that Lattice UI pre
 ## Usage
 
 ```ts
-import { setupRobloxEnvironment } from "@lattice-ui/preview-runtime";
+import { setupRobloxEnvironment } from "@loom-dev/preview-runtime";
 
 setupRobloxEnvironment();
 ```
@@ -22,7 +22,7 @@ setupRobloxEnvironment();
 You can also import the pieces directly:
 
 ```ts
-import { Enum, RunService, task } from "@lattice-ui/preview-runtime";
+import { Enum, RunService, task } from "@loom-dev/preview-runtime";
 ```
 
 ## Vite Alias Guide
@@ -48,7 +48,7 @@ export default defineConfig({
 
 ```ts
 // src/preview-shims/rbxts-services.ts
-export { RunService } from "@lattice-ui/preview-runtime";
+export { RunService } from "@loom-dev/preview-runtime";
 ```
 
 ```ts

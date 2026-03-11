@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import type { PreviewSourceTarget } from "@loom-dev/preview-engine";
 import ts from "typescript";
 
 function stripViteFsPrefix(filePath: string) {
@@ -9,6 +10,48 @@ function stripViteFsPrefix(filePath: string) {
 function normalizeComparablePath(filePath: string) {
   const slashNormalizedPath = filePath.replace(/\\/g, "/");
   return ts.sys.useCaseSensitiveFileNames ? slashNormalizedPath : slashNormalizedPath.toLowerCase();
+}
+
+function normalizeSlashPath(filePath: string) {
+  return resolveFilePath(filePath).replace(/\\/g, "/");
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[|\\{}()[\]^$+?.]/g, "\\$&");
+}
+
+function createGlobMatcher(pattern: string) {
+  const normalizedPattern = pattern.replace(/\\/g, "/");
+  let source = "^";
+
+  for (let index = 0; index < normalizedPattern.length; index += 1) {
+    const character = normalizedPattern[index];
+    const nextCharacter = normalizedPattern[index + 1];
+
+    if (character === "*" && nextCharacter === "*") {
+      source += ".*";
+      index += 1;
+      continue;
+    }
+
+    if (character === "*") {
+      source += "[^/]*";
+      continue;
+    }
+
+    source += escapeRegExp(character);
+  }
+
+  source += "$";
+  return new RegExp(source);
+}
+
+function matchesPatterns(value: string, patterns: string[] | undefined) {
+  if (!patterns || patterns.length === 0) {
+    return false;
+  }
+
+  return patterns.some((pattern) => createGlobMatcher(pattern).test(value));
 }
 
 function getComparablePathVariants(filePath: string) {
@@ -65,4 +108,27 @@ export function isFilePathUnderRoot(rootPath: string, filePath: string) {
       return comparableFilePath.startsWith(rootPrefix);
     }),
   );
+}
+
+export function isFilePathIncludedByTarget(
+  target: Pick<PreviewSourceTarget, "exclude" | "include" | "sourceRoot">,
+  filePath: string,
+) {
+  const resolvedFilePath = resolveFilePath(filePath);
+  if (!isFilePathUnderRoot(target.sourceRoot, resolvedFilePath)) {
+    return false;
+  }
+
+  const relativePath = path.relative(resolveFilePath(target.sourceRoot), resolvedFilePath).split(path.sep).join("/");
+  const candidateValues = [relativePath, normalizeSlashPath(resolvedFilePath)];
+
+  if (target.include && target.include.length > 0 && !candidateValues.some((value) => matchesPatterns(value, target.include))) {
+    return false;
+  }
+
+  if (target.exclude && target.exclude.length > 0 && candidateValues.some((value) => matchesPatterns(value, target.exclude))) {
+    return false;
+  }
+
+  return true;
 }

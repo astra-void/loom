@@ -1,4 +1,4 @@
-import type { UnsupportedPatternError } from "@lattice-ui/compiler";
+import type { UnsupportedPatternError } from "@loom-dev/compiler";
 import type {
   NormalizedTransformPreviewSourceResult,
   PreviewTransformDiagnostic,

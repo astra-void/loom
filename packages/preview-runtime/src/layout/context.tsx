@@ -49,7 +49,7 @@ const ZERO_VIEWPORT: ViewportSize = {
   height: 0,
   width: 0,
 };
-const LAYOUT_CONTEXTS_GLOBAL_KEY = "__lattice_preview_layout_contexts__";
+const LAYOUT_CONTEXTS_GLOBAL_KEY = "__loom_preview_layout_contexts__";
 
 type LayoutContexts = {
   layout: React.Context<LayoutContextValue | null>;
@@ -239,7 +239,7 @@ export function LayoutProvider(props: LayoutProviderProps) {
                 kind: "ModuleLoadError",
                 phase: "layout",
                 summary: `Wasm init failed: ${toErrorMessage(nextError)}`,
-                target: "@lattice-ui/layout-engine",
+                target: "@loom-dev/layout-engine",
               },
               nextError,
             ),
@@ -316,7 +316,7 @@ export function LayoutProvider(props: LayoutProviderProps) {
                 kind: isValidationError(nextError) ? "LayoutValidationError" : "LayoutExecutionError",
                 phase: "layout",
                 summary: `Wasm layout failed: ${toErrorMessage(nextError)}`,
-                target: "@lattice-ui/layout-engine",
+                target: "@loom-dev/layout-engine",
               },
               nextError,
             ),
@@ -333,7 +333,7 @@ export function LayoutProvider(props: LayoutProviderProps) {
                   kind: isValidationError(fallbackError) ? "LayoutValidationError" : "LayoutExecutionError",
                   phase: "layout",
                   summary: `Fallback layout failed: ${toErrorMessage(fallbackError)}`,
-                  target: "@lattice-ui/layout-engine",
+                  target: "@loom-dev/layout-engine",
                 },
                 fallbackError,
               ),

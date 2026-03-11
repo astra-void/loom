@@ -1,6 +1,6 @@
 ﻿import { normalizePreviewRuntimeError, publishPreviewRuntimeIssue } from "./runtimeError";
 
-const FRAME_SCHEDULER_KEY = Symbol.for("lattice-ui.preview-runtime.frameScheduler");
+const FRAME_SCHEDULER_KEY = Symbol.for("loom-dev.preview-runtime.frameScheduler");
 
 export interface FrameState {
   readonly now: number;
@@ -43,7 +43,7 @@ class FrameScheduler {
   private requestNextFrame() {
     const requestAnimationFrame = globalThis.requestAnimationFrame?.bind(globalThis);
     if (!requestAnimationFrame) {
-      throw new Error("@lattice-ui/preview-runtime requires requestAnimationFrame.");
+      throw new Error("@loom-dev/preview-runtime requires requestAnimationFrame.");
     }
 
     return requestAnimationFrame(this.step);

@@ -1,4 +1,4 @@
-import type { PreviewRuntimeIssue } from "@lattice-ui/preview-runtime";
+import type { PreviewRuntimeIssue } from "@loom-dev/preview-runtime";
 import type { ComponentType } from "react";
 import type { PreviewTransformDiagnostic, PreviewTransformMode, PreviewTransformOutcome } from "./transformTypes";
 
@@ -43,6 +43,8 @@ export type PreviewDefinition<Props = Record<string, unknown>> = {
 };
 
 export type PreviewSourceTarget = {
+  exclude?: string[];
+  include?: string[];
   name: string;
   packageName?: string;
   packageRoot: string;

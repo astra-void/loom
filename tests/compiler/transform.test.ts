@@ -1,10 +1,10 @@
-import { compile_tsx, transformPreviewSource } from "@lattice-ui/compiler";
+import { compile_tsx, transformPreviewSource } from "@loom-dev/compiler";
 import { describe, expect, it } from "vitest";
 
-describe("@lattice-ui/compiler preview transform", () => {
+describe("@loom-dev/compiler preview transform", () => {
   it("returns preview transform results with rewritten runtime imports and DOM-facing types", () => {
     const source = `
-      import { React, Slot } from "@lattice-ui/core";
+      import { React, Slot } from "@loom-dev/core";
       import type ReactTypes from "@rbxts/react";
 
       type Props = {
@@ -20,7 +20,7 @@ describe("@lattice-ui/compiler preview transform", () => {
     const result = transformPreviewSource(source, {
       filePath: "/virtual/compiler-transform.tsx",
       mode: "compatibility",
-      runtimeModule: "@lattice-ui/preview-runtime",
+      runtimeModule: "@loom-dev/preview-runtime",
       target: "compiler-transform",
     });
 
@@ -29,7 +29,7 @@ describe("@lattice-ui/compiler preview transform", () => {
       fidelity: "preserved",
       kind: "ready",
     });
-    expect(result.code).toContain('from "@lattice-ui/preview-runtime"');
+    expect(result.code).toContain('from "@loom-dev/preview-runtime"');
     expect(result.code).toContain('from "react"');
     expect(result.code).toContain("MutableRefObject<HTMLElement | null | undefined>");
     expect(result.code).toContain("<TextLabel");
@@ -39,7 +39,7 @@ describe("@lattice-ui/compiler preview transform", () => {
     const transformed = transformPreviewSource(`export const host = <viewportframe BackgroundTransparency={1} />;`, {
       filePath: "/virtual/fallback.tsx",
       mode: "compatibility",
-      runtimeModule: "@lattice-ui/preview-runtime",
+      runtimeModule: "@loom-dev/preview-runtime",
       target: "fallback",
     });
 
@@ -65,7 +65,7 @@ describe("@lattice-ui/compiler preview transform", () => {
     const transformed = transformPreviewSource(`export const host = <viewportframe BackgroundTransparency={1} />;`, {
       filePath: "/virtual/strict-fallback.tsx",
       mode: "strict-fidelity",
-      runtimeModule: "@lattice-ui/preview-runtime",
+      runtimeModule: "@loom-dev/preview-runtime",
       target: "strict-fallback",
     });
 
@@ -87,7 +87,7 @@ describe("@lattice-ui/compiler preview transform", () => {
     const transformed = transformPreviewSource(`export const value = game.GetService("Players");`, {
       filePath: "/virtual/mocked-global.tsx",
       mode: "mocked",
-      runtimeModule: "@lattice-ui/preview-runtime",
+      runtimeModule: "@loom-dev/preview-runtime",
       target: "mocked-global",
     });
 
@@ -110,7 +110,7 @@ describe("@lattice-ui/compiler preview transform", () => {
     const transformed = transformPreviewSource(`export const host = <frame />;`, {
       filePath: "/virtual/design-time.tsx",
       mode: "design-time",
-      runtimeModule: "@lattice-ui/preview-runtime",
+      runtimeModule: "@loom-dev/preview-runtime",
       target: "design-time",
     });
 

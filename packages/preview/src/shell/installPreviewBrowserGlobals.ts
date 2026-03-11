@@ -1,9 +1,9 @@
-import { robloxMock, setupRobloxEnvironment } from "@lattice-ui/preview-runtime";
+import { robloxMock, setupRobloxEnvironment } from "@loom-dev/preview-runtime";
 
 const robloxMockRecord = robloxMock as unknown as Record<PropertyKey, unknown>;
 
-const previewGlobalFallbackMarker = Symbol.for("lattice.preview.browserGlobalsFallback");
-const previewGlobalFallbackMetadata = Symbol.for("lattice.preview.browserGlobalsFallbackMetadata");
+const previewGlobalFallbackMarker = Symbol.for("loom.preview.browserGlobalsFallback");
+const previewGlobalFallbackMetadata = Symbol.for("loom.preview.browserGlobalsFallbackMetadata");
 
 type PropertyBag = Record<PropertyKey, unknown>;
 

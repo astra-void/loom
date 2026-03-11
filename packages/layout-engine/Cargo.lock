@@ -44,7 +44,7 @@ dependencies = [
 
 [[package]]
 name = "layout-engine"
-version = "0.4.0"
+version = "0.1.0"
 dependencies = [
  "serde",
  "serde-wasm-bindgen",

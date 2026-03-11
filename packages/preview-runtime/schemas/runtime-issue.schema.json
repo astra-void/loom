@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "@lattice-ui/preview-runtime/schemas/runtime-issue",
+  "$id": "@loom-dev/preview-runtime/schemas/runtime-issue",
   "title": "PreviewRuntimeIssue",
   "type": "object",
   "additionalProperties": false,

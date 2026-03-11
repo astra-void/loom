@@ -1,13 +1,13 @@
 // @vitest-environment jsdom
 
-import type { PreviewDiagnostic, PreviewEntryDescriptor, PreviewEntryPayload } from "@lattice-ui/preview-engine";
+import type { PreviewDiagnostic, PreviewEntryDescriptor, PreviewEntryPayload } from "@loom-dev/preview-engine";
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import React from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { PreviewApp } from "../../../packages/preview/src/shell/PreviewApp";
-import { PreviewThemeProvider } from "../../../packages/preview/src/shell/theme";
-import { PREVIEW_ENGINE_PROTOCOL_VERSION } from "../../../packages/preview-engine/src/types";
+import { PreviewApp } from "../../packages/preview/src/shell/PreviewApp";
+import { PreviewThemeProvider } from "../../packages/preview/src/shell/theme";
+import { PREVIEW_ENGINE_PROTOCOL_VERSION } from "../../packages/preview-engine/src/types";
 
 afterEach(() => {
   cleanup();
@@ -91,7 +91,7 @@ function createPayload(entry: PreviewEntryDescriptor, diagnostics: PreviewDiagno
     protocolVersion: PREVIEW_ENGINE_PROTOCOL_VERSION,
     runtimeAdapter: {
       kind: "react-dom",
-      moduleId: "virtual:lattice-preview-runtime",
+      moduleId: "virtual:loom-preview-runtime",
     },
     transform: {
       mode: "compatibility",
@@ -123,7 +123,7 @@ function createLoadedEntry(
 const checkboxEntry = createEntryDescriptor({
   candidateExportNames: ["CheckboxRoot"],
   id: "Checkbox/CheckboxRoot.tsx",
-  packageName: "@lattice-ui/checkbox",
+  packageName: "@loom-dev/checkbox",
   relativePath: "Checkbox/CheckboxRoot.tsx",
   renderTarget: {
     exportName: "CheckboxRoot",
@@ -169,7 +169,7 @@ describe("preview shell", () => {
             CheckboxRoot: () => <button type="button">Unchecked</button>,
           })
         }
-        projectName="@lattice-ui/preview-smoke"
+        projectName="@loom-dev/preview-smoke"
       />,
     );
 
@@ -193,7 +193,7 @@ describe("preview shell", () => {
             },
           })
         }
-        projectName="@lattice-ui/preview-smoke"
+        projectName="@loom-dev/preview-smoke"
       />,
     );
 
@@ -244,7 +244,7 @@ describe("preview shell", () => {
             ],
           )
         }
-        projectName="@lattice-ui/preview-smoke"
+        projectName="@loom-dev/preview-smoke"
       />,
     );
 
@@ -289,7 +289,7 @@ describe("preview shell", () => {
         entries={[blockedEntry]}
         initialSelectedId="Blocked.tsx"
         loadEntry={loadEntry}
-        projectName="@lattice-ui/preview-smoke"
+        projectName="@loom-dev/preview-smoke"
       />,
     );
 
@@ -304,7 +304,7 @@ describe("preview shell", () => {
       candidateExportNames: [],
       hasPreviewExport: true,
       id: "Checkbox/CheckboxIndicator.tsx",
-      packageName: "@lattice-ui/checkbox",
+      packageName: "@loom-dev/checkbox",
       relativePath: "Checkbox/CheckboxIndicator.tsx",
       renderTarget: {
         kind: "none",
@@ -337,7 +337,7 @@ describe("preview shell", () => {
         }}
         initialSelectedId="Checkbox/CheckboxIndicator.tsx"
         loadEntry={loadEntry}
-        projectName="@lattice-ui/preview-smoke"
+        projectName="@loom-dev/preview-smoke"
       />,
     );
 
@@ -383,7 +383,7 @@ describe("preview shell", () => {
         }}
         initialSelectedId="Ambiguous.tsx"
         loadEntry={loadEntry}
-        projectName="@lattice-ui/preview-smoke"
+        projectName="@loom-dev/preview-smoke"
       />,
     );
 
@@ -429,7 +429,7 @@ describe("preview shell", () => {
         }}
         initialSelectedId="HarnessOnly.tsx"
         loadEntry={loadEntry}
-        projectName="@lattice-ui/preview-smoke"
+        projectName="@loom-dev/preview-smoke"
       />,
     );
 
@@ -474,7 +474,7 @@ describe("preview shell", () => {
                 default: () => <button type="button">Healthy preview</button>,
               })
         }
-        projectName="@lattice-ui/preview-smoke"
+        projectName="@loom-dev/preview-smoke"
       />,
     );
 
@@ -510,7 +510,7 @@ describe("preview shell", () => {
                 : () => <button type="button">Recovered preview</button>,
           })
         }
-        projectName="@lattice-ui/preview-smoke"
+        projectName="@loom-dev/preview-smoke"
       />,
     );
 
@@ -546,7 +546,7 @@ describe("preview shell", () => {
             AnimatedSlot: () => <button type="button">Recovered stale export</button>,
           })
         }
-        projectName="@lattice-ui/preview-smoke"
+        projectName="@loom-dev/preview-smoke"
       />,
     );
 

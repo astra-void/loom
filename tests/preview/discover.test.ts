@@ -8,10 +8,10 @@ import {
   createWorkspaceTargetsDiscovery,
   loadPreviewConfig,
   resolvePreviewConfigObject,
-} from "../../../packages/preview/src/config";
-import { createPreviewHeadlessSession } from "../../../packages/preview/src/headless";
-import { resolvePreviewServerConfig } from "../../../packages/preview/src/source/server";
-import { PREVIEW_ENGINE_PROTOCOL_VERSION } from "../../../packages/preview-engine/src/types";
+} from "../../packages/preview/src/config";
+import { createPreviewHeadlessSession } from "../../packages/preview/src/headless";
+import { resolvePreviewServerConfig } from "../../packages/preview/src/source/server";
+import { PREVIEW_ENGINE_PROTOCOL_VERSION } from "../../packages/preview-engine/src/types";
 
 const temporaryRoots: string[] = [];
 
@@ -94,10 +94,10 @@ function writeInlinePreviewConfig(
 }
 
 describe("preview bootstrap config", () => {
-  it("prefers the nearest lattice.preview.config.ts over zero-config package-root mode", async () => {
-    const workspaceRoot = createTempRoot("lattice-preview-config-");
+  it("prefers the nearest loom.preview.config.ts over zero-config package-root mode", async () => {
+    const workspaceRoot = createTempRoot("loom-preview-config-");
     const target = createPackage(workspaceRoot, "packages/button", "@fixtures/button");
-    writeInlinePreviewConfig(path.join(workspaceRoot, "lattice.preview.config.ts"), {
+    writeInlinePreviewConfig(path.join(workspaceRoot, "loom.preview.config.ts"), {
       packageName: target.packageName,
       packageRoot: target.packageRoot,
       projectName: "Workspace Preview",
@@ -120,7 +120,7 @@ describe("preview bootstrap config", () => {
   });
 
   it("falls back to zero-config package-root mode when no config file exists", async () => {
-    const packageRoot = createTempRoot("lattice-preview-package-root-");
+    const packageRoot = createTempRoot("loom-preview-package-root-");
     fs.mkdirSync(path.join(packageRoot, "src"), { recursive: true });
     fs.writeFileSync(
       path.join(packageRoot, "package.json"),
@@ -146,10 +146,10 @@ describe("preview bootstrap config", () => {
   });
 
   it("prefers an explicit --config path over config lookup", async () => {
-    const workspaceRoot = createTempRoot("lattice-preview-explicit-config-");
+    const workspaceRoot = createTempRoot("loom-preview-explicit-config-");
     const primaryTarget = createPackage(workspaceRoot, "packages/primary", "@fixtures/primary");
     const secondaryTarget = createPackage(workspaceRoot, "packages/secondary", "@fixtures/secondary");
-    writeInlinePreviewConfig(path.join(workspaceRoot, "lattice.preview.config.ts"), {
+    writeInlinePreviewConfig(path.join(workspaceRoot, "loom.preview.config.ts"), {
       packageName: primaryTarget.packageName,
       packageRoot: primaryTarget.packageRoot,
       projectName: "Primary Preview",
@@ -187,7 +187,7 @@ describe("preview bootstrap config", () => {
 
 describe("preview target discovery adapters", () => {
   it("createPackageTargetDiscovery reproduces the zero-config single-package target", async () => {
-    const packageRoot = createTempRoot("lattice-preview-package-discovery-");
+    const packageRoot = createTempRoot("loom-preview-package-discovery-");
     fs.mkdirSync(path.join(packageRoot, "src"), { recursive: true });
     fs.writeFileSync(path.join(packageRoot, "package.json"), JSON.stringify({ name: "@fixtures/button" }, null, 2));
 
@@ -218,7 +218,7 @@ describe("preview target discovery adapters", () => {
   });
 
   it("createStaticTargetsDiscovery preserves explicit target lists", async () => {
-    const workspaceRoot = createTempRoot("lattice-preview-static-targets-");
+    const workspaceRoot = createTempRoot("loom-preview-static-targets-");
     const buttonTarget = createPackage(workspaceRoot, "packages/button", "@fixtures/button");
     const dialogTarget = createPackage(workspaceRoot, "packages/dialog", "@fixtures/dialog");
 
@@ -253,7 +253,7 @@ describe("preview target discovery adapters", () => {
   });
 
   it("createWorkspaceTargetsDiscovery finds workspace packages and respects include/exclude filters", async () => {
-    const workspaceRoot = createTempRoot("lattice-preview-workspace-discovery-");
+    const workspaceRoot = createTempRoot("loom-preview-workspace-discovery-");
     const buttonTarget = createPackage(workspaceRoot, "packages/button", "@fixtures/button");
     createPackage(workspaceRoot, "packages/dialog", "@fixtures/dialog");
     createPackage(workspaceRoot, "packages/internal-skip", "@fixtures/internal-skip");
@@ -289,7 +289,7 @@ describe("preview target discovery adapters", () => {
 
 describe("preview bootstrap normalization", () => {
   it("normalizes shorthand server options and config-based options to the same resolved shape", async () => {
-    const packageRoot = createTempRoot("lattice-preview-server-config-");
+    const packageRoot = createTempRoot("loom-preview-server-config-");
     fs.mkdirSync(path.join(packageRoot, "src"), { recursive: true });
     fs.writeFileSync(path.join(packageRoot, "package.json"), JSON.stringify({ name: "@fixtures/button" }, null, 2));
 
@@ -316,7 +316,7 @@ describe("preview bootstrap normalization", () => {
   });
 
   it("creates headless snapshots from the engine protocol source of truth", async () => {
-    const packageRoot = createTempRoot("lattice-preview-headless-");
+    const packageRoot = createTempRoot("loom-preview-headless-");
     fs.mkdirSync(path.join(packageRoot, "src"), { recursive: true });
     fs.writeFileSync(path.join(packageRoot, "package.json"), JSON.stringify({ name: "@fixtures/headless" }, null, 2));
     fs.writeFileSync(

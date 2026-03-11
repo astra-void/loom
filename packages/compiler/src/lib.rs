@@ -17,7 +17,7 @@ use swc_core::{
 };
 
 #[derive(Default)]
-struct LatticeUITransformer;        
+struct LoomPreviewTransformer;        
 
 const RBX_STYLE_HELPER_NAME: &str = "__rbxStyle";
 
@@ -115,7 +115,7 @@ fn jsx_attr_value_to_expr(value: Option<JSXAttrValue>) -> Expr {
     }
 }
 
-impl VisitMut for LatticeUITransformer {
+impl VisitMut for LoomPreviewTransformer {
     fn visit_mut_jsx_opening_element(&mut self, el: &mut JSXOpeningElement) {
         el.visit_mut_children_with(self);
 
@@ -239,7 +239,7 @@ pub fn compile_tsx(code: String) -> napi::Result<String> {
         )));
     }
 
-    let mut transformer = LatticeUITransformer;
+    let mut transformer = LoomPreviewTransformer;
     module.visit_mut_with(&mut transformer);
 
     let mut out = Vec::new();

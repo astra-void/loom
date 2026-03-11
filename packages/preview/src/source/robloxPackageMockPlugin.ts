@@ -2,11 +2,11 @@
 import ts from "typescript";
 import type { Plugin } from "vite";
 
-export const UNRESOLVED_MOCK_MODULE_ID = "virtual:lattice-preview-unresolved-env";
+export const UNRESOLVED_MOCK_MODULE_ID = "virtual:loom-preview-unresolved-env";
 const RESOLVED_UNRESOLVED_MOCK_MODULE_ID = `\0${UNRESOLVED_MOCK_MODULE_ID}`;
 const SCRIPT_FILE_PATTERN = /\.[cm]?[jt]sx?$/;
-const DEFAULT_MOCK_IMPORT_BASENAME = "__latticeUnresolvedEnvMock";
-const MODULE_MOCK_IMPORT_BASENAME = "__latticeUnresolvedModuleMock";
+const DEFAULT_MOCK_IMPORT_BASENAME = "__loomUnresolvedEnvMock";
+const MODULE_MOCK_IMPORT_BASENAME = "__loomUnresolvedModuleMock";
 const UNSUPPORTED_RESOLVED_EXTENSIONS = new Set([".lua", ".luau"]);
 function normalizeResolvedId(id: string) {
   return stripQuery(id)
@@ -257,7 +257,7 @@ function rewriteExpressionLevelLoads<T extends ts.Node>(
 
 export function createUnresolvedPackageMockResolvePlugin(mockEntryPath: string): Plugin {
   return {
-    name: "lattice-preview-unresolved-package-mock-resolve",
+    name: "loom-preview-unresolved-package-mock-resolve",
     enforce: "pre",
     async load(id) {
       if (id !== RESOLVED_UNRESOLVED_MOCK_MODULE_ID) {
@@ -298,7 +298,7 @@ export default mock;
 
 export function createUnresolvedPackageMockTransformPlugin(): Plugin {
   return {
-    name: "lattice-preview-unresolved-package-mock-transform",
+    name: "loom-preview-unresolved-package-mock-transform",
     enforce: "pre",
     async transform(this: TransformResolveContext, code, id) {
       const filePath = stripQuery(id);

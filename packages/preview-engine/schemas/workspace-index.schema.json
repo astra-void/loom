@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "@lattice-ui/preview-engine/schemas/workspace-index",
+  "$id": "@loom-dev/preview-engine/schemas/workspace-index",
   "title": "PreviewWorkspaceIndex",
   "type": "object",
   "additionalProperties": false,

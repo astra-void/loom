@@ -1,7 +1,7 @@
 import type {
   TransformPreviewSourceOptions as CompilerTransformPreviewSourceOptions,
   TransformPreviewSourceResult as CompilerTransformPreviewSourceResult,
-} from "@lattice-ui/compiler";
+} from "@loom-dev/compiler";
 
 export type PreviewTransformMode = "strict-fidelity" | "compatibility" | "mocked" | "design-time";
 export type PreviewTransformSeverity = "error" | "info" | "warning";

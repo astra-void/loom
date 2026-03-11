@@ -1,11 +1,11 @@
-import { previewEntryPayloads, previewImporters, previewWorkspaceIndex } from "virtual:lattice-preview-workspace-index";
-import type { PreviewEngineUpdate, PreviewEntryDescriptor, PreviewEntryPayload } from "@lattice-ui/preview-engine";
-import { type PreviewRuntimeIssue, subscribePreviewRuntimeIssues } from "@lattice-ui/preview-runtime";
+import { previewEntryPayloads, previewImporters, previewWorkspaceIndex } from "virtual:loom-preview-workspace-index";
+import type { PreviewEngineUpdate, PreviewEntryDescriptor, PreviewEntryPayload } from "@loom-dev/preview-engine";
+import { type PreviewRuntimeIssue, subscribePreviewRuntimeIssues } from "@loom-dev/preview-runtime";
 import React from "react";
 import { PreviewApp } from "./PreviewApp";
 
-const PREVIEW_UPDATE_EVENT = "lattice-preview:update";
-const RUNTIME_ISSUES_EVENT = "lattice-preview:runtime-issues";
+const PREVIEW_UPDATE_EVENT = "loom-preview:update";
+const RUNTIME_ISSUES_EVENT = "loom-preview:runtime-issues";
 
 type HotContext = {
   off?: (event: string, callback: (update: PreviewEngineUpdate) => void) => void;

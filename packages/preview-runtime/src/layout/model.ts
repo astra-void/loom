@@ -132,7 +132,7 @@ export type RobloxLayoutRegistrationInput = RobloxLayoutNodeInput & {
   styleHints?: PreviewLayoutStyleHints;
 };
 
-export const SYNTHETIC_ROOT_ID = "__lattice_preview_root__";
+export const SYNTHETIC_ROOT_ID = "__loom_preview_root__";
 
 function toLayoutAxis(value: SerializedUDim): PreviewLayoutAxis {
   return {

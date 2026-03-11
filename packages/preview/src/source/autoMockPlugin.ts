@@ -1,10 +1,10 @@
 import fs from "node:fs";
 import path from "node:path";
-import type { PreviewSourceTarget } from "@lattice-ui/preview-engine";
-import type { PreviewComponentPropsMetadata, PreviewPropMetadata } from "@lattice-ui/preview-runtime";
+import type { PreviewSourceTarget } from "@loom-dev/preview-engine";
+import type { PreviewComponentPropsMetadata, PreviewPropMetadata } from "@loom-dev/preview-runtime";
 import ts from "typescript";
 import type { Plugin } from "vite";
-import { isFilePathUnderRoot, resolveRealFilePath, stripFileIdDecorations } from "./pathUtils";
+import { isFilePathIncludedByTarget, resolveRealFilePath, stripFileIdDecorations } from "./pathUtils";
 
 const SUPPORTED_COMPONENT_EXTENSIONS = new Set([".jsx", ".tsx"]);
 const MAX_SERIALIZED_OBJECT_PROPERTIES = 16;
@@ -651,13 +651,13 @@ export function createAutoMockPropsPlugin(options: CreateAutoMockPropsPluginOpti
   const configCache = new Map<string, ts.ParsedCommandLine>();
 
   return {
-    name: "lattice-preview-auto-mock-props",
+    name: "loom-preview-auto-mock-props",
     enforce: "pre",
     transform(code, id) {
       const filePath = stripFileIdDecorations(id);
       if (
         !isSupportedComponentFile(filePath) ||
-        !options.targets.some((target) => isFilePathUnderRoot(target.sourceRoot, filePath))
+        !options.targets.some((target) => isFilePathIncludedByTarget(target, filePath))
       ) {
         return undefined;
       }

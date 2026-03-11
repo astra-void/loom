@@ -1,8 +1,8 @@
 {
-  "name": "@lattice-ui/preview",
-  "version": "0.4.0",
+  "name": "@loom-dev/preview",
+  "version": "0.1.0",
   "private": false,
-  "description": "Lattice UI source-first preview server and runtime.",
+  "description": "Loom source-first preview server and runtime.",
   "main": "dist/index.mjs",
   "types": "dist/index.d.ts",
   "files": [
@@ -18,10 +18,10 @@
     "watch": "tsc -p tsconfig.json -w"
   },
   "dependencies": {
-    "@lattice-ui/compiler": "workspace:*",
-    "@lattice-ui/layout-engine": "workspace:*",
-    "@lattice-ui/preview-engine": "workspace:*",
-    "@lattice-ui/preview-runtime": "workspace:*",
+    "@loom-dev/compiler": "workspace:*",
+    "@loom-dev/layout-engine": "workspace:*",
+    "@loom-dev/preview-engine": "workspace:*",
+    "@loom-dev/preview-runtime": "workspace:*",
     "@vitejs/plugin-react": "^5.1.4",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
@@ -31,7 +31,8 @@
   },
   "devDependencies": {
     "@types/react": "^19.2.14",
-    "@types/react-dom": "^19.2.3"
+    "@types/react-dom": "^19.2.3",
+    "esbuild": "^0.27.0"
   },
   "exports": {
     ".": {

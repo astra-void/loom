@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import ts from "typescript";
-import { isFilePathUnderRoot, resolveRealFilePath } from "./pathUtils";
+import { isFilePathIncludedByTarget, isFilePathUnderRoot, resolveRealFilePath } from "./pathUtils";
 import type {
   CreatePreviewEngineOptions,
   PreviewDiagnostic,
@@ -72,6 +72,8 @@ type RawDiagnostic = Omit<PreviewDiagnostic, "entryId" | "relativeFile"> & {
 };
 
 type TargetContext = {
+  exclude?: string[];
+  include?: string[];
   packageName: string;
   packageRoot: string;
   sourceRoot: string;
@@ -1192,6 +1194,8 @@ function buildDescriptor(
 function createTargetContext(target: PreviewSourceTarget): TargetContext {
   const workspaceRoot = findWorkspaceRoot(target.packageRoot);
   return {
+    exclude: target.exclude,
+    include: target.include,
     packageName: target.packageName ?? target.name,
     packageRoot: resolveRealFilePath(target.packageRoot),
     sourceRoot: resolveRealFilePath(target.sourceRoot),
@@ -1227,6 +1231,8 @@ export function discoverWorkspaceState(options: Pick<CreatePreviewEngineOptions,
   const targetContexts = options.targets.map(createTargetContext);
   const graphService = createWorkspaceGraphService({
     targets: targetContexts.map((target) => ({
+      exclude: target.exclude,
+      include: target.include,
       name: target.targetName,
       packageName: target.packageName,
       packageRoot: target.packageRoot,
@@ -1242,7 +1248,7 @@ export function discoverWorkspaceState(options: Pick<CreatePreviewEngineOptions,
     const recordsByPath = discoverTargetRecords(target, graphService);
     const entryRecords = [...recordsByPath.values()]
       .filter((record) => record.isTsx)
-      .filter((record) => isFilePathUnderRoot(target.sourceRoot, record.filePath))
+      .filter((record) => isFilePathIncludedByTarget(target, record.filePath))
       .filter((record) => !isPreviewPackageInternalEntry(target.packageRoot, record.relativePath));
 
     for (const record of entryRecords) {

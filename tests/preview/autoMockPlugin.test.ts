@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { createAutoMockPropsPlugin } from "../../../packages/preview/src/source/autoMockPlugin";
+import { createAutoMockPropsPlugin } from "../../packages/preview/src/source/autoMockPlugin";
 import { getHookHandler } from "./hookTestUtils";
 
 const temporaryRoots: string[] = [];
@@ -15,7 +15,7 @@ afterEach(() => {
 
 describe("createAutoMockPropsPlugin", () => {
   it("injects preview props metadata for anonymous default exported components behind decorated ids", async () => {
-    const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), "lattice-auto-mock-"));
+    const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), "loom-auto-mock-"));
     temporaryRoots.push(fixtureRoot);
 
     const sourceRoot = path.join(fixtureRoot, "src");
@@ -70,7 +70,7 @@ describe("createAutoMockPropsPlugin", () => {
   });
 
   it("matches source files when the configured source root is a symlink", async () => {
-    const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), "lattice-auto-mock-symlink-"));
+    const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), "loom-auto-mock-symlink-"));
     temporaryRoots.push(fixtureRoot);
 
     const realSourceRoot = path.join(fixtureRoot, "real-src");

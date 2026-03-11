@@ -1,9 +1,9 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { buildPreviewArtifacts } from "@lattice-ui/preview-engine";
+import { buildPreviewArtifacts } from "@loom-dev/preview-engine";
 import { afterEach, describe, expect, it } from "vitest";
-import { resolveRealFilePath } from "../../../packages/preview-engine/src/pathUtils";
+import { resolveRealFilePath } from "../../packages/preview-engine/src/pathUtils";
 
 const temporaryRoots: string[] = [];
 
@@ -14,7 +14,7 @@ afterEach(() => {
 });
 
 function createTempWorkspacePackage(files: Record<string, string>) {
-  const workspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), "lattice-preview-build-engine-"));
+  const workspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), "loom-preview-build-engine-"));
   const packageRoot = path.join(workspaceRoot, "packages", "fixture");
   const sourceRoot = path.join(packageRoot, "src");
   temporaryRoots.push(workspaceRoot);
@@ -34,7 +34,7 @@ function createTempWorkspacePackage(files: Record<string, string>) {
   }
 
   return {
-    cacheDir: path.join(workspaceRoot, ".lattice-preview-cache"),
+    cacheDir: path.join(workspaceRoot, ".loom-preview-cache"),
     packageRoot,
     sourceRoot,
     workspaceRoot,
@@ -42,7 +42,7 @@ function createTempWorkspacePackage(files: Record<string, string>) {
 }
 
 function createTempWorkspacePackages(packages: Record<string, Record<string, string>>) {
-  const workspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), "lattice-preview-build-workspace-"));
+  const workspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), "loom-preview-build-workspace-"));
   temporaryRoots.push(workspaceRoot);
   fs.writeFileSync(path.join(workspaceRoot, "pnpm-workspace.yaml"), 'packages:\n  - "packages/*"\n', "utf8");
 

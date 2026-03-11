@@ -3,7 +3,7 @@ import React from "react";
 export type PreviewThemeMode = "system" | "light" | "dark";
 export type PreviewResolvedTheme = "light" | "dark";
 
-const STORAGE_KEY = "lattice-preview-theme-mode";
+const STORAGE_KEY = "loom-preview-theme-mode";
 const SYSTEM_THEME_QUERY = "(prefers-color-scheme: dark)";
 
 type PreviewThemeContextValue = {

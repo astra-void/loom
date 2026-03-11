@@ -1,4 +1,7 @@
-declare module "@lattice-ui/compiler" {
+declare module "@loom-dev/compiler" {
+  export type PreviewTransformMode = "strict-fidelity" | "compatibility" | "mocked" | "design-time";
+  export type PreviewTransformSeverity = "error" | "info" | "warning";
+
   export type UnsupportedPatternError = {
     code: string;
     message: string;
@@ -11,13 +14,34 @@ declare module "@lattice-ui/compiler" {
 
   export type TransformPreviewSourceOptions = {
     filePath: string;
+    mode?: PreviewTransformMode;
     runtimeModule: string;
     target: string;
   };
 
-  export type TransformPreviewSourceResult = {
+  export type PreviewTransformDiagnostic = {
+    blocking: boolean;
     code: string;
+    details?: string;
+    file: string;
+    line: number;
+    column: number;
+    severity: PreviewTransformSeverity;
+    summary: string;
+    symbol?: string;
+    target: string;
+  };
+
+  export type PreviewTransformOutcome = {
+    fidelity: "preserved" | "degraded" | "metadata-only";
+    kind: "ready" | "compatibility" | "mocked" | "blocked" | "design-time";
+  };
+
+  export type TransformPreviewSourceResult = {
+    code: string | null;
     errors: UnsupportedPatternError[];
+    diagnostics: PreviewTransformDiagnostic[];
+    outcome: PreviewTransformOutcome;
   };
 
   export function transformPreviewSource(

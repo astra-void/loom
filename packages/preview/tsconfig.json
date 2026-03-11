@@ -1,20 +1,15 @@
 {
+  "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "target": "ES2021",
+    "baseUrl": ".",
     "module": "CommonJS",
     "moduleResolution": "Node",
     "rootDir": "src",
     "outDir": "dist",
     "declaration": true,
     "jsx": "react-jsx",
-    "strict": true,
-    "esModuleInterop": true,
-    "allowSyntheticDefaultImports": true,
-    "resolveJsonModule": true,
     "lib": ["ES2021", "DOM", "DOM.Iterable"],
-    "types": ["node", "react", "react-dom"],
-    "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true
+    "types": ["node", "react", "react-dom"]
   },
   "include": ["src/**/*.ts", "src/**/*.tsx", "src/**/*.d.ts"]
 }

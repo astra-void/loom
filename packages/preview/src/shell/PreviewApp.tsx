@@ -4,7 +4,7 @@ import type {
   PreviewEntryDescriptor,
   PreviewEntryPayload,
   PreviewEntryStatus,
-} from "@lattice-ui/preview-engine";
+} from "@loom-dev/preview-engine";
 import {
   AutoMockProvider,
   areViewportsEqual,
@@ -20,7 +20,7 @@ import {
   setPreviewRuntimeIssueContext,
   subscribePreviewRuntimeIssues,
   type ViewportSize,
-} from "@lattice-ui/preview-runtime";
+} from "@loom-dev/preview-runtime";
 import React from "react";
 import { PreviewThemeControl } from "./theme";
 
@@ -567,7 +567,7 @@ export function PreviewApp(props: PreviewAppProps) {
     <main className="preview-shell">
       <aside className="preview-sidebar">
         <div className="sidebar-header">
-          <p className="sidebar-eyebrow">Lattice Preview</p>
+          <p className="sidebar-eyebrow">Loom Preview</p>
           <h1>{props.projectName}</h1>
           <p>Compiler-driven preview for transformed `@rbxts/react` source files.</p>
         </div>

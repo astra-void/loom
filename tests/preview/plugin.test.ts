@@ -2,11 +2,11 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createPreviewVitePlugin } from "../../../packages/preview/src/source/plugin";
-import type { PreviewPlugin } from "../../../packages/preview/src/source/viteTypes";
+import { createPreviewVitePlugin } from "../../packages/preview/src/source/plugin";
+import type { PreviewPlugin } from "../../packages/preview/src/source/viteTypes";
 import { getHookHandler } from "./hookTestUtils";
 
-const WORKSPACE_INDEX_MODULE_ID = "virtual:lattice-preview-workspace-index";
+const WORKSPACE_INDEX_MODULE_ID = "virtual:loom-preview-workspace-index";
 const temporaryRoots: string[] = [];
 
 type MockServer = ReturnType<typeof createMockServer>;
@@ -22,7 +22,7 @@ afterEach(() => {
 });
 
 function createFixtureRoot() {
-  const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), "lattice-preview-plugin-"));
+  const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), "loom-preview-plugin-"));
   const sourceRoot = path.join(fixtureRoot, "src");
   temporaryRoots.push(fixtureRoot);
   fs.mkdirSync(sourceRoot, { recursive: true });
@@ -60,7 +60,7 @@ function createPreviewPlugin(fixtureRoot: string, sourceRoot: string): PreviewPl
 
 function createMockServer() {
   const watcherHandlers = new Map<string, Array<(filePath: string) => void>>();
-  const workspaceModule = { id: "\0virtual:lattice-preview-workspace-index" };
+  const workspaceModule = { id: "\0virtual:loom-preview-workspace-index" };
 
   return {
     emit(event: string, filePath: string) {
@@ -117,7 +117,7 @@ function readEntryPayload(previewPlugin: PreviewPlugin, entryId: string) {
   const resolveId = getHookHandler<TestResolveIdHook>(previewPlugin.resolveId as TestResolveIdHook | undefined);
   const load = getHookHandler<TestLoadHook>(previewPlugin.load as TestLoadHook | undefined);
 
-  const resolvedEntryId = resolveId?.(`virtual:lattice-preview-entry:${encodeURIComponent(entryId)}`);
+  const resolvedEntryId = resolveId?.(`virtual:loom-preview-entry:${encodeURIComponent(entryId)}`);
   const entryModuleCode = load?.(resolvedEntryId ?? entryId);
   if (typeof entryModuleCode !== "string") {
     throw new Error("Expected the preview entry module to load as a string.");
@@ -210,7 +210,7 @@ describe("createPreviewVitePlugin", () => {
     expect(mockServer.ws.send).toHaveBeenCalledTimes(4);
     expect(mockServer.ws.send).toHaveBeenCalledWith(
       expect.objectContaining({
-        event: "lattice-preview:update",
+        event: "loom-preview:update",
         type: "custom",
       }),
     );

@@ -1,8 +1,8 @@
 {
-  "name": "@lattice-ui/preview-engine",
-  "version": "0.4.0",
+  "name": "@loom-dev/preview-engine",
+  "version": "0.1.0",
   "private": false,
-  "description": "Core preview engine protocols, discovery, and invalidation for Lattice UI.",
+  "description": "Core preview engine protocols, discovery, and invalidation for Loom.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "files": [
@@ -18,9 +18,12 @@
     "watch": "tsc -p tsconfig.json -w"
   },
   "dependencies": {
-    "@lattice-ui/compiler": "workspace:*",
-    "@lattice-ui/preview-runtime": "workspace:*",
+    "@loom-dev/compiler": "workspace:*",
+    "@loom-dev/preview-runtime": "workspace:*",
     "typescript": "5.9.3"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.14"
   },
   "exports": {
     ".": {

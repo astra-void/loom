@@ -1,4 +1,7 @@
-declare module "@lattice-ui/compiler" {
+declare module "@loom-dev/compiler" {
+  export type PreviewTransformMode = "strict-fidelity" | "compatibility" | "mocked" | "design-time";
+  export type PreviewTransformSeverity = "error" | "info" | "warning";
+
   export type UnsupportedPatternError = {
     code: string;
     message: string;
@@ -11,13 +14,34 @@ declare module "@lattice-ui/compiler" {
 
   export type TransformPreviewSourceOptions = {
     filePath: string;
+    mode?: PreviewTransformMode;
     runtimeModule: string;
     target: string;
   };
 
-  export type TransformPreviewSourceResult = {
+  export type PreviewTransformDiagnostic = {
+    blocking: boolean;
     code: string;
+    details?: string;
+    file: string;
+    line: number;
+    column: number;
+    severity: PreviewTransformSeverity;
+    summary: string;
+    symbol?: string;
+    target: string;
+  };
+
+  export type PreviewTransformOutcome = {
+    fidelity: "preserved" | "degraded" | "metadata-only";
+    kind: "ready" | "compatibility" | "mocked" | "blocked" | "design-time";
+  };
+
+  export type TransformPreviewSourceResult = {
+    code: string | null;
     errors: UnsupportedPatternError[];
+    diagnostics: PreviewTransformDiagnostic[];
+    outcome: PreviewTransformOutcome;
   };
 
   export function transformPreviewSource(
@@ -28,7 +52,7 @@ declare module "@lattice-ui/compiler" {
   export function compile_tsx(code: string): string;
 }
 
-declare module "@lattice-ui/layout-engine" {
+declare module "@loom-dev/layout-engine" {
   export type LayoutEngineModuleOrPath = string | URL | Request | Response | Blob | BufferSource | WebAssembly.Module;
 
   export type LayoutEngineInitInput =
@@ -53,8 +77,11 @@ declare module "@lattice-ui/layout-engine" {
   export function compute_layout(raw_tree: unknown, viewport_width: number, viewport_height: number): unknown;
 }
 
-declare module "@lattice-ui/preview-runtime" {
+declare module "@loom-dev/preview-runtime" {
   import type * as React from "react";
+
+  export const Frame: React.ComponentType<Record<string, unknown>>;
+  export const TextLabel: React.ComponentType<Record<string, unknown>>;
 
   export type PreviewExecutionMode = "strict-fidelity" | "compatibility" | "mocked" | "design-time";
   export type PreviewPropKind =
@@ -195,9 +222,9 @@ declare module "@lattice-ui/preview-runtime" {
   export function subscribePreviewRuntimeIssues(listener: (issues: PreviewRuntimeIssue[]) => void): () => void;
 }
 
-declare module "@lattice-ui/preview-engine" {
+declare module "@loom-dev/preview-engine" {
   import type { ComponentType } from "react";
-  import type { PreviewRuntimeIssue } from "@lattice-ui/preview-runtime";
+  import type { PreviewRuntimeIssue } from "@loom-dev/preview-runtime";
 
   export type PreviewExecutionMode = "strict-fidelity" | "compatibility" | "mocked" | "design-time";
   export type PreviewEntryStatus =
@@ -358,7 +385,7 @@ declare module "@lattice-ui/preview-engine" {
   };
 
   export type PreviewBuildArtifactKind = "module" | "entry-metadata" | "layout-schema";
-  export type PreviewBuildDiagnostic = PreviewDiagnostic | import("@lattice-ui/compiler").PreviewTransformDiagnostic;
+  export type PreviewBuildDiagnostic = PreviewDiagnostic | import("@loom-dev/compiler").PreviewTransformDiagnostic;
   export type PreviewBuiltArtifact = {
     cacheKey: string;
     diagnosticsSummary: {
@@ -407,6 +434,8 @@ declare module "@lattice-ui/preview-engine" {
   };
 
   export type PreviewSourceTarget = {
+    exclude?: string[];
+    include?: string[];
     name: string;
     packageName?: string;
     packageRoot: string;

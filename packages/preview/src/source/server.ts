@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import type { PreviewExecutionMode } from "@lattice-ui/preview-engine";
+import type { PreviewExecutionMode } from "@loom-dev/preview-engine";
 import { searchForWorkspaceRoot } from "vite";
 import type { LoadPreviewConfigOptions, PreviewConfig, ResolvedPreviewConfig } from "../config";
 import { loadPreviewConfig, resolvePreviewConfigObject } from "../config";
@@ -129,7 +129,7 @@ export async function startPreviewServer(options: StartPreviewServerInput = {}) 
     assetsInclude: ["**/*.wasm"],
     configFile: false,
     optimizeDeps: {
-      exclude: ["@lattice-ui/layout-engine", "layout-engine"],
+      exclude: ["@loom-dev/layout-engine", "layout-engine"],
     },
     plugins: [
       createAutoMockPropsPlugin({ targets: resolvedConfig.targets }),
@@ -141,7 +141,7 @@ export async function startPreviewServer(options: StartPreviewServerInput = {}) 
     resolve: {
       alias: [
         {
-          find: "@lattice-ui/preview-runtime",
+          find: "@loom-dev/preview-runtime",
           replacement: previewRuntimeRootEntry,
         },
       ],

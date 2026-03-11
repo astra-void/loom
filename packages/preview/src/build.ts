@@ -4,7 +4,7 @@ import {
   buildPreviewArtifacts,
   type PreviewBuildDiagnostic,
   type PreviewExecutionMode,
-} from "@lattice-ui/preview-engine";
+} from "@loom-dev/preview-engine";
 import type { PreviewTransformDiagnostic } from "./transformTypes";
 
 export type PreviewBuildTarget = {
@@ -72,7 +72,7 @@ function inferPreviewSourceTargets(targets: PreviewBuildTarget[]) {
 }
 
 function isTransformDiagnostic(diagnostic: PreviewBuildDiagnostic): diagnostic is PreviewTransformDiagnostic {
-  return "line" in diagnostic && "column" in diagnostic;
+  return "line" in diagnostic && "column" in diagnostic && !("phase" in diagnostic);
 }
 
 export async function buildPreviewModules(options: BuildPreviewModulesOptions): Promise<BuildPreviewModulesResult> {

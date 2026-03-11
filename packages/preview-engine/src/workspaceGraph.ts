@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import ts from "typescript";
-import { isFilePathUnderRoot, resolveRealFilePath } from "./pathUtils";
+import { isFilePathIncludedByTarget, isFilePathUnderRoot, resolveRealFilePath } from "./pathUtils";
 import type { PreviewGraphImportEdge, PreviewSourceTarget } from "./types";
 
 const TRANSFORMABLE_SOURCE_EXTENSIONS = new Set([".ts", ".tsx"]);
@@ -12,7 +12,7 @@ const DEFAULT_COMPILER_OPTIONS: ts.CompilerOptions = {
   moduleResolution: ts.ModuleResolutionKind.NodeJs,
   target: ts.ScriptTarget.ESNext,
 };
-const DIRECTORY_SCAN_EXCLUDES = new Set([".git", ".lattice-preview-cache", "node_modules"]);
+const DIRECTORY_SCAN_EXCLUDES = new Set([".git", ".loom-preview-cache", "node_modules"]);
 const BUILD_OUTPUT_SEGMENTS = ["build", "dist", "lib", "out", "types"];
 const PACKAGE_JSON_FILE_NAME = "package.json";
 
@@ -72,7 +72,7 @@ export type WorkspaceGraphService = {
   collectTransitiveDependencyPaths(filePath: string): string[];
   getFileContext(filePath: string): WorkspaceFileContext;
   getWorkspaceProjects(): WorkspaceProject[];
-  listTargetSourceFiles(target: Pick<PreviewSourceTarget, "sourceRoot">): string[];
+  listTargetSourceFiles(target: Pick<PreviewSourceTarget, "exclude" | "include" | "sourceRoot">): string[];
   resolveImport(options: { importerFilePath: string; specifier: string }): WorkspaceImportResolution | undefined;
   workspaceRoot: string;
 };
@@ -654,12 +654,12 @@ export function createWorkspaceGraphService(options: {
     };
   };
 
-  const listTargetSourceFiles = (target: Pick<PreviewSourceTarget, "sourceRoot">) => {
+  const listTargetSourceFiles = (target: Pick<PreviewSourceTarget, "exclude" | "include" | "sourceRoot">) => {
     const sourceRoot = resolveRealFilePath(target.sourceRoot);
     const projectFiles = dedupeSorted(
       context.projects.flatMap((project) =>
         [...project.filePaths].filter(
-          (filePath) => isTransformableSourceFile(filePath) && isFilePathUnderRoot(sourceRoot, filePath),
+          (filePath) => isTransformableSourceFile(filePath) && isFilePathIncludedByTarget(target, filePath),
         ),
       ),
     );
@@ -668,7 +668,7 @@ export function createWorkspaceGraphService(options: {
       return projectFiles;
     }
 
-    return listSourceFiles(sourceRoot);
+    return listSourceFiles(sourceRoot).filter((filePath) => isFilePathIncludedByTarget(target, filePath));
   };
 
   const getModuleSpecifiers = (filePath: string) => {

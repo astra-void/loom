@@ -29,7 +29,7 @@ fs.mkdirSync(distShellRoot, { recursive: true });
 
 await build({
   alias: {
-    "@lattice-ui/preview-runtime": previewRuntimeSourceEntry,
+    "@loom-dev/preview-runtime": previewRuntimeSourceEntry,
   },
   assetNames: "assets/[name]-[hash]",
   bundle: true,
@@ -38,8 +38,8 @@ await build({
     "react",
     "react-dom",
     "react-dom/client",
-    "virtual:lattice-preview-registry",
-    "virtual:lattice-preview-workspace-index",
+    "virtual:loom-preview-registry",
+    "virtual:loom-preview-workspace-index",
   ],
   format: "esm",
   jsx: "automatic",

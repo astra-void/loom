@@ -1,5 +1,5 @@
-import initLayoutEngine, { createLayoutSession } from "@lattice-ui/layout-engine";
-import layoutEngineWasmUrl from "@lattice-ui/layout-engine/layout_engine_bg.wasm?url";
+import initLayoutEngine, { createLayoutSession } from "@loom-dev/layout-engine";
+import layoutEngineWasmUrl from "@loom-dev/layout-engine/layout_engine_bg.wasm?url";
 import { type LayoutSessionLike } from "./controller";
 import { normalizePreviewLayoutResult, type PreviewLayoutNode } from "./model";
 

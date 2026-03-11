@@ -1,28 +1,23 @@
 {
+  "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "baseUrl": ".",
-    "target": "ES2021",
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "jsx": "react-jsx",
-    "strict": true,
-    "allowSyntheticDefaultImports": true,
-    "resolveJsonModule": true,
-    "esModuleInterop": true,
     "paths": {
-      "@lattice-ui/compiler": ["../../packages/compiler/index.d.ts"],
-      "@lattice-ui/preview-engine": ["../../packages/preview-engine/src/index.ts"],
-      "@lattice-ui/preview-runtime": ["../../packages/preview-runtime/src/index.ts"]
+      "@loom-dev/compiler": ["../../packages/compiler/wrapper.d.ts"],
+      "@loom-dev/preview-engine": ["../../packages/preview-engine/src/index.ts"],
+      "@loom-dev/preview-runtime": ["../../packages/preview-runtime/src/index.ts"]
     },
-    "skipLibCheck": true,
     "lib": ["ES2021", "DOM", "DOM.Iterable"],
-    "types": ["vite/client"]
+    "types": ["node", "vite/client"]
   },
   "include": [
     "src/**/*.ts",
     "src/**/*.tsx",
     "src/**/*.d.ts",
-    "lattice.preview.config.ts",
+    "loom.preview.config.ts",
     "vite.config.ts",
     "../../packages/preview/src/source/virtual-modules.d.ts"
   ],

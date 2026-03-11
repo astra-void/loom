@@ -1,5 +1,5 @@
-import initLayoutEngine, { compute_layout } from "@lattice-ui/layout-engine";
-import layoutEngineWasmUrl from "@lattice-ui/layout-engine/layout_engine_bg.wasm?url";
+import initLayoutEngine, { compute_layout } from "@loom-dev/layout-engine";
+import layoutEngineWasmUrl from "@loom-dev/layout-engine/layout_engine_bg.wasm?url";
 import React from "react";
 import { PreviewThemeControl } from "./theme";
 

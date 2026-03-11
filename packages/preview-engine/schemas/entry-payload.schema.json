@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "@lattice-ui/preview-engine/schemas/entry-payload",
+  "$id": "@loom-dev/preview-engine/schemas/entry-payload",
   "title": "PreviewEntryPayload",
   "type": "object",
   "additionalProperties": false,

@@ -1,14 +1,14 @@
 // @vitest-environment jsdom
 
 import { afterEach, describe, expect, it } from "vitest";
-import { installPreviewBrowserGlobals } from "../../../packages/preview/src/shell/installPreviewBrowserGlobals";
+import { installPreviewBrowserGlobals } from "../../packages/preview/src/shell/installPreviewBrowserGlobals";
 
 type PreviewGlobalRecord = typeof globalThis & {
   Enum?: unknown;
 };
 
 const globalRecord = globalThis as PreviewGlobalRecord;
-const previewGlobalFallbackMarker = Symbol.for("lattice.preview.browserGlobalsFallback");
+const previewGlobalFallbackMarker = Symbol.for("loom.preview.browserGlobalsFallback");
 const initialEnum = globalRecord.Enum;
 const globalPrototypeHost = Object.getPrototypeOf(globalThis);
 const initialGlobalPrototypeParent = globalPrototypeHost ? Object.getPrototypeOf(globalPrototypeHost) : null;

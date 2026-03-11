@@ -1,8 +1,8 @@
 {
-  "name": "@lattice-ui/preview-runtime",
-  "version": "0.4.0",
+  "name": "@loom-dev/preview-runtime",
+  "version": "0.1.0",
   "private": false,
-  "description": "Shared browser runtime for Lattice UI previews, including Roblox globals and DOM host rendering.",
+  "description": "Shared browser runtime for Loom previews, including Roblox globals and DOM host rendering.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "files": [
@@ -19,7 +19,7 @@
     "watch": "tsc -p tsconfig.json -w"
   },
   "dependencies": {
-    "@lattice-ui/layout-engine": "workspace:*",
+    "@loom-dev/layout-engine": "workspace:*",
     "react": "^19.2.4",
     "react-dom": "^19.2.4"
   },

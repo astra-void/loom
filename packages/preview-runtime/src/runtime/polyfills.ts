@@ -1,4 +1,4 @@
-const previewRuntimePolyfillsMarker = Symbol.for("lattice.preview.runtimePolyfillsInstalled");
+const previewRuntimePolyfillsMarker = Symbol.for("loom.preview.runtimePolyfillsInstalled");
 
 type CallableSize = (() => number) & {
   [Symbol.toPrimitive]: (hint: string) => number | string;

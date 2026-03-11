@@ -1,7 +1,7 @@
 ﻿import { subscribeToFrames } from "./frameScheduler";
 import { normalizePreviewRuntimeError, publishPreviewRuntimeIssue } from "./runtimeError";
 
-const RUN_SERVICE_KEY = Symbol.for("lattice-ui.preview-runtime.RunService");
+const RUN_SERVICE_KEY = Symbol.for("loom-dev.preview-runtime.RunService");
 
 export interface RBXScriptConnection {
   readonly Connected: boolean;

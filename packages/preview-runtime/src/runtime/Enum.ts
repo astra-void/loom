@@ -1,4 +1,4 @@
-﻿const ENUM_KEY = Symbol.for("lattice-ui.preview-runtime.Enum");
+﻿const ENUM_KEY = Symbol.for("loom-dev.preview-runtime.Enum");
 const inspectSymbol = Symbol.for("nodejs.util.inspect.custom");
 
 type EnumProxy = Record<PropertyKey, unknown>;

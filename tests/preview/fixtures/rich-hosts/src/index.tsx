@@ -1,4 +1,4 @@
-import { React } from "@lattice-ui/core";
+import { React } from "@loom-dev/core";
 
 export function RichHostsPreview() {
   return (

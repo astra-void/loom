@@ -1,4 +1,4 @@
-import { createPreviewEngine, type PreviewEngine, type PreviewEngineSnapshot } from "@lattice-ui/preview-engine";
+import { createPreviewEngine, type PreviewEngine, type PreviewEngineSnapshot } from "@loom-dev/preview-engine";
 import type { ResolvedPreviewConfig } from "./config";
 import type { StartPreviewServerInput } from "./source/server";
 import { resolvePreviewServerConfig } from "./source/server";

@@ -1,5 +1,5 @@
-declare module "virtual:lattice-preview-workspace-index" {
-  import type { PreviewEntryPayload, PreviewWorkspaceIndex } from "@lattice-ui/preview-engine";
+declare module "virtual:loom-preview-workspace-index" {
+  import type { PreviewEntryPayload, PreviewWorkspaceIndex } from "@loom-dev/preview-engine";
 
   export const previewProtocolVersion: number;
   export const previewEntryPayloads: Record<string, PreviewEntryPayload>;
@@ -10,8 +10,8 @@ declare module "virtual:lattice-preview-workspace-index" {
   >;
 }
 
-declare module "virtual:lattice-preview-entry:*" {
-  import type { PreviewEntryPayload } from "@lattice-ui/preview-engine";
+declare module "virtual:loom-preview-entry:*" {
+  import type { PreviewEntryPayload } from "@loom-dev/preview-engine";
 
   export const __previewEntryPayload: PreviewEntryPayload;
   const previewEntryModule: Record<string, unknown>;

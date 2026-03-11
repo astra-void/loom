@@ -1,11 +1,15 @@
 {
-  "name": "@lattice-ui/compiler",
+  "name": "@loom-dev/compiler",
   "version": "0.4.0",
   "private": false,
   "description": "Custom TSX compiler bridge using Rust, SWC, and NAPI-RS.",
-  "main": "index.js",
-  "types": "index.d.ts",
+  "main": "wrapper.js",
+  "types": "wrapper.d.ts",
   "files": [
+    "*.node",
+    "wrapper.js",
+    "wrapper.d.ts",
+    "wrapper.mjs",
     "index.js",
     "index.d.ts"
   ],
@@ -24,13 +28,15 @@
   },
   "exports": {
     ".": {
-      "types": "./index.d.ts",
-      "require": "./index.js",
-      "default": "./index.js"
+      "types": "./wrapper.d.ts",
+      "import": "./wrapper.mjs",
+      "require": "./wrapper.js",
+      "default": "./wrapper.mjs"
     }
   },
+  "module": "wrapper.mjs",
   "napi": {
-    "binaryName": "lattice_ui_compiler",
+    "binaryName": "loom_compiler",
     "targets": [
       "x86_64-apple-darwin",
       "aarch64-apple-darwin",

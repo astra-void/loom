@@ -6,7 +6,7 @@ import {
   type SetupRobloxEnvironmentTarget,
   setupRobloxEnvironment,
   task,
-} from "@lattice-ui/preview-runtime";
+} from "@loom-dev/preview-runtime";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 class RafController {
@@ -61,7 +61,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe.sequential("@lattice-ui/preview-runtime", () => {
+describe.sequential("@loom-dev/preview-runtime", () => {
   it("provides a deep Enum proxy with stable Name and Value access", () => {
     const previewEnum = Enum as Record<string, any>;
 

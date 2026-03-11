@@ -1,5 +1,5 @@
 {
-  "name": "@lattice-ui/preview-harness",
+  "name": "@loom-dev/preview-harness",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -9,12 +9,13 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@lattice-ui/preview": "workspace:*",
+    "@loom-dev/preview": "workspace:*",
+    "@loom-dev/preview-engine": "workspace:*",
+    "@loom-dev/preview-runtime": "workspace:*",
     "react": "^19.2.4",
     "react-dom": "^19.2.4"
   },
   "devDependencies": {
-    "@lattice-ui/cli": "workspace:*",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.1.4",

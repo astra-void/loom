@@ -1,4 +1,4 @@
-declare module "@lattice-ui/layout-engine" {
+declare module "@loom-dev/layout-engine" {
   export type LayoutEngineModuleOrPath = string | URL | Request | Response | Blob | BufferSource | WebAssembly.Module;
 
   export type LayoutEngineInitInput =

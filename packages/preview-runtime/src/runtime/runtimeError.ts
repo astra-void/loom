@@ -1,5 +1,5 @@
-const PREFIX = "@lattice-ui/preview-runtime";
-const REPORTER_KEY = Symbol.for("lattice-ui.preview-runtime.reporter");
+const PREFIX = "@loom-dev/preview-runtime";
+const REPORTER_KEY = Symbol.for("loom-dev.preview-runtime.reporter");
 
 export type PreviewExecutionMode = "strict-fidelity" | "compatibility" | "mocked" | "design-time";
 export type PreviewRuntimeIssueKind =

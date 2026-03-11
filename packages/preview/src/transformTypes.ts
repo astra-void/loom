@@ -1,4 +1,4 @@
-import type { TransformPreviewSourceResult as CompilerTransformPreviewSourceResult } from "@lattice-ui/compiler";
+import type { TransformPreviewSourceResult as CompilerTransformPreviewSourceResult } from "@loom-dev/compiler";
 
 export type PreviewTransformMode = "strict-fidelity" | "compatibility" | "mocked" | "design-time";
 export type PreviewTransformSeverity = "error" | "info" | "warning";

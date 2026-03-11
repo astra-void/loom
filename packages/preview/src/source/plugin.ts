@@ -1,33 +1,33 @@
 import fs from "node:fs";
 import path from "node:path";
-import { compile_tsx, transformPreviewSource } from "@lattice-ui/compiler";
+import { compile_tsx, transformPreviewSource } from "@loom-dev/compiler";
 import {
   createPreviewEngine,
   PREVIEW_ENGINE_PROTOCOL_VERSION,
   type PreviewExecutionMode,
   type PreviewSourceTarget,
-} from "@lattice-ui/preview-engine";
-import type { PreviewRuntimeIssue } from "@lattice-ui/preview-runtime";
+} from "@loom-dev/preview-engine";
+import type { PreviewRuntimeIssue } from "@loom-dev/preview-runtime";
 import ts from "typescript";
 import { createErrorWithCause } from "../errorWithCause";
 import { normalizeTransformPreviewSourceResult } from "../transformResult";
-import { stripFileIdDecorations } from "./pathUtils";
+import { isFilePathIncludedByTarget, stripFileIdDecorations } from "./pathUtils";
 import {
   createUnresolvedPackageMockResolvePlugin,
   createUnresolvedPackageMockTransformPlugin,
 } from "./robloxPackageMockPlugin";
 import type { PreviewDevServer, PreviewPlugin, PreviewPluginOption } from "./viteTypes";
 
-const WORKSPACE_INDEX_MODULE_ID = "virtual:lattice-preview-workspace-index";
+const WORKSPACE_INDEX_MODULE_ID = "virtual:loom-preview-workspace-index";
 const RESOLVED_WORKSPACE_INDEX_MODULE_ID = `\0${WORKSPACE_INDEX_MODULE_ID}`;
-const RUNTIME_MODULE_ID = "virtual:lattice-preview-runtime";
+const RUNTIME_MODULE_ID = "virtual:loom-preview-runtime";
 const RESOLVED_RUNTIME_MODULE_ID = `\0${RUNTIME_MODULE_ID}`;
-const ENTRY_MODULE_ID_PREFIX = "virtual:lattice-preview-entry:";
+const ENTRY_MODULE_ID_PREFIX = "virtual:loom-preview-entry:";
 const RESOLVED_ENTRY_MODULE_ID_PREFIX = `\0${ENTRY_MODULE_ID_PREFIX}`;
-const PREVIEW_UPDATE_EVENT = "lattice-preview:update";
-const RUNTIME_ISSUES_EVENT = "lattice-preview:runtime-issues";
+const PREVIEW_UPDATE_EVENT = "loom-preview:update";
+const RUNTIME_ISSUES_EVENT = "loom-preview:runtime-issues";
 const RBX_STYLE_HELPER_NAME = "__rbxStyle";
-const RBX_STYLE_IMPORT = `import { ${RBX_STYLE_HELPER_NAME} } from "@lattice-ui/preview-runtime";\n`;
+const RBX_STYLE_IMPORT = `import { ${RBX_STYLE_HELPER_NAME} } from "@loom-dev/preview-runtime";\n`;
 
 type TransformPreviewSourceInvocationOptions = Parameters<typeof transformPreviewSource>[1] & {
   mode?: PreviewExecutionMode;
@@ -47,7 +47,7 @@ function resolveRuntimeEntryPath() {
   ];
   const candidate = candidates.find((filePath) => fs.existsSync(filePath));
   if (!candidate) {
-    throw new Error("Unable to resolve @lattice-ui/preview-runtime entry.");
+    throw new Error("Unable to resolve @loom-dev/preview-runtime entry.");
   }
 
   return candidate.split(path.sep).join("/");
@@ -141,9 +141,22 @@ function isWatchedCandidate(previewEngine: ReturnType<typeof createPreviewEngine
   return previewEngine.isTrackedSourceFile(normalizedFilePath);
 }
 
+function isTransformablePreviewSourceFile(filePath: string) {
+  const normalizedFilePath = stripFileIdDecorations(filePath);
+  return (
+    (normalizedFilePath.endsWith(".ts") || normalizedFilePath.endsWith(".tsx")) &&
+    !normalizedFilePath.endsWith(".d.ts") &&
+    !normalizedFilePath.endsWith(".d.tsx")
+  );
+}
+
 function getTransformTarget(targets: PreviewSourceTarget[], filePath: string) {
   const normalizedFilePath = stripFileIdDecorations(filePath);
-  return targets.find((target) => normalizedFilePath.startsWith(target.sourceRoot));
+  if (!isTransformablePreviewSourceFile(normalizedFilePath)) {
+    return undefined;
+  }
+
+  return targets.find((target) => isFilePathIncludedByTarget(target, normalizedFilePath));
 }
 
 export function createPreviewVitePlugin(options: CreatePreviewVitePluginOptions): PreviewPluginOption {
@@ -197,7 +210,7 @@ export function createPreviewVitePlugin(options: CreatePreviewVitePluginOptions)
   };
 
   const previewPlugin: PreviewPlugin = {
-    name: "lattice-preview-source-first",
+    name: "loom-preview-source-first",
     enforce: "pre",
     configureServer(configuredServer: PreviewDevServer) {
       server = configuredServer;

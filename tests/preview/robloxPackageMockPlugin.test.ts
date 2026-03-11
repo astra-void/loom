@@ -3,7 +3,7 @@ import {
   createUnresolvedPackageMockResolvePlugin,
   createUnresolvedPackageMockTransformPlugin,
   UNRESOLVED_MOCK_MODULE_ID,
-} from "../../../packages/preview/src/source/robloxPackageMockPlugin";
+} from "../../packages/preview/src/source/robloxPackageMockPlugin";
 import { getHookHandler } from "./hookTestUtils";
 
 describe("unresolved package mock plugin", () => {
@@ -34,7 +34,7 @@ describe("unresolved package mock plugin", () => {
           }
 
           if (specifier === "resolved-virtual-package") {
-            return { id: "\0virtual:lattice-preview-unresolved-env" };
+            return { id: "\0virtual:loom-preview-unresolved-env" };
           }
 
           return null;
@@ -46,15 +46,15 @@ describe("unresolved package mock plugin", () => {
     const code = typeof result === "string" ? result : (result?.code ?? "");
 
     expect(code).toContain(`from "${UNRESOLVED_MOCK_MODULE_ID}"`);
-    expect(code).toContain("const Dependency = __latticeUnresolvedEnvMock.Dependency;");
-    expect(code).toContain("const MissingDefault = __latticeUnresolvedEnvMock;");
-    expect(code).toContain("const MissingNamespace = __latticeUnresolvedEnvMock;");
-    expect(code).toContain("const MissingModule = __latticeUnresolvedModuleMock;");
-    expect(code).toContain("const LuaBound = __latticeUnresolvedEnvMock.LuaBound;");
-    expect(code).toContain("const TweenService = __latticeUnresolvedEnvMock.TweenService;");
-    expect(code).toContain("export const ReDependency = __latticeUnresolvedEnvMock.Dependency;");
-    expect(code).toContain("const required = __latticeUnresolvedModuleMock;");
-    expect(code).toContain("const lazy = Promise.resolve(__latticeUnresolvedModuleMock);");
+    expect(code).toContain("const Dependency = __loomUnresolvedEnvMock.Dependency;");
+    expect(code).toContain("const MissingDefault = __loomUnresolvedEnvMock;");
+    expect(code).toContain("const MissingNamespace = __loomUnresolvedEnvMock;");
+    expect(code).toContain("const MissingModule = __loomUnresolvedModuleMock;");
+    expect(code).toContain("const LuaBound = __loomUnresolvedEnvMock.LuaBound;");
+    expect(code).toContain("const TweenService = __loomUnresolvedEnvMock.TweenService;");
+    expect(code).toContain("export const ReDependency = __loomUnresolvedEnvMock.Dependency;");
+    expect(code).toContain("const required = __loomUnresolvedModuleMock;");
+    expect(code).toContain("const lazy = Promise.resolve(__loomUnresolvedModuleMock);");
   });
 
   it("resolves bare packages with non-browser module entries to the virtual mock", async () => {
@@ -71,7 +71,7 @@ describe("unresolved package mock plugin", () => {
       { attributes: {}, isEntry: false },
     );
 
-    expect(resolved).toBe("\0virtual:lattice-preview-unresolved-env");
+    expect(resolved).toBe("\0virtual:loom-preview-unresolved-env");
   });
 
   it("resolves unresolved bare packages to a single virtual module", async () => {
@@ -92,7 +92,7 @@ describe("unresolved package mock plugin", () => {
     const loaded = resolvedId ? await load?.call({} as never, resolvedId) : undefined;
     const code = typeof loaded === "string" ? loaded : (loaded?.code ?? "");
 
-    expect(resolvedId).toBe("\0virtual:lattice-preview-unresolved-env");
+    expect(resolvedId).toBe("\0virtual:loom-preview-unresolved-env");
     expect(code).toContain('import mock, { robloxModuleMock } from "/virtual/mock-env.ts";');
   });
 });

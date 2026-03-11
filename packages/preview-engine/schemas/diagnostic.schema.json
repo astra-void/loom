@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "@lattice-ui/preview-engine/schemas/diagnostic",
+  "$id": "@loom-dev/preview-engine/schemas/diagnostic",
   "title": "PreviewDiagnostic",
   "type": "object",
   "additionalProperties": false,

@@ -1,10 +1,10 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { createPreviewEngine } from "@lattice-ui/preview-engine";
-import type { PreviewRuntimeIssue } from "@lattice-ui/preview-runtime";
+import { createPreviewEngine } from "@loom-dev/preview-engine";
+import type { PreviewRuntimeIssue } from "@loom-dev/preview-runtime";
 import { afterEach, describe, expect, it } from "vitest";
-import { resolveRealFilePath } from "../../../packages/preview-engine/src/pathUtils";
+import { resolveRealFilePath } from "../../packages/preview-engine/src/pathUtils";
 
 const temporaryRoots: string[] = [];
 
@@ -15,7 +15,7 @@ afterEach(() => {
 });
 
 function createTempPreviewPackage(files: Record<string, string>) {
-  const packageRoot = fs.mkdtempSync(path.join(os.tmpdir(), "lattice-preview-engine-"));
+  const packageRoot = fs.mkdtempSync(path.join(os.tmpdir(), "loom-preview-engine-"));
   temporaryRoots.push(packageRoot);
 
   for (const [relativePath, content] of Object.entries(files)) {
@@ -39,7 +39,7 @@ function createTempPreviewPackage(files: Record<string, string>) {
 }
 
 function createTempPreviewWorkspace(packages: Record<string, Record<string, string>>) {
-  const workspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), "lattice-preview-workspace-engine-"));
+  const workspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), "loom-preview-workspace-engine-"));
   temporaryRoots.push(workspaceRoot);
   fs.writeFileSync(path.join(workspaceRoot, "pnpm-workspace.yaml"), 'packages:\n  - "packages/*"\n', "utf8");
 
