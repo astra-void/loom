@@ -8,12 +8,27 @@ describe("@loom-dev/compiler preview transform", () => {
       import type ReactTypes from "@rbxts/react";
 
       type Props = {
+        buttonRef: ReactTypes.MutableRefObject<GuiButton | undefined>;
         triggerRef: ReactTypes.MutableRefObject<GuiObject | undefined>;
+        labelRef: ReactTypes.MutableRefObject<GuiLabel | undefined>;
+        layer?: LayerCollector;
+        container?: BasePlayerGui;
+        viewRef: ReactTypes.MutableRefObject<Instance | undefined>;
       };
 
       export function Example(props: Props) {
-        const ref = React.useRef<TextLabel>();
-        return <textlabel ref={ref}>{props.triggerRef.current}</textlabel>;
+        const ref = React.useRef<GuiLabel>();
+        const button = props.buttonRef.current;
+        const label = props.labelRef.current;
+        return (
+          <textlabel ref={ref}>
+            {props.triggerRef.current}
+            {button && button.IsA("GuiButton") ? <frame /> : null}
+            {label && label.IsA("GuiLabel") ? <frame /> : null}
+            {props.layer && props.layer.IsA("LayerCollector") ? <frame /> : null}
+            {props.container && props.container.IsA("BasePlayerGui") ? <frame /> : null}
+          </textlabel>
+        );
       }
     `;
 
@@ -32,6 +47,10 @@ describe("@loom-dev/compiler preview transform", () => {
     expect(result.code).toContain('from "@loom-dev/preview-runtime"');
     expect(result.code).toContain('from "react"');
     expect(result.code).toContain("MutableRefObject<HTMLElement | null | undefined>");
+    expect(result.code).toContain('isPreviewElement(button, "GuiButton")');
+    expect(result.code).toContain('isPreviewElement(label, "GuiLabel")');
+    expect(result.code).toContain('isPreviewElement(props.layer, "LayerCollector")');
+    expect(result.code).toContain('isPreviewElement(props.container, "BasePlayerGui")');
     expect(result.code).toContain("<TextLabel");
   });
 
@@ -152,6 +171,35 @@ describe("@loom-dev/compiler preview transform", () => {
       }),
     ]);
     expect(transformed.code).toContain('__previewGlobal("game")');
+  });
+
+  it("rewrites expanded enum literal surfaces for preview-friendly comparisons", () => {
+    const transformed = transformPreviewSource(
+      `
+        export const horizontal = Enum.HorizontalAlignment.Center;
+        export const vertical = Enum.VerticalAlignment.Bottom;
+        export const inputMode = Enum.UserInputType.MouseButton1;
+        export const keyTab = Enum.KeyCode.Tab;
+        export const keyLetter = Enum.KeyCode.Z;
+        export const keyDigit = Enum.KeyCode.Nine;
+        export const playback = Enum.PlaybackState.Completed;
+      `,
+      {
+        filePath: "/virtual/enum-surface.tsx",
+        mode: "compatibility",
+        runtimeModule: "@loom-dev/preview-runtime",
+        target: "enum-surface",
+      },
+    );
+
+    expect(transformed.diagnostics).toHaveLength(0);
+    expect(transformed.code).toContain('"center"');
+    expect(transformed.code).toContain('"bottom"');
+    expect(transformed.code).toContain('"MouseButton1"');
+    expect(transformed.code).toContain('"Tab"');
+    expect(transformed.code).toContain('"z"');
+    expect(transformed.code).toContain('"9"');
+    expect(transformed.code).toContain('__previewGlobal("Enum").PlaybackState.Completed');
   });
 
   it("returns metadata-only outcomes in design-time mode", () => {

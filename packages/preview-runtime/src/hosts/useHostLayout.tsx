@@ -1,12 +1,14 @@
 import * as React from "react";
 import { normalizePreviewNodeId } from "../internal/robloxValues";
 import { LayoutNodeParentProvider, useLayoutDebugState, useRobloxLayout } from "../layout/context";
+import { publishPreviewRuntimeIssue } from "../runtime/runtimeError";
 import {
   domPresentationAdapter,
   type LayoutDebugState,
   type PreviewHostNode,
   patchPreviewHostNodeDomProps,
 } from "./domAdapter";
+import { isDegradedPreviewHost } from "./metadata";
 import { type LayoutHostName, type PreviewDomProps } from "./types";
 
 let previewNodeIdCounter = 0;
@@ -87,6 +89,35 @@ function useMeasurementRevision(elementRef: React.RefObject<HTMLElement | null>,
   return revision;
 }
 
+function useDegradedHostIssue(hostNode: PreviewHostNode) {
+  const publishedIssueKeyRef = React.useRef<string | null>(null);
+
+  React.useEffect(() => {
+    if (!isDegradedPreviewHost(hostNode.host)) {
+      return;
+    }
+
+    const issueKey = `${hostNode.host}:${hostNode.id}`;
+    if (publishedIssueKeyRef.current === issueKey) {
+      return;
+    }
+
+    publishedIssueKeyRef.current = issueKey;
+    publishPreviewRuntimeIssue({
+      code: "DEGRADED_HOST_RENDER",
+      details: `${hostNode.nodeType} is rendered as a preview placeholder with fallback sizing.`,
+      entryId: "preview-runtime",
+      file: "<runtime>",
+      kind: "RuntimeMockError",
+      phase: "runtime",
+      relativeFile: "<runtime>",
+      summary: `${hostNode.nodeType} rendered with degraded preview behavior.`,
+      symbol: hostNode.id,
+      target: hostNode.nodeType,
+    });
+  }, [hostNode.host, hostNode.id, hostNode.nodeType]);
+}
+
 export function useHostLayout(host: LayoutHostName, props: PreviewDomProps) {
   const elementRef = React.useRef<HTMLElement | null>(null);
   const generatedId = useGeneratedPreviewNodeId();
@@ -129,6 +160,8 @@ export function useHostLayout(host: LayoutHostName, props: PreviewDomProps) {
     }),
     [computed, diagnostics, layoutNode],
   );
+
+  useDegradedHostIssue(hostNode);
 
   return {
     computed,

@@ -1,4 +1,5 @@
 import robloxMock from "./robloxMock";
+import { previewHostMatchesType } from "../hosts/metadata";
 
 const robloxMockRecord = robloxMock as unknown as Record<PropertyKey, unknown>;
 
@@ -112,41 +113,8 @@ export function isPreviewElement(value: unknown, typeName: string): value is HTM
     return false;
   }
 
-  if (typeName === "GuiObject" || typeName === "Instance") {
-    return true;
-  }
-
   const previewHost = value.dataset.previewHost;
-  switch (typeName) {
-    case "Frame":
-      return previewHost === "frame";
-    case "ScreenGui":
-      return previewHost === "screengui";
-    case "TextButton":
-      return previewHost === "textbutton";
-    case "ImageButton":
-      return previewHost === "imagebutton";
-    case "TextLabel":
-      return previewHost === "textlabel";
-    case "TextBox":
-      return previewHost === "textbox";
-    case "ImageLabel":
-      return previewHost === "imagelabel";
-    case "ScrollingFrame":
-      return previewHost === "scrollingframe";
-    case "CanvasGroup":
-      return previewHost === "canvasgroup";
-    case "ViewportFrame":
-      return previewHost === "viewportframe";
-    case "VideoFrame":
-      return previewHost === "videoframe";
-    case "SurfaceGui":
-      return previewHost === "surfacegui";
-    case "BillboardGui":
-      return previewHost === "billboardgui";
-    default:
-      return true;
-  }
+  return previewHost ? previewHostMatchesType(previewHost, typeName, "isa") : false;
 }
 
 export function __previewGlobal(name: string) {

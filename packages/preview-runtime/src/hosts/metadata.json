@@ -1,0 +1,290 @@
+{
+  "hosts": [
+    {
+      "jsxName": "frame",
+      "runtimeName": "Frame",
+      "domTag": "div",
+      "participatesInLayout": true,
+      "supportsTypeRewrite": true,
+      "supportsIsa": true,
+      "abstractAncestors": ["GuiObject", "Instance"],
+      "fullSizeDefault": true,
+      "degraded": false
+    },
+    {
+      "jsxName": "textbutton",
+      "runtimeName": "TextButton",
+      "domTag": "button",
+      "participatesInLayout": true,
+      "supportsTypeRewrite": true,
+      "supportsIsa": true,
+      "abstractAncestors": ["GuiObject", "GuiButton", "Instance"],
+      "fullSizeDefault": false,
+      "degraded": false
+    },
+    {
+      "jsxName": "imagebutton",
+      "runtimeName": "ImageButton",
+      "domTag": "button",
+      "participatesInLayout": true,
+      "supportsTypeRewrite": true,
+      "supportsIsa": true,
+      "abstractAncestors": ["GuiObject", "GuiButton", "Instance"],
+      "fullSizeDefault": false,
+      "degraded": false
+    },
+    {
+      "jsxName": "screengui",
+      "runtimeName": "ScreenGui",
+      "domTag": "div",
+      "participatesInLayout": true,
+      "supportsTypeRewrite": true,
+      "supportsIsa": true,
+      "abstractAncestors": ["GuiObject", "LayerCollector", "BasePlayerGui", "Instance"],
+      "fullSizeDefault": true,
+      "degraded": false
+    },
+    {
+      "jsxName": "surfacegui",
+      "runtimeName": "SurfaceGui",
+      "domTag": "div",
+      "participatesInLayout": true,
+      "supportsTypeRewrite": true,
+      "supportsIsa": true,
+      "abstractAncestors": ["GuiObject", "LayerCollector", "Instance"],
+      "fullSizeDefault": true,
+      "degraded": true
+    },
+    {
+      "jsxName": "billboardgui",
+      "runtimeName": "BillboardGui",
+      "domTag": "div",
+      "participatesInLayout": true,
+      "supportsTypeRewrite": true,
+      "supportsIsa": true,
+      "abstractAncestors": ["GuiObject", "LayerCollector", "Instance"],
+      "fullSizeDefault": true,
+      "degraded": true
+    },
+    {
+      "jsxName": "textlabel",
+      "runtimeName": "TextLabel",
+      "domTag": "span",
+      "participatesInLayout": true,
+      "supportsTypeRewrite": true,
+      "supportsIsa": true,
+      "abstractAncestors": ["GuiObject", "GuiLabel", "Instance"],
+      "fullSizeDefault": false,
+      "degraded": false
+    },
+    {
+      "jsxName": "textbox",
+      "runtimeName": "TextBox",
+      "domTag": "input",
+      "participatesInLayout": true,
+      "supportsTypeRewrite": true,
+      "supportsIsa": true,
+      "abstractAncestors": ["GuiObject", "Instance"],
+      "fullSizeDefault": false,
+      "degraded": false
+    },
+    {
+      "jsxName": "imagelabel",
+      "runtimeName": "ImageLabel",
+      "domTag": "div",
+      "participatesInLayout": true,
+      "supportsTypeRewrite": true,
+      "supportsIsa": true,
+      "abstractAncestors": ["GuiObject", "GuiLabel", "Instance"],
+      "fullSizeDefault": false,
+      "degraded": false
+    },
+    {
+      "jsxName": "scrollingframe",
+      "runtimeName": "ScrollingFrame",
+      "domTag": "div",
+      "participatesInLayout": true,
+      "supportsTypeRewrite": true,
+      "supportsIsa": true,
+      "abstractAncestors": ["GuiObject", "Instance"],
+      "fullSizeDefault": false,
+      "degraded": false
+    },
+    {
+      "jsxName": "canvasgroup",
+      "runtimeName": "CanvasGroup",
+      "domTag": "div",
+      "participatesInLayout": true,
+      "supportsTypeRewrite": true,
+      "supportsIsa": true,
+      "abstractAncestors": ["GuiObject", "Instance"],
+      "fullSizeDefault": true,
+      "degraded": false
+    },
+    {
+      "jsxName": "viewportframe",
+      "runtimeName": "ViewportFrame",
+      "domTag": "div",
+      "participatesInLayout": true,
+      "supportsTypeRewrite": true,
+      "supportsIsa": true,
+      "abstractAncestors": ["GuiObject", "Instance"],
+      "fullSizeDefault": true,
+      "degraded": true
+    },
+    {
+      "jsxName": "videoframe",
+      "runtimeName": "VideoFrame",
+      "domTag": "div",
+      "participatesInLayout": true,
+      "supportsTypeRewrite": true,
+      "supportsIsa": true,
+      "abstractAncestors": ["GuiObject", "Instance"],
+      "fullSizeDefault": true,
+      "degraded": true
+    },
+    {
+      "jsxName": "uicorner",
+      "runtimeName": "UICorner",
+      "domTag": "div",
+      "participatesInLayout": false,
+      "supportsTypeRewrite": false,
+      "supportsIsa": false,
+      "abstractAncestors": [],
+      "fullSizeDefault": false,
+      "degraded": false
+    },
+    {
+      "jsxName": "uipadding",
+      "runtimeName": "UIPadding",
+      "domTag": "div",
+      "participatesInLayout": false,
+      "supportsTypeRewrite": false,
+      "supportsIsa": false,
+      "abstractAncestors": [],
+      "fullSizeDefault": false,
+      "degraded": false
+    },
+    {
+      "jsxName": "uilistlayout",
+      "runtimeName": "UIListLayout",
+      "domTag": "div",
+      "participatesInLayout": false,
+      "supportsTypeRewrite": false,
+      "supportsIsa": false,
+      "abstractAncestors": [],
+      "fullSizeDefault": false,
+      "degraded": false
+    },
+    {
+      "jsxName": "uigridlayout",
+      "runtimeName": "UIGridLayout",
+      "domTag": "div",
+      "participatesInLayout": false,
+      "supportsTypeRewrite": false,
+      "supportsIsa": false,
+      "abstractAncestors": [],
+      "fullSizeDefault": false,
+      "degraded": false
+    },
+    {
+      "jsxName": "uistroke",
+      "runtimeName": "UIStroke",
+      "domTag": "div",
+      "participatesInLayout": false,
+      "supportsTypeRewrite": false,
+      "supportsIsa": false,
+      "abstractAncestors": [],
+      "fullSizeDefault": false,
+      "degraded": false
+    },
+    {
+      "jsxName": "uiscale",
+      "runtimeName": "UIScale",
+      "domTag": "div",
+      "participatesInLayout": false,
+      "supportsTypeRewrite": false,
+      "supportsIsa": false,
+      "abstractAncestors": [],
+      "fullSizeDefault": false,
+      "degraded": false
+    },
+    {
+      "jsxName": "uigradient",
+      "runtimeName": "UIGradient",
+      "domTag": "div",
+      "participatesInLayout": false,
+      "supportsTypeRewrite": false,
+      "supportsIsa": false,
+      "abstractAncestors": [],
+      "fullSizeDefault": false,
+      "degraded": false
+    },
+    {
+      "jsxName": "uipagelayout",
+      "runtimeName": "UIPageLayout",
+      "domTag": "div",
+      "participatesInLayout": false,
+      "supportsTypeRewrite": false,
+      "supportsIsa": false,
+      "abstractAncestors": [],
+      "fullSizeDefault": false,
+      "degraded": false
+    },
+    {
+      "jsxName": "uitablelayout",
+      "runtimeName": "UITableLayout",
+      "domTag": "div",
+      "participatesInLayout": false,
+      "supportsTypeRewrite": false,
+      "supportsIsa": false,
+      "abstractAncestors": [],
+      "fullSizeDefault": false,
+      "degraded": false
+    },
+    {
+      "jsxName": "uisizeconstraint",
+      "runtimeName": "UISizeConstraint",
+      "domTag": "div",
+      "participatesInLayout": false,
+      "supportsTypeRewrite": false,
+      "supportsIsa": false,
+      "abstractAncestors": [],
+      "fullSizeDefault": false,
+      "degraded": false
+    },
+    {
+      "jsxName": "uitextsizeconstraint",
+      "runtimeName": "UITextSizeConstraint",
+      "domTag": "div",
+      "participatesInLayout": false,
+      "supportsTypeRewrite": false,
+      "supportsIsa": false,
+      "abstractAncestors": [],
+      "fullSizeDefault": false,
+      "degraded": false
+    },
+    {
+      "jsxName": "uiaspectratioconstraint",
+      "runtimeName": "UIAspectRatioConstraint",
+      "domTag": "div",
+      "participatesInLayout": false,
+      "supportsTypeRewrite": false,
+      "supportsIsa": false,
+      "abstractAncestors": [],
+      "fullSizeDefault": false,
+      "degraded": false
+    },
+    {
+      "jsxName": "uiflexitem",
+      "runtimeName": "UIFlexItem",
+      "domTag": "div",
+      "participatesInLayout": false,
+      "supportsTypeRewrite": false,
+      "supportsIsa": false,
+      "abstractAncestors": [],
+      "fullSizeDefault": false,
+      "degraded": false
+    }
+  ]
+}

@@ -5,11 +5,17 @@ import { installPreviewBrowserGlobals } from "../../packages/preview/src/shell/i
 
 type PreviewGlobalRecord = typeof globalThis & {
   Enum?: unknown;
+  TweenInfo?: new (...args: unknown[]) => unknown;
+  game?: unknown;
+  workspace?: unknown;
 };
 
 const globalRecord = globalThis as PreviewGlobalRecord;
 const previewGlobalFallbackMarker = Symbol.for("loom.preview.browserGlobalsFallback");
 const initialEnum = globalRecord.Enum;
+const initialGame = globalRecord.game;
+const initialTweenInfo = globalRecord.TweenInfo;
+const initialWorkspace = globalRecord.workspace;
 const globalPrototypeHost = Object.getPrototypeOf(globalThis);
 const initialGlobalPrototypeParent = globalPrototypeHost ? Object.getPrototypeOf(globalPrototypeHost) : null;
 const windowPrototypeHost = typeof window !== "undefined" ? Object.getPrototypeOf(window) : null;
@@ -20,6 +26,24 @@ afterEach(() => {
     delete globalRecord.Enum;
   } else {
     globalRecord.Enum = initialEnum;
+  }
+
+  if (initialGame === undefined) {
+    delete globalRecord.game;
+  } else {
+    globalRecord.game = initialGame;
+  }
+
+  if (initialTweenInfo === undefined) {
+    delete globalRecord.TweenInfo;
+  } else {
+    globalRecord.TweenInfo = initialTweenInfo;
+  }
+
+  if (initialWorkspace === undefined) {
+    delete globalRecord.workspace;
+  } else {
+    globalRecord.workspace = initialWorkspace;
   }
 
   if (globalPrototypeHost && Object.getPrototypeOf(globalPrototypeHost) !== initialGlobalPrototypeParent) {
@@ -64,7 +88,7 @@ describe("installPreviewBrowserGlobals", () => {
     expect(globalRecord.Enum).toBe(existingEnum);
   });
 
-  it("installs a catch-all fallback for arbitrary Roblox globals", () => {
+  it("installs preview-safe focused globals for game, TweenInfo, and workspace", () => {
     delete globalRecord.Enum;
 
     installPreviewBrowserGlobals();
@@ -77,9 +101,12 @@ describe("installPreviewBrowserGlobals", () => {
         tweenInfoType: typeof TweenInfo,
         taskDelayType: typeof task.delay,
         tostringType: typeof tostring,
-        tweenInfoInstance: new TweenInfo(0.14),
-        service: game.GetService("Players"),
-        workspaceValue: workspace,
+        tweenInfoTime: new TweenInfo(0.14).Time,
+        localPlayerName: game.GetService("Players").LocalPlayer.Name,
+        playerCount: game.GetService("Players").GetPlayers().length,
+        lastInputType: game.GetService("UserInputService").GetLastInputType(),
+        guiInset: game.GetService("GuiService").GetGuiInset(),
+        workspaceMatches: workspace === game.GetService("Workspace"),
       };
     `)() as {
       stringSize: number;
@@ -87,9 +114,12 @@ describe("installPreviewBrowserGlobals", () => {
       tweenInfoType: string;
       taskDelayType: string;
       tostringType: string;
-      tweenInfoInstance: unknown;
-      service: unknown;
-      workspaceValue: unknown;
+      tweenInfoTime: number;
+      localPlayerName: string;
+      playerCount: number;
+      lastInputType: string;
+      guiInset: readonly [{ X: number; Y: number }, { X: number; Y: number }];
+      workspaceMatches: boolean;
     };
 
     expect(result.stringSize).toBe(5);
@@ -97,9 +127,15 @@ describe("installPreviewBrowserGlobals", () => {
     expect(result.tweenInfoType).toBe("function");
     expect(result.taskDelayType).toBe("function");
     expect(result.tostringType).toBe("function");
-    expect(result.tweenInfoInstance).toBeDefined();
-    expect(result.service).toBeDefined();
-    expect(result.workspaceValue).toBeDefined();
+    expect(result.tweenInfoTime).toBe(0.14);
+    expect(result.localPlayerName).toBe("LocalPlayer");
+    expect(result.playerCount).toBe(1);
+    expect(result.lastInputType).toBe("MouseButton1");
+    expect(result.guiInset).toEqual([
+      { X: 0, Y: 0 },
+      { X: 0, Y: 0 },
+    ]);
+    expect(result.workspaceMatches).toBe(true);
   });
 
   it("repairs a marker-only fallback chain on reinstall", () => {

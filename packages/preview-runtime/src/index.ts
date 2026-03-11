@@ -43,23 +43,29 @@ import {
   Color3,
   Enum,
   error,
+  game,
   installPreviewRuntimeGlobals,
   isPreviewElement,
   pairs,
   RunService,
   task,
+  TweenInfo,
   typeIs,
   UDim,
   UDim2,
   Vector2,
+  workspace,
 } from "./runtime";
 
 export interface SetupRobloxEnvironmentTarget {
   Enum?: typeof Enum;
   RunService?: typeof RunService;
+  TweenInfo?: typeof TweenInfo;
+  game?: typeof game;
   print?: (...args: unknown[]) => void;
   task?: typeof task;
   tostring?: (value: unknown) => string;
+  workspace?: typeof workspace;
 }
 
 /**
@@ -116,9 +122,12 @@ const previewRuntimeHelpers = {
   UDim2,
   Vector2,
   error,
+  game,
   isPreviewElement,
   pairs,
+  TweenInfo,
   typeIs,
+  workspace,
 };
 
 const previewRuntimePrimitives = {
@@ -146,13 +155,20 @@ export type {
   PreviewEnumItem,
   PreviewEnumRoot,
   PreviewExecutionMode,
+  PreviewGame,
+  PreviewGuiService,
   PreviewPolyfillTarget,
+  PreviewPlayer,
+  PreviewPlayersService,
   PreviewRunService,
   PreviewRuntimeIssue,
   PreviewRuntimeIssueContext,
   PreviewRuntimeIssueKind,
   PreviewRuntimeIssuePhase,
   PreviewRuntimeReporter,
+  PreviewTween,
+  PreviewTweenService,
+  PreviewUserInputService,
   RBXScriptConnection,
   RBXScriptSignal,
   TaskCallback,
@@ -216,7 +232,7 @@ export {
   type ViewportSize,
 } from "./layout";
 export { DismissableLayer, FocusScope, Portal, PortalProvider, Presence, usePortalContext } from "./react";
-export { __previewGlobal, Color3, UDim, UDim2, Vector2, typeIs, pairs, error, isPreviewElement };
+export { __previewGlobal, Color3, UDim, UDim2, Vector2, typeIs, pairs, error, game, isPreviewElement, TweenInfo, workspace };
 export type { PreviewLayoutDebugNode, PreviewLayoutDebugPayload } from "./layout";
 export type { PreviewComponentPropsMetadata, PreviewPropMetadata } from "./preview";
 export type { LayerInteractEvent } from "./react";

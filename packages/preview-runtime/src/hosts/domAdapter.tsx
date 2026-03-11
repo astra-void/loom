@@ -1,6 +1,7 @@
 import * as React from "react";
 import { FULL_SIZE_UDIM2, normalizePreviewNodeId, serializeUDim2 } from "../internal/robloxValues";
 import { adaptRobloxNodeInput, type ComputedRect, type PreviewLayoutNode } from "../layout/model";
+import { isDegradedPreviewHost } from "./metadata";
 import { applyHoistedModifierStyles, extractHoistedChildren } from "./modifiers";
 import { applyComputedLayoutStyle, type ResolvedPreviewDomProps, resolvePreviewDomProps } from "./resolveProps";
 import { fullSizeLayoutHostNames, type LayoutHostName, layoutHostNodeType, type PreviewDomProps } from "./types";
@@ -56,6 +57,43 @@ function getDefaultSize(host: LayoutHostName) {
   }
 
   return undefined;
+}
+
+function renderDegradedHostLabel(node: PreviewHostNode) {
+  if (!isDegradedPreviewHost(node.host)) {
+    return undefined;
+  }
+
+  return (
+    <span
+      aria-hidden="true"
+      className="preview-host-degraded-label"
+      data-preview-degraded-label={node.nodeType}
+      style={{
+        background: "rgba(247, 232, 208, 0.92)",
+        border: "1px solid rgba(121, 97, 67, 0.22)",
+        borderRadius: "999px",
+        color: "#6f5739",
+        fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+        fontSize: "11px",
+        fontWeight: 600,
+        left: "8px",
+        letterSpacing: "0.04em",
+        maxWidth: "calc(100% - 16px)",
+        overflow: "hidden",
+        padding: "4px 8px",
+        pointerEvents: "none",
+        position: "absolute",
+        textOverflow: "ellipsis",
+        textTransform: "uppercase",
+        top: "8px",
+        whiteSpace: "nowrap",
+        zIndex: 2,
+      }}
+    >
+      {node.nodeType}
+    </span>
+  );
 }
 
 function renderHostText(text: string | undefined) {
@@ -129,7 +167,7 @@ function readMeasuredSize(element: HTMLElement | null) {
 }
 
 function withLayoutDiagnostics(
-  domProps: React.HTMLAttributes<HTMLElement>,
+  domProps: React.HTMLAttributes<HTMLElement> & Record<string, unknown>,
   diagnostics: LayoutDebugState | undefined,
   node: PreviewHostNode,
 ) {
@@ -163,11 +201,25 @@ function createRenderedDomProps(node: PreviewHostNode) {
 
   applyComputedLayoutStyle(style, node.computed ?? null);
   applyHoistedModifierStyles(style, state, node.sourceProps.AnchorPoint);
+  if (isDegradedPreviewHost(node.host)) {
+    style.backgroundImage =
+      style.backgroundImage ??
+      "linear-gradient(135deg, rgba(245, 232, 210, 0.9), rgba(255, 247, 234, 0.9))";
+    style.border = style.border ?? "1px dashed rgba(141, 115, 83, 0.45)";
+    style.overflow = style.overflow ?? "hidden";
+  }
   domProps.style = style;
 
   return {
     children,
-    domProps: withLayoutDiagnostics(domProps, node.layoutDebug, node),
+    domProps: withLayoutDiagnostics(
+      {
+        ...domProps,
+        "data-preview-degraded": isDegradedPreviewHost(node.host) ? "true" : undefined,
+      },
+      node.layoutDebug,
+      node,
+    ),
   };
 }
 
@@ -295,6 +347,7 @@ export const domPresentationAdapter: PresentationAdapter = {
       default: {
         return (
           <div {...rendered.domProps} ref={ref as React.Ref<HTMLDivElement>}>
+            {renderDegradedHostLabel(node)}
             {(node.host === "textlabel" || node.host === "frame") && renderHostText(node.presentationHints.text)}
             {children}
           </div>

@@ -1,6 +1,10 @@
 import type * as React from "react";
 import type { UDim2Like, Vector2Like } from "../internal/robloxValues";
 import type { Color3Value } from "../runtime/helpers";
+import {
+  fullSizeLayoutHostNames as sharedFullSizeLayoutHostNames,
+  layoutHostNodeType as sharedLayoutHostNodeType,
+} from "./metadata";
 
 export type PreviewEventTable = {
   Activated?: (event: Event) => void;
@@ -31,35 +35,26 @@ export const decoratorHostNames = [
 ] as const;
 export type DecoratorHostName = (typeof decoratorHostNames)[number];
 
-export const layoutHostNodeType = {
-  frame: "Frame",
-  textbutton: "TextButton",
-  imagebutton: "ImageButton",
-  screengui: "ScreenGui",
-  surfacegui: "SurfaceGui",
-  billboardgui: "BillboardGui",
-  textlabel: "TextLabel",
-  textbox: "TextBox",
-  imagelabel: "ImageLabel",
-  scrollingframe: "ScrollingFrame",
-  canvasgroup: "CanvasGroup",
-  viewportframe: "ViewportFrame",
-  videoframe: "VideoFrame",
-} as const;
+export const layoutHostNodeType = sharedLayoutHostNodeType;
 
-export type LayoutHostName = keyof typeof layoutHostNodeType;
+export type LayoutHostName =
+  | "frame"
+  | "textbutton"
+  | "imagebutton"
+  | "screengui"
+  | "surfacegui"
+  | "billboardgui"
+  | "textlabel"
+  | "textbox"
+  | "imagelabel"
+  | "scrollingframe"
+  | "canvasgroup"
+  | "viewportframe"
+  | "videoframe";
 export type HostName = LayoutHostName | DecoratorHostName;
 
 export const buttonLikeHostNames = ["textbutton", "imagebutton"] as const;
-export const frameLikeHostNames = [
-  "frame",
-  "canvasgroup",
-  "viewportframe",
-  "videoframe",
-  "surfacegui",
-  "billboardgui",
-] as const;
-export const fullSizeLayoutHostNames = [...frameLikeHostNames, "screengui"] as const;
+export const fullSizeLayoutHostNames = sharedFullSizeLayoutHostNames;
 
 export type PreviewDomProps = {
   Active?: boolean;

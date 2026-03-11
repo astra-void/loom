@@ -2,10 +2,13 @@
 
 import {
   Enum,
+  game,
   RunService,
   type SetupRobloxEnvironmentTarget,
   setupRobloxEnvironment,
   task,
+  TweenInfo,
+  workspace,
 } from "@loom-dev/preview-runtime";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -58,6 +61,7 @@ let rafController: RafController | undefined;
 afterEach(() => {
   rafController?.restore();
   rafController = undefined;
+  document.body.innerHTML = "";
   vi.restoreAllMocks();
 });
 
@@ -183,6 +187,81 @@ describe.sequential("@loom-dev/preview-runtime", () => {
     expect(target.Enum).toBe(Enum);
     expect(target.RunService).toBe(RunService);
     expect(target.task).toBe(existingTask);
+    expect(target.game).toBe(game);
+    expect(target.TweenInfo).toBe(TweenInfo);
+    expect(target.workspace).toBe(workspace);
+  });
+
+  it("provides focused GetService semantics for common preview services", () => {
+    setupRobloxEnvironment();
+
+    const players = game.GetService("Players") as {
+      GetPlayers(): unknown[];
+      LocalPlayer: { Name: string };
+    };
+    const userInputService = game.GetService("UserInputService") as {
+      GetFocusedTextBox(): HTMLElement | null;
+      GetLastInputType(): string;
+      KeyboardEnabled: boolean;
+      MouseEnabled: boolean;
+    };
+    const guiService = game.GetService("GuiService") as {
+      GetGuiInset(): readonly [{ X: number; Y: number }, { X: number; Y: number }];
+      IsTenFootInterface(): boolean;
+    };
+    const unknownService = game.GetService("AnalyticsService");
+    const input = document.createElement("input");
+    input.dataset.previewHost = "textbox";
+    document.body.append(input);
+    input.focus();
+
+    expect(game.GetService("RunService")).toBe(RunService);
+    expect(players.LocalPlayer.Name).toBe("LocalPlayer");
+    expect(players.GetPlayers()).toEqual([players.LocalPlayer]);
+    expect(userInputService.KeyboardEnabled).toBe(true);
+    expect(userInputService.MouseEnabled).toBe(true);
+    expect(userInputService.GetLastInputType()).toBe("MouseButton1");
+    expect(userInputService.GetFocusedTextBox()).toBe(input);
+    expect(guiService.GetGuiInset()).toEqual([
+      { X: 0, Y: 0 },
+      { X: 0, Y: 0 },
+    ]);
+    expect(guiService.IsTenFootInterface()).toBe(false);
+    expect(game.GetService("AnalyticsService")).toBe(unknownService);
+    expect(workspace).toBe(game.GetService("Workspace"));
+  });
+
+  it("applies tween goals immediately and fires Completed on preview tweens", () => {
+    setupRobloxEnvironment();
+
+    const tweenService = game.GetService("TweenService") as {
+      Create(instance: unknown, tweenInfo: TweenInfo, goal: Record<string, unknown>): {
+        Completed: { Connect(listener: (state: unknown) => void): void };
+        Play(): void;
+      };
+    };
+    const target = {
+      Position: 1,
+      Visible: false,
+    };
+    const tweenInfo = new TweenInfo(0.15);
+    const completed = vi.fn();
+    const tween = tweenService.Create(target, tweenInfo, {
+      Position: 2,
+      Visible: true,
+    });
+
+    tween.Completed.Connect((state) => {
+      completed(String(state));
+    });
+    tween.Play();
+
+    expect(tweenInfo.Time).toBe(0.15);
+    expect(target).toEqual({
+      Position: 2,
+      Visible: true,
+    });
+    expect(completed).toHaveBeenCalledWith("Enum.PlaybackState.Completed");
   });
 
   it("installs Luau-style globals and prototype helpers", () => {

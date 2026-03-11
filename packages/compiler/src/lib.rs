@@ -1,4 +1,5 @@
 mod preview_transform;
+mod preview_metadata;
 
 use napi_derive::napi;
 use swc_core::{
@@ -16,45 +17,16 @@ use swc_core::{
     },
 };
 
+use crate::preview_metadata::preview_host_metadata_by_jsx_name;
+
 #[derive(Default)]
 struct LoomPreviewTransformer;
 
 const RBX_STYLE_HELPER_NAME: &str = "__rbxStyle";
 
-const RBX_HOST_TAG_MAPPINGS: [(&str, &str); 26] = [
-    ("textbutton", "button"),
-    ("imagebutton", "button"),
-    ("textbox", "input"),
-    ("textlabel", "span"),
-    ("frame", "div"),
-    ("scrollingframe", "div"),
-    ("canvasgroup", "div"),
-    ("imagelabel", "div"),
-    ("viewportframe", "div"),
-    ("videoframe", "div"),
-    ("screengui", "div"),
-    ("surfacegui", "div"),
-    ("billboardgui", "div"),
-    ("uicorner", "div"),
-    ("uipadding", "div"),
-    ("uilistlayout", "div"),
-    ("uigridlayout", "div"),
-    ("uistroke", "div"),
-    ("uigradient", "div"),
-    ("uipagelayout", "div"),
-    ("uitablelayout", "div"),
-    ("uiscale", "div"),
-    ("uisizeconstraint", "div"),
-    ("uitextsizeconstraint", "div"),
-    ("uiaspectratioconstraint", "div"),
-    ("uiflexitem", "div"),
-];
-
 fn map_roblox_host_tag(tag: &str) -> Option<&'static str> {
-    RBX_HOST_TAG_MAPPINGS
-        .iter()
-        .find(|(host_tag, _)| *host_tag == tag)
-        .map(|(_, mapped_tag)| *mapped_tag)
+    preview_host_metadata_by_jsx_name(tag)
+        .map(|record| record.dom_tag.as_str())
 }
 
 fn is_roblox_style_prop(name: &str) -> bool {

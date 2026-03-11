@@ -4,6 +4,10 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 
+use crate::preview_metadata::{
+    is_supported_preview_host_type, preview_host_metadata_by_jsx_name,
+    preview_host_metadata_records, PreviewTypeSupportKind,
+};
 use napi_derive::napi;
 use swc_core::{
     common::{sync::Lrc, FileName, SourceMap, Span, SyntaxContext, DUMMY_SP},
@@ -39,172 +43,6 @@ const RUNTIME_HELPER_NAMES: [&str; 9] = [
     "pairs",
     "error",
     "isPreviewElement",
-];
-
-struct PreviewHostSpec {
-    jsx_name: &'static str,
-    runtime_name: &'static str,
-    supports_isa: bool,
-    supports_type_rewrite: bool,
-}
-
-const PREVIEW_HOST_SPECS: [PreviewHostSpec; 26] = [
-    PreviewHostSpec {
-        jsx_name: "frame",
-        runtime_name: "Frame",
-        supports_isa: true,
-        supports_type_rewrite: true,
-    },
-    PreviewHostSpec {
-        jsx_name: "textbutton",
-        runtime_name: "TextButton",
-        supports_isa: true,
-        supports_type_rewrite: true,
-    },
-    PreviewHostSpec {
-        jsx_name: "imagebutton",
-        runtime_name: "ImageButton",
-        supports_isa: true,
-        supports_type_rewrite: true,
-    },
-    PreviewHostSpec {
-        jsx_name: "screengui",
-        runtime_name: "ScreenGui",
-        supports_isa: true,
-        supports_type_rewrite: true,
-    },
-    PreviewHostSpec {
-        jsx_name: "surfacegui",
-        runtime_name: "SurfaceGui",
-        supports_isa: true,
-        supports_type_rewrite: true,
-    },
-    PreviewHostSpec {
-        jsx_name: "billboardgui",
-        runtime_name: "BillboardGui",
-        supports_isa: true,
-        supports_type_rewrite: true,
-    },
-    PreviewHostSpec {
-        jsx_name: "textlabel",
-        runtime_name: "TextLabel",
-        supports_isa: true,
-        supports_type_rewrite: true,
-    },
-    PreviewHostSpec {
-        jsx_name: "textbox",
-        runtime_name: "TextBox",
-        supports_isa: true,
-        supports_type_rewrite: true,
-    },
-    PreviewHostSpec {
-        jsx_name: "imagelabel",
-        runtime_name: "ImageLabel",
-        supports_isa: true,
-        supports_type_rewrite: true,
-    },
-    PreviewHostSpec {
-        jsx_name: "scrollingframe",
-        runtime_name: "ScrollingFrame",
-        supports_isa: true,
-        supports_type_rewrite: true,
-    },
-    PreviewHostSpec {
-        jsx_name: "canvasgroup",
-        runtime_name: "CanvasGroup",
-        supports_isa: true,
-        supports_type_rewrite: true,
-    },
-    PreviewHostSpec {
-        jsx_name: "viewportframe",
-        runtime_name: "ViewportFrame",
-        supports_isa: true,
-        supports_type_rewrite: true,
-    },
-    PreviewHostSpec {
-        jsx_name: "videoframe",
-        runtime_name: "VideoFrame",
-        supports_isa: true,
-        supports_type_rewrite: true,
-    },
-    PreviewHostSpec {
-        jsx_name: "uicorner",
-        runtime_name: "UICorner",
-        supports_isa: false,
-        supports_type_rewrite: false,
-    },
-    PreviewHostSpec {
-        jsx_name: "uipadding",
-        runtime_name: "UIPadding",
-        supports_isa: false,
-        supports_type_rewrite: false,
-    },
-    PreviewHostSpec {
-        jsx_name: "uilistlayout",
-        runtime_name: "UIListLayout",
-        supports_isa: false,
-        supports_type_rewrite: false,
-    },
-    PreviewHostSpec {
-        jsx_name: "uigridlayout",
-        runtime_name: "UIGridLayout",
-        supports_isa: false,
-        supports_type_rewrite: false,
-    },
-    PreviewHostSpec {
-        jsx_name: "uistroke",
-        runtime_name: "UIStroke",
-        supports_isa: false,
-        supports_type_rewrite: false,
-    },
-    PreviewHostSpec {
-        jsx_name: "uiscale",
-        runtime_name: "UIScale",
-        supports_isa: false,
-        supports_type_rewrite: false,
-    },
-    PreviewHostSpec {
-        jsx_name: "uigradient",
-        runtime_name: "UIGradient",
-        supports_isa: false,
-        supports_type_rewrite: false,
-    },
-    PreviewHostSpec {
-        jsx_name: "uipagelayout",
-        runtime_name: "UIPageLayout",
-        supports_isa: false,
-        supports_type_rewrite: false,
-    },
-    PreviewHostSpec {
-        jsx_name: "uitablelayout",
-        runtime_name: "UITableLayout",
-        supports_isa: false,
-        supports_type_rewrite: false,
-    },
-    PreviewHostSpec {
-        jsx_name: "uisizeconstraint",
-        runtime_name: "UISizeConstraint",
-        supports_isa: false,
-        supports_type_rewrite: false,
-    },
-    PreviewHostSpec {
-        jsx_name: "uitextsizeconstraint",
-        runtime_name: "UITextSizeConstraint",
-        supports_isa: false,
-        supports_type_rewrite: false,
-    },
-    PreviewHostSpec {
-        jsx_name: "uiaspectratioconstraint",
-        runtime_name: "UIAspectRatioConstraint",
-        supports_isa: false,
-        supports_type_rewrite: false,
-    },
-    PreviewHostSpec {
-        jsx_name: "uiflexitem",
-        runtime_name: "UIFlexItem",
-        supports_isa: false,
-        supports_type_rewrite: false,
-    },
 ];
 
 #[allow(non_snake_case)]
@@ -675,7 +513,11 @@ fn runtime_binding_names() -> HashSet<String> {
     RUNTIME_HELPER_NAMES
         .iter()
         .copied()
-        .chain(PREVIEW_HOST_SPECS.iter().map(|spec| spec.runtime_name))
+        .chain(
+            preview_host_metadata_records()
+                .iter()
+                .map(|record| record.runtime_name.as_str()),
+        )
         .map(ToOwned::to_owned)
         .collect()
 }
@@ -687,64 +529,110 @@ fn is_preview_runtime_alias_source(module_name: &str) -> bool {
     )
 }
 
-fn preview_host_spec_for_jsx_name(host_name: &str) -> Option<&'static PreviewHostSpec> {
-    PREVIEW_HOST_SPECS
-        .iter()
-        .find(|spec| spec.jsx_name == host_name)
-}
-
-fn preview_host_spec_for_runtime_name(runtime_name: &str) -> Option<&'static PreviewHostSpec> {
-    PREVIEW_HOST_SPECS
-        .iter()
-        .find(|spec| spec.runtime_name == runtime_name)
-}
-
 fn supported_host_mapping(host_name: &str) -> Option<&'static str> {
-    preview_host_spec_for_jsx_name(host_name).map(|spec| spec.runtime_name)
+    preview_host_metadata_by_jsx_name(host_name).map(|record| record.runtime_name.as_str())
 }
 
 fn is_supported_type_name(type_name: &str) -> bool {
-    matches!(type_name, "GuiObject" | "BasePlayerGui" | "Instance")
-        || preview_host_spec_for_runtime_name(type_name).is_some_and(|spec| spec.supports_type_rewrite)
+    is_supported_preview_host_type(type_name, PreviewTypeSupportKind::TypeRewrite)
 }
 
 fn is_supported_isa_type(type_name: &str) -> bool {
-    type_name == "GuiObject"
-        || preview_host_spec_for_runtime_name(type_name).is_some_and(|spec| spec.supports_isa)
+    is_supported_preview_host_type(type_name, PreviewTypeSupportKind::Isa)
 }
+
+const PREVIEW_ENUM_LITERAL_MAPPINGS: &[(&str, &str)] = &[
+    ("Enum.TextXAlignment.Left", "left"),
+    ("Enum.TextXAlignment.Center", "center"),
+    ("Enum.TextXAlignment.Right", "right"),
+    ("Enum.TextYAlignment.Top", "top"),
+    ("Enum.TextYAlignment.Center", "center"),
+    ("Enum.TextYAlignment.Bottom", "bottom"),
+    ("Enum.FillDirection.Horizontal", "horizontal"),
+    ("Enum.FillDirection.Vertical", "vertical"),
+    ("Enum.SortOrder.LayoutOrder", "layout-order"),
+    ("Enum.SortOrder.Name", "name"),
+    ("Enum.AutomaticSize.None", "none"),
+    ("Enum.AutomaticSize.X", "x"),
+    ("Enum.AutomaticSize.Y", "y"),
+    ("Enum.AutomaticSize.XY", "xy"),
+    ("Enum.ScrollingDirection.X", "x"),
+    ("Enum.ScrollingDirection.Y", "y"),
+    ("Enum.ScrollingDirection.XY", "xy"),
+    ("Enum.HorizontalAlignment.Left", "left"),
+    ("Enum.HorizontalAlignment.Center", "center"),
+    ("Enum.HorizontalAlignment.Right", "right"),
+    ("Enum.VerticalAlignment.Top", "top"),
+    ("Enum.VerticalAlignment.Center", "center"),
+    ("Enum.VerticalAlignment.Bottom", "bottom"),
+    ("Enum.UserInputType.Keyboard", "Keyboard"),
+    ("Enum.UserInputType.MouseButton1", "MouseButton1"),
+    ("Enum.UserInputType.MouseButton2", "MouseButton2"),
+    ("Enum.UserInputType.MouseButton3", "MouseButton3"),
+    ("Enum.UserInputType.MouseMovement", "MouseMovement"),
+    ("Enum.UserInputType.Touch", "Touch"),
+    ("Enum.UserInputType.Gamepad1", "Gamepad1"),
+    ("Enum.UserInputType.Gamepad2", "Gamepad2"),
+    ("Enum.UserInputType.Gamepad3", "Gamepad3"),
+    ("Enum.UserInputType.Gamepad4", "Gamepad4"),
+    ("Enum.KeyCode.Return", "Enter"),
+    ("Enum.KeyCode.Space", " "),
+    ("Enum.KeyCode.Down", "ArrowDown"),
+    ("Enum.KeyCode.Up", "ArrowUp"),
+    ("Enum.KeyCode.Left", "ArrowLeft"),
+    ("Enum.KeyCode.Right", "ArrowRight"),
+    ("Enum.KeyCode.Home", "Home"),
+    ("Enum.KeyCode.End", "End"),
+    ("Enum.KeyCode.PageUp", "PageUp"),
+    ("Enum.KeyCode.PageDown", "PageDown"),
+    ("Enum.KeyCode.Escape", "Escape"),
+    ("Enum.KeyCode.Backspace", "Backspace"),
+    ("Enum.KeyCode.Tab", "Tab"),
+    ("Enum.KeyCode.Delete", "Delete"),
+    ("Enum.KeyCode.Insert", "Insert"),
+    ("Enum.KeyCode.A", "a"),
+    ("Enum.KeyCode.B", "b"),
+    ("Enum.KeyCode.C", "c"),
+    ("Enum.KeyCode.D", "d"),
+    ("Enum.KeyCode.E", "e"),
+    ("Enum.KeyCode.F", "f"),
+    ("Enum.KeyCode.G", "g"),
+    ("Enum.KeyCode.H", "h"),
+    ("Enum.KeyCode.I", "i"),
+    ("Enum.KeyCode.J", "j"),
+    ("Enum.KeyCode.K", "k"),
+    ("Enum.KeyCode.L", "l"),
+    ("Enum.KeyCode.M", "m"),
+    ("Enum.KeyCode.N", "n"),
+    ("Enum.KeyCode.O", "o"),
+    ("Enum.KeyCode.P", "p"),
+    ("Enum.KeyCode.Q", "q"),
+    ("Enum.KeyCode.R", "r"),
+    ("Enum.KeyCode.S", "s"),
+    ("Enum.KeyCode.T", "t"),
+    ("Enum.KeyCode.U", "u"),
+    ("Enum.KeyCode.V", "v"),
+    ("Enum.KeyCode.W", "w"),
+    ("Enum.KeyCode.X", "x"),
+    ("Enum.KeyCode.Y", "y"),
+    ("Enum.KeyCode.Z", "z"),
+    ("Enum.KeyCode.Zero", "0"),
+    ("Enum.KeyCode.One", "1"),
+    ("Enum.KeyCode.Two", "2"),
+    ("Enum.KeyCode.Three", "3"),
+    ("Enum.KeyCode.Four", "4"),
+    ("Enum.KeyCode.Five", "5"),
+    ("Enum.KeyCode.Six", "6"),
+    ("Enum.KeyCode.Seven", "7"),
+    ("Enum.KeyCode.Eight", "8"),
+    ("Enum.KeyCode.Nine", "9"),
+];
+
 fn resolve_supported_enum_value(value: &str) -> Option<&'static str> {
-    match value {
-        "Enum.TextXAlignment.Left" => Some("left"),
-        "Enum.TextXAlignment.Center" => Some("center"),
-        "Enum.TextXAlignment.Right" => Some("right"),
-        "Enum.TextYAlignment.Top" => Some("top"),
-        "Enum.TextYAlignment.Center" => Some("center"),
-        "Enum.TextYAlignment.Bottom" => Some("bottom"),
-        "Enum.FillDirection.Horizontal" => Some("horizontal"),
-        "Enum.FillDirection.Vertical" => Some("vertical"),
-        "Enum.SortOrder.LayoutOrder" => Some("layout-order"),
-        "Enum.SortOrder.Name" => Some("name"),
-        "Enum.AutomaticSize.None" => Some("none"),
-        "Enum.AutomaticSize.X" => Some("x"),
-        "Enum.AutomaticSize.Y" => Some("y"),
-        "Enum.AutomaticSize.XY" => Some("xy"),
-        "Enum.ScrollingDirection.X" => Some("x"),
-        "Enum.ScrollingDirection.Y" => Some("y"),
-        "Enum.ScrollingDirection.XY" => Some("xy"),
-        "Enum.KeyCode.Return" => Some("Enter"),
-        "Enum.KeyCode.Space" => Some(" "),
-        "Enum.KeyCode.Down" => Some("ArrowDown"),
-        "Enum.KeyCode.Up" => Some("ArrowUp"),
-        "Enum.KeyCode.Left" => Some("ArrowLeft"),
-        "Enum.KeyCode.Right" => Some("ArrowRight"),
-        "Enum.KeyCode.Home" => Some("Home"),
-        "Enum.KeyCode.End" => Some("End"),
-        "Enum.KeyCode.PageUp" => Some("PageUp"),
-        "Enum.KeyCode.PageDown" => Some("PageDown"),
-        "Enum.KeyCode.Escape" => Some("Escape"),
-        "Enum.KeyCode.Backspace" => Some("Backspace"),
-        _ => None,
-    }
+    PREVIEW_ENUM_LITERAL_MAPPINGS
+        .iter()
+        .find(|(name, _)| *name == value)
+        .map(|(_, resolved)| *resolved)
 }
 
 fn string_literal(value: &str) -> Str {
@@ -828,9 +716,11 @@ fn merge_runtime_imports(body: Vec<ModuleItem>, runtime_module: &str) -> Vec<Mod
         specifiers.push(create_runtime_named_import_specifier(helper_name));
     }
 
-    for host_spec in PREVIEW_HOST_SPECS {
-        specifier_indices.insert(host_spec.runtime_name.to_owned(), specifiers.len());
-        specifiers.push(create_runtime_named_import_specifier(host_spec.runtime_name));
+    for host_record in preview_host_metadata_records() {
+        specifier_indices.insert(host_record.runtime_name.clone(), specifiers.len());
+        specifiers.push(create_runtime_named_import_specifier(
+            host_record.runtime_name.as_str(),
+        ));
     }
 
     let mut remaining_items = Vec::with_capacity(body.len() + 1);

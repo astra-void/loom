@@ -6,4 +6,5 @@ export * from "./polyfills";
 export * from "./RunService";
 export * from "./robloxMock";
 export * from "./runtimeError";
+export * from "./services";
 export * from "./task";

@@ -13,16 +13,22 @@ describe("preview source transform", () => {
       import type ReactTypes from "@rbxts/react";
 
       type Props = {
+        buttonRef: ReactTypes.MutableRefObject<GuiButton | undefined>;
         triggerRef: ReactTypes.MutableRefObject<GuiObject | undefined>;
+        labelRef: ReactTypes.MutableRefObject<GuiLabel | undefined>;
         container?: BasePlayerGui;
+        layer?: LayerCollector;
         surface?: SurfaceGui;
         viewportRef: ReactTypes.MutableRefObject<ViewportFrame | undefined>;
+        viewRef: ReactTypes.MutableRefObject<Instance | undefined>;
         event?: LayerInteractEvent;
       };
 
       export function Example(props: Props) {
-        const ref = React.useRef<TextLabel>();
+        const ref = React.useRef<GuiLabel>();
         const host = props.viewportRef.current;
+        const button = props.buttonRef.current;
+        const label = props.labelRef.current;
         return (
           <surfacegui>
             <imagebutton Image="preview://button" />
@@ -39,6 +45,10 @@ describe("preview source transform", () => {
               <uiscale Scale={1.25} />
             </textlabel>
             {host && host.IsA("ViewportFrame") ? <frame /> : null}
+            {button && button.IsA("GuiButton") ? <frame /> : null}
+            {label && label.IsA("GuiLabel") ? <frame /> : null}
+            {props.layer && props.layer.IsA("LayerCollector") ? <frame /> : null}
+            {props.container && props.container.IsA("BasePlayerGui") ? <frame /> : null}
           </surfacegui>
         );
       }
@@ -67,12 +77,22 @@ describe("preview source transform", () => {
     expect(result.code).toContain("<UIPadding");
     expect(result.code).toContain("<UIScale");
     expect(result.code).toContain('isPreviewElement(host, "ViewportFrame")');
+    expect(result.code).toContain('isPreviewElement(button, "GuiButton")');
+    expect(result.code).toContain('isPreviewElement(label, "GuiLabel")');
+    expect(result.code).toContain('isPreviewElement(props.layer, "LayerCollector")');
+    expect(result.code).toContain('isPreviewElement(props.container, "BasePlayerGui")');
     expect(result.code).toContain('"left"');
   });
 
-  it("keeps unresolved Enum access for the browser runtime mock", () => {
+  it("rewrites expanded preview-safe enum literals and keeps unsupported enum roots mocked", () => {
     const source = `
       export const inputMode = Enum.UserInputType.MouseButton1;
+      export const horizontal = Enum.HorizontalAlignment.Center;
+      export const vertical = Enum.VerticalAlignment.Bottom;
+      export const keyTab = Enum.KeyCode.Tab;
+      export const keyLetter = Enum.KeyCode.A;
+      export const keyDigit = Enum.KeyCode.Zero;
+      export const playback = Enum.PlaybackState.Completed;
       export const host = <frame />;
     `;
 
@@ -84,7 +104,13 @@ describe("preview source transform", () => {
     });
 
     expect(result.diagnostics).toHaveLength(0);
-    expect(result.code).toContain('__previewGlobal("Enum").UserInputType.MouseButton1');
+    expect(result.code).toContain('"MouseButton1"');
+    expect(result.code).toContain('"center"');
+    expect(result.code).toContain('"bottom"');
+    expect(result.code).toContain('"Tab"');
+    expect(result.code).toContain('"a"');
+    expect(result.code).toContain('"0"');
+    expect(result.code).toContain('__previewGlobal("Enum").PlaybackState.Completed');
     expect(result.code).toContain("<Frame");
   });
 

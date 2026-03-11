@@ -344,9 +344,32 @@ describe("preview runtime host mapping", () => {
     expect(button.tagName).toBe("BUTTON");
     expect(image.getAttribute("src")).toBe("https://example.com/preview-button.png");
     expect(isPreviewElement(button, "ImageButton")).toBe(true);
+    expect(isPreviewElement(button, "GuiButton")).toBe(true);
+    expect(isPreviewElement(button, "GuiObject")).toBe(true);
+    expect(isPreviewElement(button, "Instance")).toBe(true);
 
     await user.click(button);
     expect(activated).toHaveBeenCalledTimes(1);
+  });
+
+  it("matches abstract preview host hierarchy through metadata-driven IsA checks", () => {
+    render(
+      <LayoutProvider debounceMs={0} viewportHeight={480} viewportWidth={640}>
+        <ScreenGui Id="abstract-screen">
+          <TextLabel Id="abstract-label" Text="Hierarchy" />
+        </ScreenGui>
+      </LayoutProvider>,
+    );
+
+    const screenGui = document.querySelector('[data-preview-host="screengui"]') as HTMLElement;
+    const label = document.querySelector('[data-preview-host="textlabel"]') as HTMLElement;
+
+    expect(isPreviewElement(screenGui, "LayerCollector")).toBe(true);
+    expect(isPreviewElement(screenGui, "BasePlayerGui")).toBe(true);
+    expect(isPreviewElement(screenGui, "GuiObject")).toBe(true);
+    expect(isPreviewElement(label, "GuiLabel")).toBe(true);
+    expect(isPreviewElement(label, "GuiObject")).toBe(true);
+    expect(isPreviewElement(label, "LayerCollector")).toBe(false);
   });
 
   it("registers frame-like placeholder hosts with full-size fallback layout", async () => {
@@ -427,6 +450,28 @@ describe("preview runtime host mapping", () => {
     expect(document.querySelector('[data-preview-host="videoframe"]')).toBeTruthy();
     expect(document.querySelector('[data-preview-host="surfacegui"]')).toBeTruthy();
     expect(document.querySelector('[data-preview-host="billboardgui"]')).toBeTruthy();
+    expect(document.querySelector('[data-preview-host="canvasgroup"]')?.getAttribute("data-preview-degraded")).toBeNull();
+    expect(document.querySelector('[data-preview-host="viewportframe"]')?.getAttribute("data-preview-degraded")).toBe("true");
+    expect(document.querySelector('[data-preview-host="videoframe"]')?.getAttribute("data-preview-degraded")).toBe("true");
+    expect(document.querySelector('[data-preview-host="surfacegui"]')?.getAttribute("data-preview-degraded")).toBe("true");
+    expect(document.querySelector('[data-preview-host="billboardgui"]')?.getAttribute("data-preview-degraded")).toBe(
+      "true",
+    );
+
+    await waitFor(() => {
+      expect(
+        getPreviewRuntimeIssues()
+          .filter((issue) => issue.code === "DEGRADED_HOST_RENDER")
+          .map((issue) => issue.target)
+          .sort(),
+      ).toEqual(["BillboardGui", "SurfaceGui", "VideoFrame", "ViewportFrame"]);
+    });
+
+    expect(
+      [...document.querySelectorAll("[data-preview-degraded-label]")]
+        .map((node) => node.getAttribute("data-preview-degraded-label"))
+        .sort(),
+    ).toEqual(["BillboardGui", "SurfaceGui", "VideoFrame", "ViewportFrame"]);
   });
 
   it("maps Roblox fonts and scales text into the host bounds", async () => {
