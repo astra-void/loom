@@ -80,11 +80,50 @@
 				}
 			}
 		},
+		"hostPolicy": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["degraded", "fullSizeDefault", "placeholderBehavior"],
+			"properties": {
+				"degraded": {
+					"type": "boolean"
+				},
+				"fullSizeDefault": {
+					"type": "boolean"
+				},
+				"placeholderBehavior": {
+					"enum": ["none", "container", "opaque"]
+				}
+			}
+		},
+		"sizeResolution": {
+			"type": "object",
+			"additionalProperties": false,
+			"required": ["hadExplicitSize", "intrinsicSizeAvailable", "reason"],
+			"properties": {
+				"hadExplicitSize": {
+					"type": "boolean"
+				},
+				"intrinsicSizeAvailable": {
+					"type": "boolean"
+				},
+				"reason": {
+					"enum": [
+						"explicit-size",
+						"full-size-default",
+						"intrinsic-measurement",
+						"intrinsic-empty",
+						"root-default"
+					]
+				}
+			}
+		},
 		"debugNode": {
 			"type": "object",
 			"additionalProperties": false,
 			"required": [
 				"children",
+				"hostPolicy",
 				"id",
 				"intrinsicSize",
 				"kind",
@@ -92,7 +131,8 @@
 				"nodeType",
 				"parentConstraints",
 				"provenance",
-				"rect"
+				"rect",
+				"sizeResolution"
 			],
 			"properties": {
 				"children": {
@@ -103,6 +143,9 @@
 				},
 				"debugLabel": {
 					"type": "string"
+				},
+				"hostPolicy": {
+					"$ref": "#/$defs/hostPolicy"
 				},
 				"id": {
 					"type": "string"
@@ -121,7 +164,12 @@
 					"enum": ["host", "layout", "root"]
 				},
 				"layoutSource": {
-					"enum": ["explicit-size", "intrinsic-size", "root-default"]
+					"enum": [
+						"explicit-size",
+						"full-size-default",
+						"intrinsic-size",
+						"root-default"
+					]
 				},
 				"nodeType": {
 					"type": "string"
@@ -161,6 +209,9 @@
 							"$ref": "#/$defs/rect"
 						}
 					]
+				},
+				"sizeResolution": {
+					"$ref": "#/$defs/sizeResolution"
 				},
 				"styleHints": {
 					"$ref": "#/$defs/styleHints"

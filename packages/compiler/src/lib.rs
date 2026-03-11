@@ -1,5 +1,5 @@
-mod preview_transform;
 mod preview_metadata;
+mod preview_transform;
 
 use napi_derive::napi;
 use swc_core::{
@@ -25,8 +25,7 @@ struct LoomPreviewTransformer;
 const RBX_STYLE_HELPER_NAME: &str = "__rbxStyle";
 
 fn map_roblox_host_tag(tag: &str) -> Option<&'static str> {
-    preview_host_metadata_by_jsx_name(tag)
-        .map(|record| record.dom_tag.as_str())
+    preview_host_metadata_by_jsx_name(tag).map(|record| record.dom_tag.as_str())
 }
 
 fn is_roblox_style_prop(name: &str) -> bool {

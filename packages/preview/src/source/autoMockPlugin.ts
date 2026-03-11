@@ -501,7 +501,10 @@ function serializeType(
 		);
 
 		if (filteredTypes.length === 1) {
-			return serializeType(filteredTypes[0]!, checker, contextNode, seenTypes);
+			const [singleType] = filteredTypes;
+			if (singleType) {
+				return serializeType(singleType, checker, contextNode, seenTypes);
+			}
 		}
 
 		return {

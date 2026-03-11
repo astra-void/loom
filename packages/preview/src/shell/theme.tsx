@@ -146,11 +146,14 @@ export function usePreviewTheme() {
 
 export function PreviewThemeControl() {
 	const { mode, setMode } = usePreviewTheme();
+	const labelId = React.useId();
 
 	return (
 		<div className="theme-control">
-			<span className="theme-toggle-label">Theme</span>
-			<div aria-label="Color theme" className="theme-toggle" role="group">
+			<span className="theme-toggle-label" id={labelId}>
+				Theme
+			</span>
+			<fieldset aria-labelledby={labelId} className="theme-toggle">
 				{THEME_OPTIONS.map((option) => (
 					<button
 						aria-pressed={mode === option.mode}
@@ -162,7 +165,7 @@ export function PreviewThemeControl() {
 						{option.label}
 					</button>
 				))}
-			</div>
+			</fieldset>
 		</div>
 	);
 }

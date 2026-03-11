@@ -98,7 +98,8 @@ export function resolveRealFilePath(filePath: string) {
 }
 
 export function canonicalizeFilePath(filePath: string) {
-	return getComparablePathVariants(filePath)[0]!;
+	const [canonicalPath] = getComparablePathVariants(filePath);
+	return canonicalPath ?? normalizeComparablePath(resolveFilePath(filePath));
 }
 
 export function isFilePathUnderRoot(rootPath: string, filePath: string) {

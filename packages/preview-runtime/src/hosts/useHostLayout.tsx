@@ -113,7 +113,7 @@ function useDegradedHostIssue(hostNode: PreviewHostNode) {
 		publishPreviewRuntimeIssue({
 			blocking: false,
 			code: "DEGRADED_HOST_RENDER",
-			details: `${hostNode.nodeType} is rendered as a preview placeholder with fallback sizing.`,
+			details: `${hostNode.nodeType} is rendered as a degraded preview placeholder with fallback sizing.`,
 			entryId: "preview-runtime",
 			file: "<runtime>",
 			kind: "RuntimeMockError",

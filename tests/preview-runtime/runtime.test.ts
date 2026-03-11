@@ -62,6 +62,25 @@ class RafController {
 
 let rafController: RafController | undefined;
 
+type TestPreviewEnumMember = {
+	EnumType: {
+		Name: string;
+	};
+	Name: string;
+	Value: number;
+};
+
+type TestPreviewEnum = {
+	KeyCode: {
+		Return: TestPreviewEnumMember;
+	};
+	TextXAlignment: {
+		Center: TestPreviewEnumMember;
+		FromName(name: string): TestPreviewEnumMember;
+		FromValue(value: number): TestPreviewEnumMember;
+	};
+};
+
 afterEach(() => {
 	rafController?.restore();
 	rafController = undefined;
@@ -71,7 +90,7 @@ afterEach(() => {
 
 describe.sequential("@loom-dev/preview-runtime", () => {
 	it("provides a deep Enum proxy with stable Name and Value access", () => {
-		const previewEnum = Enum as Record<string, any>;
+		const previewEnum = Enum as unknown as TestPreviewEnum;
 
 		expect(previewEnum.KeyCode.Return.Name).toBe("Return");
 		expect(previewEnum.KeyCode.Return.EnumType.Name).toBe("KeyCode");

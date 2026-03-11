@@ -687,16 +687,15 @@ async function runWithConcurrency<T>(
 	worker: (value: T) => Promise<void>,
 ) {
 	const concurrency = Math.max(1, limit);
-	let cursor = 0;
+	const iterator = values.values();
 
 	async function runNext(): Promise<void> {
-		if (cursor >= values.length) {
+		const nextValue = iterator.next();
+		if (nextValue.done) {
 			return;
 		}
 
-		const currentIndex = cursor;
-		cursor += 1;
-		await worker(values[currentIndex]!);
+		await worker(nextValue.value);
 		await runNext();
 	}
 
@@ -797,7 +796,7 @@ export async function buildPreviewArtifacts(
 
 		if (!cachedRecord) {
 			const sourceText = fs.readFileSync(record.sourceFilePath, "utf8");
-			let transformed;
+			let transformed: ReturnType<typeof normalizeTransformPreviewSourceResult>;
 			try {
 				transformed = normalizeTransformPreviewSourceResult(
 					transformPreviewSource(sourceText, {
@@ -880,16 +879,17 @@ export async function buildPreviewArtifacts(
 		artifactKinds.includes("entry-metadata") ||
 		artifactKinds.includes("layout-schema")
 	) {
-		previewEngine = createPreviewEngine({
+		const activePreviewEngine = createPreviewEngine({
 			projectName: options.projectName,
 			runtimeModule,
 			targets,
 			transformMode,
 		});
+		previewEngine = activePreviewEngine;
 
-		const workspaceIndex = previewEngine.getWorkspaceIndex();
-		const payloads = workspaceIndex.entries.map((entry) =>
-			previewEngine?.getEntryPayload(entry.id),
+		const workspaceIndex = activePreviewEngine.getWorkspaceIndex();
+		const payloads: PreviewEntryPayload[] = workspaceIndex.entries.map(
+			(entry) => activePreviewEngine.getEntryPayload(entry.id),
 		);
 
 		await runWithConcurrency(concurrency, payloads, async (payload) => {
@@ -900,12 +900,12 @@ export async function buildPreviewArtifacts(
 					versions,
 				});
 				const cachePath = getEntryMetadataCachePath(cacheDir, cacheKey);
-				let cachedRecord =
+				const cachedRecord =
 					readJsonFile<CachedEntryMetadataArtifactRecord>(cachePath);
-				let reusedFromCache = Boolean(cachedRecord);
-
-				if (!cachedRecord) {
-					cachedRecord = {
+				const reusedFromCache = Boolean(cachedRecord);
+				const entryMetadataRecord =
+					cachedRecord ??
+					({
 						artifactKind: "entry-metadata",
 						cacheKey,
 						createdAt: new Date().toISOString(),
@@ -916,9 +916,10 @@ export async function buildPreviewArtifacts(
 						relativePath: payload.descriptor.relativePath,
 						sourceFilePath: payload.descriptor.sourceFilePath,
 						targetName: payload.descriptor.targetName,
-					};
-					writeJsonFile(cachePath, cachedRecord);
-					reusedFromCache = false;
+					} satisfies CachedEntryMetadataArtifactRecord);
+
+				if (!cachedRecord) {
+					writeJsonFile(cachePath, entryMetadataRecord);
 				}
 
 				const builtArtifact: PreviewBuiltArtifact = {
@@ -932,7 +933,7 @@ export async function buildPreviewArtifacts(
 					targetName: payload.descriptor.targetName,
 				};
 
-				pushUniqueDiagnostics(diagnosticsMap, cachedRecord.diagnostics);
+				pushUniqueDiagnostics(diagnosticsMap, entryMetadataRecord.diagnostics);
 
 				if (options.outDir) {
 					const relativeOutputPath = normalizeRelativePath(
@@ -946,7 +947,7 @@ export async function buildPreviewArtifacts(
 					);
 					materializedFiles.set(relativeOutputPath, {
 						cacheKey,
-						content: JSON.stringify(cachedRecord.payload, undefined, 2),
+						content: JSON.stringify(entryMetadataRecord.payload, undefined, 2),
 						sourceFilePath: payload.descriptor.sourceFilePath,
 					});
 				}
@@ -965,12 +966,12 @@ export async function buildPreviewArtifacts(
 					versions,
 				});
 				const cachePath = getLayoutSchemaCachePath(cacheDir, cacheKey);
-				let cachedRecord =
+				const cachedRecord =
 					readJsonFile<CachedLayoutSchemaArtifactRecord>(cachePath);
-				let reusedFromCache = Boolean(cachedRecord);
-
-				if (!cachedRecord) {
-					cachedRecord = {
+				const reusedFromCache = Boolean(cachedRecord);
+				const layoutSchemaRecord =
+					cachedRecord ??
+					({
 						artifactKind: "layout-schema",
 						cacheKey,
 						createdAt: new Date().toISOString(),
@@ -981,9 +982,10 @@ export async function buildPreviewArtifacts(
 						schema,
 						sourceFilePath: payload.descriptor.sourceFilePath,
 						targetName: payload.descriptor.targetName,
-					};
-					writeJsonFile(cachePath, cachedRecord);
-					reusedFromCache = false;
+					} satisfies CachedLayoutSchemaArtifactRecord);
+
+				if (!cachedRecord) {
+					writeJsonFile(cachePath, layoutSchemaRecord);
 				}
 
 				const builtArtifact: PreviewBuiltArtifact = {
@@ -997,7 +999,7 @@ export async function buildPreviewArtifacts(
 					targetName: payload.descriptor.targetName,
 				};
 
-				pushUniqueDiagnostics(diagnosticsMap, cachedRecord.diagnostics);
+				pushUniqueDiagnostics(diagnosticsMap, layoutSchemaRecord.diagnostics);
 
 				if (options.outDir) {
 					const relativeOutputPath = normalizeRelativePath(
@@ -1011,7 +1013,7 @@ export async function buildPreviewArtifacts(
 					);
 					materializedFiles.set(relativeOutputPath, {
 						cacheKey,
-						content: JSON.stringify(cachedRecord.schema, undefined, 2),
+						content: JSON.stringify(layoutSchemaRecord.schema, undefined, 2),
 						sourceFilePath: payload.descriptor.sourceFilePath,
 					});
 				}

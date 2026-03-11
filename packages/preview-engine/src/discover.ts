@@ -267,25 +267,7 @@ function findWorkspaceRoot(startPath: string | string[]) {
 	const resolvedStartPaths = startPaths.map((candidate) =>
 		resolveRealFilePath(candidate),
 	);
-	const markerRoots = resolvedStartPaths.map((candidate) => {
-		let current = candidate;
-
-		while (true) {
-			if (
-				fs.existsSync(path.join(current, "pnpm-workspace.yaml")) ||
-				fs.existsSync(path.join(current, ".git"))
-			) {
-				return current;
-			}
-
-			const parent = path.dirname(current);
-			if (parent === current) {
-				return candidate;
-			}
-
-			current = parent;
-		}
-	});
+	const markerRoots = resolvedStartPaths.map(findMarkerRoot);
 
 	let commonPath = markerRoots[0] ?? process.cwd();
 	for (const candidate of markerRoots.slice(1)) {
@@ -300,6 +282,26 @@ function findWorkspaceRoot(startPath: string | string[]) {
 	}
 
 	return commonPath;
+}
+
+function findMarkerRoot(candidate: string): string {
+	let current = candidate;
+
+	while (true) {
+		if (
+			fs.existsSync(path.join(current, "pnpm-workspace.yaml")) ||
+			fs.existsSync(path.join(current, ".git"))
+		) {
+			return current;
+		}
+
+		const parent = path.dirname(current);
+		if (parent === current) {
+			return candidate;
+		}
+
+		current = parent;
+	}
 }
 
 function findNearestPackageRoot(filePath: string) {
@@ -863,6 +865,11 @@ function resolvePreviewEntryExport(
 		return undefined;
 	}
 
+	const [firstExportName] = exportNames;
+	if (!firstExportName) {
+		return undefined;
+	}
+
 	if (exportNames.includes(entryLocalName)) {
 		return {
 			exportName: entryLocalName,
@@ -872,7 +879,7 @@ function resolvePreviewEntryExport(
 
 	if (exportNames.length === 1) {
 		return {
-			exportName: exportNames[0]!,
+			exportName: firstExportName,
 			trace: resolvedEntry,
 		};
 	}
@@ -885,7 +892,7 @@ function resolvePreviewEntryExport(
 	}
 
 	return {
-		exportName: exportNames[0]!,
+		exportName: firstExportName,
 		trace: resolvedEntry,
 	};
 }

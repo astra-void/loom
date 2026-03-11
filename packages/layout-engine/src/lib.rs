@@ -66,13 +66,33 @@ pub struct MeasuredNodeSize {
     pub width: f32,
 }
 
-#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct PreviewHostMetadata {
     #[serde(default)]
     pub degraded: bool,
     #[serde(default)]
     pub full_size_default: bool,
+    #[serde(default = "default_placeholder_behavior")]
+    pub placeholder_behavior: String,
+}
+
+impl Default for PreviewHostMetadata {
+    fn default() -> Self {
+        Self {
+            degraded: false,
+            full_size_default: false,
+            placeholder_behavior: default_placeholder_behavior(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PreviewLayoutSizeResolution {
+    pub had_explicit_size: bool,
+    pub intrinsic_size_available: bool,
+    pub reason: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -130,6 +150,7 @@ pub struct PreviewLayoutDebugNode {
     pub children: Vec<PreviewLayoutDebugNode>,
     #[serde(default)]
     pub debug_label: Option<String>,
+    pub host_policy: PreviewHostMetadata,
     pub id: String,
     #[serde(default)]
     pub intrinsic_size: Option<MeasuredNodeSize>,
@@ -143,6 +164,7 @@ pub struct PreviewLayoutDebugNode {
     pub provenance: PreviewLayoutDebugProvenance,
     #[serde(default)]
     pub rect: Option<ComputedRect>,
+    pub size_resolution: PreviewLayoutSizeResolution,
     #[serde(default)]
     pub style_hints: Option<PreviewLayoutStyleHints>,
 }
@@ -181,6 +203,10 @@ pub struct RobloxNode {
 
 fn default_position_mode() -> String {
     "absolute".to_owned()
+}
+
+fn default_placeholder_behavior() -> String {
+    "none".to_owned()
 }
 
 fn zero_axis() -> LayoutAxis {
@@ -268,13 +294,32 @@ fn normalize_root_node(node: &PreviewLayoutNode) -> PreviewLayoutNode {
     normalized
 }
 
-fn resolve_layout_source(node: &PreviewLayoutNode) -> &'static str {
+#[derive(Debug, Clone, Copy)]
+struct ResolvedNodeSize {
+    layout_source: &'static str,
+    resolved_size: LayoutSize,
+    size_resolution_reason: &'static str,
+}
+
+fn resolve_host_policy(node: &PreviewLayoutNode) -> PreviewHostMetadata {
+    node.host_metadata.clone().unwrap_or_default()
+}
+
+fn resolve_node_size(node: &PreviewLayoutNode) -> ResolvedNodeSize {
     if node.kind == "root" {
-        return "root-default";
+        return ResolvedNodeSize {
+            layout_source: "root-default",
+            resolved_size: full_size(),
+            size_resolution_reason: "root-default",
+        };
     }
 
-    if node.layout.size.is_some() {
-        return "explicit-size";
+    if let Some(size) = node.layout.size {
+        return ResolvedNodeSize {
+            layout_source: "explicit-size",
+            resolved_size: size,
+            size_resolution_reason: "explicit-size",
+        };
     }
 
     if node
@@ -282,13 +327,46 @@ fn resolve_layout_source(node: &PreviewLayoutNode) -> &'static str {
         .as_ref()
         .is_some_and(|metadata| metadata.full_size_default)
     {
-        return "full-size-default";
+        return ResolvedNodeSize {
+            layout_source: "full-size-default",
+            resolved_size: full_size(),
+            size_resolution_reason: "full-size-default",
+        };
     }
 
-    "intrinsic-size"
+    if let Some(intrinsic_size) = node.intrinsic_size {
+        return ResolvedNodeSize {
+            layout_source: "intrinsic-size",
+            resolved_size: create_measured_size_layout(intrinsic_size),
+            size_resolution_reason: "intrinsic-measurement",
+        };
+    }
+
+    ResolvedNodeSize {
+        layout_source: "intrinsic-size",
+        resolved_size: zero_size(),
+        size_resolution_reason: "intrinsic-empty",
+    }
 }
 
-fn compute_node_rect(node: &PreviewLayoutNode, parent_rect: &ComputedRect) -> (ComputedRect, &'static str) {
+fn resolve_size_resolution(node: &PreviewLayoutNode) -> PreviewLayoutSizeResolution {
+    let resolved = resolve_node_size(node);
+
+    PreviewLayoutSizeResolution {
+        had_explicit_size: node.layout.size.is_some(),
+        intrinsic_size_available: node.intrinsic_size.is_some(),
+        reason: resolved.size_resolution_reason.to_owned(),
+    }
+}
+
+fn resolve_layout_source(node: &PreviewLayoutNode) -> &'static str {
+    resolve_node_size(node).layout_source
+}
+
+fn compute_node_rect(
+    node: &PreviewLayoutNode,
+    parent_rect: &ComputedRect,
+) -> (ComputedRect, &'static str) {
     if node.kind == "root" {
         return (
             ComputedRect {
@@ -301,42 +379,33 @@ fn compute_node_rect(node: &PreviewLayoutNode, parent_rect: &ComputedRect) -> (C
         );
     }
 
-    let layout_source = resolve_layout_source(node);
-    let resolved_size = if let Some(size) = node.layout.size {
-        size
-    } else if node
-        .host_metadata
-        .as_ref()
-        .is_some_and(|metadata| metadata.full_size_default)
-    {
-        full_size()
-    } else if let Some(intrinsic_size) = node.intrinsic_size {
-        create_measured_size_layout(intrinsic_size)
-    } else {
-        zero_size()
-    };
+    let resolved = resolve_node_size(node);
 
     let width = clamp_axis(
-        resolve_axis(resolved_size.x, parent_rect.width),
-        node.layout.constraints.as_ref().and_then(|constraints| constraints.width.as_ref()),
+        resolve_axis(resolved.resolved_size.x, parent_rect.width),
+        node.layout
+            .constraints
+            .as_ref()
+            .and_then(|constraints| constraints.width.as_ref()),
     );
     let height = clamp_axis(
-        resolve_axis(resolved_size.y, parent_rect.height),
-        node.layout.constraints.as_ref().and_then(|constraints| constraints.height.as_ref()),
+        resolve_axis(resolved.resolved_size.y, parent_rect.height),
+        node.layout
+            .constraints
+            .as_ref()
+            .and_then(|constraints| constraints.height.as_ref()),
     );
 
     (
         ComputedRect {
-            x: parent_rect.x
-                + resolve_axis(node.layout.position.x, parent_rect.width)
+            x: parent_rect.x + resolve_axis(node.layout.position.x, parent_rect.width)
                 - (node.layout.anchor_point.x * width),
-            y: parent_rect.y
-                + resolve_axis(node.layout.position.y, parent_rect.height)
+            y: parent_rect.y + resolve_axis(node.layout.position.y, parent_rect.height)
                 - (node.layout.anchor_point.y * height),
             width,
             height,
         },
-        layout_source,
+        resolved.layout_source,
     )
 }
 
@@ -422,7 +491,12 @@ impl LayoutSession {
         child_ids
     }
 
-    fn collect_subtree_ids(&self, node_id: &str, visited: &mut HashSet<String>, output: &mut Vec<String>) {
+    fn collect_subtree_ids(
+        &self,
+        node_id: &str,
+        visited: &mut HashSet<String>,
+        output: &mut Vec<String>,
+    ) {
         if visited.contains(node_id) {
             return;
         }
@@ -521,6 +595,8 @@ impl LayoutSession {
     ) -> Option<PreviewLayoutDebugNode> {
         let node = self.nodes.get(node_id)?;
         let rect = self.last_rects.get(node_id).copied();
+        let host_policy = resolve_host_policy(node);
+        let size_resolution = resolve_size_resolution(node);
         let children = self
             .child_ids_for_parent(node_id)
             .iter()
@@ -530,6 +606,7 @@ impl LayoutSession {
         Some(PreviewLayoutDebugNode {
             children,
             debug_label: node.debug_label.clone(),
+            host_policy,
             id: node.id.clone(),
             intrinsic_size: node.intrinsic_size,
             kind: node.kind.clone(),
@@ -542,6 +619,7 @@ impl LayoutSession {
                 source: "wasm".to_owned(),
             },
             rect,
+            size_resolution,
             style_hints: node.style_hints.clone(),
         })
     }
@@ -570,7 +648,9 @@ impl LayoutSession {
 
             taffy
                 .set_children(*parent_node, &child_nodes)
-                .map_err(|error| format!("Failed to attach Taffy children for {}: {error}", node.id))?;
+                .map_err(|error| {
+                    format!("Failed to attach Taffy children for {}: {error}", node.id)
+                })?;
         }
 
         Ok(())
@@ -812,7 +892,9 @@ mod tests {
             width: 800.0,
         });
 
-        let result = session.compute_dirty_internal().expect("layout should compute");
+        let result = session
+            .compute_dirty_internal()
+            .expect("layout should compute");
 
         let screen = result.rects.get("screen").expect("screen should exist");
         assert_close(screen.x, 0.0);
@@ -852,7 +934,9 @@ mod tests {
             width: 640.0,
         });
 
-        let result = session.compute_dirty_internal().expect("layout should compute");
+        let result = session
+            .compute_dirty_internal()
+            .expect("layout should compute");
 
         let label = result.rects.get("label").expect("label should exist");
         assert_close(label.width, 88.0);
@@ -866,6 +950,15 @@ mod tests {
                 .map(|node| node.layout_source.as_str()),
             Some("intrinsic-size")
         );
+        assert_eq!(
+            result
+                .debug
+                .roots
+                .first()
+                .and_then(|root| root.children.first())
+                .map(|node| node.size_resolution.reason.as_str()),
+            Some("intrinsic-measurement")
+        );
     }
 
     #[test]
@@ -877,6 +970,7 @@ mod tests {
                 host_metadata: Some(PreviewHostMetadata {
                     degraded: true,
                     full_size_default: true,
+                    placeholder_behavior: "opaque".to_owned(),
                 }),
                 layout: PreviewNodeLayout {
                     anchor_point: zero_vector(),
@@ -893,7 +987,9 @@ mod tests {
             width: 640.0,
         });
 
-        let result = session.compute_dirty_internal().expect("layout should compute");
+        let result = session
+            .compute_dirty_internal()
+            .expect("layout should compute");
 
         let viewport = result.rects.get("viewport").expect("viewport should exist");
         assert_close(viewport.width, 640.0);
@@ -905,6 +1001,24 @@ mod tests {
                 .first()
                 .and_then(|root| root.children.first())
                 .map(|node| node.layout_source.as_str()),
+            Some("full-size-default")
+        );
+        assert_eq!(
+            result
+                .debug
+                .roots
+                .first()
+                .and_then(|root| root.children.first())
+                .map(|node| node.host_policy.placeholder_behavior.as_str()),
+            Some("opaque")
+        );
+        assert_eq!(
+            result
+                .debug
+                .roots
+                .first()
+                .and_then(|root| root.children.first())
+                .map(|node| node.size_resolution.reason.as_str()),
             Some("full-size-default")
         );
     }
@@ -922,7 +1036,9 @@ mod tests {
             width: 400.0,
         });
 
-        let _ = session.compute_dirty_internal().expect("initial layout should compute");
+        let _ = session
+            .compute_dirty_internal()
+            .expect("initial layout should compute");
 
         session.apply_preview_nodes(vec![PreviewLayoutNode {
             layout: PreviewNodeLayout {
@@ -939,8 +1055,14 @@ mod tests {
             .compute_dirty_internal()
             .expect("incremental layout should compute");
 
-        assert!(result.dirty_node_ids.iter().any(|node_id| node_id == "right"));
-        assert!(!result.dirty_node_ids.iter().any(|node_id| node_id == "left"));
+        assert!(result
+            .dirty_node_ids
+            .iter()
+            .any(|node_id| node_id == "right"));
+        assert!(!result
+            .dirty_node_ids
+            .iter()
+            .any(|node_id| node_id == "left"));
     }
 
     #[test]
@@ -984,7 +1106,9 @@ mod tests {
             width: 800.0,
         });
 
-        let result = session.compute_dirty_internal().expect("layout should compute");
+        let result = session
+            .compute_dirty_internal()
+            .expect("layout should compute");
 
         let frame = result.rects.get("frame").expect("frame should exist");
         assert_close(frame.x, 350.0);

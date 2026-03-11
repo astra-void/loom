@@ -7,6 +7,8 @@ import {
 	type PreviewLayoutDebugNode,
 	type PreviewLayoutNode,
 	type PreviewLayoutResult,
+	resolveNodeHostPolicy,
+	resolveNodeSize,
 } from "./model";
 
 export type LayoutSessionViewport = {
@@ -177,10 +179,6 @@ export class LayoutController {
 			y: number;
 		} | null,
 		provenance: "fallback" | "wasm",
-		layoutSourcesById?: ReadonlyMap<
-			string,
-			PreviewLayoutDebugNode["layoutSource"]
-		>,
 	): PreviewLayoutDebugNode | null {
 		const node = this.nodes.get(nodeId);
 		if (!node) {
@@ -189,24 +187,18 @@ export class LayoutController {
 
 		const rect = this.result.rects[nodeId] ?? null;
 		const childIds = this.childIdsByParent.get(nodeId) ?? [];
+		const sizeResolution = resolveNodeSize(node);
 
 		return {
 			children: childIds
-				.map((childId) =>
-					this.buildDebugTree(childId, rect, provenance, layoutSourcesById),
-				)
+				.map((childId) => this.buildDebugTree(childId, rect, provenance))
 				.filter((child): child is PreviewLayoutDebugNode => child !== null),
 			debugLabel: node.debugLabel,
+			hostPolicy: resolveNodeHostPolicy(node),
 			id: node.id,
 			intrinsicSize: node.intrinsicSize ?? null,
 			kind: node.kind,
-			layoutSource:
-				layoutSourcesById?.get(node.id) ??
-				(node.kind === "root"
-					? "root-default"
-					: node.layout.size
-						? "explicit-size"
-						: "intrinsic-size"),
+			layoutSource: sizeResolution.layoutSource,
 			nodeType: node.nodeType,
 			parentConstraints,
 			parentId: node.parentId,
@@ -218,6 +210,7 @@ export class LayoutController {
 				source: provenance,
 			},
 			rect,
+			sizeResolution: sizeResolution.sizeResolution,
 			styleHints: node.styleHints,
 		};
 	}
@@ -259,22 +252,13 @@ export class LayoutController {
 			this.viewport.width,
 			this.viewport.height,
 		);
-		const layoutSourcesById = new Map<
-			string,
-			PreviewLayoutDebugNode["layoutSource"]
-		>();
 
 		for (const rootId of dirtyRootIds) {
 			for (const affectedId of this.collectSubtreeIds(rootId)) {
 				delete nextRects[affectedId];
 			}
 
-			this.computeFallbackSubtree(
-				rootId,
-				viewportRect,
-				nextRects,
-				layoutSourcesById,
-			);
+			this.computeFallbackSubtree(rootId, viewportRect, nextRects);
 		}
 
 		const provisionalResult: PreviewLayoutResult = {
@@ -292,12 +276,7 @@ export class LayoutController {
 				dirtyNodeIds: provisionalResult.dirtyNodeIds,
 				roots: this.rootIds
 					.map((rootId) =>
-						this.buildDebugTree(
-							rootId,
-							viewportRect,
-							"fallback",
-							layoutSourcesById,
-						),
+						this.buildDebugTree(rootId, viewportRect, "fallback"),
 					)
 					.filter((node): node is PreviewLayoutDebugNode => node !== null),
 				viewport: cloneViewport(this.viewport),
@@ -314,20 +293,18 @@ export class LayoutController {
 			string,
 			{ height: number; width: number; x: number; y: number }
 		>,
-		layoutSourcesById: Map<string, PreviewLayoutDebugNode["layoutSource"]>,
 	) {
 		const node = this.nodes.get(nodeId);
 		if (!node) {
 			return;
 		}
 
-		const { layoutSource, rect } = computeNodeRect(node, parentRect);
+		const { rect } = computeNodeRect(node, parentRect);
 		output[node.id] = rect;
-		layoutSourcesById.set(node.id, layoutSource);
 
 		const childIds = this.childIdsByParent.get(nodeId) ?? [];
 		for (const childId of childIds) {
-			this.computeFallbackSubtree(childId, rect, output, layoutSourcesById);
+			this.computeFallbackSubtree(childId, rect, output);
 		}
 	}
 

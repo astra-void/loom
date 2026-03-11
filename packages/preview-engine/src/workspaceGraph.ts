@@ -349,9 +349,14 @@ function splitBarePackageSpecifier(specifier: string) {
 		};
 	}
 
+	const [packageName, ...subpathParts] = parts;
+	if (!packageName) {
+		return undefined;
+	}
+
 	return {
-		packageName: parts[0]!,
-		subpath: parts.slice(1).join("/"),
+		packageName,
+		subpath: subpathParts.join("/"),
 	};
 }
 

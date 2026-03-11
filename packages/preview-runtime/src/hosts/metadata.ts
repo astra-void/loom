@@ -1,11 +1,14 @@
 import rawPreviewHostMetadata from "./metadata.json";
 
+export type PreviewPlaceholderBehavior = "none" | "container" | "opaque";
+
 export type PreviewHostMetadataRecord = {
 	abstractAncestors: string[];
 	degraded: boolean;
 	domTag: string;
 	fullSizeDefault: boolean;
 	jsxName: string;
+	placeholderBehavior: PreviewPlaceholderBehavior;
 	participatesInLayout: boolean;
 	runtimeName: string;
 	supportsIsa: boolean;
@@ -50,6 +53,12 @@ function validatePreviewHostMetadata(records: PreviewHostMetadataRecord[]) {
 
 		jsxNames.add(record.jsxName);
 		runtimeNames.add(record.runtimeName);
+
+		if (record.placeholderBehavior !== "none" && !record.degraded) {
+			throw new Error(
+				`Preview host ${record.jsxName} cannot declare placeholder behavior without degraded fidelity.`,
+			);
+		}
 	}
 }
 
@@ -85,6 +94,16 @@ export const fullSizeLayoutHostNames = Object.freeze(
 export const degradedPreviewHostNames = Object.freeze(
 	previewHostMetadataRecords
 		.filter((record) => record.degraded)
+		.map((record) => record.jsxName),
+);
+export const degradedContainerPreviewHostNames = Object.freeze(
+	previewHostMetadataRecords
+		.filter((record) => record.placeholderBehavior === "container")
+		.map((record) => record.jsxName),
+);
+export const degradedOpaquePreviewHostNames = Object.freeze(
+	previewHostMetadataRecords
+		.filter((record) => record.placeholderBehavior === "opaque")
 		.map((record) => record.jsxName),
 );
 export const previewHostDomTags = Object.freeze(
@@ -123,6 +142,23 @@ export function getPreviewHostMetadataByJsxName(jsxName: string) {
 
 export function getPreviewHostMetadataByRuntimeName(runtimeName: string) {
 	return previewHostMetadataByRuntimeName.get(runtimeName);
+}
+
+export function getPreviewPlaceholderBehaviorByJsxName(
+	jsxName: string,
+): PreviewPlaceholderBehavior {
+	return (
+		getPreviewHostMetadataByJsxName(jsxName)?.placeholderBehavior ?? "none"
+	);
+}
+
+export function getPreviewPlaceholderBehaviorByRuntimeName(
+	runtimeName: string,
+): PreviewPlaceholderBehavior {
+	return (
+		getPreviewHostMetadataByRuntimeName(runtimeName)?.placeholderBehavior ??
+		"none"
+	);
 }
 
 export function isPreviewHostTypeSupported(
@@ -164,4 +200,12 @@ export function previewHostMatchesType(
 
 export function isDegradedPreviewHost(jsxName: string) {
 	return degradedPreviewHostNames.includes(jsxName);
+}
+
+export function isContainerDegradedPreviewHost(jsxName: string) {
+	return degradedContainerPreviewHostNames.includes(jsxName);
+}
+
+export function isOpaqueDegradedPreviewHost(jsxName: string) {
+	return degradedOpaquePreviewHostNames.includes(jsxName);
 }

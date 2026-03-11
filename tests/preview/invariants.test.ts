@@ -3,6 +3,7 @@ import { previewRuntime } from "@loom-dev/preview-runtime";
 import { describe, expect, it } from "vitest";
 import entryPayloadSchema from "../../packages/preview-engine/schemas/entry-payload.schema.json";
 import workspaceIndexSchema from "../../packages/preview-engine/schemas/workspace-index.schema.json";
+import layoutDebugPayloadSchema from "../../packages/preview-runtime/schemas/layout-debug-payload.schema.json";
 import {
 	supportedIsaNames,
 	supportedTypeRewriteNames,
@@ -12,6 +13,18 @@ import { layoutHostNodeType } from "../../packages/preview-runtime/src/hosts/typ
 import { normalizePreviewLayoutResult } from "../../packages/preview-runtime/src/layout/model";
 
 const previewHostRecords = previewHostMetadata.hosts;
+
+type JsonSchemaNode = {
+	$defs?: Record<string, JsonSchemaNode>;
+	const?: string;
+	enum?: string[];
+	oneOf?: JsonSchemaNode[];
+	properties?: Record<string, JsonSchemaNode>;
+};
+
+const entryPayloadSchemaNode = entryPayloadSchema as JsonSchemaNode;
+const layoutDebugPayloadSchemaNode = layoutDebugPayloadSchema as JsonSchemaNode;
+const workspaceIndexSchemaNode = workspaceIndexSchema as JsonSchemaNode;
 
 function countMatches(source: string, pattern: RegExp) {
 	return [...source.matchAll(pattern)].length;
@@ -123,6 +136,11 @@ ${isaChecks}
 					roots: [
 						{
 							children: [],
+							hostPolicy: {
+								degraded: true,
+								fullSizeDefault: true,
+								placeholderBehavior: "opaque",
+							},
 							id: "viewport",
 							intrinsicSize: null,
 							kind: "host",
@@ -138,6 +156,11 @@ ${isaChecks}
 								width: 640,
 								x: 0,
 								y: 0,
+							},
+							sizeResolution: {
+								hadExplicitSize: false,
+								intrinsicSizeAvailable: false,
+								reason: "full-size-default",
 							},
 						},
 					],
@@ -160,16 +183,34 @@ ${isaChecks}
 		);
 
 		expect(normalized.debug.roots[0]?.layoutSource).toBe("full-size-default");
-		const readyEntryStatusDetails = (
-			entryPayloadSchema as any
-		).$defs.statusDetails.oneOf.find(
-			(variant: any) => variant.properties?.kind?.const === "ready",
-		);
-		const readyWorkspaceStatusDetails = (
-			workspaceIndexSchema as any
-		).$defs.statusDetails.oneOf.find(
-			(variant: any) => variant.properties?.kind?.const === "ready",
-		);
+		expect(normalized.debug.roots[0]?.hostPolicy).toEqual({
+			degraded: true,
+			fullSizeDefault: true,
+			placeholderBehavior: "opaque",
+		});
+		expect(normalized.debug.roots[0]?.sizeResolution).toEqual({
+			hadExplicitSize: false,
+			intrinsicSizeAvailable: false,
+			reason: "full-size-default",
+		});
+		expect(
+			layoutDebugPayloadSchemaNode.$defs?.debugNode?.properties?.layoutSource
+				?.enum,
+		).toContain("full-size-default");
+		expect(
+			layoutDebugPayloadSchemaNode.$defs?.debugNode?.properties,
+		).toMatchObject({
+			hostPolicy: expect.any(Object),
+			sizeResolution: expect.any(Object),
+		});
+		const readyEntryStatusDetails =
+			entryPayloadSchemaNode.$defs?.statusDetails?.oneOf?.find(
+				(variant) => variant.properties?.kind?.const === "ready",
+			);
+		const readyWorkspaceStatusDetails =
+			workspaceIndexSchemaNode.$defs?.statusDetails?.oneOf?.find(
+				(variant) => variant.properties?.kind?.const === "ready",
+			);
 
 		expect(readyEntryStatusDetails?.properties).toMatchObject({
 			degradedTargets: expect.any(Object),

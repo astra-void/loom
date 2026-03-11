@@ -41,8 +41,8 @@ const SMART_STRING_HEURISTICS: Array<{
 	},
 ];
 
-function hasOwnProperty(value: Record<string, unknown>, key: string) {
-	return Object.hasOwn(value, key);
+function hasOwnKey(value: Record<string, unknown>, key: string) {
+	return Object.getOwnPropertyDescriptor(value, key) !== undefined;
 }
 
 function normalizePropName(propName: string) {
@@ -368,7 +368,7 @@ export function buildAutoMockProps<Props extends Record<string, unknown>>(
 
 	for (const [propName, definition] of Object.entries(metadata.props)) {
 		if (
-			hasOwnProperty(resolvedProps, propName) &&
+			hasOwnKey(resolvedProps, propName) &&
 			resolvedProps[propName] !== undefined
 		) {
 			continue;

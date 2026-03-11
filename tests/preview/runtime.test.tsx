@@ -46,6 +46,7 @@ type LayoutNode = {
 	hostMetadata?: {
 		degraded: boolean;
 		fullSizeDefault: boolean;
+		placeholderBehavior: "none" | "container" | "opaque";
 	};
 	id: string;
 	intrinsicSize?: { height: number; width: number } | null;
@@ -438,6 +439,7 @@ describe("preview runtime host mapping", () => {
 			hostMetadata: {
 				degraded: false,
 				fullSizeDefault: true,
+				placeholderBehavior: "none",
 			},
 			nodeType: "CanvasGroup",
 			parentId: expect.any(String),
@@ -446,6 +448,7 @@ describe("preview runtime host mapping", () => {
 			hostMetadata: {
 				degraded: true,
 				fullSizeDefault: true,
+				placeholderBehavior: "opaque",
 			},
 			nodeType: "ViewportFrame",
 		});
@@ -453,6 +456,7 @@ describe("preview runtime host mapping", () => {
 			hostMetadata: {
 				degraded: true,
 				fullSizeDefault: true,
+				placeholderBehavior: "opaque",
 			},
 			nodeType: "VideoFrame",
 		});
@@ -460,6 +464,7 @@ describe("preview runtime host mapping", () => {
 			hostMetadata: {
 				degraded: true,
 				fullSizeDefault: true,
+				placeholderBehavior: "container",
 			},
 			nodeType: "SurfaceGui",
 		});
@@ -467,6 +472,7 @@ describe("preview runtime host mapping", () => {
 			hostMetadata: {
 				degraded: true,
 				fullSizeDefault: true,
+				placeholderBehavior: "container",
 			},
 			nodeType: "BillboardGui",
 		});
@@ -498,6 +504,11 @@ describe("preview runtime host mapping", () => {
 		).toBe("true");
 		expect(
 			document
+				.querySelector('[data-preview-host="viewportframe"]')
+				?.getAttribute("data-preview-placeholder-behavior"),
+		).toBe("opaque");
+		expect(
+			document
 				.querySelector('[data-preview-host="videoframe"]')
 				?.getAttribute("data-preview-degraded"),
 		).toBe("true");
@@ -506,6 +517,11 @@ describe("preview runtime host mapping", () => {
 				.querySelector('[data-preview-host="surfacegui"]')
 				?.getAttribute("data-preview-degraded"),
 		).toBe("true");
+		expect(
+			document
+				.querySelector('[data-preview-host="surfacegui"]')
+				?.getAttribute("data-preview-placeholder-behavior"),
+		).toBe("container");
 		expect(
 			document
 				.querySelector('[data-preview-host="billboardgui"]')
@@ -534,6 +550,48 @@ describe("preview runtime host mapping", () => {
 				.map((node) => node.getAttribute("data-preview-degraded-label"))
 				.sort(),
 		).toEqual(["BillboardGui", "SurfaceGui", "VideoFrame", "ViewportFrame"]);
+		expect(
+			document
+				.querySelector('[data-preview-host="viewportframe"]')
+				?.getAttribute("data-layout-placeholder-behavior"),
+		).toBe("opaque");
+		expect(
+			document
+				.querySelector('[data-preview-host="viewportframe"]')
+				?.getAttribute("data-layout-size-reason"),
+		).toBe("full-size-default");
+	});
+
+	it("renders children only for container degraded placeholders", async () => {
+		render(
+			<LayoutProvider debounceMs={0} viewportHeight={480} viewportWidth={640}>
+				<ScreenGui>
+					<SurfaceGui Id="preview-surfacegui-children">
+						<TextLabel Text="Surface child" />
+					</SurfaceGui>
+					<ViewportFrame Id="preview-viewportframe-children">
+						<TextLabel Text="Viewport child" />
+					</ViewportFrame>
+				</ScreenGui>
+			</LayoutProvider>,
+		);
+
+		await waitFor(() => {
+			expect(layoutEngineMocks.computeDirty).toHaveBeenCalled();
+		});
+
+		expect(screen.getByText("Surface child")).toBeTruthy();
+		expect(screen.queryByText("Viewport child")).toBeNull();
+		expect(
+			document
+				.querySelector('[data-preview-host="surfacegui"]')
+				?.getAttribute("data-preview-placeholder-behavior"),
+		).toBe("container");
+		expect(
+			document
+				.querySelector('[data-preview-host="viewportframe"]')
+				?.getAttribute("data-preview-placeholder-behavior"),
+		).toBe("opaque");
 	});
 
 	it("maps Roblox fonts and scales text into the host bounds", async () => {
@@ -750,6 +808,15 @@ describe("preview runtime host mapping", () => {
 			await waitFor(() => {
 				expect(label.style.width).toBe("88px");
 				expect(label.style.height).toBe("24px");
+				expect(label.getAttribute("data-layout-size-reason")).toBe(
+					"intrinsic-measurement",
+				);
+				expect(label.getAttribute("data-layout-had-explicit-size")).toBe(
+					"false",
+				);
+				expect(label.getAttribute("data-layout-intrinsic-size-available")).toBe(
+					"true",
+				);
 			});
 		} finally {
 			getBoundingClientRectSpy.mockRestore();
@@ -776,6 +843,12 @@ describe("preview runtime host mapping", () => {
 			expect(viewportFrame.style.top).toBe("0px");
 			expect(viewportFrame.style.width).toBe("640px");
 			expect(viewportFrame.style.height).toBe("480px");
+			expect(viewportFrame.getAttribute("data-layout-size-reason")).toBe(
+				"full-size-default",
+			);
+			expect(
+				viewportFrame.getAttribute("data-layout-placeholder-behavior"),
+			).toBe("opaque");
 		});
 	});
 
@@ -793,6 +866,7 @@ describe("preview runtime host mapping", () => {
 					hostMetadata: {
 						degraded: false,
 						fullSizeDefault: true,
+						placeholderBehavior: "none",
 					},
 					id: "preview-node-frame",
 					layout: {

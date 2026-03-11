@@ -320,7 +320,7 @@ describe("preview shell", () => {
 		expect(screen.getByText("Rendered with degraded fidelity.")).toBeTruthy();
 		expect(screen.getAllByText("warning").length).toBeGreaterThan(0);
 		expect(
-			screen.getAllByText(/Placeholder hosts: ViewportFrame\./).length,
+			screen.getAllByText(/Degraded placeholders: ViewportFrame\./).length,
 		).toBeGreaterThan(0);
 		expect(screen.getByText("1 warning(s)")).toBeTruthy();
 	});

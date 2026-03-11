@@ -70,6 +70,11 @@ type LoadedPreviewEntry = {
 	payload?: PreviewEntryPayload;
 };
 
+type RuntimeIssueRenderMeta = {
+	key: string;
+	occurrence: number;
+};
+
 class PreviewErrorBoundary extends React.Component<
 	PreviewErrorBoundaryProps,
 	PreviewErrorBoundaryState
@@ -139,6 +144,38 @@ function readPreviewDefinition(module: PreviewModule) {
 	}
 
 	return preview;
+}
+
+function getRuntimeIssueFingerprint(issue: PreviewRuntimeIssue) {
+	return [
+		issue.entryId,
+		issue.code,
+		issue.kind,
+		issue.phase,
+		issue.relativeFile,
+		issue.summary,
+		issue.details ?? "",
+		issue.symbol ?? "",
+		issue.codeFrame ?? "",
+		issue.importChain?.join(">") ?? "",
+	].join("::");
+}
+
+function createRuntimeIssueRenderMeta(issues: PreviewRuntimeIssue[]) {
+	const counts = new Map<string, number>();
+	const renderMeta = new Map<PreviewRuntimeIssue, RuntimeIssueRenderMeta>();
+
+	for (const issue of issues) {
+		const fingerprint = getRuntimeIssueFingerprint(issue);
+		const occurrence = (counts.get(fingerprint) ?? 0) + 1;
+		counts.set(fingerprint, occurrence);
+		renderMeta.set(issue, {
+			key: occurrence === 1 ? fingerprint : `${fingerprint}::${occurrence}`,
+			occurrence,
+		});
+	}
+
+	return renderMeta;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -303,7 +340,7 @@ function getReadyWarningState(
 
 function describeWarningState(warningState: PreviewReadyWarningState) {
 	if (warningState.degradedTargets.length > 0) {
-		return `Placeholder hosts: ${warningState.degradedTargets.join(", ")}.`;
+		return `Degraded placeholders: ${warningState.degradedTargets.join(", ")}.`;
 	}
 
 	if (warningState.warningCodes.length > 0) {
@@ -585,7 +622,7 @@ function PreviewCanvas(props: PreviewCanvasProps) {
 			</div>
 			{props.warningState.fidelity === "degraded" ||
 			props.warningState.warningCodes.length > 0 ? (
-				<div className="preview-warning" role="status">
+				<aside aria-live="polite" className="preview-warning">
 					<p className="preview-warning-eyebrow">Fidelity warning</p>
 					<p className="preview-warning-title">
 						Rendered with degraded fidelity.
@@ -593,7 +630,7 @@ function PreviewCanvas(props: PreviewCanvasProps) {
 					<p className="preview-warning-body">
 						{describeWarningState(props.warningState)}
 					</p>
-				</div>
+				</aside>
 			) : undefined}
 			<div className="preview-stage">
 				<div
@@ -636,6 +673,10 @@ export function PreviewApp(props: PreviewAppProps) {
 	const [runtimeIssues, setRuntimeIssues] = React.useState<
 		PreviewRuntimeIssue[]
 	>([]);
+	const runtimeIssueRenderMeta = React.useMemo(
+		() => createRuntimeIssueRenderMeta(runtimeIssues),
+		[runtimeIssues],
+	);
 	const selectedEntry =
 		props.entries.find((entry) => entry.id === selectedId) ?? props.entries[0];
 	const selectedEntryPayload =
@@ -994,20 +1035,28 @@ export function PreviewApp(props: PreviewAppProps) {
 											</p>
 										</article>
 									))}
-									{runtimeIssues.map((issue, index) => (
-										<article
-											className={`diagnostic-item diagnostic-item-runtime ${
-												isBlockingIssue(issue) ? "" : "diagnostic-item-warning"
-											}`.trim()}
-											key={`${issue.code}:${issue.kind}:${issue.relativeFile}:${index}`}
-										>
-											<p className="diagnostic-code">{issue.code}</p>
-											<p className="diagnostic-message">{issue.summary}</p>
-											<p className="diagnostic-location">
-												{issue.relativeFile}:{issue.kind}:{index + 1}
-											</p>
-										</article>
-									))}
+									{runtimeIssues.map((issue) => {
+										const renderMeta = runtimeIssueRenderMeta.get(issue);
+										return (
+											<article
+												className={`diagnostic-item diagnostic-item-runtime ${
+													isBlockingIssue(issue)
+														? ""
+														: "diagnostic-item-warning"
+												}`.trim()}
+												key={
+													renderMeta?.key ?? getRuntimeIssueFingerprint(issue)
+												}
+											>
+												<p className="diagnostic-code">{issue.code}</p>
+												<p className="diagnostic-message">{issue.summary}</p>
+												<p className="diagnostic-location">
+													{issue.relativeFile}:{issue.kind}:
+													{renderMeta?.occurrence ?? 1}
+												</p>
+											</article>
+										);
+									})}
 									{loadIssue ? (
 										<article className="diagnostic-item diagnostic-item-runtime">
 											<p className="diagnostic-code">{loadIssue.code}</p>
@@ -1032,8 +1081,8 @@ export function PreviewApp(props: PreviewAppProps) {
 							<p className="preview-empty-eyebrow">Empty project</p>
 							<h2>No previewable source files were found.</h2>
 							<p>
-								Add `src/**/*.tsx` files to one of the configured preview
-								targets.
+								Add <code>{"src/**/*.tsx"}</code> files to one of the configured
+								preview targets.
 							</p>
 						</div>
 					</section>

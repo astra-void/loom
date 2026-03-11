@@ -17,7 +17,13 @@ const USER_INPUT_TRACKER_KEY = Symbol.for(
 );
 
 const robloxMockRecord = robloxMock as unknown as Record<PropertyKey, unknown>;
-const previewEnum = Enum as Record<string, any>;
+type PreviewEnumValueLookup = Record<string, unknown>;
+
+const previewEnum = Enum as unknown as {
+	EasingDirection: PreviewEnumValueLookup;
+	EasingStyle: PreviewEnumValueLookup;
+	PlaybackState: PreviewEnumValueLookup;
+};
 
 type PreviewServiceName =
 	| "GuiService"

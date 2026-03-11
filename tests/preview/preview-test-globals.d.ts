@@ -2,7 +2,12 @@ declare const Color3: {
 	fromRGB(r: number, g: number, b: number): unknown;
 };
 
-declare const Enum: any;
+interface PreviewDynamicProxy {
+	(...args: unknown[]): PreviewDynamicProxy;
+	readonly [key: string]: PreviewDynamicProxy;
+}
+
+declare const Enum: PreviewDynamicProxy;
 
 declare const UDim: {
 	new (scale: number, offset: number): unknown;
@@ -24,7 +29,7 @@ declare const UDim2: {
 	fromScale(x: number, y: number): unknown;
 };
 
-declare const game: any;
+declare const game: PreviewDynamicProxy;
 
 interface PreviewIntrinsicElements {
 	frame: Record<string, unknown>;

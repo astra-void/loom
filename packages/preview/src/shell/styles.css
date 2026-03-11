@@ -432,11 +432,16 @@ code {
 
 .theme-toggle-label {
 	margin: 0;
+	padding: 0;
 }
 
 .theme-toggle {
+	border: 0;
 	display: inline-flex;
 	gap: 4px;
+	margin: 0;
+	min-inline-size: 0;
+	padding: 0;
 }
 
 .theme-toggle-button {
@@ -683,9 +688,17 @@ code {
 	font: inherit;
 }
 
+.preview-host-degraded-detail {
+	display: none;
+}
+
 [data-debug-mode="true"] .preview-host {
 	background-color: rgba(255, 0, 0, 0.08);
 	outline: 1px solid red;
+}
+
+[data-debug-mode="true"] .preview-host-degraded-detail {
+	display: inline-flex;
 }
 
 [data-debug-mode="true"] .preview-textlabel {

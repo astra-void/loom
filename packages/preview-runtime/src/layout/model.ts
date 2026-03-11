@@ -1,4 +1,8 @@
 import {
+	getPreviewHostMetadataByRuntimeName,
+	type PreviewPlaceholderBehavior,
+} from "../hosts/metadata";
+import {
 	FULL_SIZE_UDIM2,
 	normalizePreviewNodeId,
 	type SerializedUDim,
@@ -48,7 +52,10 @@ export type PreviewLayoutAxisConstraints = {
 export type PreviewLayoutHostMetadata = {
 	degraded: boolean;
 	fullSizeDefault: boolean;
+	placeholderBehavior: PreviewPlaceholderBehavior;
 };
+
+export type PreviewLayoutHostPolicy = PreviewLayoutHostMetadata;
 
 export type PreviewLayoutConstraints = {
 	height?: PreviewLayoutAxisConstraints;
@@ -62,6 +69,19 @@ export type PreviewLayoutSource =
 	| "full-size-default"
 	| "intrinsic-size"
 	| "root-default";
+
+export type PreviewLayoutSizeResolutionReason =
+	| "explicit-size"
+	| "full-size-default"
+	| "intrinsic-measurement"
+	| "intrinsic-empty"
+	| "root-default";
+
+export type PreviewLayoutSizeResolution = {
+	hadExplicitSize: boolean;
+	intrinsicSizeAvailable: boolean;
+	reason: PreviewLayoutSizeResolutionReason;
+};
 
 export type PreviewLayoutStyleHints = {
 	height?: string;
@@ -91,6 +111,7 @@ export type PreviewLayoutNode = {
 export type PreviewLayoutDebugNode = {
 	children: PreviewLayoutDebugNode[];
 	debugLabel?: string;
+	hostPolicy: PreviewLayoutHostPolicy;
 	id: string;
 	intrinsicSize: MeasuredNodeSize | null;
 	kind: PreviewLayoutNodeKind;
@@ -103,6 +124,7 @@ export type PreviewLayoutDebugNode = {
 		source: "fallback" | "wasm";
 	};
 	rect: ComputedRect | null;
+	sizeResolution: PreviewLayoutSizeResolution;
 	styleHints?: PreviewLayoutStyleHints;
 };
 
@@ -247,17 +269,65 @@ function normalizeStyleHints(
 }
 
 function normalizeHostMetadata(
-	metadata: PreviewLayoutHostMetadata | null | undefined,
+	metadata: Partial<PreviewLayoutHostMetadata> | null | undefined,
+	runtimeName?: string,
 ): PreviewLayoutHostMetadata | undefined {
-	if (!metadata) {
+	const fallback = runtimeName
+		? getPreviewHostMetadataByRuntimeName(runtimeName)
+		: undefined;
+	if (!metadata && !fallback) {
 		return undefined;
 	}
 
 	return {
-		degraded: metadata.degraded === true,
-		fullSizeDefault: metadata.fullSizeDefault === true,
+		degraded: metadata?.degraded ?? fallback?.degraded ?? false,
+		fullSizeDefault:
+			metadata?.fullSizeDefault ?? fallback?.fullSizeDefault ?? false,
+		placeholderBehavior:
+			metadata?.placeholderBehavior === "container" ||
+			metadata?.placeholderBehavior === "opaque" ||
+			metadata?.placeholderBehavior === "none"
+				? metadata.placeholderBehavior
+				: (fallback?.placeholderBehavior ?? "none"),
 	};
 }
+
+const DEFAULT_HOST_POLICY: PreviewLayoutHostPolicy = {
+	degraded: false,
+	fullSizeDefault: false,
+	placeholderBehavior: "none",
+};
+
+function createHostPolicy(
+	metadata: Partial<PreviewLayoutHostMetadata> | null | undefined,
+	runtimeName?: string,
+): PreviewLayoutHostPolicy {
+	return normalizeHostMetadata(metadata, runtimeName) ?? DEFAULT_HOST_POLICY;
+}
+
+export function resolveNodeHostPolicy(
+	node: Pick<PreviewLayoutNode, "hostMetadata" | "nodeType">,
+): PreviewLayoutHostPolicy {
+	return createHostPolicy(node.hostMetadata, node.nodeType);
+}
+
+function createSizeResolution(
+	hadExplicitSize: boolean,
+	intrinsicSizeAvailable: boolean,
+	reason: PreviewLayoutSizeResolutionReason,
+): PreviewLayoutSizeResolution {
+	return {
+		hadExplicitSize,
+		intrinsicSizeAvailable,
+		reason,
+	};
+}
+
+type PreviewResolvedNodeSize = {
+	layoutSource: PreviewLayoutSource;
+	resolvedSize: PreviewLayoutSize;
+	sizeResolution: PreviewLayoutSizeResolution;
+};
 
 export function createViewportRect(
 	width: number,
@@ -361,7 +431,7 @@ export function adaptRobloxNodeInput(
 
 	const nextNode: PreviewLayoutNode = {
 		debugLabel: input.debugLabel,
-		hostMetadata: normalizeHostMetadata(input.hostMetadata),
+		hostMetadata: normalizeHostMetadata(input.hostMetadata, input.nodeType),
 		id: normalizedId,
 		intrinsicSize: measuredSize,
 		kind:
@@ -400,6 +470,8 @@ export function areNodesEqual(
 		a.debugLabel === b.debugLabel &&
 		a.hostMetadata?.degraded === b.hostMetadata?.degraded &&
 		a.hostMetadata?.fullSizeDefault === b.hostMetadata?.fullSizeDefault &&
+		a.hostMetadata?.placeholderBehavior ===
+			b.hostMetadata?.placeholderBehavior &&
 		a.id === b.id &&
 		(a.intrinsicSize?.width ?? 0) === (b.intrinsicSize?.width ?? 0) &&
 		(a.intrinsicSize?.height ?? 0) === (b.intrinsicSize?.height ?? 0) &&
@@ -430,33 +502,79 @@ export function areNodesEqual(
 	);
 }
 
-export function computeRectFromParentRect(
-	node: Pick<PreviewLayoutNode, "hostMetadata" | "intrinsicSize" | "layout">,
-	parentRect: ComputedRect,
-): { layoutSource: PreviewLayoutSource; rect: ComputedRect } {
-	let layoutSource: PreviewLayoutSource = "explicit-size";
-	let resolvedSize = node.layout.size;
-
-	if (!resolvedSize) {
-		if (node.hostMetadata?.fullSizeDefault) {
-			layoutSource = "full-size-default";
-			resolvedSize = toLayoutSize(FULL_SIZE_UDIM2);
-		} else if (node.intrinsicSize) {
-			layoutSource = "intrinsic-size";
-			resolvedSize = createMeasuredSizeLayout(node.intrinsicSize);
-		} else {
-			layoutSource = "intrinsic-size";
-			resolvedSize = toLayoutSize(ZERO_UDIM2);
-		}
+export function resolveNodeSize(
+	node: Pick<
+		PreviewLayoutNode,
+		"hostMetadata" | "intrinsicSize" | "kind" | "layout"
+	>,
+): PreviewResolvedNodeSize {
+	if (node.kind === "root") {
+		return {
+			layoutSource: "root-default",
+			resolvedSize: toLayoutSize(FULL_SIZE_UDIM2),
+			sizeResolution: createSizeResolution(false, false, "root-default"),
+		};
 	}
 
-	let width = resolveAxis(resolvedSize.x, parentRect.width);
-	let height = resolveAxis(resolvedSize.y, parentRect.height);
+	if (node.layout.size) {
+		return {
+			layoutSource: "explicit-size",
+			resolvedSize: node.layout.size,
+			sizeResolution: createSizeResolution(
+				true,
+				node.intrinsicSize !== null && node.intrinsicSize !== undefined,
+				"explicit-size",
+			),
+		};
+	}
+
+	if (node.hostMetadata?.fullSizeDefault) {
+		return {
+			layoutSource: "full-size-default",
+			resolvedSize: toLayoutSize(FULL_SIZE_UDIM2),
+			sizeResolution: createSizeResolution(
+				false,
+				node.intrinsicSize !== null && node.intrinsicSize !== undefined,
+				"full-size-default",
+			),
+		};
+	}
+
+	if (node.intrinsicSize) {
+		return {
+			layoutSource: "intrinsic-size",
+			resolvedSize: createMeasuredSizeLayout(node.intrinsicSize),
+			sizeResolution: createSizeResolution(
+				false,
+				true,
+				"intrinsic-measurement",
+			),
+		};
+	}
+
+	return {
+		layoutSource: "intrinsic-size",
+		resolvedSize: toLayoutSize(ZERO_UDIM2),
+		sizeResolution: createSizeResolution(false, false, "intrinsic-empty"),
+	};
+}
+
+export function computeRectFromParentRect(
+	node: Pick<
+		PreviewLayoutNode,
+		"hostMetadata" | "intrinsicSize" | "kind" | "layout"
+	>,
+	parentRect: ComputedRect,
+): { layoutSource: PreviewLayoutSource; rect: ComputedRect } {
+	const resolved = resolveNodeSize(node);
+
+	let width = resolveAxis(resolved.resolvedSize.x, parentRect.width);
+	let height = resolveAxis(resolved.resolvedSize.y, parentRect.height);
 	width = clampAxis(width, node.layout.constraints?.width);
 	height = clampAxis(height, node.layout.constraints?.height);
 
 	return {
-		layoutSource,
+		layoutSource: resolved.layoutSource,
 		rect: {
 			height,
 			width,
@@ -517,6 +635,45 @@ export function normalizeLayoutMap(raw: unknown): Record<string, ComputedRect> {
 	return next;
 }
 
+function normalizeLayoutSource(value: unknown): PreviewLayoutSource {
+	return value === "explicit-size" ||
+		value === "full-size-default" ||
+		value === "intrinsic-size" ||
+		value === "root-default"
+		? value
+		: "intrinsic-size";
+}
+
+function normalizeSizeResolutionReason(
+	value: unknown,
+	layoutSource: PreviewLayoutSource,
+	intrinsicSizeAvailable: boolean,
+): PreviewLayoutSizeResolutionReason {
+	if (
+		value === "explicit-size" ||
+		value === "full-size-default" ||
+		value === "intrinsic-measurement" ||
+		value === "intrinsic-empty" ||
+		value === "root-default"
+	) {
+		return value;
+	}
+
+	if (layoutSource === "explicit-size") {
+		return "explicit-size";
+	}
+
+	if (layoutSource === "full-size-default") {
+		return "full-size-default";
+	}
+
+	if (layoutSource === "root-default") {
+		return "root-default";
+	}
+
+	return intrinsicSizeAvailable ? "intrinsic-measurement" : "intrinsic-empty";
+}
+
 function normalizeDebugNode(raw: unknown): PreviewLayoutDebugNode | null {
 	if (!raw || typeof raw !== "object") {
 		return null;
@@ -544,6 +701,46 @@ function normalizeDebugNode(raw: unknown): PreviewLayoutDebugNode | null {
 		record.provenance && typeof record.provenance === "object"
 			? (record.provenance as Record<string, unknown>)
 			: null;
+	const hostPolicy =
+		record.hostPolicy && typeof record.hostPolicy === "object"
+			? (record.hostPolicy as Partial<PreviewLayoutHostMetadata>)
+			: undefined;
+	const nodeType =
+		typeof record.nodeType === "string" ? record.nodeType : "Frame";
+	const kind =
+		record.kind === "layout" || record.kind === "root" || record.kind === "host"
+			? record.kind
+			: "host";
+	const layoutSource =
+		record.layoutSource === undefined && kind === "root"
+			? "root-default"
+			: normalizeLayoutSource(record.layoutSource);
+	const normalizedIntrinsicSize = intrinsicSize
+		? {
+				height: toFiniteNumber(intrinsicSize.height, 0),
+				width: toFiniteNumber(intrinsicSize.width, 0),
+			}
+		: null;
+	const normalizedHostPolicy = createHostPolicy(hostPolicy, nodeType);
+	const sizeResolutionRecord =
+		record.sizeResolution && typeof record.sizeResolution === "object"
+			? (record.sizeResolution as Record<string, unknown>)
+			: null;
+	const intrinsicSizeAvailable =
+		typeof sizeResolutionRecord?.intrinsicSizeAvailable === "boolean"
+			? sizeResolutionRecord.intrinsicSizeAvailable
+			: normalizedIntrinsicSize !== null;
+	const sizeResolution = createSizeResolution(
+		typeof sizeResolutionRecord?.hadExplicitSize === "boolean"
+			? sizeResolutionRecord.hadExplicitSize
+			: layoutSource === "explicit-size",
+		intrinsicSizeAvailable,
+		normalizeSizeResolutionReason(
+			sizeResolutionRecord?.reason,
+			layoutSource,
+			intrinsicSizeAvailable,
+		),
+	);
 
 	return {
 		children: Array.isArray(record.children)
@@ -553,27 +750,12 @@ function normalizeDebugNode(raw: unknown): PreviewLayoutDebugNode | null {
 			: [],
 		debugLabel:
 			typeof record.debugLabel === "string" ? record.debugLabel : undefined,
+		hostPolicy: normalizedHostPolicy,
 		id: normalizePreviewNodeId(idValue) ?? idValue,
-		intrinsicSize: intrinsicSize
-			? {
-					height: toFiniteNumber(intrinsicSize.height, 0),
-					width: toFiniteNumber(intrinsicSize.width, 0),
-				}
-			: null,
-		kind:
-			record.kind === "layout" ||
-			record.kind === "root" ||
-			record.kind === "host"
-				? record.kind
-				: "host",
-		layoutSource:
-			record.layoutSource === "explicit-size" ||
-			record.layoutSource === "full-size-default" ||
-			record.layoutSource === "intrinsic-size" ||
-			record.layoutSource === "root-default"
-				? record.layoutSource
-				: "intrinsic-size",
-		nodeType: typeof record.nodeType === "string" ? record.nodeType : "Frame",
+		intrinsicSize: normalizedIntrinsicSize,
+		kind,
+		layoutSource,
+		nodeType,
 		parentConstraints: parentConstraints
 			? {
 					height: toFiniteNumber(parentConstraints.height, 0),
@@ -601,6 +783,7 @@ function normalizeDebugNode(raw: unknown): PreviewLayoutDebugNode | null {
 					y: toFiniteNumber(rect.y, 0),
 				}
 			: null,
+		sizeResolution,
 		styleHints:
 			record.styleHints && typeof record.styleHints === "object"
 				? normalizeStyleHints(record.styleHints as PreviewLayoutStyleHints)

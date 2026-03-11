@@ -9,7 +9,8 @@
 			"supportsIsa": true,
 			"abstractAncestors": ["GuiObject", "Instance"],
 			"fullSizeDefault": true,
-			"degraded": false
+			"degraded": false,
+			"placeholderBehavior": "none"
 		},
 		{
 			"jsxName": "textbutton",
@@ -20,7 +21,8 @@
 			"supportsIsa": true,
 			"abstractAncestors": ["GuiObject", "GuiButton", "Instance"],
 			"fullSizeDefault": false,
-			"degraded": false
+			"degraded": false,
+			"placeholderBehavior": "none"
 		},
 		{
 			"jsxName": "imagebutton",
@@ -31,7 +33,8 @@
 			"supportsIsa": true,
 			"abstractAncestors": ["GuiObject", "GuiButton", "Instance"],
 			"fullSizeDefault": false,
-			"degraded": false
+			"degraded": false,
+			"placeholderBehavior": "none"
 		},
 		{
 			"jsxName": "screengui",
@@ -47,7 +50,8 @@
 				"Instance"
 			],
 			"fullSizeDefault": true,
-			"degraded": false
+			"degraded": false,
+			"placeholderBehavior": "none"
 		},
 		{
 			"jsxName": "surfacegui",
@@ -58,7 +62,8 @@
 			"supportsIsa": true,
 			"abstractAncestors": ["GuiObject", "LayerCollector", "Instance"],
 			"fullSizeDefault": true,
-			"degraded": true
+			"degraded": true,
+			"placeholderBehavior": "container"
 		},
 		{
 			"jsxName": "billboardgui",
@@ -69,7 +74,8 @@
 			"supportsIsa": true,
 			"abstractAncestors": ["GuiObject", "LayerCollector", "Instance"],
 			"fullSizeDefault": true,
-			"degraded": true
+			"degraded": true,
+			"placeholderBehavior": "container"
 		},
 		{
 			"jsxName": "textlabel",
@@ -80,7 +86,8 @@
 			"supportsIsa": true,
 			"abstractAncestors": ["GuiObject", "GuiLabel", "Instance"],
 			"fullSizeDefault": false,
-			"degraded": false
+			"degraded": false,
+			"placeholderBehavior": "none"
 		},
 		{
 			"jsxName": "textbox",
@@ -91,7 +98,8 @@
 			"supportsIsa": true,
 			"abstractAncestors": ["GuiObject", "Instance"],
 			"fullSizeDefault": false,
-			"degraded": false
+			"degraded": false,
+			"placeholderBehavior": "none"
 		},
 		{
 			"jsxName": "imagelabel",
@@ -102,7 +110,8 @@
 			"supportsIsa": true,
 			"abstractAncestors": ["GuiObject", "GuiLabel", "Instance"],
 			"fullSizeDefault": false,
-			"degraded": false
+			"degraded": false,
+			"placeholderBehavior": "none"
 		},
 		{
 			"jsxName": "scrollingframe",
@@ -113,7 +122,8 @@
 			"supportsIsa": true,
 			"abstractAncestors": ["GuiObject", "Instance"],
 			"fullSizeDefault": false,
-			"degraded": false
+			"degraded": false,
+			"placeholderBehavior": "none"
 		},
 		{
 			"jsxName": "canvasgroup",
@@ -124,7 +134,8 @@
 			"supportsIsa": true,
 			"abstractAncestors": ["GuiObject", "Instance"],
 			"fullSizeDefault": true,
-			"degraded": false
+			"degraded": false,
+			"placeholderBehavior": "none"
 		},
 		{
 			"jsxName": "viewportframe",
@@ -135,7 +146,8 @@
 			"supportsIsa": true,
 			"abstractAncestors": ["GuiObject", "Instance"],
 			"fullSizeDefault": true,
-			"degraded": true
+			"degraded": true,
+			"placeholderBehavior": "opaque"
 		},
 		{
 			"jsxName": "videoframe",
@@ -146,7 +158,8 @@
 			"supportsIsa": true,
 			"abstractAncestors": ["GuiObject", "Instance"],
 			"fullSizeDefault": true,
-			"degraded": true
+			"degraded": true,
+			"placeholderBehavior": "opaque"
 		},
 		{
 			"jsxName": "uicorner",
@@ -157,7 +170,8 @@
 			"supportsIsa": false,
 			"abstractAncestors": [],
 			"fullSizeDefault": false,
-			"degraded": false
+			"degraded": false,
+			"placeholderBehavior": "none"
 		},
 		{
 			"jsxName": "uipadding",
@@ -168,7 +182,8 @@
 			"supportsIsa": false,
 			"abstractAncestors": [],
 			"fullSizeDefault": false,
-			"degraded": false
+			"degraded": false,
+			"placeholderBehavior": "none"
 		},
 		{
 			"jsxName": "uilistlayout",
@@ -179,7 +194,8 @@
 			"supportsIsa": false,
 			"abstractAncestors": [],
 			"fullSizeDefault": false,
-			"degraded": false
+			"degraded": false,
+			"placeholderBehavior": "none"
 		},
 		{
 			"jsxName": "uigridlayout",
@@ -190,7 +206,8 @@
 			"supportsIsa": false,
 			"abstractAncestors": [],
 			"fullSizeDefault": false,
-			"degraded": false
+			"degraded": false,
+			"placeholderBehavior": "none"
 		},
 		{
 			"jsxName": "uistroke",
@@ -201,7 +218,8 @@
 			"supportsIsa": false,
 			"abstractAncestors": [],
 			"fullSizeDefault": false,
-			"degraded": false
+			"degraded": false,
+			"placeholderBehavior": "none"
 		},
 		{
 			"jsxName": "uiscale",
@@ -212,7 +230,8 @@
 			"supportsIsa": false,
 			"abstractAncestors": [],
 			"fullSizeDefault": false,
-			"degraded": false
+			"degraded": false,
+			"placeholderBehavior": "none"
 		},
 		{
 			"jsxName": "uigradient",
@@ -223,7 +242,8 @@
 			"supportsIsa": false,
 			"abstractAncestors": [],
 			"fullSizeDefault": false,
-			"degraded": false
+			"degraded": false,
+			"placeholderBehavior": "none"
 		},
 		{
 			"jsxName": "uipagelayout",
@@ -234,7 +254,8 @@
 			"supportsIsa": false,
 			"abstractAncestors": [],
 			"fullSizeDefault": false,
-			"degraded": false
+			"degraded": false,
+			"placeholderBehavior": "none"
 		},
 		{
 			"jsxName": "uitablelayout",
@@ -245,7 +266,8 @@
 			"supportsIsa": false,
 			"abstractAncestors": [],
 			"fullSizeDefault": false,
-			"degraded": false
+			"degraded": false,
+			"placeholderBehavior": "none"
 		},
 		{
 			"jsxName": "uisizeconstraint",
@@ -256,7 +278,8 @@
 			"supportsIsa": false,
 			"abstractAncestors": [],
 			"fullSizeDefault": false,
-			"degraded": false
+			"degraded": false,
+			"placeholderBehavior": "none"
 		},
 		{
 			"jsxName": "uitextsizeconstraint",
@@ -267,7 +290,8 @@
 			"supportsIsa": false,
 			"abstractAncestors": [],
 			"fullSizeDefault": false,
-			"degraded": false
+			"degraded": false,
+			"placeholderBehavior": "none"
 		},
 		{
 			"jsxName": "uiaspectratioconstraint",
@@ -278,7 +302,8 @@
 			"supportsIsa": false,
 			"abstractAncestors": [],
 			"fullSizeDefault": false,
-			"degraded": false
+			"degraded": false,
+			"placeholderBehavior": "none"
 		},
 		{
 			"jsxName": "uiflexitem",
@@ -289,7 +314,8 @@
 			"supportsIsa": false,
 			"abstractAncestors": [],
 			"fullSizeDefault": false,
-			"degraded": false
+			"degraded": false,
+			"placeholderBehavior": "none"
 		}
 	]
 }

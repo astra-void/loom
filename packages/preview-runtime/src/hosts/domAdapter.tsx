@@ -6,7 +6,10 @@ import {
 import {
 	adaptRobloxNodeInput,
 	type ComputedRect,
+	type PreviewLayoutHostPolicy,
 	type PreviewLayoutNode,
+	type PreviewLayoutSizeResolution,
+	resolveNodeSize,
 } from "../layout/model";
 import {
 	getPreviewHostMetadataByJsxName,
@@ -29,8 +32,15 @@ import {
 
 export type LayoutDebugState = {
 	debugNode: {
+		hostPolicy: PreviewLayoutHostPolicy;
+		layoutSource:
+			| "explicit-size"
+			| "full-size-default"
+			| "intrinsic-size"
+			| "root-default";
 		parentConstraints: ComputedRect | null;
 		rect: ComputedRect | null;
+		sizeResolution: PreviewLayoutSizeResolution;
 		styleHints?: {
 			height?: string;
 			width?: string;
@@ -79,40 +89,89 @@ export interface PresentationAdapter {
 	): React.ReactElement;
 }
 
+const DEFAULT_HOST_POLICY: PreviewLayoutHostPolicy = {
+	degraded: false,
+	fullSizeDefault: false,
+	placeholderBehavior: "none",
+};
+
+function getHostPolicy(node: PreviewHostNode): PreviewLayoutHostPolicy {
+	return node.hostMetadata ?? DEFAULT_HOST_POLICY;
+}
+
+function shouldRenderHostChildren(node: PreviewHostNode) {
+	return getHostPolicy(node).placeholderBehavior !== "opaque";
+}
+
+function getDegradedHostDetail(node: PreviewHostNode) {
+	const debugNode = node.layoutDebug?.debugNode;
+	const hostPolicy = debugNode?.hostPolicy ?? getHostPolicy(node);
+	const sizeReason =
+		debugNode?.sizeResolution.reason ??
+		(hostPolicy.fullSizeDefault ? "full-size-default" : "intrinsic-empty");
+
+	return `${hostPolicy.placeholderBehavior} placeholder · ${sizeReason}`;
+}
+
 function renderDegradedHostLabel(node: PreviewHostNode) {
 	if (!isDegradedPreviewHost(node.host)) {
 		return undefined;
 	}
 
 	return (
-		<span
+		<div
 			aria-hidden="true"
-			className="preview-host-degraded-label"
-			data-preview-degraded-label={node.nodeType}
+			className="preview-host-degraded-banner"
 			style={{
-				background: "rgba(247, 232, 208, 0.92)",
-				border: "1px solid rgba(121, 97, 67, 0.22)",
-				borderRadius: "999px",
-				color: "#6f5739",
-				fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-				fontSize: "11px",
-				fontWeight: 600,
+				display: "flex",
+				flexDirection: "column",
+				gap: "4px",
 				left: "8px",
-				letterSpacing: "0.04em",
 				maxWidth: "calc(100% - 16px)",
-				overflow: "hidden",
-				padding: "4px 8px",
 				pointerEvents: "none",
 				position: "absolute",
-				textOverflow: "ellipsis",
-				textTransform: "uppercase",
 				top: "8px",
-				whiteSpace: "nowrap",
 				zIndex: 2,
 			}}
 		>
-			{node.nodeType}
-		</span>
+			<span
+				className="preview-host-degraded-label"
+				data-preview-degraded-label={node.nodeType}
+				style={{
+					background: "rgba(247, 232, 208, 0.92)",
+					border: "1px solid rgba(121, 97, 67, 0.22)",
+					borderRadius: "999px",
+					color: "#6f5739",
+					fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+					fontSize: "11px",
+					fontWeight: 600,
+					letterSpacing: "0.04em",
+					overflow: "hidden",
+					padding: "4px 8px",
+					textOverflow: "ellipsis",
+					textTransform: "uppercase",
+					whiteSpace: "nowrap",
+				}}
+			>
+				{node.nodeType}
+			</span>
+			<span
+				className="preview-host-degraded-detail"
+				data-preview-degraded-detail={getDegradedHostDetail(node)}
+				style={{
+					background: "rgba(255, 250, 242, 0.96)",
+					border: "1px solid rgba(121, 97, 67, 0.18)",
+					borderRadius: "10px",
+					color: "#6f5739",
+					fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+					fontSize: "10px",
+					lineHeight: 1.3,
+					padding: "4px 6px",
+				}}
+			>
+				{getDegradedHostDetail(node)}
+			</span>
+		</div>
 	);
 }
 
@@ -192,12 +251,24 @@ function withLayoutDiagnostics(
 	node: PreviewHostNode,
 ) {
 	const debugNode = diagnostics?.debugNode ?? null;
+	const resolvedNodeSize = resolveNodeSize(node);
+	const hostPolicy = debugNode?.hostPolicy ?? getHostPolicy(node);
+	const sizeResolution =
+		debugNode?.sizeResolution ?? resolvedNodeSize.sizeResolution;
+	const layoutSource = debugNode?.layoutSource ?? resolvedNodeSize.layoutSource;
 
 	return {
 		...domProps,
 		"data-layout-computed-height": debugNode?.rect?.height ?? undefined,
 		"data-layout-computed-width": debugNode?.rect?.width ?? undefined,
 		"data-layout-context": diagnostics?.hasContext ? "true" : "false",
+		"data-layout-had-explicit-size": String(sizeResolution.hadExplicitSize),
+		"data-layout-host-degraded": String(hostPolicy.degraded),
+		"data-layout-host-full-size-default": String(hostPolicy.fullSizeDefault),
+		"data-layout-intrinsic-size-available": String(
+			sizeResolution.intrinsicSizeAvailable,
+		),
+		"data-layout-layout-source": layoutSource,
 		"data-layout-parent-height":
 			debugNode?.parentConstraints?.height ??
 			diagnostics?.inheritedParentRect?.height ??
@@ -210,6 +281,8 @@ function withLayoutDiagnostics(
 			debugNode?.styleHints?.height ?? node.styleHints?.height ?? undefined,
 		"data-layout-style-width":
 			debugNode?.styleHints?.width ?? node.styleHints?.width ?? undefined,
+		"data-layout-placeholder-behavior": hostPolicy.placeholderBehavior,
+		"data-layout-size-reason": sizeResolution.reason,
 		"data-layout-viewport-height": diagnostics?.viewport?.height ?? undefined,
 		"data-layout-viewport-ready": diagnostics?.viewportReady ? "true" : "false",
 		"data-layout-viewport-width": diagnostics?.viewport?.width ?? undefined,
@@ -247,6 +320,8 @@ function createRenderedDomProps(node: PreviewHostNode) {
 				"data-preview-degraded": isDegradedPreviewHost(node.host)
 					? "true"
 					: undefined,
+				"data-preview-placeholder-behavior":
+					node.hostMetadata?.placeholderBehavior ?? "none",
 			},
 			node.layoutDebug,
 			node,
@@ -283,6 +358,7 @@ function createHostNode(source: SourceHostDescriptor): PreviewHostNode {
 					: {
 							degraded: hostMetadata.degraded,
 							fullSizeDefault: hostMetadata.fullSizeDefault,
+							placeholderBehavior: hostMetadata.placeholderBehavior,
 						},
 			id: nodeId,
 			kind:
@@ -400,7 +476,7 @@ export const domPresentationAdapter: PresentationAdapter = {
 						{renderDegradedHostLabel(node)}
 						{(node.host === "textlabel" || node.host === "frame") &&
 							renderHostText(node.presentationHints.text)}
-						{children}
+						{shouldRenderHostChildren(node) ? children : undefined}
 					</div>
 				);
 			}

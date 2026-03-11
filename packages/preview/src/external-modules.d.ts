@@ -146,8 +146,19 @@ declare module "@loom-dev/preview-runtime" {
 	export type PreviewLayoutHostMetadata = {
 		degraded: boolean;
 		fullSizeDefault: boolean;
+		placeholderBehavior: "none" | "container" | "opaque";
 	};
 	export type PreviewLayoutNodeKind = "host" | "layout" | "root";
+	export type PreviewLayoutSizeResolution = {
+		hadExplicitSize: boolean;
+		intrinsicSizeAvailable: boolean;
+		reason:
+			| "explicit-size"
+			| "full-size-default"
+			| "intrinsic-measurement"
+			| "intrinsic-empty"
+			| "root-default";
+	};
 	export type PreviewLayoutNode = {
 		debugLabel?: string;
 		hostMetadata?: PreviewLayoutHostMetadata;
@@ -204,6 +215,7 @@ declare module "@loom-dev/preview-runtime" {
 	export type PreviewLayoutDebugNode = {
 		children: PreviewLayoutDebugNode[];
 		debugLabel?: string;
+		hostPolicy: PreviewLayoutHostMetadata;
 		id: string;
 		intrinsicSize: {
 			height: number;
@@ -223,6 +235,7 @@ declare module "@loom-dev/preview-runtime" {
 			source: "fallback" | "wasm";
 		};
 		rect: ComputedRect | null;
+		sizeResolution: PreviewLayoutSizeResolution;
 		styleHints?: {
 			height?: string;
 			width?: string;
