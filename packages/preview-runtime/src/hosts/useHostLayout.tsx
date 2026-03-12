@@ -124,14 +124,41 @@ function useSourceOrder() {
 	return orderRef.current?.value;
 }
 
-function useMeasurementRevision(
-	elementRef: React.RefObject<HTMLElement | null>,
-	enabled: boolean,
+function areMeasuredSizesEqual(
+	left: { height: number; width: number } | null,
+	right: { height: number; width: number } | null,
 ) {
-	const [revision, setRevision] = React.useState(0);
+	return left?.width === right?.width && left?.height === right?.height;
+}
+
+function readIntrinsicSize(element: HTMLElement | null) {
+	if (!element) {
+		return null;
+	}
+
+	const rect = element.getBoundingClientRect();
+	if (!Number.isFinite(rect.width) || !Number.isFinite(rect.height)) {
+		return null;
+	}
+
+	return {
+		height: Math.max(0, rect.height),
+		width: Math.max(0, rect.width),
+	};
+}
+
+function useObservedIntrinsicSize(
+	elementRef: React.RefObject<HTMLElement | null>,
+	measurementEnabled: boolean,
+) {
+	const [intrinsicSize, setIntrinsicSize] = React.useState<{
+		height: number;
+		width: number;
+	} | null>(null);
 
 	React.useLayoutEffect(() => {
-		if (!enabled) {
+		if (!measurementEnabled) {
+			setIntrinsicSize((previous) => (previous === null ? previous : null));
 			return;
 		}
 
@@ -140,24 +167,18 @@ function useMeasurementRevision(
 			return;
 		}
 
-		let lastWidth = element.getBoundingClientRect().width;
-		let lastHeight = element.getBoundingClientRect().height;
-		setRevision((previous) => previous + 1);
-
-		const notifyIfChanged = () => {
-			const rect = element.getBoundingClientRect();
-			if (lastWidth === rect.width && lastHeight === rect.height) {
-				return;
-			}
-
-			lastWidth = rect.width;
-			lastHeight = rect.height;
-			setRevision((previous) => previous + 1);
+		const update = () => {
+			const nextSize = readIntrinsicSize(element);
+			setIntrinsicSize((previous) =>
+				areMeasuredSizesEqual(previous, nextSize) ? previous : nextSize,
+			);
 		};
+
+		update();
 
 		if (typeof ResizeObserver !== "undefined") {
 			const observer = new ResizeObserver(() => {
-				notifyIfChanged();
+				update();
 			});
 			observer.observe(element);
 			return () => {
@@ -166,16 +187,16 @@ function useMeasurementRevision(
 		}
 
 		const handleResize = () => {
-			notifyIfChanged();
+			update();
 		};
 
 		globalThis.addEventListener?.("resize", handleResize);
 		return () => {
 			globalThis.removeEventListener?.("resize", handleResize);
 		};
-	}, [elementRef, enabled]);
+	}, [elementRef, measurementEnabled]);
 
-	return revision;
+	return intrinsicSize;
 }
 
 function useDegradedHostIssue(hostNode: PreviewHostNode) {
@@ -238,13 +259,9 @@ export function useHostLayout(host: LayoutHostName, props: PreviewDomProps) {
 		[host, nodeId, normalizedParentId, props, sourceOrder],
 	);
 
-	const measurementVersion = useMeasurementRevision(
+	const intrinsicSize = useObservedIntrinsicSize(
 		elementRef,
 		normalizedNode.measurementEnabled,
-	);
-	const intrinsicSize = React.useMemo(
-		() => domPresentationAdapter.measure(normalizedNode, elementRef.current),
-		[measurementVersion, normalizedNode],
 	);
 
 	const layoutNode = React.useMemo<PreviewLayoutNode>(

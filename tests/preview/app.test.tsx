@@ -5,9 +5,9 @@ import type {
 	PreviewEntryDescriptor,
 	PreviewEntryPayload,
 } from "@loom-dev/preview-engine";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type React from "react";
+import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PreviewApp } from "../../packages/preview/src/shell/PreviewApp";
 import { PreviewThemeProvider } from "../../packages/preview/src/shell/theme";
@@ -189,6 +189,26 @@ const dialogEntry = createEntryDescriptor({
 	title: "Dialog Root",
 });
 
+const workspaceHarnessEntry = createEntryDescriptor({
+	hasDefaultExport: true,
+	hasPreviewExport: true,
+	id: "unnamed-wizzard-game:client/ui/components/Test.tsx",
+	packageName: "unnamed-wizzard-game",
+	relativePath: "client/ui/components/Test.tsx",
+	renderTarget: {
+		contract: "preview.render",
+		kind: "harness",
+	},
+	selection: {
+		contract: "preview.render",
+		kind: "explicit",
+	},
+	sourceFilePath:
+		"/Users/returnf4lse/Desktop/Workspace/rojo/unnamed-wizzard-game/src/client/ui/components/Test.tsx",
+	targetName: "unnamed-wizzard-game",
+	title: "Test",
+});
+
 function renderPreviewApp(app: React.ReactElement) {
 	return render(<PreviewThemeProvider>{app}</PreviewThemeProvider>);
 }
@@ -236,6 +256,80 @@ describe("preview shell", () => {
 
 		expect(await screen.findByText("Dialog Preview")).toBeTruthy();
 		expect(screen.getByRole("button", { name: /close/i })).toBeTruthy();
+	});
+
+	it("does not restart ready entry loads when payload updates replace the descriptor", async () => {
+		const loadEntrySpy = vi.fn<(id: string) => void>();
+		const module = {
+			preview: {
+				render: () => <button type="button">test</button>,
+			},
+		};
+
+		function WorkspacePreviewHarness() {
+			const [entries, setEntries] = React.useState<PreviewEntryDescriptor[]>([
+				workspaceHarnessEntry,
+			]);
+			const [entryPayloads, setEntryPayloads] = React.useState<
+				Record<string, PreviewEntryPayload>
+			>({});
+
+			const applyEntryPayload = React.useCallback(
+				(entryId: string, payload: PreviewEntryPayload | undefined) => {
+					if (!payload) {
+						return;
+					}
+
+					setEntries((previousEntries) =>
+						previousEntries.map((entry) =>
+							entry.id === entryId ? payload.descriptor : entry,
+						),
+					);
+					setEntryPayloads((previousPayloads) => ({
+						...previousPayloads,
+						[entryId]: payload,
+					}));
+				},
+				[],
+			);
+
+			const loadEntry = React.useCallback(
+				(id: string) => {
+					loadEntrySpy(id);
+					const payload = createPayload({
+						...workspaceHarnessEntry,
+					});
+
+					return Promise.resolve(module).then((loadedModule) => {
+						applyEntryPayload(id, payload);
+						return {
+							module: loadedModule,
+							payload,
+						};
+					});
+				},
+				[applyEntryPayload],
+			);
+
+			return (
+				<PreviewApp
+					entries={entries}
+					entryPayloads={entryPayloads}
+					initialSelectedId={workspaceHarnessEntry.id}
+					loadEntry={loadEntry}
+					projectName="unnamed-wizzard-game"
+				/>
+			);
+		}
+
+		renderPreviewApp(<WorkspacePreviewHarness />);
+
+		expect(screen.getByText("Preparing transformed source.")).toBeTruthy();
+		expect(await screen.findByRole("button", { name: "test" })).toBeTruthy();
+		expect(screen.queryByText("Preparing transformed source.")).toBeNull();
+		await waitFor(() => {
+			expect(loadEntrySpy).toHaveBeenCalledTimes(1);
+		});
 	});
 
 	it("shows compatibility-mode transform diagnostics without blocking the preview", async () => {

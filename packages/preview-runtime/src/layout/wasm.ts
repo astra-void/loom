@@ -1,5 +1,4 @@
 import initLayoutEngine, { createLayoutSession } from "@loom-dev/layout-engine";
-import layoutEngineWasmUrl from "@loom-dev/layout-engine/layout_engine_bg.wasm?url";
 import type { LayoutSessionLike } from "./controller";
 import { normalizePreviewLayoutResult, type PreviewLayoutNode } from "./model";
 
@@ -35,13 +34,94 @@ export function setPreviewLayoutEngineLoader(
 	globalRecord[LAYOUT_ENGINE_LOADER_KEY] = loader;
 }
 
+function resolveLayoutEngineWasmUrl(url: string): string {
+	try {
+		return new URL(url).toString();
+	} catch {
+		const baseUrl =
+			typeof window !== "undefined" &&
+			window.location &&
+			typeof window.location.href === "string"
+				? window.location.href
+				: typeof document !== "undefined" &&
+						typeof document.baseURI === "string"
+					? document.baseURI
+					: undefined;
+
+		if (!baseUrl) {
+			return url;
+		}
+
+		return new URL(url, baseUrl).toString();
+	}
+}
+
+function createLazyPromise<T>(factory: () => Promise<T>): Promise<T> {
+	let promise: Promise<T> | undefined;
+
+	const getPromise = () => {
+		if (!promise) {
+			promise = factory();
+		}
+
+		return promise;
+	};
+
+	return new Proxy(Object.create(null), {
+		get(_target, property) {
+			if (property === Symbol.toStringTag) {
+				return "Promise";
+			}
+
+			if (
+				property !== "then" &&
+				property !== "catch" &&
+				property !== "finally"
+			) {
+				return undefined;
+			}
+
+			const activePromise = getPromise();
+			const value = activePromise[property];
+			return typeof value === "function" ? value.bind(activePromise) : value;
+		},
+	}) as Promise<T>;
+}
+
+function getDefaultPreviewLayoutEngineLoader(): PreviewLayoutEngineLoader | null {
+	if (typeof window === "undefined" || typeof fetch !== "function") {
+		return null;
+	}
+
+	return () =>
+		createLazyPromise(async () => {
+			const { default: layoutEngineWasmUrl } = await import(
+				"@loom-dev/layout-engine/layout_engine_bg.wasm?url"
+			);
+			const response = await fetch(
+				resolveLayoutEngineWasmUrl(layoutEngineWasmUrl),
+			);
+			if (!response.ok) {
+				throw new Error(
+					`Failed to fetch layout engine Wasm (${response.status}) from ${layoutEngineWasmUrl}`,
+				);
+			}
+
+			return new Uint8Array(await response.arrayBuffer());
+		});
+}
+
 export function initializeLayoutEngine(): Promise<void> {
 	if (!layoutEngineInitPromise) {
-		const loader = getPreviewLayoutEngineLoader();
-		const moduleOrPath = loader ? loader() : layoutEngineWasmUrl;
-		layoutEngineInitPromise = initLayoutEngine({
-			module_or_path: moduleOrPath,
-		})
+		const loader =
+			getPreviewLayoutEngineLoader() ?? getDefaultPreviewLayoutEngineLoader();
+		layoutEngineInitPromise = initLayoutEngine(
+			loader
+				? {
+						module_or_path: loader(),
+					}
+				: undefined,
+		)
 			.then(() => undefined)
 			.catch((error: unknown) => {
 				layoutEngineInitPromise = undefined;

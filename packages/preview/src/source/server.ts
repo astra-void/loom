@@ -19,6 +19,13 @@ import type {
 } from "./viteTypes";
 
 const DEFAULT_PORT = 4174;
+const PREVIEW_VITE_CACHE_DIR = path.join(".loom-preview-cache", "vite");
+const PREVIEW_OPTIMIZE_DEPS_INCLUDE = [
+	"react",
+	"react-dom",
+	"react/jsx-runtime",
+	"react/jsx-dev-runtime",
+];
 
 export type StartPreviewServerOptions = {
 	configFile?: string;
@@ -145,6 +152,10 @@ function createRuntimeDependencyAliases() {
 	];
 }
 
+function resolvePreviewViteCacheDir(workspaceRoot: string) {
+	return path.resolve(workspaceRoot, PREVIEW_VITE_CACHE_DIR);
+}
+
 function isResolvedPreviewConfig(
 	value: StartPreviewServerInput,
 ): value is ResolvedPreviewConfig {
@@ -266,9 +277,11 @@ export async function createPreviewViteServer(
 	const server = await vite.createServer({
 		appType: options.appType ?? "spa",
 		assetsInclude: ["**/*.wasm"],
+		cacheDir: resolvePreviewViteCacheDir(resolvedConfig.workspaceRoot),
 		configFile: false,
 		optimizeDeps: {
 			exclude: ["@loom-dev/layout-engine", "layout-engine"],
+			include: PREVIEW_OPTIMIZE_DEPS_INCLUDE,
 			...(options.middlewareMode
 				? {
 						entries: [],

@@ -13,6 +13,7 @@ import {
 	subscribePreviewRuntimeIssues,
 } from "@loom-dev/preview-runtime";
 import React from "react";
+import { loadPreviewModule } from "./loadPreviewModule";
 import { PreviewApp } from "./PreviewApp";
 
 const PREVIEW_UPDATE_EVENT = "loom-preview:update";
@@ -46,6 +47,51 @@ export function PreviewWorkspaceApp() {
 		Record<string, PreviewEntryPayload>
 	>(() => previewEntryPayloads);
 
+	const applyEntryPayload = React.useCallback(
+		(entryId: string, payload: PreviewEntryPayload | undefined) => {
+			if (!payload) {
+				return;
+			}
+
+			setEntries((previousEntries) =>
+				previousEntries.map((entry) =>
+					entry.id === entryId ? payload.descriptor : entry,
+				),
+			);
+			setEntryPayloads((previousPayloads) => ({
+				...previousPayloads,
+				[entryId]: payload,
+			}));
+		},
+		[],
+	);
+
+	const loadEntry = React.useCallback(
+		(id: string) => {
+			const importer = previewImporters[id];
+			if (!importer) {
+				return Promise.reject(
+					new Error(`No preview importer registered for \`${id}\`.`),
+				);
+			}
+
+			return loadPreviewModule(importer).then((module) => {
+				const payload = (
+					"__previewEntryPayload" in module
+						? module.__previewEntryPayload
+						: undefined
+				) as PreviewEntryPayload | undefined;
+				applyEntryPayload(id, payload);
+
+				return {
+					module,
+					payload,
+				};
+			});
+		},
+		[applyEntryPayload],
+	);
+
 	React.useEffect(() => {
 		const hot = getHotContext();
 		if (!hot) {
@@ -68,21 +114,16 @@ export function PreviewWorkspaceApp() {
 					continue;
 				}
 
-				void importer().then((module) => {
-					const payload = (
-						"__previewEntryPayload" in module
-							? module.__previewEntryPayload
-							: undefined
-					) as PreviewEntryPayload | undefined;
-					if (!payload) {
-						return;
-					}
-
-					setEntryPayloads((previousPayloads) => ({
-						...previousPayloads,
-						[entryId]: payload,
-					}));
-				});
+				void loadPreviewModule(importer)
+					.then((module) => {
+						const payload = (
+							"__previewEntryPayload" in module
+								? module.__previewEntryPayload
+								: undefined
+						) as PreviewEntryPayload | undefined;
+						applyEntryPayload(entryId, payload);
+					})
+					.catch(() => {});
 			}
 		};
 
@@ -90,7 +131,7 @@ export function PreviewWorkspaceApp() {
 		return () => {
 			hot.off?.(PREVIEW_UPDATE_EVENT, handleUpdate);
 		};
-	}, []);
+	}, [applyEntryPayload]);
 
 	React.useEffect(() => {
 		const hot = getHotContext();
@@ -111,39 +152,7 @@ export function PreviewWorkspaceApp() {
 		<PreviewApp
 			entries={entries}
 			entryPayloads={entryPayloads}
-			loadEntry={(id) => {
-				const importer = previewImporters[id];
-				if (!importer) {
-					return Promise.reject(
-						new Error(`No preview importer registered for \`${id}\`.`),
-					);
-				}
-
-				return importer().then((module) => {
-					const payload = (
-						"__previewEntryPayload" in module
-							? module.__previewEntryPayload
-							: undefined
-					) as PreviewEntryPayload | undefined;
-
-					if (payload) {
-						setEntries((previousEntries) =>
-							previousEntries.map((entry) =>
-								entry.id === id ? payload.descriptor : entry,
-							),
-						);
-						setEntryPayloads((previousPayloads) => ({
-							...previousPayloads,
-							[id]: payload,
-						}));
-					}
-
-					return {
-						module,
-						payload,
-					};
-				});
-			}}
+			loadEntry={loadEntry}
 			projectName={previewWorkspaceIndex.projectName}
 		/>
 	);

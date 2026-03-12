@@ -7,7 +7,9 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const packageRoot = path.resolve(__dirname, "..");
 const sourceShellRoot = path.join(packageRoot, "src/shell");
+const sourceReactShimsRoot = path.join(packageRoot, "src/source/react-shims");
 const distShellRoot = path.join(packageRoot, "dist/shell");
+const distReactShimsRoot = path.join(packageRoot, "dist/source/react-shims");
 
 const sourceShellIndexHtml = path.join(sourceShellRoot, "index.html");
 const sourceShellStyles = path.join(sourceShellRoot, "styles.css");
@@ -29,6 +31,7 @@ if (!fs.existsSync(sourceShellStyles)) {
 }
 
 fs.mkdirSync(distShellRoot, { recursive: true });
+fs.mkdirSync(distReactShimsRoot, { recursive: true });
 
 await build({
 	alias: {
@@ -68,3 +71,16 @@ fs.writeFileSync(
 	['export * from "./index.js";', ""].join("\n"),
 	"utf8",
 );
+
+for (const entry of fs.readdirSync(sourceReactShimsRoot, {
+	withFileTypes: true,
+})) {
+	if (!entry.isFile()) {
+		continue;
+	}
+
+	fs.copyFileSync(
+		path.join(sourceReactShimsRoot, entry.name),
+		path.join(distReactShimsRoot, entry.name),
+	);
+}

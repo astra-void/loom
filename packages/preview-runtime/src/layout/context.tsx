@@ -327,8 +327,8 @@ export function LayoutProvider(props: LayoutProviderProps) {
 
 	const [isReady, setIsReady] = React.useState(false);
 	const [error, setError] = React.useState<string | null>(null);
-	const [treeVersion, setTreeVersion] = React.useState(0);
-	const [settledTreeVersion, setSettledTreeVersion] = React.useState(0);
+	const [_treeVersion, setTreeVersion] = React.useState(0);
+	const [_settledTreeVersion, setSettledTreeVersion] = React.useState(0);
 	const [layoutResult, setLayoutResult] = React.useState<PreviewLayoutResult>(
 		() => createEmptyLayoutResult(ZERO_VIEWPORT),
 	);
@@ -409,7 +409,7 @@ export function LayoutProvider(props: LayoutProviderProps) {
 		return () => {
 			cancelled = true;
 		};
-	}, [treeVersion]);
+	}, []);
 
 	React.useEffect(() => {
 		if (!viewportReady) {
@@ -500,16 +500,14 @@ export function LayoutProvider(props: LayoutProviderProps) {
 		return () => {
 			globalThis.clearTimeout(timeoutId);
 		};
-		}, [
-			controller,
-			debounceMs,
-			isReady,
-			settledTreeVersion,
-			treeVersion,
-			viewportHeight,
-			viewportReady,
-			viewportWidth,
-		]);
+	}, [
+		controller,
+		debounceMs,
+		isReady,
+		viewportHeight,
+		viewportReady,
+		viewportWidth,
+	]);
 
 	const getRect = React.useCallback(
 		(nodeId: string) => {

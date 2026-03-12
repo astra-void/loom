@@ -702,6 +702,7 @@ function PreviewCanvas(props: PreviewCanvasProps) {
 }
 
 export function PreviewApp(props: PreviewAppProps) {
+	const { loadEntry } = props;
 	const [selectedId, setSelectedId] = React.useState(() =>
 		getInitialSelectedId(props.entries, props.initialSelectedId),
 	);
@@ -786,19 +787,24 @@ export function PreviewApp(props: PreviewAppProps) {
 	const selectedEntryFileName = selectedEntry
 		? getEntryFileName(selectedEntry.relativePath)
 		: undefined;
+	const selectedEntryId = selectedEntry?.id;
+	const selectedEntryStatus = selectedEntry?.status;
+	const selectedEntrySourceFilePath = selectedEntry?.sourceFilePath;
+	const selectedEntryRelativePath = selectedEntry?.relativePath;
+	const selectedEntryTargetName = selectedEntry?.targetName;
 	const [collapsedFolderIds, setCollapsedFolderIds] = React.useState<
 		Set<string>
 	>(() => new Set());
 
 	React.useEffect(() => {
-		if (!selectedEntry || typeof window === "undefined") {
+		if (!selectedEntryId || typeof window === "undefined") {
 			return;
 		}
 
 		const url = new URL(window.location.href);
-		url.searchParams.set("path", selectedEntry.id);
+		url.searchParams.set("path", selectedEntryId);
 		window.history.replaceState({}, "", url);
-	}, [selectedEntry]);
+	}, [selectedEntryId]);
 
 	React.useEffect(() => {
 		const unsubscribe = subscribePreviewRuntimeIssues((issues) => {
@@ -813,12 +819,15 @@ export function PreviewApp(props: PreviewAppProps) {
 	React.useEffect(() => {
 		clearPreviewRuntimeIssues();
 		setPreviewRuntimeIssueContext(
-			selectedEntry
+			selectedEntryId &&
+			selectedEntrySourceFilePath &&
+			selectedEntryRelativePath &&
+			selectedEntryTargetName
 				? {
-						entryId: selectedEntry.id,
-						file: selectedEntry.sourceFilePath,
-						relativeFile: selectedEntry.relativePath,
-						target: selectedEntry.targetName,
+						entryId: selectedEntryId,
+						file: selectedEntrySourceFilePath,
+						relativeFile: selectedEntryRelativePath,
+						target: selectedEntryTargetName,
 					}
 				: null,
 		);
@@ -828,10 +837,19 @@ export function PreviewApp(props: PreviewAppProps) {
 		return () => {
 			setPreviewRuntimeIssueContext(null);
 		};
-	}, [selectedEntry]);
+	}, [
+		selectedEntryId,
+		selectedEntryRelativePath,
+		selectedEntrySourceFilePath,
+		selectedEntryTargetName,
+	]);
 
 	React.useEffect(() => {
-		if (!selectedEntry || !isLoadableEntryStatus(selectedEntry.status)) {
+		if (
+			!selectedEntryId ||
+			!selectedEntryStatus ||
+			!isLoadableEntryStatus(selectedEntryStatus)
+		) {
 			setLoadedEntry(undefined);
 			setLoadIssue(null);
 			setRenderIssue(null);
@@ -843,8 +861,7 @@ export function PreviewApp(props: PreviewAppProps) {
 		setLoadIssue(null);
 		setRenderIssue(null);
 
-		props
-			.loadEntry(selectedEntry.id)
+		loadEntry(selectedEntryId)
 			.then((entryResult) => {
 				if (!cancelled) {
 					setLoadedEntry(entryResult);
@@ -859,7 +876,7 @@ export function PreviewApp(props: PreviewAppProps) {
 		return () => {
 			cancelled = true;
 		};
-	}, [props, selectedEntry]);
+	}, [loadEntry, selectedEntryId, selectedEntryStatus]);
 
 	React.useEffect(() => {
 		setCollapsedFolderIds((previous) => {
