@@ -2,21 +2,28 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import { TextDecoder, TextEncoder } from "node:util";
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
-import {
-	ensurePreviewGenerated,
-	GENERATED_COMPONENT_TARGET,
-} from "./ensureGenerated";
 
 afterEach(() => {
 	cleanup();
 });
 
-let generatedPreview: Awaited<ReturnType<typeof ensurePreviewGenerated>>;
+let generatedPreview: Awaited<
+	ReturnType<typeof import("./ensureGenerated").ensurePreviewGenerated>
+>;
+let generatedComponentTarget = "";
 
 beforeAll(async () => {
-	generatedPreview = await ensurePreviewGenerated();
+	globalThis.TextEncoder = TextEncoder as typeof globalThis.TextEncoder;
+	globalThis.TextDecoder = TextDecoder as typeof globalThis.TextDecoder;
+	globalThis.Uint8Array = new globalThis.TextEncoder().encode("")
+		.constructor as typeof globalThis.Uint8Array;
+
+	const ensureGeneratedModule = await import("./ensureGenerated");
+	generatedComponentTarget = ensureGeneratedModule.GENERATED_COMPONENT_TARGET;
+	generatedPreview = await ensureGeneratedModule.ensurePreviewGenerated();
 });
 
 function toRelativeSpecifier(filePath: string) {
@@ -32,7 +39,7 @@ function toRelativeSpecifier(filePath: string) {
 function findGeneratedFile(relativePath: string) {
 	const generatedFilePath = path.join(
 		generatedPreview.outDir,
-		GENERATED_COMPONENT_TARGET,
+		generatedComponentTarget,
 		relativePath,
 	);
 	if (!fs.existsSync(generatedFilePath)) {

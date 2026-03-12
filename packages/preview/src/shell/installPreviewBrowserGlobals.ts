@@ -15,6 +15,60 @@ type PreviewGlobalFallbackMetadata = {
 	basePrototype: object | null;
 };
 
+type PreviewGlobalRestoreEntry = {
+	descriptor?: PropertyDescriptor;
+	hadOwnProperty: boolean;
+	key: PropertyKey;
+	target: object;
+};
+
+type PrototypeRestoreEntry = {
+	parent: object | null;
+	prototypeHost: object;
+};
+
+const previewRuntimePolyfillsMarker = Symbol.for(
+	"loom.preview.runtimePolyfillsInstalled",
+);
+const previewRuntimeEnumKey = Symbol.for("loom-dev.preview-runtime.Enum");
+const previewRuntimeFrameSchedulerKey = Symbol.for(
+	"loom-dev.preview-runtime.frameScheduler",
+);
+const previewRuntimeReporterKey = Symbol.for(
+	"loom-dev.preview-runtime.reporter",
+);
+const previewRuntimeRunServiceKey = Symbol.for(
+	"loom-dev.preview-runtime.RunService",
+);
+const previewRuntimeServicesKey = Symbol.for(
+	"loom-dev.preview-runtime.services",
+);
+const previewRuntimeTweenInfoKey = Symbol.for(
+	"loom-dev.preview-runtime.TweenInfo",
+);
+const previewRuntimeUserInputTrackerKey = Symbol.for(
+	"loom-dev.preview-runtime.userInputTracker",
+);
+
+const previewGlobalPropertyKeys = [
+	"Enum",
+	"RunService",
+	"TweenInfo",
+	"game",
+	"print",
+	"task",
+	"tostring",
+	"workspace",
+	previewRuntimePolyfillsMarker,
+	previewRuntimeEnumKey,
+	previewRuntimeFrameSchedulerKey,
+	previewRuntimeReporterKey,
+	previewRuntimeRunServiceKey,
+	previewRuntimeServicesKey,
+	previewRuntimeTweenInfoKey,
+	previewRuntimeUserInputTrackerKey,
+] as const;
+
 function isObjectLike(value: unknown): value is object {
 	return (
 		(typeof value === "object" && value !== null) || typeof value === "function"
@@ -28,6 +82,61 @@ function getPrototype(value: object): object | null {
 
 function getObjectProperty(container: object, property: PropertyKey) {
 	return (container as PropertyBag)[property];
+}
+
+function snapshotTargetProperties(
+	target: object,
+	keys: readonly PropertyKey[],
+): PreviewGlobalRestoreEntry[] {
+	return keys.map((key) => ({
+		descriptor: Object.getOwnPropertyDescriptor(target, key),
+		hadOwnProperty: Object.hasOwn(target, key),
+		key,
+		target,
+	}));
+}
+
+function restoreTargetProperties(entries: PreviewGlobalRestoreEntry[]) {
+	for (const entry of entries.reverse()) {
+		if (!entry.hadOwnProperty) {
+			delete (entry.target as PropertyBag)[entry.key];
+			continue;
+		}
+
+		if (entry.descriptor) {
+			Object.defineProperty(entry.target, entry.key, entry.descriptor);
+		}
+	}
+}
+
+function snapshotPrototypeRestoreEntry(
+	target: object,
+): PrototypeRestoreEntry | null {
+	const prototypeHost = getPrototype(target);
+	if (!prototypeHost) {
+		return null;
+	}
+
+	return {
+		parent: getPrototype(prototypeHost),
+		prototypeHost,
+	};
+}
+
+function restorePrototypeParent(entry: PrototypeRestoreEntry | null) {
+	if (!entry) {
+		return;
+	}
+
+	if (Object.getPrototypeOf(entry.prototypeHost) === entry.parent) {
+		return;
+	}
+
+	try {
+		Object.setPrototypeOf(entry.prototypeHost, entry.parent);
+	} catch {
+		// Ignore environments that do not allow prototype restoration.
+	}
 }
 
 function clonePrototypeSurface(prototype: object | null): object | null {
@@ -166,10 +275,31 @@ function installMissingGlobalFallback(target: object) {
 }
 
 export function installPreviewBrowserGlobals() {
+	const restoreEntries = snapshotTargetProperties(
+		globalThis,
+		previewGlobalPropertyKeys,
+	);
+	const prototypeRestoreEntry = snapshotPrototypeRestoreEntry(globalThis);
+	const shouldSnapshotWindow =
+		typeof window !== "undefined" && window !== globalThis;
+	const windowRestoreEntries = shouldSnapshotWindow
+		? snapshotTargetProperties(window, previewGlobalPropertyKeys)
+		: [];
+	const windowPrototypeRestoreEntry = shouldSnapshotWindow
+		? snapshotPrototypeRestoreEntry(window)
+		: null;
+
 	setupRobloxEnvironment();
 	installMissingGlobalFallback(globalThis);
 
 	if (typeof window !== "undefined") {
 		installMissingGlobalFallback(window);
 	}
+
+	return () => {
+		restoreTargetProperties(windowRestoreEntries);
+		restoreTargetProperties(restoreEntries);
+		restorePrototypeParent(windowPrototypeRestoreEntry);
+		restorePrototypeParent(prototypeRestoreEntry);
+	};
 }

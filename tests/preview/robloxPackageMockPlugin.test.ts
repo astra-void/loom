@@ -6,7 +6,11 @@ import {
 	createUnresolvedPackageMockTransformPlugin,
 	UNRESOLVED_MOCK_MODULE_ID,
 } from "../../packages/preview/src/source/robloxPackageMockPlugin";
-import { getHookHandler } from "./hookTestUtils";
+import {
+	getHookHandler,
+	getHookResultCode,
+	getHookResultId,
+} from "./hookTestUtils";
 
 describe("unresolved package mock plugin", () => {
 	it("rewrites unresolved, non-browser, or virtual-mock bare imports to the shared mock module", async () => {
@@ -45,7 +49,7 @@ describe("unresolved package mock plugin", () => {
 			source,
 			"/virtual/mana-bar.ts",
 		);
-		const code = typeof result === "string" ? result : (result?.code ?? "");
+		const code = getHookResultCode(result);
 
 		expect(code).toContain(`from "${UNRESOLVED_MOCK_MODULE_ID}"`);
 		expect(code).toContain(
@@ -85,7 +89,7 @@ describe("unresolved package mock plugin", () => {
 			source,
 			"/virtual/mock-runtime-tree.tsx",
 		);
-		const code = typeof result === "string" ? result : (result?.code ?? "");
+		const code = getHookResultCode(result);
 
 		expect(code).toContain(`from "${UNRESOLVED_MOCK_MODULE_ID}"`);
 		expect(code).toContain(
@@ -129,16 +133,11 @@ describe("unresolved package mock plugin", () => {
 			{ attributes: {}, isEntry: false },
 		);
 		const load = getHookHandler(plugin.load);
-		const resolvedId =
-			typeof resolved === "string"
-				? resolved
-				: resolved
-					? resolved.id
-					: undefined;
+		const resolvedId = getHookResultId(resolved);
 		const loaded = resolvedId
 			? await load?.call({} as never, resolvedId)
 			: undefined;
-		const code = typeof loaded === "string" ? loaded : (loaded?.code ?? "");
+		const code = getHookResultCode(loaded);
 
 		expect(resolvedId).toBe("\0virtual:loom-preview-unresolved-env");
 		expect(code).toContain(

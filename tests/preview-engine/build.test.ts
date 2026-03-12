@@ -107,9 +107,9 @@ function createBuildOptions(
 	sourceRoot: string,
 	workspaceRoot: string,
 	overrides: Partial<Parameters<typeof buildPreviewArtifacts>[0]> = {},
-) {
+): Parameters<typeof buildPreviewArtifacts>[0] {
 	return {
-		artifactKinds: ["module"] as const,
+		artifactKinds: ["module"],
 		projectName: "Fixture Build",
 		targets: [
 			{

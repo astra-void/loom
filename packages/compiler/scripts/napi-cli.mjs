@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
-import { dirname, join } from "node:path";
 import { createRequire } from "node:module";
+import { dirname, join } from "node:path";
 
 const require = createRequire(import.meta.url);
 const cliPackageJsonPath = require.resolve("@napi-rs/cli/package.json");

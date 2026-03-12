@@ -5,7 +5,10 @@ import {
 	useLayoutDebugState,
 	useRobloxLayout,
 } from "../layout/context";
-import { publishPreviewRuntimeIssue } from "../runtime/runtimeError";
+import {
+	normalizePreviewRuntimeError,
+	publishPreviewRuntimeIssue,
+} from "../runtime/runtimeError";
 import {
 	domPresentationAdapter,
 	type LayoutDebugState,
@@ -110,20 +113,24 @@ function useDegradedHostIssue(hostNode: PreviewHostNode) {
 		}
 
 		publishedIssueKeyRef.current = issueKey;
-		publishPreviewRuntimeIssue({
-			blocking: false,
-			code: "DEGRADED_HOST_RENDER",
-			details: `${hostNode.nodeType} is rendered as a degraded preview placeholder with fallback sizing.`,
-			entryId: "preview-runtime",
-			file: "<runtime>",
-			kind: "RuntimeMockError",
-			phase: "runtime",
-			relativeFile: "<runtime>",
-			severity: "warning",
-			summary: `${hostNode.nodeType} rendered with degraded preview behavior.`,
-			symbol: hostNode.id,
-			target: hostNode.nodeType,
-		});
+		publishPreviewRuntimeIssue(
+			normalizePreviewRuntimeError(
+				{
+					blocking: false,
+					code: "DEGRADED_HOST_RENDER",
+					details: `${hostNode.nodeType} is rendered as a degraded preview placeholder with fallback sizing.`,
+					kind: "RuntimeMockError",
+					phase: "runtime",
+					severity: "warning",
+					summary: `${hostNode.nodeType} rendered with degraded preview behavior.`,
+					symbol: hostNode.id,
+					target: hostNode.nodeType,
+				},
+				new Error(
+					`${hostNode.nodeType} rendered with degraded preview behavior.`,
+				),
+			),
+		);
 	}, [hostNode.host, hostNode.id, hostNode.nodeType]);
 }
 

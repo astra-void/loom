@@ -1,4 +1,18 @@
 export type {
+	BuildPreviewArtifactsOptions,
+	BuildPreviewArtifactsOverrides,
+	BuildPreviewModulesOptions,
+	BuildPreviewModulesResult,
+	PreviewBuildArtifactKind,
+	PreviewBuildResult,
+	PreviewBuildTarget,
+} from "./build";
+export {
+	buildPreviewArtifacts,
+	buildPreviewModules,
+	PreviewBuildError,
+} from "./build";
+export type {
 	LoadPreviewConfigOptions,
 	PreviewConfig,
 	PreviewConfigServer,
@@ -16,23 +30,12 @@ export {
 	loadPreviewConfig,
 	resolvePreviewConfigObject,
 } from "./config";
-export type {
-	BuildPreviewArtifactsOptions,
-	BuildPreviewArtifactsOverrides,
-	BuildPreviewModulesOptions,
-	BuildPreviewModulesResult,
-	PreviewBuildArtifactKind,
-	PreviewBuildResult,
-	PreviewBuildTarget,
-} from "./build";
-export {
-	PreviewBuildError,
-	buildPreviewArtifacts,
-	buildPreviewModules,
-} from "./build";
+export type { PreviewReadyWarningState } from "./execution/shared";
 export type {
 	CreatePreviewHeadlessSessionOptions,
+	PreviewHeadlessEntryExecutionResult,
 	PreviewHeadlessSession,
+	PreviewHeadlessSessionRunOptions,
 	PreviewHeadlessSnapshot,
 } from "./headless";
 export { createPreviewHeadlessSession } from "./headless";

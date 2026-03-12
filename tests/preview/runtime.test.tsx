@@ -31,6 +31,7 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { suppressExpectedConsoleMessages } from "../testLogUtils";
 
 type LayoutRect = { height: number; width: number; x: number; y: number };
 type SerializedAxis = { offset: number; scale: number };
@@ -125,6 +126,8 @@ const layoutEngineMocks = vi.hoisted(() => ({
 	}),
 	init: vi.fn<() => Promise<void>>(() => Promise.resolve(undefined)),
 }));
+
+let restoreExpectedLogs: (() => void) | undefined;
 
 vi.mock("@loom-dev/layout-engine", () => ({
 	createLayoutSession: layoutEngineMocks.createLayoutSession,
@@ -250,6 +253,10 @@ function DelayedNestedTree() {
 }
 
 beforeEach(() => {
+	restoreExpectedLogs = suppressExpectedConsoleMessages({
+		error: ["RUNTIME_MOCK_ERROR"],
+		warn: ["DEGRADED_HOST_RENDER"],
+	});
 	layoutEngineMocks.computeDirty.mockReset();
 	layoutEngineMocks.computeDirty.mockImplementation(
 		(_nodes, viewportWidth, viewportHeight) =>
@@ -262,7 +269,10 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+	restoreExpectedLogs?.();
+	restoreExpectedLogs = undefined;
 	cleanup();
+	vi.restoreAllMocks();
 });
 
 describe("preview runtime host mapping", () => {
@@ -1192,6 +1202,6 @@ describe("preview runtime host mapping", () => {
 				target: "fixture",
 			},
 		]);
-		expect(snapshots.at(-1)).toEqual(getPreviewRuntimeIssues());
+		expect(snapshots[snapshots.length - 1]).toEqual(getPreviewRuntimeIssues());
 	});
 });

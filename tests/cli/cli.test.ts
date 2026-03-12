@@ -75,8 +75,12 @@ function createResolvedConfig(
 	};
 }
 
-function createPreviewModule(config = createResolvedConfig()) {
+function createPreviewModule(
+	config = createResolvedConfig(),
+	snapshotOverride?: unknown,
+) {
 	const dispose = vi.fn();
+	const run = vi.fn(async () => snapshot);
 	const buildResult = {
 		builtArtifacts: [
 			{
@@ -107,21 +111,32 @@ function createPreviewModule(config = createResolvedConfig()) {
 		reusedArtifacts: [],
 		writtenFiles: ["/repo/generated/preview/Button.tsx"],
 	};
-	const snapshot = {
+	const snapshot = (snapshotOverride ?? {
 		entries: {},
+		execution: {
+			entries: {},
+			summary: {
+				error: 0,
+				pass: 0,
+				selectedEntryCount: 0,
+				total: 0,
+				warning: 0,
+			},
+		},
 		protocolVersion: "1",
 		workspaceIndex: {
 			entries: [],
 			projectName: config.projectName,
 			protocolVersion: "1",
 		},
-	};
+	}) as Record<string, unknown>;
 
 	const previewModule: CliPreviewModule = {
 		buildPreviewArtifacts: vi.fn(async () => buildResult),
 		createPreviewHeadlessSession: vi.fn(async () => ({
 			dispose,
 			getSnapshot: () => snapshot,
+			run,
 		})),
 		loadPreviewConfig: vi.fn(async () => config),
 		startPreviewServer: vi.fn(async () => ({ close: vi.fn() })),
@@ -131,7 +146,157 @@ function createPreviewModule(config = createResolvedConfig()) {
 		buildResult,
 		dispose,
 		previewModule,
+		run,
 		snapshot,
+	};
+}
+
+function createCheckSnapshot(projectName = "Loom Preview") {
+	return {
+		entries: {
+			"preview:Viewport.tsx": {
+				descriptor: {
+					id: "preview:Viewport.tsx",
+					relativePath: "Viewport.tsx",
+					status: "ready",
+					targetName: "preview",
+					title: "Viewport",
+				},
+				diagnostics: [],
+			},
+			"preview:Broken.tsx": {
+				descriptor: {
+					id: "preview:Broken.tsx",
+					relativePath: "Broken.tsx",
+					status: "blocked_by_runtime",
+					targetName: "preview",
+					title: "Broken",
+				},
+				diagnostics: [
+					{
+						blocking: true,
+						code: "RENDER_ERROR",
+						phase: "runtime",
+						severity: "error",
+						summary: "Preview render failed.",
+					},
+				],
+			},
+		},
+		execution: {
+			entries: {
+				"preview:Viewport.tsx": {
+					degradedHostWarnings: [
+						{
+							code: "DEGRADED_HOST_RENDER",
+							phase: "runtime",
+							severity: "warning",
+							summary: "ViewportFrame rendered with degraded preview behavior.",
+							target: "ViewportFrame",
+						},
+					],
+					layoutDebug: {
+						dirtyNodeIds: [],
+						roots: [],
+						viewport: {
+							height: 600,
+							width: 800,
+						},
+					},
+					layoutIssues: [],
+					loadIssue: null,
+					render: {
+						status: "rendered",
+					},
+					renderIssue: null,
+					runtimeIssues: [
+						{
+							code: "DEGRADED_HOST_RENDER",
+							phase: "runtime",
+							severity: "warning",
+							summary: "ViewportFrame rendered with degraded preview behavior.",
+							target: "ViewportFrame",
+						},
+					],
+					severity: "warning",
+					viewport: {
+						height: 600,
+						ready: true,
+						source: "window-fallback",
+						width: 800,
+					},
+					warningState: {
+						degradedTargets: ["ViewportFrame"],
+						fidelity: "degraded",
+						warningCodes: ["DEGRADED_HOST_RENDER"],
+					},
+				},
+				"preview:Broken.tsx": {
+					degradedHostWarnings: [],
+					layoutDebug: null,
+					layoutIssues: [],
+					loadIssue: null,
+					render: {
+						status: "render_failed",
+					},
+					renderIssue: {
+						code: "RENDER_ERROR",
+						phase: "runtime",
+						severity: "error",
+						summary: "Preview render failed.",
+						target: "preview",
+					},
+					runtimeIssues: [
+						{
+							code: "RENDER_ERROR",
+							phase: "runtime",
+							severity: "error",
+							summary: "Preview render failed.",
+							target: "preview",
+						},
+					],
+					severity: "error",
+					viewport: {
+						height: 600,
+						ready: true,
+						source: "window-fallback",
+						width: 800,
+					},
+					warningState: {
+						degradedTargets: [],
+						fidelity: null,
+						warningCodes: [],
+					},
+				},
+			},
+			summary: {
+				error: 1,
+				pass: 0,
+				selectedEntryCount: 2,
+				total: 2,
+				warning: 1,
+			},
+		},
+		protocolVersion: "1",
+		workspaceIndex: {
+			entries: [
+				{
+					id: "preview:Viewport.tsx",
+					relativePath: "Viewport.tsx",
+					status: "ready",
+					targetName: "preview",
+					title: "Viewport",
+				},
+				{
+					id: "preview:Broken.tsx",
+					relativePath: "Broken.tsx",
+					status: "blocked_by_runtime",
+					targetName: "preview",
+					title: "Broken",
+				},
+			],
+			projectName,
+		},
 	};
 }
 
@@ -147,6 +312,7 @@ describe("loom cli", () => {
 		expect(helpOutput.read()).toContain("loom preview");
 		expect(helpOutput.read()).toContain("loom build");
 		expect(helpOutput.read()).toContain("loom snapshot");
+		expect(helpOutput.read()).toContain("loom check");
 
 		const versionOutput = createWriter();
 		await runCli(["--version"], {
@@ -366,6 +532,82 @@ describe("loom cli", () => {
 		expect(fileModule.dispose).toHaveBeenCalledTimes(1);
 	});
 
+	it("emits preview checks in pretty and json formats", async () => {
+		const checkSnapshot = createCheckSnapshot();
+		const prettyWriter = createWriter();
+		const prettyModule = createPreviewModule(undefined, checkSnapshot);
+
+		await expect(
+			runCli(["check", "--cwd", "/workspace"], {
+				loadPreviewModuleFn: async () => prettyModule.previewModule,
+				stdout: prettyWriter.writer,
+			}),
+		).rejects.toMatchObject({
+			message: expect.stringContaining("Preview check failed"),
+		});
+
+		expect(prettyWriter.read()).toContain("Loom Preview");
+		expect(prettyWriter.read()).toContain("WARNING preview:Viewport.tsx");
+		expect(prettyWriter.read()).toContain("ERROR preview:Broken.tsx");
+
+		const jsonWriter = createWriter();
+		const jsonModule = createPreviewModule(undefined, checkSnapshot);
+
+		await expect(
+			runCli(["check", "--format", "json", "--fail-on", "warning"], {
+				loadPreviewModuleFn: async () => jsonModule.previewModule,
+				stdout: jsonWriter.writer,
+			}),
+		).rejects.toMatchObject({
+			message: expect.stringContaining("Preview check failed"),
+		});
+
+		expect(JSON.parse(jsonWriter.read())).toEqual(
+			expect.objectContaining({
+				failOn: "warning",
+				projectName: "Loom Preview",
+				summary: {
+					error: 1,
+					pass: 0,
+					selectedEntryCount: 2,
+					total: 2,
+					warning: 1,
+				},
+			}),
+		);
+	});
+
+	it("supports loom check entry filtering and validates duplicate entries", async () => {
+		const checkSnapshot = createCheckSnapshot();
+		const filteredWriter = createWriter();
+		const filteredModule = createPreviewModule(undefined, checkSnapshot);
+
+		await expect(
+			runCli(
+				["check", "--entry", "preview:Viewport.tsx", "--fail-on", "warning"],
+				{
+					loadPreviewModuleFn: async () => filteredModule.previewModule,
+					stdout: filteredWriter.writer,
+				},
+			),
+		).rejects.toMatchObject({
+			message: expect.stringContaining("Preview check failed"),
+		});
+
+		expect(
+			filteredModule.previewModule.createPreviewHeadlessSession,
+		).toHaveBeenCalledTimes(1);
+		expect(filteredModule.run).toHaveBeenCalledWith({
+			entryIds: ["preview:Viewport.tsx"],
+		});
+
+		await expect(
+			runCli(["check", "--entry", "a", "--entry", "b"]),
+		).rejects.toMatchObject({
+			message: expect.stringContaining("Duplicate --entry"),
+		});
+	});
+
 	it("validates port, option values, and transform modes", async () => {
 		await expect(runCli(["preview", "--port", "0"])).rejects.toMatchObject({
 			message: expect.stringContaining("Invalid --port"),
@@ -408,7 +650,9 @@ describe("loom cli", () => {
 				"design-time",
 			]),
 		).rejects.toMatchObject({
-			message: expect.stringContaining("Design-time builds do not support module artifacts"),
+			message: expect.stringContaining(
+				"Design-time builds do not support module artifacts",
+			),
 		});
 		await expect(
 			runCli([
@@ -421,7 +665,9 @@ describe("loom cli", () => {
 				"design-time",
 			]),
 		).rejects.toMatchObject({
-			message: expect.stringContaining("Design-time builds do not support module artifacts"),
+			message: expect.stringContaining(
+				"Design-time builds do not support module artifacts",
+			),
 		});
 	});
 });

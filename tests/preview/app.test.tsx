@@ -8,12 +8,29 @@ import type {
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type React from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PreviewApp } from "../../packages/preview/src/shell/PreviewApp";
 import { PreviewThemeProvider } from "../../packages/preview/src/shell/theme";
 import { PREVIEW_ENGINE_PROTOCOL_VERSION } from "../../packages/preview-engine/src/types";
+import { suppressExpectedConsoleMessages } from "../testLogUtils";
+
+let restoreExpectedLogs: (() => void) | undefined;
+
+beforeEach(() => {
+	restoreExpectedLogs = suppressExpectedConsoleMessages({
+		error: [
+			"@loom-dev/preview-runtime:ModuleLoadError",
+			"LAYOUT_WASM_INIT_FAILED",
+			"Intentional render failure.",
+			"Expected `LoadoutEditor` to be a component export",
+			"PreviewErrorBoundary",
+		],
+	});
+});
 
 afterEach(() => {
+	restoreExpectedLogs?.();
+	restoreExpectedLogs = undefined;
 	cleanup();
 });
 
@@ -21,6 +38,8 @@ function createEntryDescriptor(
 	overrides: Partial<PreviewEntryDescriptor> &
 		Pick<PreviewEntryDescriptor, "id" | "relativePath" | "title">,
 ): PreviewEntryDescriptor {
+	const { id, relativePath, title, ...rest } = overrides;
+
 	return {
 		candidateExportNames: [],
 		capabilities: {
@@ -41,9 +60,9 @@ function createEntryDescriptor(
 		},
 		hasDefaultExport: false,
 		hasPreviewExport: false,
-		id: overrides.id,
+		id,
 		packageName: overrides.packageName ?? "@fixtures/preview-shell",
-		relativePath: overrides.relativePath,
+		relativePath,
 		renderTarget:
 			overrides.renderTarget ??
 			({
@@ -65,8 +84,8 @@ function createEntryDescriptor(
 				kind: "ready",
 			} as const),
 		targetName: overrides.targetName ?? "fixture",
-		title: overrides.title,
-		...overrides,
+		title,
+		...rest,
 	};
 }
 
@@ -74,16 +93,18 @@ function createDiagnostic(
 	overrides: Partial<PreviewDiagnostic> &
 		Pick<PreviewDiagnostic, "code" | "phase" | "summary">,
 ): PreviewDiagnostic {
+	const { code, phase, summary, ...rest } = overrides;
+
 	return {
-		code: overrides.code,
+		code,
 		entryId: overrides.entryId ?? "fixture:entry",
 		file: overrides.file ?? "/virtual/fixture.tsx",
-		phase: overrides.phase,
+		phase,
 		relativeFile: overrides.relativeFile ?? "src/fixture.tsx",
 		severity: overrides.severity ?? "warning",
-		summary: overrides.summary,
+		summary,
 		target: overrides.target ?? "fixture",
-		...overrides,
+		...rest,
 	};
 }
 
@@ -318,11 +339,11 @@ describe("preview shell", () => {
 			await screen.findByRole("button", { name: "Viewport preview" }),
 		).toBeTruthy();
 		expect(screen.getByText("Rendered with degraded fidelity.")).toBeTruthy();
-		expect(screen.getAllByText("warning").length).toBeGreaterThan(0);
+		expect(screen.getAllByText(/warning/i).length).toBeGreaterThan(0);
 		expect(
 			screen.getAllByText(/Degraded placeholders: ViewportFrame\./).length,
 		).toBeGreaterThan(0);
-		expect(screen.getByText("1 warning(s)")).toBeTruthy();
+		expect(screen.getByText(/1 warnings?/i)).toBeTruthy();
 	});
 
 	it("shows blocked-by-transform guidance without rendering the canvas", async () => {

@@ -11,6 +11,7 @@ import { loadPreviewConfig, resolvePreviewConfigObject } from "../config";
 import { createAutoMockPropsPlugin } from "./autoMockPlugin";
 import { createPreviewVitePlugin } from "./plugin";
 import type {
+	PreviewPluginOption,
 	ReactPluginModule,
 	ViteModule,
 	ViteTopLevelAwaitPluginModule,
@@ -36,6 +37,11 @@ export type StartPreviewServerInput =
 	| ResolvedPreviewConfig
 	| StartPreviewServerOptions;
 
+export type CreatePreviewViteServerOptions = {
+	appType?: "custom" | "spa";
+	middlewareMode?: boolean;
+};
+
 function resolvePreviewPackageEntry(candidates: string[], label: string) {
 	const matchedPath = candidates.find((candidate) => fs.existsSync(candidate));
 	if (!matchedPath) {
@@ -55,7 +61,7 @@ function resolveShellRoot() {
 	);
 }
 
-function resolvePreviewRuntimeRootEntry() {
+export function resolvePreviewRuntimeRootEntry() {
 	return resolvePreviewPackageEntry(
 		[
 			path.resolve(__dirname, "../../../preview-runtime/src/index.ts"),
@@ -63,6 +69,80 @@ function resolvePreviewRuntimeRootEntry() {
 		],
 		"preview runtime root",
 	);
+}
+
+function resolveReactShimEntry(fileName: string) {
+	return resolvePreviewPackageEntry(
+		[
+			path.resolve(__dirname, `./react-shims/${fileName}`),
+			path.resolve(__dirname, `../../src/source/react-shims/${fileName}`),
+		],
+		`react shim ${fileName}`,
+	);
+}
+
+function normalizeResolvedImporter(importer?: string) {
+	if (!importer) {
+		return undefined;
+	}
+
+	return importer
+		.split("?", 1)[0]
+		?.replace(/^\/@fs\//, "/")
+		.replace(/^\/@id\/__x00__/, "\0");
+}
+
+function createRuntimeDependencyResolvePlugin(): PreviewPluginOption {
+	const reactShimsRoot = resolvePreviewPackageEntry(
+		[
+			path.resolve(__dirname, "./react-shims"),
+			path.resolve(__dirname, "../../src/source/react-shims"),
+		],
+		"react shims root",
+	);
+	const shimEntries = new Map<string, string>([
+		[
+			"react/jsx-dev-runtime",
+			resolveReactShimEntry("react-jsx-dev-runtime.js"),
+		],
+		["react/jsx-runtime", resolveReactShimEntry("react-jsx-runtime.js")],
+		["react", resolveReactShimEntry("react.js")],
+	]);
+
+	return {
+		enforce: "pre",
+		name: "loom-preview-runtime-dependency-resolve",
+		resolveId(id, importer) {
+			const replacement = shimEntries.get(id);
+			if (!replacement) {
+				return undefined;
+			}
+
+			const normalizedImporter = normalizeResolvedImporter(importer);
+			if (normalizedImporter?.startsWith(reactShimsRoot)) {
+				return undefined;
+			}
+
+			return replacement;
+		},
+	};
+}
+
+function createRuntimeDependencyAliases() {
+	return [
+		{
+			find: "react/jsx-dev-runtime",
+			replacement: resolveReactShimEntry("react-jsx-dev-runtime.js"),
+		},
+		{
+			find: "react/jsx-runtime",
+			replacement: resolveReactShimEntry("react-jsx-runtime.js"),
+		},
+		{
+			find: "react",
+			replacement: resolveReactShimEntry("react.js"),
+		},
+	];
 }
 
 function isResolvedPreviewConfig(
@@ -146,6 +226,20 @@ export async function startPreviewServer(
 	options: StartPreviewServerInput = {},
 ) {
 	const resolvedConfig = await resolvePreviewServerConfig(options);
+	const server = await createPreviewViteServer(resolvedConfig);
+	await server.listen();
+	process.stdout.write(
+		`Previewing ${resolvedConfig.projectName} from ${resolvedConfig.workspaceRoot}\n`,
+	);
+	server.printUrls();
+
+	return server;
+}
+
+export async function createPreviewViteServer(
+	resolvedConfig: ResolvedPreviewConfig,
+	options: CreatePreviewViteServerOptions = {},
+) {
 	const vite = (await import("vite")) as unknown as ViteModule;
 	const reactPlugin = (
 		(await import("@vitejs/plugin-react")) as unknown as ReactPluginModule
@@ -170,13 +264,22 @@ export async function startPreviewServer(
 	});
 
 	const server = await vite.createServer({
-		appType: "spa",
+		appType: options.appType ?? "spa",
 		assetsInclude: ["**/*.wasm"],
 		configFile: false,
 		optimizeDeps: {
 			exclude: ["@loom-dev/layout-engine", "layout-engine"],
+			...(options.middlewareMode
+				? {
+						entries: [],
+						noDiscovery: true,
+					}
+				: {}),
 		},
 		plugins: [
+			...(options.middlewareMode
+				? [createRuntimeDependencyResolvePlugin()]
+				: []),
 			createAutoMockPropsPlugin({ targets: resolvedConfig.targets }),
 			previewPlugin,
 			reactPlugin(),
@@ -185,11 +288,13 @@ export async function startPreviewServer(
 		],
 		resolve: {
 			alias: [
+				...(options.middlewareMode ? createRuntimeDependencyAliases() : []),
 				{
 					find: "@loom-dev/preview-runtime",
 					replacement: previewRuntimeRootEntry,
 				},
 			],
+			dedupe: ["react", "react-dom"],
 		},
 		root: shellRoot,
 		server: {
@@ -197,16 +302,22 @@ export async function startPreviewServer(
 				allow: [shellRoot, ...resolvedConfig.server.fsAllow],
 			},
 			host: resolvedConfig.server.host,
+			...(options.middlewareMode
+				? {
+						hmr: false,
+						middlewareMode: true,
+						ws: false,
+					}
+				: {}),
 			open: resolvedConfig.server.open,
 			port: resolvedConfig.server.port,
 		},
+		ssr: options.middlewareMode
+			? {
+					noExternal: [/^react(?:$|\/)/, /^react-dom(?:$|\/)/],
+				}
+			: undefined,
 	});
-
-	await server.listen();
-	process.stdout.write(
-		`Previewing ${resolvedConfig.projectName} from ${resolvedConfig.workspaceRoot}\n`,
-	);
-	server.printUrls();
 
 	return server;
 }

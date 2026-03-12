@@ -2,12 +2,15 @@ import { usageError } from "./core/errors";
 import { CLI_BINARY_NAME, getCliVersion } from "./packageMetadata";
 import type {
 	CliBuildTransformMode,
+	CliCheckFailOn,
+	CliCheckFormat,
 	CliCommandRuntime,
 	CliPreviewBuildArtifactKind,
 	CliPreviewTransformMode,
 } from "./preview";
 import {
 	runBuildCommand,
+	runCheckCommand,
 	runConfigCommand,
 	runPreviewCommand,
 	runSnapshotCommand,
@@ -31,6 +34,11 @@ Commands:
            [--transform-mode <strict-fidelity|compatibility>]
     Emit a full headless preview snapshot as JSON.
 
+  check [--cwd <path>] [--config <path>] [--entry <id>]
+        [--format <pretty|json>] [--fail-on <warning|error>]
+        [--transform-mode <strict-fidelity|compatibility>]
+    Execute preview entries headlessly and report pass/warning/error status.
+
   build [--cwd <path>] [--config <path>] --out-dir <path>
         [--artifact-kind <module|entry-metadata|layout-schema>]
         [--transform-mode <strict-fidelity|compatibility|mocked|design-time>]
@@ -51,6 +59,7 @@ Examples:
   ${CLI_BINARY_NAME} preview --config ./loom.config.ts --port 4175 --open
   ${CLI_BINARY_NAME} snapshot --cwd packages/preview --output ./preview-snapshot.json
   ${CLI_BINARY_NAME} build --cwd packages/preview --out-dir ./generated
+  ${CLI_BINARY_NAME} check --cwd packages/preview --fail-on warning
   ${CLI_BINARY_NAME} config --cwd packages/preview
 `;
 
@@ -84,6 +93,13 @@ interface ParsedBuildArgs extends SharedCommandArgs {
 	transformMode?: CliBuildTransformMode;
 }
 
+interface ParsedCheckArgs extends SharedCommandArgs {
+	entryId?: string;
+	failOn?: CliCheckFailOn;
+	format?: CliCheckFormat;
+	transformMode?: CliPreviewTransformMode;
+}
+
 const PREVIEW_TRANSFORM_MODES = [
 	"strict-fidelity",
 	"compatibility",
@@ -101,6 +117,16 @@ const BUILD_ARTIFACT_KINDS = [
 	"entry-metadata",
 	"layout-schema",
 ] as const satisfies readonly CliPreviewBuildArtifactKind[];
+
+const CHECK_FORMATS = [
+	"pretty",
+	"json",
+] as const satisfies readonly CliCheckFormat[];
+
+const CHECK_FAIL_ON_VALUES = [
+	"warning",
+	"error",
+] as const satisfies readonly CliCheckFailOn[];
 
 type ParsedRequiredValue =
 	| {
@@ -214,9 +240,7 @@ function parseTransformMode<TMode extends string>(
 }
 
 function parseArtifactKind(value: string): CliPreviewBuildArtifactKind {
-	if (
-		BUILD_ARTIFACT_KINDS.includes(value as CliPreviewBuildArtifactKind)
-	) {
+	if (BUILD_ARTIFACT_KINDS.includes(value as CliPreviewBuildArtifactKind)) {
 		return value as CliPreviewBuildArtifactKind;
 	}
 
@@ -488,9 +512,84 @@ function parseBuildArgs(args: string[]): ParsedBuildArgs {
 	};
 }
 
+function parseCheckArgs(args: string[]): ParsedCheckArgs {
+	const output: ParsedCheckArgs = {};
+
+	for (let index = 0; index < args.length; index += 1) {
+		const token = args[index];
+
+		const cwdValue = parseRequiredValue(args, index, token, "--cwd");
+		if (cwdValue.matched) {
+			output.cwd = cwdValue.value;
+			index = cwdValue.nextIndex;
+			continue;
+		}
+
+		const configValue = parseRequiredValue(args, index, token, "--config");
+		if (configValue.matched) {
+			output.configFile = configValue.value;
+			index = configValue.nextIndex;
+			continue;
+		}
+
+		const entryValue = parseRequiredValue(args, index, token, "--entry");
+		if (entryValue.matched) {
+			if (output.entryId) {
+				throw usageError("Duplicate --entry values are not allowed.");
+			}
+
+			output.entryId = entryValue.value;
+			index = entryValue.nextIndex;
+			continue;
+		}
+
+		const formatValue = parseRequiredValue(args, index, token, "--format");
+		if (formatValue.matched) {
+			output.format = parseTransformMode(formatValue.value, CHECK_FORMATS);
+			index = formatValue.nextIndex;
+			continue;
+		}
+
+		const failOnValue = parseRequiredValue(args, index, token, "--fail-on");
+		if (failOnValue.matched) {
+			output.failOn = parseTransformMode(
+				failOnValue.value,
+				CHECK_FAIL_ON_VALUES,
+			);
+			index = failOnValue.nextIndex;
+			continue;
+		}
+
+		const transformModeValue = parseRequiredValue(
+			args,
+			index,
+			token,
+			"--transform-mode",
+		);
+		if (transformModeValue.matched) {
+			output.transformMode = parseTransformMode(
+				transformModeValue.value,
+				PREVIEW_TRANSFORM_MODES,
+			);
+			index = transformModeValue.nextIndex;
+			continue;
+		}
+
+		if (token.startsWith("-")) {
+			throw usageError(`Unknown option for check: ${token}`);
+		}
+
+		throw usageError(
+			`check does not accept positional arguments. Received: ${token}`,
+		);
+	}
+
+	return output;
+}
+
 function createLegacyCommandError(command: string) {
 	return usageError(
-		`"${command}" is not supported. Use ${CLI_BINARY_NAME} preview, ${CLI_BINARY_NAME} build, ${CLI_BINARY_NAME} snapshot, or ${CLI_BINARY_NAME} config.`,
+		`"${command}" is not supported. Use ${CLI_BINARY_NAME} preview, ${CLI_BINARY_NAME} build, ${CLI_BINARY_NAME} snapshot, ${CLI_BINARY_NAME} check, or ${CLI_BINARY_NAME} config.`,
 	);
 }
 
@@ -550,6 +649,11 @@ export async function runCli(
 		return;
 	}
 
+	if (parsed.command === "check") {
+		await runCheckCommand(parseCheckArgs(parsed.commandArgs), runtime);
+		return;
+	}
+
 	if (parsed.command === "build") {
 		await runBuildCommand(parseBuildArgs(parsed.commandArgs), runtime);
 		return;
@@ -564,6 +668,6 @@ export async function runCli(
 	}
 
 	throw usageError(
-		`Unknown command: ${parsed.command}. Supported commands: ${CLI_BINARY_NAME} preview, ${CLI_BINARY_NAME} serve, ${CLI_BINARY_NAME} build, ${CLI_BINARY_NAME} snapshot, ${CLI_BINARY_NAME} config.`,
+		`Unknown command: ${parsed.command}. Supported commands: ${CLI_BINARY_NAME} preview, ${CLI_BINARY_NAME} serve, ${CLI_BINARY_NAME} build, ${CLI_BINARY_NAME} snapshot, ${CLI_BINARY_NAME} check, ${CLI_BINARY_NAME} config.`,
 	);
 }

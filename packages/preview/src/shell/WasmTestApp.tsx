@@ -139,22 +139,24 @@ type WasmShellProps = {
 function WasmShell(props: WasmShellProps) {
 	return (
 		<main className="wasm-shell">
-			<header className="wasm-header">
-				<div className="wasm-header-copy">
+			<header className="preview-header wasm-header">
+				<div className="preview-header-copy wasm-header-copy">
 					<p className="section-eyebrow">Wasm playground</p>
-					<h1>Layout Engine</h1>
-					<p>
+					<div className="preview-header-title">
+						<h1>Layout Engine</h1>
+						<span className="meta-pill meta-pill-accent">{props.status}</span>
+					</div>
+					<p className="preview-header-path">
 						Smoke-test the layout Wasm bridge with a mock Roblox tree and
 						browser-hosted viewport.
 					</p>
-				</div>
-				<div className="header-controls">
-					<PreviewThemeControl />
-					<div className="header-meta">
-						<span>{props.status}</span>
-						<span>{props.detail}</span>
-						<span>{props.meta}</span>
+					<div className="preview-header-meta">
+						<span className="meta-pill">{props.detail}</span>
+						<span className="meta-pill">{props.meta}</span>
 					</div>
+				</div>
+				<div className="preview-toolbar">
+					<PreviewThemeControl />
 				</div>
 			</header>
 			{props.children}

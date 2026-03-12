@@ -3,12 +3,44 @@ import layoutEngineWasmUrl from "@loom-dev/layout-engine/layout_engine_bg.wasm?u
 import type { LayoutSessionLike } from "./controller";
 import { normalizePreviewLayoutResult, type PreviewLayoutNode } from "./model";
 
+const LAYOUT_ENGINE_LOADER_KEY = "__loom_preview_layout_engine_loader__";
+
+export type PreviewLayoutEngineModuleOrPath =
+	| ArrayBuffer
+	| Promise<ArrayBuffer | Uint8Array | URL | WebAssembly.Module | string>
+	| Uint8Array
+	| URL
+	| WebAssembly.Module
+	| string;
+
+export type PreviewLayoutEngineLoader = () => PreviewLayoutEngineModuleOrPath;
+
 let layoutEngineInitPromise: Promise<void> | undefined;
+
+function getPreviewLayoutEngineLoader() {
+	const globalRecord = globalThis as typeof globalThis & {
+		[LAYOUT_ENGINE_LOADER_KEY]?: PreviewLayoutEngineLoader | null;
+	};
+
+	return globalRecord[LAYOUT_ENGINE_LOADER_KEY] ?? null;
+}
+
+export function setPreviewLayoutEngineLoader(
+	loader: PreviewLayoutEngineLoader | null,
+) {
+	const globalRecord = globalThis as typeof globalThis & {
+		[LAYOUT_ENGINE_LOADER_KEY]?: PreviewLayoutEngineLoader | null;
+	};
+
+	globalRecord[LAYOUT_ENGINE_LOADER_KEY] = loader;
+}
 
 export function initializeLayoutEngine(): Promise<void> {
 	if (!layoutEngineInitPromise) {
+		const loader = getPreviewLayoutEngineLoader();
+		const moduleOrPath = loader ? loader() : layoutEngineWasmUrl;
 		layoutEngineInitPromise = initLayoutEngine({
-			module_or_path: layoutEngineWasmUrl,
+			module_or_path: moduleOrPath,
 		})
 			.then(() => undefined)
 			.catch((error: unknown) => {

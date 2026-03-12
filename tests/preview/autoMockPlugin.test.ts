@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { createAutoMockPropsPlugin } from "../../packages/preview/src/source/autoMockPlugin";
-import { getHookHandler } from "./hookTestUtils";
+import { getHookHandler, getHookResultCode } from "./hookTestUtils";
 
 const temporaryRoots: string[] = [];
 
@@ -64,27 +64,12 @@ describe("createAutoMockPropsPlugin", () => {
 			source,
 			`${sourceFile}?source=preview#component`,
 		);
+		const transformedCode = getHookResultCode(transformed);
 
-		expect(
-			transformed && typeof transformed === "object"
-				? transformed.code
-				: transformed,
-		).toContain("const __previewDefaultExport =");
-		expect(
-			transformed && typeof transformed === "object"
-				? transformed.code
-				: transformed,
-		).toContain("__previewDefaultExport.__previewProps");
-		expect(
-			transformed && typeof transformed === "object"
-				? transformed.code
-				: transformed,
-		).toContain('"index"');
-		expect(
-			transformed && typeof transformed === "object"
-				? transformed.code
-				: transformed,
-		).toContain('"spell"');
+		expect(transformedCode).toContain("const __previewDefaultExport =");
+		expect(transformedCode).toContain("__previewDefaultExport.__previewProps");
+		expect(transformedCode).toContain('"index"');
+		expect(transformedCode).toContain('"spell"');
 	});
 
 	it("matches source files when the configured source root is a symlink", async () => {
@@ -126,16 +111,9 @@ describe("createAutoMockPropsPlugin", () => {
 
 		const transform = getHookHandler(plugin.transform);
 		const transformed = await transform?.call({} as never, source, sourceFile);
+		const transformedCode = getHookResultCode(transformed);
 
-		expect(
-			transformed && typeof transformed === "object"
-				? transformed.code
-				: transformed,
-		).toContain("Symlinked.__previewProps");
-		expect(
-			transformed && typeof transformed === "object"
-				? transformed.code
-				: transformed,
-		).toContain('"label"');
+		expect(transformedCode).toContain("Symlinked.__previewProps");
+		expect(transformedCode).toContain('"label"');
 	});
 });

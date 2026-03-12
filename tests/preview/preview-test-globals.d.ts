@@ -52,3 +52,9 @@ declare namespace React {
 		interface IntrinsicElements extends PreviewIntrinsicElements {}
 	}
 }
+
+declare module "@missing/vendor" {
+	export const MissingLabel: (
+		props: Record<string, unknown>,
+	) => JSX.Element | null;
+}

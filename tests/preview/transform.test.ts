@@ -147,7 +147,7 @@ describe("preview source transform", () => {
 
 		expect(result.diagnostics).toHaveLength(0);
 		expect(
-			result.code.match(/from "@loom-dev\/preview-runtime"/g) ?? [],
+			result.code?.match(/from "@loom-dev\/preview-runtime"/g) ?? [],
 		).toHaveLength(1);
 		expect(result.code).toContain("React");
 		expect(result.code).toContain("Slot");

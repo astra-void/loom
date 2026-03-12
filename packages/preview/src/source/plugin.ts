@@ -135,6 +135,7 @@ ${importers}
 function renderEntryModule(
 	previewEngine: ReturnType<typeof createPreviewEngine>,
 	entryId: string,
+	runtimeModulePath: string,
 ) {
 	const entry = previewEngine
 		.getSnapshot()
@@ -145,7 +146,9 @@ function renderEntryModule(
 
 	const payload = previewEngine.getEntryPayload(entryId);
 	if (payload.descriptor.status !== "ready") {
-		return `export const __previewEntryPayload = ${JSON.stringify(payload, null, 2)};
+		return `import * as __previewRuntimeModule from ${JSON.stringify(runtimeModulePath)};
+export const __previewEntryPayload = ${JSON.stringify(payload, null, 2)};
+export { __previewRuntimeModule };
 const __previewBlockedModule = {};
 export default __previewBlockedModule;
 `;
@@ -154,10 +157,12 @@ export default __previewBlockedModule;
 	const sourceFilePath = entry.sourceFilePath.split(path.sep).join("/");
 
 	return `import * as __previewModule from ${JSON.stringify(sourceFilePath)};
+import * as __previewRuntimeModule from ${JSON.stringify(runtimeModulePath)};
 export * from ${JSON.stringify(sourceFilePath)};
 const __previewDefault = __previewModule.default;
 export default __previewDefault;
 export const __previewEntryPayload = ${JSON.stringify(payload, null, 2)};
+export { __previewRuntimeModule };
 `;
 }
 
@@ -299,7 +304,7 @@ export function createPreviewVitePlugin(
 				const entryId = decodeURIComponent(
 					id.slice(RESOLVED_ENTRY_MODULE_ID_PREFIX.length),
 				);
-				return renderEntryModule(previewEngine, entryId);
+				return renderEntryModule(previewEngine, entryId, runtimeEntryPath);
 			}
 
 			return undefined;

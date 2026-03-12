@@ -1,12 +1,10 @@
 import type {
-	PreviewDefinition,
 	PreviewDiagnostic,
 	PreviewEntryDescriptor,
 	PreviewEntryPayload,
 	PreviewEntryStatus,
 } from "@loom-dev/preview-engine";
 import {
-	AutoMockProvider,
 	areViewportsEqual,
 	clearPreviewRuntimeIssues,
 	createViewportSize,
@@ -14,7 +12,6 @@ import {
 	isViewportLargeEnough,
 	LayoutProvider,
 	measureElementViewport,
-	normalizePreviewRuntimeError,
 	type PreviewRuntimeIssue,
 	pickViewport,
 	setPreviewRuntimeIssueContext,
@@ -22,12 +19,17 @@ import {
 	type ViewportSize,
 } from "@loom-dev/preview-runtime";
 import React from "react";
+import {
+	createPreviewLoadIssue,
+	createPreviewRenderIssue,
+	createPreviewRenderNode,
+	describePreviewWarningState,
+	getPreviewReadyWarningState,
+	isPreviewBlockingIssue,
+	type PreviewModule,
+	type PreviewReadyWarningState,
+} from "../execution/shared";
 import { PreviewThemeControl } from "./theme";
-
-type PreviewModule = Record<string, unknown> & {
-	default?: unknown;
-	preview?: PreviewDefinition;
-};
 
 type PreviewAppProps = {
 	entries: PreviewEntryDescriptor[];
@@ -59,12 +61,6 @@ type PreviewErrorBoundaryState = {
 	errorMessage: string | null;
 };
 
-type PreviewReadyWarningState = {
-	degradedTargets: string[];
-	fidelity: "degraded" | "preserved" | null;
-	warningCodes: string[];
-};
-
 type LoadedPreviewEntry = {
 	module: PreviewModule;
 	payload?: PreviewEntryPayload;
@@ -73,6 +69,42 @@ type LoadedPreviewEntry = {
 type RuntimeIssueRenderMeta = {
 	key: string;
 	occurrence: number;
+};
+
+type SidebarFileNode = {
+	entry: PreviewEntryDescriptor;
+	hasWarning: boolean;
+	id: string;
+	kind: "file";
+	name: string;
+};
+
+type SidebarFolderNode = {
+	children: SidebarTreeNode[];
+	id: string;
+	kind: "folder";
+	name: string;
+};
+
+type SidebarTargetNode = {
+	children: SidebarTreeNode[];
+	entryCount: number;
+	id: string;
+	name: string;
+};
+
+type SidebarTreeNode = SidebarFolderNode | SidebarFileNode;
+
+type SidebarTree = {
+	folderIds: Set<string>;
+	targets: SidebarTargetNode[];
+};
+
+type MutableSidebarBranchNode = {
+	files: SidebarFileNode[];
+	folders: Map<string, MutableSidebarBranchNode>;
+	id: string;
+	name: string;
 };
 
 class PreviewErrorBoundary extends React.Component<
@@ -178,68 +210,8 @@ function createRuntimeIssueRenderMeta(issues: PreviewRuntimeIssue[]) {
 	return renderMeta;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+function _isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null;
-}
-
-function readNestedExport(
-	container: unknown,
-	exportName: string,
-	visited = new Set<unknown>(),
-): unknown {
-	if (!isRecord(container) || visited.has(container)) {
-		return undefined;
-	}
-
-	visited.add(container);
-	return exportName in container ? container[exportName] : undefined;
-}
-
-function readModuleExport(
-	module: PreviewModule,
-	exportName: "default" | string,
-) {
-	if (exportName === "default") {
-		return module.default;
-	}
-
-	return readNestedExport(module, exportName);
-}
-
-function isRenderableComponentExport(value: unknown): boolean {
-	return (
-		typeof value === "function" || (isRecord(value) && "$$typeof" in value)
-	);
-}
-
-function describeValue(value: unknown) {
-	if (value === undefined) {
-		return "undefined";
-	}
-
-	if (value === null) {
-		return "null";
-	}
-
-	if (typeof value === "function") {
-		return value.name ? `function ${value.name}` : "function";
-	}
-
-	if (Array.isArray(value)) {
-		return "array";
-	}
-
-	if (isRecord(value)) {
-		const keys = Object.keys(value).sort();
-		return keys.length > 0 ? `object with keys [${keys.join(", ")}]` : "object";
-	}
-
-	return typeof value;
-}
-
-function describeModuleExports(module: PreviewModule) {
-	const keys = Object.keys(module).sort();
-	return `module: [${keys.join(", ") || "(none)"}]`;
 }
 
 function getRenderModeLabel(entry: PreviewEntryDescriptor) {
@@ -289,7 +261,7 @@ function formatCandidateExports(candidates: string[]) {
 	return candidates.join(", ");
 }
 
-function uniqueSorted(values: Iterable<string>) {
+function _uniqueSorted(values: Iterable<string>) {
 	return [...new Set(values)].sort((left, right) => left.localeCompare(right));
 }
 
@@ -298,7 +270,7 @@ function isBlockingIssue(
 		| Pick<PreviewDiagnostic, "blocking" | "severity">
 		| Pick<PreviewRuntimeIssue, "blocking" | "severity">,
 ) {
-	return issue.blocking ?? issue.severity !== "warning";
+	return isPreviewBlockingIssue(issue);
 }
 
 function getReadyWarningState(
@@ -306,48 +278,11 @@ function getReadyWarningState(
 	diagnostics: PreviewDiagnostic[],
 	runtimeIssues: PreviewRuntimeIssue[],
 ): PreviewReadyWarningState {
-	const payloadWarningCodes =
-		statusDetails?.kind === "ready" ? (statusDetails.warningCodes ?? []) : [];
-	const payloadDegradedTargets =
-		statusDetails?.kind === "ready"
-			? (statusDetails.degradedTargets ?? [])
-			: [];
-	const fidelity =
-		statusDetails?.kind === "ready" ? (statusDetails.fidelity ?? null) : null;
-	const warningDiagnostics = diagnostics.filter(
-		(diagnostic) => !isBlockingIssue(diagnostic),
-	);
-	const warningRuntimeIssues = runtimeIssues.filter(
-		(issue) => !isBlockingIssue(issue),
-	);
-	const degradedTargets = uniqueSorted([
-		...payloadDegradedTargets,
-		...warningRuntimeIssues
-			.filter((issue) => issue.code === "DEGRADED_HOST_RENDER")
-			.map((issue) => issue.target),
-	]);
-
-	return {
-		degradedTargets,
-		fidelity: fidelity ?? (degradedTargets.length > 0 ? "degraded" : null),
-		warningCodes: uniqueSorted([
-			...payloadWarningCodes,
-			...warningDiagnostics.map((diagnostic) => diagnostic.code),
-			...warningRuntimeIssues.map((issue) => issue.code),
-		]),
-	};
+	return getPreviewReadyWarningState(statusDetails, diagnostics, runtimeIssues);
 }
 
 function describeWarningState(warningState: PreviewReadyWarningState) {
-	if (warningState.degradedTargets.length > 0) {
-		return `Degraded placeholders: ${warningState.degradedTargets.join(", ")}.`;
-	}
-
-	if (warningState.warningCodes.length > 0) {
-		return `Warnings: ${warningState.warningCodes.join(", ")}.`;
-	}
-
-	return "This preview stays renderable, but fidelity is reduced.";
+	return describePreviewWarningState(warningState);
 }
 
 function getPrimaryDiscoveryDiagnostic(
@@ -471,48 +406,161 @@ function isLoadableEntryStatus(status: PreviewEntryStatus) {
 	);
 }
 
+function hasSidebarWarningIndicator(entry: PreviewEntryDescriptor) {
+	return (
+		entry.statusDetails.kind === "ready" &&
+		(entry.statusDetails.fidelity === "degraded" ||
+			(entry.statusDetails.warningCodes?.length ?? 0) > 0)
+	);
+}
+
+function getRelativePathSegments(relativePath: string) {
+	return relativePath.split("/").filter(Boolean);
+}
+
+function getEntryFileName(relativePath: string) {
+	const pathSegments = getRelativePathSegments(relativePath);
+	return pathSegments[pathSegments.length - 1] ?? relativePath;
+}
+
+function createSidebarTargetId(targetName: string) {
+	return `target:${targetName}`;
+}
+
+function createSidebarFolderId(targetName: string, folderPath: string) {
+	return `folder:${targetName}:${folderPath}`;
+}
+
+function createMutableSidebarBranchNode(
+	id: string,
+	name: string,
+): MutableSidebarBranchNode {
+	return {
+		files: [],
+		folders: new Map(),
+		id,
+		name,
+	};
+}
+
+function sortSidebarTreeNodes(nodes: SidebarTreeNode[]) {
+	return [...nodes].sort((left, right) => {
+		if (left.kind !== right.kind) {
+			return left.kind === "folder" ? -1 : 1;
+		}
+
+		const nameComparison = left.name.localeCompare(right.name);
+		if (nameComparison !== 0) {
+			return nameComparison;
+		}
+
+		if (left.kind === "file" && right.kind === "file") {
+			return left.entry.relativePath.localeCompare(right.entry.relativePath);
+		}
+
+		return left.id.localeCompare(right.id);
+	});
+}
+
+function finalizeSidebarBranchNode(
+	branch: MutableSidebarBranchNode,
+): SidebarTreeNode[] {
+	const folderNodes = [...branch.folders.values()].map((folder) => ({
+		children: finalizeSidebarBranchNode(folder),
+		id: folder.id,
+		kind: "folder" as const,
+		name: folder.name,
+	}));
+
+	return sortSidebarTreeNodes([...folderNodes, ...branch.files]);
+}
+
+function buildSidebarTree(entries: PreviewEntryDescriptor[]): SidebarTree {
+	const folderIds = new Set<string>();
+	const targets = new Map<
+		string,
+		MutableSidebarBranchNode & {
+			entryCount: number;
+		}
+	>();
+
+	for (const entry of entries) {
+		let target = targets.get(entry.targetName);
+		if (!target) {
+			target = {
+				...createMutableSidebarBranchNode(
+					createSidebarTargetId(entry.targetName),
+					entry.targetName,
+				),
+				entryCount: 0,
+			};
+			targets.set(entry.targetName, target);
+		}
+
+		target.entryCount += 1;
+
+		const pathSegments = getRelativePathSegments(entry.relativePath);
+		const fileName = getEntryFileName(entry.relativePath);
+		const folderSegments = pathSegments.slice(0, -1);
+
+		let parent = target as MutableSidebarBranchNode;
+		let folderPath = "";
+		for (const folderName of folderSegments) {
+			folderPath = folderPath ? `${folderPath}/${folderName}` : folderName;
+			let folder = parent.folders.get(folderName);
+			if (!folder) {
+				const folderId = createSidebarFolderId(entry.targetName, folderPath);
+				folder = createMutableSidebarBranchNode(folderId, folderName);
+				parent.folders.set(folderName, folder);
+				folderIds.add(folderId);
+			}
+
+			parent = folder;
+		}
+
+		parent.files.push({
+			entry,
+			hasWarning: hasSidebarWarningIndicator(entry),
+			id: `file:${entry.id}`,
+			kind: "file",
+			name: fileName,
+		});
+	}
+
+	return {
+		folderIds,
+		targets: [...targets.values()]
+			.sort((left, right) => left.name.localeCompare(right.name))
+			.map((target) => ({
+				children: finalizeSidebarBranchNode(target),
+				entryCount: target.entryCount,
+				id: target.id,
+				name: target.name,
+			})),
+	};
+}
+
+function getSelectedEntryFolderIds(entry: PreviewEntryDescriptor) {
+	const folderIds: string[] = [];
+	const folderSegments = getRelativePathSegments(entry.relativePath).slice(
+		0,
+		-1,
+	);
+	let folderPath = "";
+
+	for (const folderName of folderSegments) {
+		folderPath = folderPath ? `${folderPath}/${folderName}` : folderName;
+		folderIds.push(createSidebarFolderId(entry.targetName, folderPath));
+	}
+
+	return folderIds;
+}
+
 function createPreviewNode(
 	entry: PreviewEntryDescriptor,
 	module: PreviewModule,
 ) {
-	const preview = readPreviewDefinition(module);
-
-	if (entry.renderTarget.kind === "harness") {
-		if (!preview?.render || typeof preview.render !== "function") {
-			throw new Error(
-				"This entry is marked as preview.render but the module does not export a callable preview.render.",
-			);
-		}
-
-		const Harness = preview.render as React.ComponentType;
-		return <Harness />;
-	}
-
-	if (entry.renderTarget.kind === "component") {
-		const exportValue = readModuleExport(module, entry.renderTarget.exportName);
-		if (!isRenderableComponentExport(exportValue)) {
-			throw new Error(
-				`Expected \`${entry.renderTarget.exportName}\` to be a component export, received ${describeValue(exportValue)}. ` +
-					`Available exports: ${describeModuleExports(module)}.`,
-			);
-		}
-
-		const props =
-			entry.renderTarget.usesPreviewProps &&
-			preview?.props &&
-			typeof preview.props === "object"
-				? preview.props
-				: undefined;
-
-		return (
-			<AutoMockProvider
-				component={exportValue as React.ComponentType<Record<string, unknown>>}
-				props={props}
-			/>
-		);
-	}
-
-	return null;
+	return createPreviewRenderNode(entry, module);
 }
 
 function PreviewNodeRenderer(props: PreviewNodeRendererProps) {
@@ -578,10 +626,6 @@ function usePreviewViewport() {
 			window.removeEventListener("resize", onWindowResize);
 		};
 	}, []);
-
-	React.useEffect(() => {
-		console.log("Measured Canvas Size:", viewport.width, viewport.height);
-	}, [viewport.height, viewport.width]);
 
 	return {
 		viewport,
@@ -713,6 +757,14 @@ export function PreviewApp(props: PreviewAppProps) {
 	const selectedEntryRuntimeWarningCount = runtimeIssues.filter(
 		(issue) => !isBlockingIssue(issue),
 	).length;
+	const blockingRuntimeIssueCount = runtimeIssues.filter((issue) =>
+		isBlockingIssue(issue),
+	).length;
+	const blockingIssueCount =
+		selectedEntryBlockingDiagnostics.length +
+		blockingRuntimeIssueCount +
+		(renderIssue ? 1 : 0) +
+		(loadIssue ? 1 : 0);
 	const selectedEntryWarningCount = Math.max(
 		selectedEntryWarningState.warningCodes.length,
 		selectedEntryDiagnostics.filter(
@@ -722,6 +774,21 @@ export function PreviewApp(props: PreviewAppProps) {
 	const emptyState = selectedEntry
 		? getEntryEmptyState(selectedEntry, selectedEntryDiscoveryDiagnostics)
 		: undefined;
+	const sidebarTree = React.useMemo(
+		() => buildSidebarTree(props.entries),
+		[props.entries],
+	);
+	const selectedEntryFolderIds = React.useMemo(
+		() =>
+			selectedEntry ? new Set(getSelectedEntryFolderIds(selectedEntry)) : null,
+		[selectedEntry],
+	);
+	const selectedEntryFileName = selectedEntry
+		? getEntryFileName(selectedEntry.relativePath)
+		: undefined;
+	const [collapsedFolderIds, setCollapsedFolderIds] = React.useState<
+		Set<string>
+	>(() => new Set());
 
 	React.useEffect(() => {
 		if (!selectedEntry || typeof window === "undefined") {
@@ -785,17 +852,7 @@ export function PreviewApp(props: PreviewAppProps) {
 			})
 			.catch((error: unknown) => {
 				if (!cancelled) {
-					setLoadIssue(
-						normalizePreviewRuntimeError(
-							{
-								code: "MODULE_LOAD_ERROR",
-								kind: "ModuleLoadError",
-								phase: "runtime",
-								summary: `Preview module failed to load: ${error instanceof Error ? error.message : String(error)}`,
-							},
-							error,
-						),
-					);
+					setLoadIssue(createPreviewLoadIssue(selectedEntry, error));
 				}
 			});
 
@@ -804,42 +861,150 @@ export function PreviewApp(props: PreviewAppProps) {
 		};
 	}, [props, selectedEntry]);
 
+	React.useEffect(() => {
+		setCollapsedFolderIds((previous) => {
+			let changed = false;
+			const next = new Set<string>();
+
+			for (const folderId of previous) {
+				if (sidebarTree.folderIds.has(folderId)) {
+					next.add(folderId);
+				} else {
+					changed = true;
+				}
+			}
+
+			return changed ? next : previous;
+		});
+	}, [sidebarTree]);
+
+	React.useEffect(() => {
+		if (!selectedEntry) {
+			return;
+		}
+
+		const selectedFolderIds = getSelectedEntryFolderIds(selectedEntry);
+		if (selectedFolderIds.length === 0) {
+			return;
+		}
+
+		setCollapsedFolderIds((previous) => {
+			let changed = false;
+			const next = new Set(previous);
+
+			for (const folderId of selectedFolderIds) {
+				if (next.delete(folderId)) {
+					changed = true;
+				}
+			}
+
+			return changed ? next : previous;
+		});
+	}, [selectedEntry]);
+
+	const renderSidebarNodes = (
+		nodes: SidebarTreeNode[],
+		depth: number,
+	): React.ReactNode =>
+		nodes.map((node) => {
+			const indentStyle = {
+				paddingInlineStart: `${8 + depth * 14}px`,
+			} satisfies React.CSSProperties;
+
+			if (node.kind === "folder") {
+				const isCollapsed = collapsedFolderIds.has(node.id);
+				const isSelectedBranch = selectedEntryFolderIds?.has(node.id) ?? false;
+				return (
+					<div className="sidebar-tree-node" key={node.id}>
+						<button
+							aria-expanded={!isCollapsed}
+							className={`sidebar-folder-row ${isCollapsed ? "is-collapsed" : ""} ${
+								isSelectedBranch ? "is-active-branch" : ""
+							}`}
+							onClick={() => {
+								setCollapsedFolderIds((previous) => {
+									const next = new Set(previous);
+									if (isSelectedBranch && !next.has(node.id)) {
+										return previous;
+									}
+									if (next.has(node.id)) {
+										next.delete(node.id);
+									} else {
+										next.add(node.id);
+									}
+									return next;
+								});
+							}}
+							style={indentStyle}
+							type="button"
+						>
+							<span aria-hidden="true" className="sidebar-tree-arrow" />
+							<span className="sidebar-folder-label">{node.name}</span>
+						</button>
+						{isCollapsed ? undefined : (
+							<div className="sidebar-tree-children">
+								{renderSidebarNodes(node.children, depth + 1)}
+							</div>
+						)}
+					</div>
+				);
+			}
+
+			const isSelected = node.entry.id === selectedEntry?.id;
+			const statusDescription = getStatusLabel(node.entry.status);
+
+			return (
+				<button
+					aria-current={isSelected ? "page" : undefined}
+					className={`sidebar-file-row ${isSelected ? "is-selected" : ""}`}
+					key={node.id}
+					onClick={() =>
+						React.startTransition(() => setSelectedId(node.entry.id))
+					}
+					style={indentStyle}
+					title={`${node.entry.relativePath} (${statusDescription}${node.hasWarning ? ", warning" : ""})`}
+					type="button"
+				>
+					<span className="sidebar-file-name">{node.name}</span>
+					<span aria-hidden="true" className="sidebar-file-indicators">
+						<span
+							className="sidebar-status-dot"
+							data-status={node.entry.status}
+						/>
+						{node.hasWarning ? (
+							<span className="sidebar-warning-dot" />
+						) : undefined}
+					</span>
+				</button>
+			);
+		});
+
 	return (
 		<main className="preview-shell">
 			<aside className="preview-sidebar">
 				<div className="sidebar-header">
-					<p className="sidebar-eyebrow">Loom Preview</p>
-					<h1>{props.projectName}</h1>
-					<p>
-						Compiler-driven preview for transformed `@rbxts/react` source files.
+					<div className="sidebar-brand">
+						<p className="sidebar-eyebrow">Explorer</p>
+						<h1>{props.projectName}</h1>
+					</div>
+					<p className="sidebar-header-note">
+						{props.entries.length} preview file(s) across{" "}
+						{sidebarTree.targets.length} target(s).
 					</p>
 				</div>
-				<nav aria-label="Preview entries" className="sidebar-list">
-					{props.entries.map((entry) => (
-						<button
-							className={`sidebar-item ${entry.id === selectedEntry?.id ? "is-selected" : ""}`}
-							key={entry.id}
-							onClick={() =>
-								React.startTransition(() => setSelectedId(entry.id))
-							}
-							type="button"
-						>
-							<span className="sidebar-item-badges">
-								<span className={`status-pill status-${entry.status}`}>
-									{getStatusLabel(entry.status)}
+				<nav aria-label="Preview entries" className="sidebar-tree">
+					{sidebarTree.targets.map((target) => (
+						<section className="sidebar-target-group" key={target.id}>
+							<div className="sidebar-target-row">
+								<span className="sidebar-target-label">{target.name}</span>
+								<span className="sidebar-target-count">
+									{target.entryCount}
 								</span>
-								{entry.statusDetails.kind === "ready" &&
-								(entry.statusDetails.fidelity === "degraded" ||
-									(entry.statusDetails.warningCodes?.length ?? 0) > 0) ? (
-									<span className="status-pill status-warning">warning</span>
-								) : undefined}
-							</span>
-							<span className="sidebar-item-copy">
-								<span className="sidebar-item-title">{entry.title}</span>
-								<span className="sidebar-item-target">{entry.targetName}</span>
-								<span className="sidebar-item-path">{entry.relativePath}</span>
-							</span>
-						</button>
+							</div>
+							<div className="sidebar-tree-children">
+								{renderSidebarNodes(target.children, 1)}
+							</div>
+						</section>
 					))}
 				</nav>
 			</aside>
@@ -848,9 +1013,30 @@ export function PreviewApp(props: PreviewAppProps) {
 				{selectedEntry ? (
 					<>
 						<header className="preview-header">
-							<div>
-								<p className="section-eyebrow">Selected file</p>
-								<h2>{selectedEntry.title}</h2>
+							<div className="preview-header-copy">
+								<p className="section-eyebrow">Selected preview</p>
+								<div className="preview-header-title">
+									<h2>{selectedEntryFileName}</h2>
+									<span
+										className={`status-pill status-${selectedEntry.status}`}
+									>
+										{getStatusLabel(selectedEntry.status)}
+									</span>
+								</div>
+								<p className="preview-header-path">
+									{selectedEntry.relativePath}
+								</p>
+								<div className="preview-header-meta">
+									<span className="meta-pill">{selectedEntry.targetName}</span>
+									{selectedEntry.title !== selectedEntryFileName ? (
+										<span className="meta-pill">{selectedEntry.title}</span>
+									) : undefined}
+									<span className="meta-pill">
+										{selectedEntry.selection.kind === "explicit"
+											? "Explicit preview contract"
+											: "Unresolved preview contract"}
+									</span>
+								</div>
 								{selectedEntryWarningState.fidelity === "degraded" ||
 								selectedEntryWarningState.warningCodes.length > 0 ? (
 									<p className="header-warning-copy">
@@ -858,24 +1044,17 @@ export function PreviewApp(props: PreviewAppProps) {
 									</p>
 								) : undefined}
 							</div>
-							<div className="header-controls">
-								<PreviewThemeControl />
-								<label className="debug-toggle">
-									<input
-										checked={isDebugMode}
-										onChange={(event) => setIsDebugMode(event.target.checked)}
-										type="checkbox"
-									/>
-									<span>Debug mode</span>
-								</label>
-								<div className="header-meta">
-									<span>{selectedEntry.targetName}</span>
-									<span>{selectedEntry.relativePath}</span>
-									<span>
-										{selectedEntry.selection.kind === "explicit"
-											? "Explicit preview contract"
-											: "Unresolved preview contract"}
-									</span>
+							<div className="preview-toolbar">
+								<div className="preview-toolbar-group">
+									<PreviewThemeControl />
+									<label className="debug-toggle">
+										<input
+											checked={isDebugMode}
+											onChange={(event) => setIsDebugMode(event.target.checked)}
+											type="checkbox"
+										/>
+										<span>Debug mode</span>
+									</label>
 								</div>
 							</div>
 						</header>
@@ -903,18 +1082,7 @@ export function PreviewApp(props: PreviewAppProps) {
 												}
 
 												setRenderIssue(
-													normalizePreviewRuntimeError(
-														{
-															code: "RENDER_ERROR",
-															kind: "TransformExecutionError",
-															phase: "runtime",
-															summary:
-																error instanceof Error
-																	? error.message
-																	: String(error),
-														},
-														error,
-													),
+													createPreviewRenderIssue(selectedEntry, error),
 												);
 											}}
 											warningState={selectedEntryWarningState}
@@ -985,20 +1153,23 @@ export function PreviewApp(props: PreviewAppProps) {
 									<h3>Source analysis</h3>
 								</div>
 								<div className="diagnostics-summary">
-									<span>
-										{selectedEntryBlockingDiagnostics.length +
-											runtimeIssues.filter((issue) => isBlockingIssue(issue))
-												.length +
-											(renderIssue ? 1 : 0) +
-											(loadIssue ? 1 : 0)}{" "}
-										blocking issue(s)
+									<span className="diagnostics-summary-item">
+										{blockingIssueCount} blocking
 									</span>
-									<span>{selectedEntryWarningCount} warning(s)</span>
-									<span>
-										{selectedEntryDiscoveryDiagnostics.length} discover note(s)
+									<span className="diagnostics-summary-item">
+										{selectedEntryWarningCount} warnings
 									</span>
-									{renderIssue ? <span>render error</span> : undefined}
-									{loadIssue ? <span>load error</span> : undefined}
+									<span className="diagnostics-summary-item">
+										{selectedEntryDiscoveryDiagnostics.length} notes
+									</span>
+									{renderIssue ? (
+										<span className="diagnostics-summary-item">
+											render error
+										</span>
+									) : undefined}
+									{loadIssue ? (
+										<span className="diagnostics-summary-item">load error</span>
+									) : undefined}
 								</div>
 							</div>
 							{selectedEntryDiagnostics.length === 0 &&

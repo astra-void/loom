@@ -8,6 +8,14 @@ const SCRIPT_FILE_PATTERN = /\.[cm]?[jt]sx?$/;
 const DEFAULT_MOCK_IMPORT_BASENAME = "__loomUnresolvedEnvMock";
 const MODULE_MOCK_IMPORT_BASENAME = "__loomUnresolvedModuleMock";
 const UNSUPPORTED_RESOLVED_EXTENSIONS = new Set([".lua", ".luau"]);
+const NON_MOCKABLE_SPECIFIERS = new Set([
+	"react",
+	"react-dom",
+	"react-dom/client",
+	"react-dom/server",
+	"react/jsx-dev-runtime",
+	"react/jsx-runtime",
+]);
 function normalizeResolvedId(id: string) {
 	return stripQuery(id)
 		.split("#", 1)[0]
@@ -96,7 +104,8 @@ async function shouldMockSpecifier(
 ) {
 	if (
 		!isBareModuleSpecifier(specifier) ||
-		specifier === UNRESOLVED_MOCK_MODULE_ID
+		specifier === UNRESOLVED_MOCK_MODULE_ID ||
+		NON_MOCKABLE_SPECIFIERS.has(specifier)
 	) {
 		return false;
 	}
@@ -358,7 +367,7 @@ export default mock;
 				return RESOLVED_UNRESOLVED_MOCK_MODULE_ID;
 			}
 
-			if (!isBareModuleSpecifier(id)) {
+			if (!isBareModuleSpecifier(id) || NON_MOCKABLE_SPECIFIERS.has(id)) {
 				return undefined;
 			}
 

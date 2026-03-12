@@ -22,9 +22,10 @@ type JsonSchemaNode = {
 	properties?: Record<string, JsonSchemaNode>;
 };
 
-const entryPayloadSchemaNode = entryPayloadSchema as JsonSchemaNode;
+const entryPayloadSchemaNode = entryPayloadSchema as unknown as JsonSchemaNode;
 const layoutDebugPayloadSchemaNode = layoutDebugPayloadSchema as JsonSchemaNode;
-const workspaceIndexSchemaNode = workspaceIndexSchema as JsonSchemaNode;
+const workspaceIndexSchemaNode =
+	workspaceIndexSchema as unknown as JsonSchemaNode;
 
 function countMatches(source: string, pattern: RegExp) {
 	return [...source.matchAll(pattern)].length;

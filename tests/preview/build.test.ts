@@ -175,9 +175,7 @@ describe("buildPreviewArtifacts", () => {
 		});
 
 		expect(result.writtenFiles).toEqual(
-			expect.arrayContaining([
-				path.join(outDir, "package-root", "Button.tsx"),
-			]),
+			expect.arrayContaining([path.join(outDir, "package-root", "Button.tsx")]),
 		);
 	});
 
@@ -288,7 +286,9 @@ describe("buildPreviewArtifacts", () => {
 
 describe("buildPreviewModules", () => {
 	it("continues to reject design-time mode from the module-only wrapper", async () => {
-		const fixtureRoot = createTempRoot("loom-preview-build-modules-design-time-");
+		const fixtureRoot = createTempRoot(
+			"loom-preview-build-modules-design-time-",
+		);
 		const sourceRoot = path.join(fixtureRoot, "src");
 
 		fs.mkdirSync(sourceRoot, { recursive: true });

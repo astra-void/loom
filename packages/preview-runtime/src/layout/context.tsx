@@ -12,6 +12,7 @@ import {
 	createEmptyLayoutResult,
 	createViewportRect,
 	type PreviewLayoutDebugNode,
+	type PreviewLayoutDebugPayload,
 	type PreviewLayoutNode,
 	type PreviewLayoutResult,
 	type RobloxLayoutRegistrationInput,
@@ -40,6 +41,15 @@ export type LayoutProviderProps = {
 	viewportWidth?: number;
 };
 
+export type PreviewLayoutProbeSnapshot = {
+	debug: PreviewLayoutDebugPayload;
+	error: string | null;
+	isReady: boolean;
+	revision: number;
+	viewport: ViewportSize;
+	viewportReady: boolean;
+};
+
 type LayoutContextValue = {
 	error: string | null;
 	getDebugNode: (nodeId: string) => PreviewLayoutDebugNode | null;
@@ -57,12 +67,108 @@ const ZERO_VIEWPORT: ViewportSize = {
 	width: 0,
 };
 const LAYOUT_CONTEXTS_GLOBAL_KEY = "__loom_preview_layout_contexts__";
+const LAYOUT_PROBE_STORE_GLOBAL_KEY = "__loom_preview_layout_probe_store__";
 
 type LayoutContexts = {
 	layout: React.Context<LayoutContextValue | null>;
 	parentNode: React.Context<string | undefined>;
 	parentRect: React.Context<ComputedRect | null>;
 };
+
+type PreviewLayoutProbeListener = (
+	snapshot: PreviewLayoutProbeSnapshot,
+) => void;
+
+type PreviewLayoutProbeStore = {
+	getSnapshot(): PreviewLayoutProbeSnapshot;
+	reset(): void;
+	setSnapshot(
+		snapshot: Omit<PreviewLayoutProbeSnapshot, "revision">,
+	): PreviewLayoutProbeSnapshot;
+	subscribe(listener: PreviewLayoutProbeListener): () => void;
+};
+
+function createDefaultLayoutProbeSnapshot(): PreviewLayoutProbeSnapshot {
+	return {
+		debug: createEmptyLayoutResult(ZERO_VIEWPORT).debug,
+		error: null,
+		isReady: false,
+		revision: 0,
+		viewport: ZERO_VIEWPORT,
+		viewportReady: false,
+	};
+}
+
+function createPreviewLayoutProbeStore(): PreviewLayoutProbeStore {
+	let snapshot = createDefaultLayoutProbeSnapshot();
+	const listeners = new Set<PreviewLayoutProbeListener>();
+
+	const emit = () => {
+		const current = snapshot;
+		for (const listener of listeners) {
+			listener(current);
+		}
+	};
+
+	return {
+		getSnapshot() {
+			return snapshot;
+		},
+		reset() {
+			snapshot = {
+				...createDefaultLayoutProbeSnapshot(),
+				revision: snapshot.revision + 1,
+			};
+			emit();
+		},
+		setSnapshot(nextSnapshot) {
+			snapshot = {
+				...nextSnapshot,
+				revision: snapshot.revision + 1,
+			};
+			emit();
+			return snapshot;
+		},
+		subscribe(listener) {
+			listeners.add(listener);
+			listener(snapshot);
+			return () => {
+				listeners.delete(listener);
+			};
+		},
+	};
+}
+
+function getPreviewLayoutProbeStore(): PreviewLayoutProbeStore {
+	const globalRecord = globalThis as typeof globalThis & {
+		[LAYOUT_PROBE_STORE_GLOBAL_KEY]?: PreviewLayoutProbeStore;
+	};
+
+	if (!globalRecord[LAYOUT_PROBE_STORE_GLOBAL_KEY]) {
+		globalRecord[LAYOUT_PROBE_STORE_GLOBAL_KEY] =
+			createPreviewLayoutProbeStore();
+	}
+
+	return globalRecord[LAYOUT_PROBE_STORE_GLOBAL_KEY];
+}
+
+export function getPreviewLayoutProbeSnapshot() {
+	return getPreviewLayoutProbeStore().getSnapshot();
+}
+
+export function subscribePreviewLayoutProbe(
+	listener: PreviewLayoutProbeListener,
+) {
+	return getPreviewLayoutProbeStore().subscribe(listener);
+}
+
+export function usePreviewLayoutProbeSnapshot() {
+	return React.useSyncExternalStore(
+		subscribePreviewLayoutProbe,
+		getPreviewLayoutProbeSnapshot,
+		getPreviewLayoutProbeSnapshot,
+	);
+}
 
 function getSharedLayoutContexts(): LayoutContexts {
 	const globalRecord = globalThis as typeof globalThis & {
@@ -441,6 +547,21 @@ export function LayoutProvider(props: LayoutProviderProps) {
 			viewportReady,
 		],
 	);
+
+	React.useEffect(() => {
+		const probeStore = getPreviewLayoutProbeStore();
+		probeStore.setSnapshot({
+			debug: layoutResult.debug,
+			error,
+			isReady,
+			viewport: resolvedViewport ?? ZERO_VIEWPORT,
+			viewportReady,
+		});
+
+		return () => {
+			probeStore.reset();
+		};
+	}, [error, isReady, layoutResult.debug, resolvedViewport, viewportReady]);
 
 	return (
 		<LayoutContext.Provider value={contextValue}>

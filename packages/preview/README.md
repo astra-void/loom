@@ -61,6 +61,8 @@ The main exports are:
 - `createStaticTargetsDiscovery`
 - `createWorkspaceTargetsDiscovery`
 
+`createPreviewHeadlessSession()` now executes previewable entries headlessly. Its snapshot keeps the engine payload at the top level and adds an `execution` field with per-entry render status, runtime/layout issues, layout debug, degraded-host warnings, and viewport metadata.
+
 `buildPreviewModules` is the raw target-array, module-only wrapper and continues to reject `design-time`.
 
 `buildPreviewArtifacts` is the config-aware surface. It reuses `loadPreviewConfig()` / target discovery and can build metadata sidecars in `design-time`.
@@ -85,4 +87,4 @@ await buildPreviewArtifacts({
 });
 ```
 
-For the packaged CLI, install `@loom-dev/cli` and use `loom preview`, `loom build`, `loom config`, or `loom snapshot`.
+For the packaged CLI, install `@loom-dev/cli` and use `loom preview`, `loom build`, `loom config`, `loom snapshot`, or `loom check`.

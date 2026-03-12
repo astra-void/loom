@@ -37,14 +37,12 @@ async function prepareStage() {
 	await copyArtifacts();
 
 	runNapi(["create-npm-dirs", "--npm-dir", "./npm"], { cwd: STAGE_ROOT });
-	runNapi(
-		["artifacts", "--output-dir", "./artifacts", "--npm-dir", "./npm"],
-		{ cwd: STAGE_ROOT }
-	);
-	runNapi(
-		["pre-publish", "--npm-dir", "./npm", "--skip-optional-publish"],
-		{ cwd: STAGE_ROOT }
-	);
+	runNapi(["artifacts", "--output-dir", "./artifacts", "--npm-dir", "./npm"], {
+		cwd: STAGE_ROOT,
+	});
+	runNapi(["pre-publish", "--npm-dir", "./npm", "--skip-optional-publish"], {
+		cwd: STAGE_ROOT,
+	});
 
 	await validateStage();
 }
@@ -154,7 +152,7 @@ async function copyArtifacts() {
 
 	if (!existsSync(sourceArtifactsDir)) {
 		throw new Error(
-			"Missing aggregated artifacts directory at packages/compiler/artifacts"
+			"Missing aggregated artifacts directory at packages/compiler/artifacts",
 		);
 	}
 
@@ -176,7 +174,7 @@ async function copyArtifacts() {
 		throw new Error(
 			`Missing compiled artifacts:\n${missingArtifacts
 				.map((artifact) => `- ${artifact}`)
-				.join("\n")}`
+				.join("\n")}`,
 		);
 	}
 }
@@ -197,30 +195,35 @@ async function writeStagePackageJson() {
 
 	await writeFile(
 		join(STAGE_ROOT, "package.json"),
-		`${JSON.stringify(stagedPackageJson, null, 2)}\n`
+		`${JSON.stringify(stagedPackageJson, null, 2)}\n`,
 	);
 }
 
 async function validateStage() {
 	const stagedPackageJson = JSON.parse(
-		await readFile(join(STAGE_ROOT, "package.json"), "utf8")
+		await readFile(join(STAGE_ROOT, "package.json"), "utf8"),
 	);
 	const optionalDependencyNames = Object.keys(
-		stagedPackageJson.optionalDependencies ?? {}
+		stagedPackageJson.optionalDependencies ?? {},
 	).sort();
 	const expectedPackageNames = targets
 		.map((target) => `${packageName}-${target.platformArchABI}`)
 		.sort();
 	const stageIndexSource = await readFile(join(STAGE_ROOT, "index.js"), "utf8");
 
-	if (JSON.stringify(optionalDependencyNames) !== JSON.stringify(expectedPackageNames)) {
-		throw new Error("Staged root package optionalDependencies do not match configured targets");
+	if (
+		JSON.stringify(optionalDependencyNames) !==
+		JSON.stringify(expectedPackageNames)
+	) {
+		throw new Error(
+			"Staged root package optionalDependencies do not match configured targets",
+		);
 	}
 
 	for (const expectedPackageName of expectedPackageNames) {
 		if (!stageIndexSource.includes(expectedPackageName)) {
 			throw new Error(
-				`Generated loader is missing native package reference: ${expectedPackageName}`
+				`Generated loader is missing native package reference: ${expectedPackageName}`,
 			);
 		}
 	}
@@ -228,27 +231,39 @@ async function validateStage() {
 	for (const target of targets) {
 		const packageDir = join(STAGE_ROOT, "npm", target.platformArchABI);
 		const targetPackageJson = JSON.parse(
-			await readFile(join(packageDir, "package.json"), "utf8")
+			await readFile(join(packageDir, "package.json"), "utf8"),
 		);
 		const expectedArtifactFile = getArtifactFileName(target);
 
 		if (targetPackageJson.name !== `${packageName}-${target.platformArchABI}`) {
-			throw new Error(`Unexpected target package name for ${target.platformArchABI}`);
+			throw new Error(
+				`Unexpected target package name for ${target.platformArchABI}`,
+			);
 		}
 
-		if (JSON.stringify(targetPackageJson.os) !== JSON.stringify([target.platform])) {
+		if (
+			JSON.stringify(targetPackageJson.os) !== JSON.stringify([target.platform])
+		) {
 			throw new Error(`Unexpected os field for ${target.platformArchABI}`);
 		}
 
-		if (JSON.stringify(targetPackageJson.cpu) !== JSON.stringify([target.arch])) {
+		if (
+			JSON.stringify(targetPackageJson.cpu) !== JSON.stringify([target.arch])
+		) {
 			throw new Error(`Unexpected cpu field for ${target.platformArchABI}`);
 		}
 
-		if (target.abi === "gnu" && JSON.stringify(targetPackageJson.libc) !== JSON.stringify(["glibc"])) {
+		if (
+			target.abi === "gnu" &&
+			JSON.stringify(targetPackageJson.libc) !== JSON.stringify(["glibc"])
+		) {
 			throw new Error(`Unexpected libc field for ${target.platformArchABI}`);
 		}
 
-		if (target.abi === "musl" && JSON.stringify(targetPackageJson.libc) !== JSON.stringify(["musl"])) {
+		if (
+			target.abi === "musl" &&
+			JSON.stringify(targetPackageJson.libc) !== JSON.stringify(["musl"])
+		) {
 			throw new Error(`Unexpected libc field for ${target.platformArchABI}`);
 		}
 
@@ -267,7 +282,7 @@ async function detectPublishClient() {
 
 	if (existsSync(workspacePackageJsonPath)) {
 		const workspacePackageJson = JSON.parse(
-			await readFile(workspacePackageJsonPath, "utf8")
+			await readFile(workspacePackageJsonPath, "utf8"),
 		);
 
 		if (typeof workspacePackageJson.packageManager === "string") {

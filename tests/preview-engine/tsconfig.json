@@ -1,17 +1,21 @@
 {
-	"extends": "../../packages/preview-runtime/tsconfig.json",
+	"extends": "../../packages/preview-engine/tsconfig.json",
 	"compilerOptions": {
 		"noEmit": true,
 		"rootDir": "../..",
 		"baseUrl": "../..",
+		"jsx": "react-jsx",
 		"types": ["node", "vitest/globals"],
 		"paths": {
+			"@loom-dev/compiler": ["packages/compiler/wrapper.d.ts"],
+			"@loom-dev/preview-engine": ["packages/preview-engine/src/index.ts"],
 			"@loom-dev/preview-runtime": ["packages/preview-runtime/src/index.ts"]
 		}
 	},
 	"include": [
 		"./**/*.ts",
 		"./**/*.tsx",
+		"../../packages/preview-engine/src/**/*.d.ts",
 		"../../packages/preview-runtime/src/**/*.d.ts",
 		"../../packages/layout-engine/pkg/**/*.d.ts"
 	]

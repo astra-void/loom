@@ -99,8 +99,46 @@ declare module "@loom-dev/layout-engine" {
 declare module "@loom-dev/preview-runtime" {
 	import type * as React from "react";
 
+	type PreviewSerializedAxis = {
+		Offset: number;
+		Scale: number;
+	};
+	type PreviewUDim2Value = {
+		X: PreviewSerializedAxis;
+		Y: PreviewSerializedAxis;
+		add(other: unknown): PreviewUDim2Value;
+		sub(other: unknown): PreviewUDim2Value;
+	};
+
+	export const BillboardGui: React.ComponentType<Record<string, unknown>>;
+	export const CanvasGroup: React.ComponentType<Record<string, unknown>>;
 	export const Frame: React.ComponentType<Record<string, unknown>>;
+	export const ImageButton: React.ComponentType<Record<string, unknown>>;
+	export const ScreenGui: React.ComponentType<Record<string, unknown>>;
+	export const Slot: React.ComponentType<Record<string, unknown>>;
+	export const SurfaceGui: React.ComponentType<Record<string, unknown>>;
 	export const TextLabel: React.ComponentType<Record<string, unknown>>;
+	export const UICorner: React.ComponentType<Record<string, unknown>>;
+	export const UIListLayout: React.ComponentType<Record<string, unknown>>;
+	export const UIPadding: React.ComponentType<Record<string, unknown>>;
+	export const UIScale: React.ComponentType<Record<string, unknown>>;
+	export const UIStroke: React.ComponentType<Record<string, unknown>>;
+	export const VideoFrame: React.ComponentType<Record<string, unknown>>;
+	export const ViewportFrame: React.ComponentType<Record<string, unknown>>;
+	export const Color3: {
+		fromRGB(r: number, g: number, b: number): unknown;
+	};
+	export const UDim2: {
+		new (
+			xScale: number,
+			xOffset: number,
+			yScale: number,
+			yOffset: number,
+		): PreviewUDim2Value;
+		fromOffset(x: number, y: number): PreviewUDim2Value;
+		fromScale(x: number, y: number): PreviewUDim2Value;
+	};
+	export function isPreviewElement(value: unknown, typeName: string): boolean;
 
 	export type PreviewExecutionMode =
 		| "strict-fidelity"
@@ -249,6 +287,24 @@ declare module "@loom-dev/preview-runtime" {
 			width: number;
 		};
 	};
+	export type PreviewLayoutProbeSnapshot = {
+		debug: PreviewLayoutDebugPayload;
+		error: string | null;
+		isReady: boolean;
+		revision: number;
+		viewport: {
+			height: number;
+			width: number;
+		};
+		viewportReady: boolean;
+	};
+	export type PreviewLayoutEngineLoader = () =>
+		| ArrayBuffer
+		| Promise<ArrayBuffer | Uint8Array | URL | WebAssembly.Module | string>
+		| Uint8Array
+		| URL
+		| WebAssembly.Module
+		| string;
 	export type PreviewRuntimeIssueKind =
 		| "ModuleLoadError"
 		| "TransformExecutionError"
@@ -300,6 +356,7 @@ declare module "@loom-dev/preview-runtime" {
 		height?: number | null,
 	): ViewportSize;
 	export function createWindowViewport(): ViewportSize;
+	export function getPreviewLayoutProbeSnapshot(): PreviewLayoutProbeSnapshot;
 	export function getPreviewRuntimeIssues(): PreviewRuntimeIssue[];
 	export function getPreviewRuntimeReporter(): PreviewRuntimeReporter;
 	export function installPreviewRuntimePolyfills(target?: object): object;
@@ -331,9 +388,22 @@ declare module "@loom-dev/preview-runtime" {
 	export function setPreviewRuntimeIssueContext(
 		context: PreviewRuntimeIssueContext | null,
 	): void;
+	export function setPreviewLayoutEngineLoader(
+		loader: PreviewLayoutEngineLoader | null,
+	): void;
 	export function subscribePreviewRuntimeIssues(
 		listener: (issues: PreviewRuntimeIssue[]) => void,
 	): () => void;
+	export function subscribePreviewLayoutProbe(
+		listener: (snapshot: PreviewLayoutProbeSnapshot) => void,
+	): () => void;
+	export function usePreviewLayoutProbeSnapshot(): PreviewLayoutProbeSnapshot;
+	export type PreviewRuntime = {
+		hosts: Record<string, unknown>;
+		helpers: Record<string, unknown>;
+		primitives: Record<string, unknown>;
+	};
+	export const previewRuntime: PreviewRuntime;
 }
 
 declare module "@loom-dev/preview-engine" {
