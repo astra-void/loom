@@ -1,10 +1,12 @@
 ﻿import { Enum } from "./Enum";
+import { Color3 } from "./helpers";
 import { installPreviewRuntimePolyfills } from "./polyfills";
 import { RunService } from "./RunService";
 import { game, getTweenInfoConstructor, workspace } from "./services";
 import { task } from "./task";
 
 export interface PreviewRuntimeGlobalTarget {
+	Color3?: typeof Color3;
 	Enum?: typeof Enum;
 	RunService?: typeof RunService;
 	TweenInfo?: typeof import("./services").TweenInfo;
@@ -19,6 +21,10 @@ export function installPreviewRuntimeGlobals(
 	target: PreviewRuntimeGlobalTarget = globalThis as PreviewRuntimeGlobalTarget,
 ) {
 	installPreviewRuntimePolyfills(target as typeof globalThis);
+
+	if (target.Color3 === undefined) {
+		target.Color3 = Color3;
+	}
 
 	if (target.Enum === undefined) {
 		target.Enum = Enum;

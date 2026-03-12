@@ -3,11 +3,7 @@ import robloxMock from "./robloxMock";
 
 const robloxMockRecord = robloxMock as unknown as Record<PropertyKey, unknown>;
 
-export type Color3Value = {
-	r: number;
-	g: number;
-	b: number;
-};
+export type Color3Value = Color3;
 
 export class UDim {
 	readonly Scale: number;
@@ -80,11 +76,29 @@ export class UDim2 {
 
 export type UDim2Value = UDim2;
 
-export const Color3 = {
-	fromRGB(r: number, g: number, b: number): Color3Value {
-		return { r, g, b };
-	},
-} as const;
+function clampNormalizedChannel(channel: number) {
+	return Math.max(0, Math.min(1, Number(channel) || 0));
+}
+
+function colorChannelToByte(channel: number) {
+	return Math.round(clampNormalizedChannel(channel) * 255);
+}
+
+export class Color3 {
+	readonly R: number;
+	readonly G: number;
+	readonly B: number;
+
+	constructor(r: number, g: number, b: number) {
+		this.R = clampNormalizedChannel(r);
+		this.G = clampNormalizedChannel(g);
+		this.B = clampNormalizedChannel(b);
+	}
+
+	static fromRGB(r: number, g: number, b: number): Color3 {
+		return new Color3(r / 255, g / 255, b / 255);
+	}
+}
 
 export function typeIs(
 	value: unknown,
@@ -139,8 +153,12 @@ export function __previewGlobal(name: string) {
 	return robloxMockRecord[name];
 }
 
-function toChannel(channel: number) {
-	return Math.max(0, Math.min(255, Math.round(channel)));
+function resolveColorChannels(color: Color3Value) {
+	return {
+		blue: colorChannelToByte(color.B),
+		green: colorChannelToByte(color.G),
+		red: colorChannelToByte(color.R),
+	};
 }
 
 function clampAlpha(value: number | undefined) {
@@ -167,10 +185,11 @@ export function toCssColor(
 	color: Color3Value,
 	backgroundTransparency?: number,
 ) {
+	const channels = resolveColorChannels(color);
 	const alpha = clampAlpha(
 		backgroundTransparency === undefined
 			? undefined
 			: 1 - backgroundTransparency,
 	);
-	return `rgba(${toChannel(color.r)}, ${toChannel(color.g)}, ${toChannel(color.b)}, ${alpha})`;
+	return `rgba(${channels.red}, ${channels.green}, ${channels.blue}, ${alpha})`;
 }

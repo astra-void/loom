@@ -173,6 +173,38 @@ describe("createPreviewViteServer", () => {
 			expect(transformedSource?.code).toContain(
 				"/packages/preview-runtime/src/index.ts",
 			);
+
+			const optimizedDependencyPath = path.join(
+				fixture.workspaceRoot,
+				".loom-preview-cache",
+				"vite",
+				"deps",
+				"react-dom_client.js",
+			);
+			fs.mkdirSync(path.dirname(optimizedDependencyPath), {
+				recursive: true,
+			});
+			fs.writeFileSync(
+				optimizedDependencyPath,
+				[
+					'import { jsxDEV } from "react/jsx-dev-runtime";',
+					"",
+					"export const CachedDependency = () =>",
+					'\tjsxDEV("div", {}, undefined, false, undefined, this);',
+				].join("\n"),
+				"utf8",
+			);
+
+			const transformedOptimizedDependency = await server.transformRequest(
+				optimizedDependencyPath,
+			);
+			expect(transformedOptimizedDependency?.code).toContain("jsxDEV");
+			expect(transformedOptimizedDependency?.code).not.toContain(
+				"/@react-refresh",
+			);
+			expect(transformedOptimizedDependency?.code).not.toContain(
+				"RefreshRuntime",
+			);
 		} finally {
 			await server.close();
 		}

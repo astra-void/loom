@@ -51,6 +51,7 @@ const previewRuntimeUserInputTrackerKey = Symbol.for(
 );
 
 const previewGlobalPropertyKeys = [
+	"Color3",
 	"Enum",
 	"RunService",
 	"TweenInfo",

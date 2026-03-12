@@ -326,6 +326,40 @@ describe("preview runtime host mapping", () => {
 		expect(frame.style.height).toBe("48px");
 	});
 
+	it("supports constructible Color3 values and keeps fromRGB rendering stable", () => {
+		const backgroundColor = new Color3(1, 0.5, 0);
+		const textColor = Color3.fromRGB(10, 20, 30);
+
+		expect(backgroundColor).toBeInstanceOf(Color3);
+		expect(backgroundColor.R).toBe(1);
+		expect(backgroundColor.G).toBe(0.5);
+		expect(backgroundColor.B).toBe(0);
+
+		expect(textColor).toBeInstanceOf(Color3);
+		expect(textColor.R).toBeCloseTo(10 / 255);
+		expect(textColor.G).toBeCloseTo(20 / 255);
+		expect(textColor.B).toBeCloseTo(30 / 255);
+
+		render(
+			<Frame
+				BackgroundColor3={backgroundColor}
+				Size={UDim2.fromOffset(120, 40)}
+			>
+				<TextLabel Text="Color sample" TextColor3={textColor} />
+			</Frame>,
+		);
+
+		const frame = document.querySelector(
+			'[data-preview-host="frame"]',
+		) as HTMLElement;
+		const label = document.querySelector(
+			'[data-preview-host="textlabel"]',
+		) as HTMLElement;
+
+		expect(frame.style.backgroundColor).toContain("255, 128, 0");
+		expect(label.style.color).toContain("10, 20, 30");
+	});
+
 	it("merges slot and child activated handlers", async () => {
 		const user = userEvent.setup();
 		const childActivated = vi.fn();

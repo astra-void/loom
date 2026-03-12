@@ -4,12 +4,9 @@ import {
 	serializeUDim2,
 	type UDim2Like,
 } from "../internal/robloxValues";
+import type { Color3Value } from "../runtime/helpers";
 
-type Color3Like = {
-	R?: number;
-	G?: number;
-	B?: number;
-};
+type Color3Like = Color3Value;
 
 type RobloxStyleProps = Record<string, unknown> & {
 	Size?: UDim2Like;
@@ -32,9 +29,9 @@ function toRgb(color: Color3Like | undefined) {
 		return undefined;
 	}
 
-	const red = Math.round(Number(color.R ?? 0) * 255);
-	const green = Math.round(Number(color.G ?? 0) * 255);
-	const blue = Math.round(Number(color.B ?? 0) * 255);
+	const red = Math.max(0, Math.min(255, Math.round(color.R * 255)));
+	const green = Math.max(0, Math.min(255, Math.round(color.G * 255)));
+	const blue = Math.max(0, Math.min(255, Math.round(color.B * 255)));
 	return `rgb(${red}, ${green}, ${blue})`;
 }
 

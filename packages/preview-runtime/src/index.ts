@@ -62,6 +62,7 @@ import {
 } from "./runtime";
 
 export interface SetupRobloxEnvironmentTarget {
+	Color3?: typeof Color3;
 	Enum?: typeof Enum;
 	RunService?: typeof RunService;
 	TweenInfo?: typeof TweenInfo;

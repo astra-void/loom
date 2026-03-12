@@ -1,5 +1,22 @@
 declare const Color3: {
-	fromRGB(r: number, g: number, b: number): unknown;
+	new (
+		r: number,
+		g: number,
+		b: number,
+	): {
+		B: number;
+		G: number;
+		R: number;
+	};
+	fromRGB(
+		r: number,
+		g: number,
+		b: number,
+	): {
+		B: number;
+		G: number;
+		R: number;
+	};
 };
 
 interface PreviewDynamicProxy {

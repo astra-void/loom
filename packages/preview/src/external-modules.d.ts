@@ -163,12 +163,6 @@ declare module "@loom-dev/preview-runtime" {
 		IsA(name: string): boolean;
 	};
 
-	export type Color3Value = {
-		r: number;
-		g: number;
-		b: number;
-	};
-
 	export type PreviewExecutionMode =
 		| "strict-fidelity"
 		| "compatibility"
@@ -526,6 +520,7 @@ declare module "@loom-dev/preview-runtime" {
 		IsA(name: string): boolean;
 	}
 	export interface SetupRobloxEnvironmentTarget {
+		Color3?: typeof Color3;
 		Enum?: PreviewEnumRoot;
 		RunService?: PreviewRunService;
 		TweenInfo?: typeof TweenInfo;
@@ -601,9 +596,14 @@ declare module "@loom-dev/preview-runtime" {
 		add(other: { X: PreviewSerializedAxis; Y: PreviewSerializedAxis }): UDim2;
 		sub(other: { X: PreviewSerializedAxis; Y: PreviewSerializedAxis }): UDim2;
 	}
-	export const Color3: {
-		readonly fromRGB: (r: number, g: number, b: number) => Color3Value;
-	};
+	export class Color3 {
+		readonly B: number;
+		readonly G: number;
+		readonly R: number;
+		constructor(r: number, g: number, b: number);
+		static fromRGB(r: number, g: number, b: number): Color3;
+	}
+	export type Color3Value = Color3;
 	export const Enum: PreviewEnumRoot;
 	export const RunService: PreviewRunService;
 	export const game: PreviewGame;

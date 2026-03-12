@@ -1,6 +1,7 @@
 ﻿// @vitest-environment jsdom
 
 import {
+	Color3,
 	Enum,
 	game,
 	RunService,
@@ -210,19 +211,28 @@ describe.sequential("@loom-dev/preview-runtime", () => {
 	});
 
 	it("setupRobloxEnvironment installs globals without overwriting an existing target", () => {
+		const existingColor3 = {} as typeof Color3;
 		const existingTask = {} as typeof task;
 		const target: SetupRobloxEnvironmentTarget = {
+			Color3: existingColor3,
 			task: existingTask,
 		};
 
 		setupRobloxEnvironment(target);
 
+		expect(target.Color3).toBe(existingColor3);
 		expect(target.Enum).toBe(Enum);
 		expect(target.RunService).toBe(RunService);
 		expect(target.task).toBe(existingTask);
 		expect(target.game).toBe(game);
 		expect(target.TweenInfo).toBe(TweenInfo);
 		expect(target.workspace).toBe(workspace);
+	});
+
+	it("setupRobloxEnvironment installs Color3 on the global target", () => {
+		setupRobloxEnvironment();
+
+		expect((globalThis as { Color3?: typeof Color3 }).Color3).toBe(Color3);
 	});
 
 	it("provides focused GetService semantics for common preview services", () => {

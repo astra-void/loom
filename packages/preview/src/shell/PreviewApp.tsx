@@ -820,9 +820,9 @@ export function PreviewApp(props: PreviewAppProps) {
 		clearPreviewRuntimeIssues();
 		setPreviewRuntimeIssueContext(
 			selectedEntryId &&
-			selectedEntrySourceFilePath &&
-			selectedEntryRelativePath &&
-			selectedEntryTargetName
+				selectedEntrySourceFilePath &&
+				selectedEntryRelativePath &&
+				selectedEntryTargetName
 				? {
 						entryId: selectedEntryId,
 						file: selectedEntrySourceFilePath,
@@ -876,7 +876,7 @@ export function PreviewApp(props: PreviewAppProps) {
 		return () => {
 			cancelled = true;
 		};
-	}, [loadEntry, selectedEntryId, selectedEntryStatus]);
+	}, [loadEntry, selectedEntryId, selectedEntryStatus, selectedEntry]);
 
 	React.useEffect(() => {
 		setCollapsedFolderIds((previous) => {

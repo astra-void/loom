@@ -26,6 +26,7 @@ const PREVIEW_OPTIMIZE_DEPS_INCLUDE = [
 	"react/jsx-runtime",
 	"react/jsx-dev-runtime",
 ];
+const DEFAULT_REACT_PLUGIN_EXCLUDE_RE = /\/node_modules\//;
 
 export type StartPreviewServerOptions = {
 	configFile?: string;
@@ -156,6 +157,18 @@ function resolvePreviewViteCacheDir(workspaceRoot: string) {
 	return path.resolve(workspaceRoot, PREVIEW_VITE_CACHE_DIR);
 }
 
+function escapeRegExp(value: string) {
+	return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function createPreviewReactPluginExclude(cacheDir: string) {
+	const normalizedDepsDir = `${cacheDir.split(path.sep).join("/")}/deps/`;
+	return [
+		DEFAULT_REACT_PLUGIN_EXCLUDE_RE,
+		new RegExp(`^${escapeRegExp(normalizedDepsDir)}`),
+	];
+}
+
 function isResolvedPreviewConfig(
 	value: StartPreviewServerInput,
 ): value is ResolvedPreviewConfig {
@@ -267,6 +280,9 @@ export async function createPreviewViteServer(
 	const shellRoot = resolveShellRoot();
 	const previewRuntimeRootEntry =
 		resolvedConfig.runtimeModule ?? resolvePreviewRuntimeRootEntry();
+	const previewViteCacheDir = resolvePreviewViteCacheDir(
+		resolvedConfig.workspaceRoot,
+	);
 	const previewPlugin = createPreviewVitePlugin({
 		projectName: resolvedConfig.projectName,
 		runtimeModule: previewRuntimeRootEntry,
@@ -277,7 +293,7 @@ export async function createPreviewViteServer(
 	const server = await vite.createServer({
 		appType: options.appType ?? "spa",
 		assetsInclude: ["**/*.wasm"],
-		cacheDir: resolvePreviewViteCacheDir(resolvedConfig.workspaceRoot),
+		cacheDir: previewViteCacheDir,
 		configFile: false,
 		optimizeDeps: {
 			exclude: ["@loom-dev/layout-engine", "layout-engine"],
@@ -295,7 +311,9 @@ export async function createPreviewViteServer(
 				: []),
 			createAutoMockPropsPlugin({ targets: resolvedConfig.targets }),
 			previewPlugin,
-			reactPlugin(),
+			reactPlugin({
+				exclude: createPreviewReactPluginExclude(previewViteCacheDir),
+			}),
 			wasmPlugin(),
 			topLevelAwaitPlugin(),
 		],
