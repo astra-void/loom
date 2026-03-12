@@ -7,7 +7,9 @@ import {
 	adaptRobloxNodeInput,
 	type ComputedRect,
 	type PreviewLayoutHostPolicy,
+	type PreviewLayoutModifiers,
 	type PreviewLayoutNode,
+	type PreviewLayoutPaddingInsets,
 	type PreviewLayoutSizeResolution,
 	resolveNodeSize,
 } from "../layout/model";
@@ -17,7 +19,8 @@ import {
 } from "./metadata";
 import {
 	applyHoistedModifierStyles,
-	extractHoistedChildren,
+	extractModifierState,
+	type HoistedModifierState,
 } from "./modifiers";
 import {
 	applyComputedLayoutStyle,
@@ -60,12 +63,15 @@ export type SourceHostDescriptor = {
 	nodeId: string;
 	parentId?: string;
 	props: PreviewDomProps;
+	sourceOrder?: number;
 };
 
 export type PreviewHostNode = PreviewLayoutNode & {
 	computed?: ComputedRect | null;
 	host: LayoutHostName;
+	hoistedModifierState: HoistedModifierState;
 	layoutDebug?: LayoutDebugState;
+	layoutModifiers?: PreviewLayoutModifiers;
 	measurementEnabled: boolean;
 	presentationHints: {
 		disabled: boolean;
@@ -73,6 +79,7 @@ export type PreviewHostNode = PreviewLayoutNode & {
 		image: unknown;
 		text: string | undefined;
 	};
+	renderChildren: React.ReactNode;
 	sourceProps: PreviewDomProps;
 };
 
@@ -289,11 +296,33 @@ function withLayoutDiagnostics(
 	};
 }
 
+function resolvePaddingInset(
+	value: PreviewLayoutPaddingInsets["left"] | undefined,
+	referenceSize: number,
+) {
+	if (!value) {
+		return 0;
+	}
+
+	return Math.max(0, referenceSize * value.Scale + value.Offset);
+}
+
+function applyPaddingStyle(
+	style: React.CSSProperties,
+	padding: PreviewLayoutPaddingInsets | undefined,
+	computed: ComputedRect | null,
+) {
+	if (!padding || !computed) {
+		return;
+	}
+
+	style.paddingBottom = `${resolvePaddingInset(padding.bottom, computed.height)}px`;
+	style.paddingLeft = `${resolvePaddingInset(padding.left, computed.width)}px`;
+	style.paddingRight = `${resolvePaddingInset(padding.right, computed.width)}px`;
+	style.paddingTop = `${resolvePaddingInset(padding.top, computed.height)}px`;
+}
+
 function createRenderedDomProps(node: PreviewHostNode) {
-	const { children, state } = extractHoistedChildren(
-		node.sourceProps.children,
-		node.computed ?? null,
-	);
 	const domProps = {
 		...node.presentationHints.domProps,
 	} as ResolvedPreviewDomProps["domProps"] & Record<string, unknown>;
@@ -302,7 +331,17 @@ function createRenderedDomProps(node: PreviewHostNode) {
 	};
 
 	applyComputedLayoutStyle(style, node.computed ?? null);
-	applyHoistedModifierStyles(style, state, node.sourceProps.AnchorPoint);
+	applyPaddingStyle(
+		style,
+		node.layoutModifiers?.padding,
+		node.computed ?? null,
+	);
+	applyHoistedModifierStyles(
+		style,
+		node.hoistedModifierState,
+		node.computed ?? null,
+		node.sourceProps.AnchorPoint,
+	);
 	if (isDegradedPreviewHost(node.host)) {
 		style.backgroundImage =
 			style.backgroundImage ??
@@ -312,21 +351,18 @@ function createRenderedDomProps(node: PreviewHostNode) {
 	}
 	domProps.style = style;
 
-	return {
-		children,
-		domProps: withLayoutDiagnostics(
-			{
-				...domProps,
-				"data-preview-degraded": isDegradedPreviewHost(node.host)
-					? "true"
-					: undefined,
-				"data-preview-placeholder-behavior":
-					node.hostMetadata?.placeholderBehavior ?? "none",
-			},
-			node.layoutDebug,
-			node,
-		),
-	};
+	return withLayoutDiagnostics(
+		{
+			...domProps,
+			"data-preview-degraded": isDegradedPreviewHost(node.host)
+				? "true"
+				: undefined,
+			"data-preview-placeholder-behavior":
+				node.hostMetadata?.placeholderBehavior ?? "none",
+		},
+		node.layoutDebug,
+		node,
+	);
 }
 
 function createHostNode(source: SourceHostDescriptor): PreviewHostNode {
@@ -343,6 +379,10 @@ function createHostNode(source: SourceHostDescriptor): PreviewHostNode {
 		host: source.host,
 		nodeId,
 	});
+	const extractedModifierState = extractModifierState(
+		source.props.children,
+		null,
+	);
 	const hostMetadata = getPreviewHostMetadataByJsxName(source.host);
 	const style = resolved.domProps.style as React.CSSProperties | undefined;
 
@@ -363,11 +403,18 @@ function createHostNode(source: SourceHostDescriptor): PreviewHostNode {
 			id: nodeId,
 			kind:
 				source.host === "screengui" && parentId === undefined ? "root" : "host",
+			layoutModifiers: extractedModifierState.layoutModifiers,
+			layoutOrder: source.props.LayoutOrder,
 			nodeType: layoutHostNodeType[source.host],
+			name:
+				typeof source.props.Name === "string" && source.props.Name.length > 0
+					? source.props.Name
+					: nodeId,
 			parentId,
 			position:
 				source.props.Position ??
 				(rawProps.position as PreviewDomProps["Position"] | undefined),
+			sourceOrder: source.sourceOrder,
 			size:
 				serializeUDim2(source.props.Size ?? rawProps.size, undefined) ??
 				undefined,
@@ -382,7 +429,9 @@ function createHostNode(source: SourceHostDescriptor): PreviewHostNode {
 	return {
 		...layoutNode,
 		host: source.host,
+		hoistedModifierState: extractedModifierState.appearance,
 		measurementEnabled: shouldMeasureHost(source.host, source.props),
+		renderChildren: extractedModifierState.renderableChildren,
 		presentationHints: {
 			disabled: resolved.disabled,
 			domProps: resolved.domProps,
@@ -426,7 +475,7 @@ export const domPresentationAdapter: PresentationAdapter = {
 			case "textbutton":
 				return (
 					<button
-						{...rendered.domProps}
+						{...rendered}
 						disabled={node.presentationHints.disabled}
 						ref={ref as React.Ref<HTMLButtonElement>}
 						type="button"
@@ -438,7 +487,7 @@ export const domPresentationAdapter: PresentationAdapter = {
 			case "imagebutton":
 				return (
 					<button
-						{...rendered.domProps}
+						{...rendered}
 						disabled={node.presentationHints.disabled}
 						ref={ref as React.Ref<HTMLButtonElement>}
 						type="button"
@@ -450,7 +499,7 @@ export const domPresentationAdapter: PresentationAdapter = {
 			case "textbox":
 				return (
 					<input
-						{...rendered.domProps}
+						{...rendered}
 						defaultValue={node.presentationHints.text}
 						disabled={node.presentationHints.disabled}
 						ref={ref as React.Ref<HTMLInputElement>}
@@ -460,7 +509,7 @@ export const domPresentationAdapter: PresentationAdapter = {
 			case "imagelabel":
 				return (
 					<img
-						{...rendered.domProps}
+						{...rendered}
 						alt=""
 						ref={ref as React.Ref<HTMLImageElement>}
 						src={
@@ -472,7 +521,7 @@ export const domPresentationAdapter: PresentationAdapter = {
 				);
 			default: {
 				return (
-					<div {...rendered.domProps} ref={ref as React.Ref<HTMLDivElement>}>
+					<div {...rendered} ref={ref as React.Ref<HTMLDivElement>}>
 						{renderDegradedHostLabel(node)}
 						{(node.host === "textlabel" || node.host === "frame") &&
 							renderHostText(node.presentationHints.text)}

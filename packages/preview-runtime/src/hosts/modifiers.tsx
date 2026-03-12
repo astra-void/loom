@@ -6,22 +6,33 @@ import {
 } from "../internal/robloxValues";
 import type { ComputedRect } from "../layout/model";
 import { toCssColor } from "../runtime/helpers";
-import type { HostModifierName, HostName, PreviewDomProps } from "./types";
+import type {
+	DecoratorHostName,
+	HostModifierName,
+	HostName,
+	PreviewDomProps,
+} from "./types";
 
 const PREVIEW_DECORATOR_HOST_MARKER = Symbol.for("loom.preview.decoratorHost");
 
-type HoistedModifierState = {
-	cornerRadius?: string;
+export type HoistedModifierState = {
+	cornerRadius?: unknown;
 	scale?: number;
 	strokeShadow?: string;
 };
 
-function getDecoratorHost(type: unknown): HostModifierName | undefined {
+type ExtractedModifierState = {
+	appearance: HoistedModifierState;
+	layoutModifiers: Record<string, unknown>;
+	renderableChildren: React.ReactNode[];
+};
+
+function getDecoratorHost(type: unknown): DecoratorHostName | undefined {
 	if (typeof type !== "object" && typeof type !== "function") {
 		return undefined;
 	}
 
-	return (type as { [PREVIEW_DECORATOR_HOST_MARKER]?: HostModifierName })[
+	return (type as { [PREVIEW_DECORATOR_HOST_MARKER]?: DecoratorHostName })[
 		PREVIEW_DECORATOR_HOST_MARKER
 	];
 }
@@ -57,11 +68,11 @@ function collectHoistedModifierState(
 	state: HoistedModifierState,
 	host: HostModifierName,
 	props: PreviewDomProps,
-	computed: ComputedRect | null,
+	_computed: ComputedRect | null,
 ): void {
 	switch (host) {
 		case "uicorner":
-			state.cornerRadius = resolveCornerRadius(props.CornerRadius, computed);
+			state.cornerRadius = props.CornerRadius;
 			break;
 		case "uiscale":
 			state.scale = toFiniteNumber(props.Scale, 1);
@@ -79,9 +90,77 @@ function collectHoistedModifierState(
 	}
 }
 
+function mergeLayoutModifiers(
+	target: Record<string, unknown>,
+	host: DecoratorHostName,
+	props: PreviewDomProps,
+) {
+	switch (host) {
+		case "uipadding":
+			target.padding = {
+				bottom: props.PaddingBottom ?? props.Padding,
+				left: props.PaddingLeft ?? props.Padding,
+				right: props.PaddingRight ?? props.Padding,
+				top: props.PaddingTop ?? props.Padding,
+			};
+			break;
+		case "uilistlayout":
+			target.list = {
+				fillDirection: props.FillDirection,
+				horizontalAlignment: props.HorizontalAlignment,
+				horizontalFlex: props.HorizontalFlex,
+				itemLineAlignment: props.ItemLineAlignment,
+				padding: props.Padding,
+				sortOrder: props.SortOrder,
+				verticalAlignment: props.VerticalAlignment,
+				verticalFlex: props.VerticalFlex,
+				wraps: props.Wraps,
+			};
+			break;
+		case "uigridlayout":
+			target.grid = {
+				cellPadding: props.CellPadding,
+				cellSize: props.CellSize,
+				fillDirection: props.FillDirection,
+				fillDirectionMaxCells: props.FillDirectionMaxCells,
+				horizontalAlignment: props.HorizontalAlignment,
+				sortOrder: props.SortOrder,
+				startCorner: props.StartCorner,
+				verticalAlignment: props.VerticalAlignment,
+			};
+			break;
+		case "uisizeconstraint":
+			target.sizeConstraint = {
+				maxSize: props.MaxSize,
+				minSize: props.MinSize,
+			};
+			break;
+		case "uitextsizeconstraint":
+			target.textSizeConstraint = {
+				maxTextSize: props.MaxTextSize,
+				minTextSize: props.MinTextSize,
+			};
+			break;
+		case "uiaspectratioconstraint":
+			target.aspectRatioConstraint = {
+				aspectRatio: props.AspectRatio,
+				dominantAxis: props.DominantAxis,
+			};
+			break;
+		case "uiflexitem":
+			target.flexItem = {
+				flexMode: props.FlexMode,
+				growRatio: props.GrowRatio,
+				itemLineAlignment: props.ItemLineAlignment,
+				shrinkRatio: props.ShrinkRatio,
+			};
+			break;
+	}
+}
+
 function collectRenderableChildren(
 	children: React.ReactNode,
-	state: HoistedModifierState,
+	state: ExtractedModifierState,
 	computed: ComputedRect | null,
 ): React.ReactNode[] {
 	const renderableChildren: React.ReactNode[] = [];
@@ -96,11 +175,22 @@ function collectRenderableChildren(
 
 		const decoratorHost = getDecoratorHost(child.type);
 		if (decoratorHost) {
-			collectHoistedModifierState(
-				state,
+			if (
+				decoratorHost === "uicorner" ||
+				decoratorHost === "uiscale" ||
+				decoratorHost === "uistroke"
+			) {
+				collectHoistedModifierState(
+					state.appearance,
+					decoratorHost,
+					child.props as PreviewDomProps,
+					computed,
+				);
+			}
+			mergeLayoutModifiers(
+				state.layoutModifiers,
 				decoratorHost,
 				child.props as PreviewDomProps,
-				computed,
 			);
 			return;
 		}
@@ -126,30 +216,32 @@ function collectRenderableChildren(
 	return renderableChildren;
 }
 
-export function extractHoistedChildren(
+export function extractModifierState(
 	children: React.ReactNode,
 	computed: ComputedRect | null,
-) {
-	const state: HoistedModifierState = {};
-	const renderableChildren = collectRenderableChildren(
+): ExtractedModifierState {
+	const state: ExtractedModifierState = {
+		appearance: {},
+		layoutModifiers: {},
+		renderableChildren: [],
+	};
+	state.renderableChildren = collectRenderableChildren(
 		children,
 		state,
 		computed,
 	);
 
-	return {
-		children: renderableChildren,
-		state,
-	};
+	return state;
 }
 
 export function applyHoistedModifierStyles(
 	style: React.CSSProperties,
 	state: HoistedModifierState,
+	computed: ComputedRect | null,
 	anchorPoint: PreviewDomProps["AnchorPoint"],
 ): void {
 	if (state.cornerRadius) {
-		style.borderRadius = state.cornerRadius;
+		style.borderRadius = resolveCornerRadius(state.cornerRadius, computed);
 	}
 
 	if (
@@ -178,13 +270,11 @@ function createDecoratorHost(displayName: string, host: HostName) {
 	const Component = React.forwardRef<HTMLElement, PreviewDomProps>(() => null);
 
 	Component.displayName = displayName;
-	if (host === "uicorner" || host === "uiscale" || host === "uistroke") {
-		(
-			Component as typeof Component & {
-				[PREVIEW_DECORATOR_HOST_MARKER]?: HostModifierName;
-			}
-		)[PREVIEW_DECORATOR_HOST_MARKER] = host;
-	}
+	(
+		Component as typeof Component & {
+			[PREVIEW_DECORATOR_HOST_MARKER]?: DecoratorHostName;
+		}
+	)[PREVIEW_DECORATOR_HOST_MARKER] = host as DecoratorHostName;
 
 	return Component;
 }

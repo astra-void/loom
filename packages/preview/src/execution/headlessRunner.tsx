@@ -334,6 +334,19 @@ function readNumberAttribute(element: Element | null, name: string) {
 	return Number.isFinite(parsed) ? parsed : null;
 }
 
+function readStylePixelValue(
+	element: HTMLElement | null,
+	property: "height" | "left" | "top" | "width",
+) {
+	const value = element?.style[property];
+	if (!value) {
+		return null;
+	}
+
+	const parsed = Number.parseFloat(value);
+	return Number.isFinite(parsed) ? parsed : null;
+}
+
 function collectChildPreviewNodes(element: Element): HTMLElement[] {
 	const childPreviewNodes: HTMLElement[] = [];
 
@@ -364,14 +377,20 @@ function buildDomDebugNode(
 	parentId?: string,
 ): PreviewLayoutDebugPayload["roots"][number] {
 	const computedHeight =
-		readNumberAttribute(element, "data-layout-computed-height") ?? 0;
+		readNumberAttribute(element, "data-layout-computed-height") ??
+		readStylePixelValue(element, "height") ??
+		0;
 	const computedWidth =
-		readNumberAttribute(element, "data-layout-computed-width") ?? 0;
+		readNumberAttribute(element, "data-layout-computed-width") ??
+		readStylePixelValue(element, "width") ??
+		0;
+	const localX = readStylePixelValue(element, "left") ?? 0;
+	const localY = readStylePixelValue(element, "top") ?? 0;
 	const rect = {
 		height: computedHeight,
 		width: computedWidth,
-		x: 0,
-		y: 0,
+		x: localX,
+		y: localY,
 	};
 	const nodeId =
 		element.getAttribute("data-preview-node-id") ??

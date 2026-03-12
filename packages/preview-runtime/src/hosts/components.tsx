@@ -1,8 +1,12 @@
 import * as React from "react";
-import { useTextScaleStyle } from "../style/textStyles";
+import { clampPreviewTextSize, useTextScaleStyle } from "../style/textStyles";
 import { domPresentationAdapter } from "./domAdapter";
 import type { PreviewDomProps } from "./types";
-import { useHostLayout, withNodeParent } from "./useHostLayout";
+import {
+	resolveHostContentRect,
+	useHostLayout,
+	withNodeParent,
+} from "./useHostLayout";
 
 function useMergedRefs<T>(...refs: Array<React.Ref<T> | undefined>) {
 	return React.useCallback(
@@ -25,11 +29,16 @@ function useMergedRefs<T>(...refs: Array<React.Ref<T> | undefined>) {
 }
 
 function renderChildren(
+	hostNode: ReturnType<typeof useHostLayout>["hostNode"],
 	nodeId: string,
 	rect: ReturnType<typeof useHostLayout>["computed"],
-	children: React.ReactNode,
 ) {
-	return withNodeParent(nodeId, rect, children);
+	return withNodeParent(
+		nodeId,
+		rect,
+		resolveHostContentRect(rect, hostNode.layoutModifiers),
+		hostNode.renderChildren,
+	);
 }
 
 function createSimpleHost(
@@ -49,7 +58,7 @@ function createSimpleHost(
 
 			return domPresentationAdapter.render(
 				hostNode,
-				renderChildren(nodeId, computed, props.children as React.ReactNode),
+				renderChildren(hostNode, nodeId, computed),
 				mergedRef,
 			);
 		},
@@ -57,6 +66,39 @@ function createSimpleHost(
 
 	Component.displayName = displayName;
 	return Component;
+}
+
+function withConstrainedTextStyle(
+	style: React.CSSProperties | undefined,
+	constraints:
+		| {
+				maxTextSize?: number;
+				minTextSize?: number;
+		  }
+		| undefined,
+) {
+	if (!style || !constraints) {
+		return style;
+	}
+
+	const nextStyle = {
+		...style,
+	};
+	const currentFontSize =
+		typeof nextStyle.fontSize === "number"
+			? nextStyle.fontSize
+			: typeof nextStyle.fontSize === "string"
+				? Number.parseFloat(nextStyle.fontSize)
+				: undefined;
+	const constrainedFontSize = clampPreviewTextSize(
+		currentFontSize,
+		constraints,
+	);
+	if (constrainedFontSize !== undefined) {
+		nextStyle.fontSize = `${constrainedFontSize}px`;
+	}
+
+	return nextStyle;
 }
 
 export const Frame = createSimpleHost("frame", "PreviewFrame");
@@ -83,6 +125,8 @@ export const TextButton = React.forwardRef<HTMLElement, PreviewDomProps>(
 				| React.CSSProperties["fontWeight"]
 				| undefined,
 			lineHeight: hostNode.presentationHints.domProps.style?.lineHeight,
+			maxTextSize: hostNode.layoutModifiers?.textSizeConstraint?.maxTextSize,
+			minTextSize: hostNode.layoutModifiers?.textSizeConstraint?.minTextSize,
 			text: hostNode.presentationHints.text,
 			wrapped: props.TextWrapped === true,
 		});
@@ -90,19 +134,27 @@ export const TextButton = React.forwardRef<HTMLElement, PreviewDomProps>(
 			() =>
 				patchDomProps({
 					...hostNode.presentationHints.domProps,
-					style: {
-						...(hostNode.presentationHints.domProps.style as
-							| React.CSSProperties
-							| undefined),
-						...(textScaleStyle ?? {}),
-					},
+					style: withConstrainedTextStyle(
+						{
+							...(hostNode.presentationHints.domProps.style as
+								| React.CSSProperties
+								| undefined),
+							...(textScaleStyle ?? {}),
+						},
+						hostNode.layoutModifiers?.textSizeConstraint,
+					),
 				}),
-			[hostNode.presentationHints.domProps, patchDomProps, textScaleStyle],
+			[
+				hostNode.layoutModifiers?.textSizeConstraint,
+				hostNode.presentationHints.domProps,
+				patchDomProps,
+				textScaleStyle,
+			],
 		);
 
 		return domPresentationAdapter.render(
 			renderNode,
-			renderChildren(nodeId, computed, props.children as React.ReactNode),
+			renderChildren(hostNode, nodeId, computed),
 			mergedRef,
 		);
 	},
@@ -122,7 +174,7 @@ export const ImageButton = React.forwardRef<HTMLElement, PreviewDomProps>(
 
 		return domPresentationAdapter.render(
 			hostNode,
-			renderChildren(nodeId, computed, props.children as React.ReactNode),
+			renderChildren(hostNode, nodeId, computed),
 			mergedRef,
 		);
 	},
@@ -158,6 +210,8 @@ export const TextLabel = React.forwardRef<HTMLElement, PreviewDomProps>(
 				| React.CSSProperties["fontWeight"]
 				| undefined,
 			lineHeight: hostNode.presentationHints.domProps.style?.lineHeight,
+			maxTextSize: hostNode.layoutModifiers?.textSizeConstraint?.maxTextSize,
+			minTextSize: hostNode.layoutModifiers?.textSizeConstraint?.minTextSize,
 			text: hostNode.presentationHints.text,
 			wrapped: props.TextWrapped === true,
 		});
@@ -165,19 +219,27 @@ export const TextLabel = React.forwardRef<HTMLElement, PreviewDomProps>(
 			() =>
 				patchDomProps({
 					...hostNode.presentationHints.domProps,
-					style: {
-						...(hostNode.presentationHints.domProps.style as
-							| React.CSSProperties
-							| undefined),
-						...(textScaleStyle ?? {}),
-					},
+					style: withConstrainedTextStyle(
+						{
+							...(hostNode.presentationHints.domProps.style as
+								| React.CSSProperties
+								| undefined),
+							...(textScaleStyle ?? {}),
+						},
+						hostNode.layoutModifiers?.textSizeConstraint,
+					),
 				}),
-			[hostNode.presentationHints.domProps, patchDomProps, textScaleStyle],
+			[
+				hostNode.layoutModifiers?.textSizeConstraint,
+				hostNode.presentationHints.domProps,
+				patchDomProps,
+				textScaleStyle,
+			],
 		);
 
 		return domPresentationAdapter.render(
 			renderNode,
-			renderChildren(nodeId, computed, props.children as React.ReactNode),
+			renderChildren(hostNode, nodeId, computed),
 			mergedRef,
 		);
 	},
@@ -206,6 +268,8 @@ export const TextBox = React.forwardRef<HTMLElement, PreviewDomProps>(
 				| React.CSSProperties["fontWeight"]
 				| undefined,
 			lineHeight: hostNode.presentationHints.domProps.style?.lineHeight,
+			maxTextSize: hostNode.layoutModifiers?.textSizeConstraint?.maxTextSize,
+			minTextSize: hostNode.layoutModifiers?.textSizeConstraint?.minTextSize,
 			text: hostNode.presentationHints.text,
 			wrapped: props.TextWrapped === true,
 		});
@@ -213,19 +277,27 @@ export const TextBox = React.forwardRef<HTMLElement, PreviewDomProps>(
 			() =>
 				patchDomProps({
 					...hostNode.presentationHints.domProps,
-					style: {
-						...(hostNode.presentationHints.domProps.style as
-							| React.CSSProperties
-							| undefined),
-						...(textScaleStyle ?? {}),
-					},
+					style: withConstrainedTextStyle(
+						{
+							...(hostNode.presentationHints.domProps.style as
+								| React.CSSProperties
+								| undefined),
+							...(textScaleStyle ?? {}),
+						},
+						hostNode.layoutModifiers?.textSizeConstraint,
+					),
 				}),
-			[hostNode.presentationHints.domProps, patchDomProps, textScaleStyle],
+			[
+				hostNode.layoutModifiers?.textSizeConstraint,
+				hostNode.presentationHints.domProps,
+				patchDomProps,
+				textScaleStyle,
+			],
 		);
 
 		return domPresentationAdapter.render(
 			renderNode,
-			renderChildren(nodeId, computed, props.children as React.ReactNode),
+			renderChildren(hostNode, nodeId, computed),
 			mergedRef,
 		);
 	},
@@ -245,7 +317,7 @@ export const ImageLabel = React.forwardRef<HTMLElement, PreviewDomProps>(
 
 		return domPresentationAdapter.render(
 			hostNode,
-			renderChildren(nodeId, computed, props.children as React.ReactNode),
+			renderChildren(hostNode, nodeId, computed),
 			mergedRef,
 		);
 	},

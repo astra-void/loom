@@ -5,6 +5,7 @@ import {
 	useLayoutDebugState,
 	useRobloxLayout,
 } from "../layout/context";
+import type { ComputedRect, PreviewLayoutNode } from "../layout/model";
 import {
 	normalizePreviewRuntimeError,
 	publishPreviewRuntimeIssue,
@@ -19,6 +20,31 @@ import { isDegradedPreviewHost } from "./metadata";
 import type { LayoutHostName, PreviewDomProps } from "./types";
 
 let previewNodeIdCounter = 0;
+const LayoutChildOrderContext = React.createContext<{
+	nextOrder(): number;
+	passId: number;
+} | null>(null);
+
+function PreviewLayoutChildOrderProvider(props: { children: React.ReactNode }) {
+	const counterRef = React.useRef(0);
+	counterRef.current = 0;
+	const passIdRef = React.useRef(0);
+	passIdRef.current += 1;
+	const passId = passIdRef.current;
+	const value = React.useMemo(
+		() => ({
+			nextOrder: () => counterRef.current++,
+			passId,
+		}),
+		[passId],
+	);
+
+	return (
+		<LayoutChildOrderContext.Provider value={value}>
+			{props.children}
+		</LayoutChildOrderContext.Provider>
+	);
+}
 
 function getStringValue(value: unknown): string | undefined {
 	return typeof value === "string" ? value : undefined;
@@ -43,6 +69,59 @@ function resolveNodeId(generatedId: string, props: PreviewDomProps): string {
 	const source = props as Record<string, unknown>;
 	const explicitId = getStringValue(source.Id ?? source.id);
 	return normalizePreviewNodeId(explicitId) ?? generatedId;
+}
+
+function resolvePaddingInset(
+	value: { Offset: number; Scale: number } | undefined,
+	referenceSize: number,
+) {
+	if (!value) {
+		return 0;
+	}
+
+	return Math.max(0, referenceSize * value.Scale + value.Offset);
+}
+
+function resolveContentRect(
+	rect: ComputedRect | null,
+	padding:
+		| {
+				bottom?: { Offset: number; Scale: number };
+				left?: { Offset: number; Scale: number };
+				right?: { Offset: number; Scale: number };
+				top?: { Offset: number; Scale: number };
+		  }
+		| undefined,
+): ComputedRect | null {
+	if (!rect || !padding) {
+		return rect;
+	}
+
+	const left = resolvePaddingInset(padding.left, rect.width);
+	const right = resolvePaddingInset(padding.right, rect.width);
+	const top = resolvePaddingInset(padding.top, rect.height);
+	const bottom = resolvePaddingInset(padding.bottom, rect.height);
+
+	return {
+		height: Math.max(0, rect.height - top - bottom),
+		width: Math.max(0, rect.width - left - right),
+		x: rect.x + left,
+		y: rect.y + top,
+	};
+}
+
+function useSourceOrder() {
+	const context = React.useContext(LayoutChildOrderContext);
+	const orderRef = React.useRef<{ passId: number; value: number } | null>(null);
+
+	if (context && orderRef.current?.passId !== context.passId) {
+		orderRef.current = {
+			passId: context.passId,
+			value: context.nextOrder(),
+		};
+	}
+
+	return orderRef.current?.value;
 }
 
 function useMeasurementRevision(
@@ -145,6 +224,7 @@ export function useHostLayout(host: LayoutHostName, props: PreviewDomProps) {
 		() => normalizePreviewNodeId(getLayoutParentId(props)),
 		[props],
 	);
+	const sourceOrder = useSourceOrder();
 
 	const normalizedNode = React.useMemo(
 		() =>
@@ -153,23 +233,35 @@ export function useHostLayout(host: LayoutHostName, props: PreviewDomProps) {
 				nodeId,
 				parentId: normalizedParentId,
 				props,
+				sourceOrder,
 			}),
-		[host, nodeId, normalizedParentId, props],
+		[host, nodeId, normalizedParentId, props, sourceOrder],
 	);
 
-	const _measurementVersion = useMeasurementRevision(
+	const measurementVersion = useMeasurementRevision(
 		elementRef,
 		normalizedNode.measurementEnabled,
 	);
 	const intrinsicSize = React.useMemo(
 		() => domPresentationAdapter.measure(normalizedNode, elementRef.current),
-		[normalizedNode],
+		[measurementVersion, normalizedNode],
 	);
 
-	const layoutNode = React.useMemo<PreviewHostNode>(
+	const layoutNode = React.useMemo<PreviewLayoutNode>(
 		() => ({
-			...normalizedNode,
+			debugLabel: normalizedNode.debugLabel,
+			hostMetadata: normalizedNode.hostMetadata,
+			id: normalizedNode.id,
 			intrinsicSize,
+			kind: normalizedNode.kind,
+			layout: normalizedNode.layout,
+			layoutModifiers: normalizedNode.layoutModifiers,
+			layoutOrder: normalizedNode.layoutOrder,
+			name: normalizedNode.name,
+			nodeType: normalizedNode.nodeType,
+			parentId: normalizedNode.parentId,
+			sourceOrder: normalizedNode.sourceOrder,
+			styleHints: normalizedNode.styleHints,
 		}),
 		[intrinsicSize, normalizedNode],
 	);
@@ -179,11 +271,12 @@ export function useHostLayout(host: LayoutHostName, props: PreviewDomProps) {
 
 	const hostNode = React.useMemo(
 		() => ({
-			...layoutNode,
+			...normalizedNode,
 			computed,
+			intrinsicSize,
 			layoutDebug: diagnostics,
 		}),
-		[computed, diagnostics, layoutNode],
+		[computed, diagnostics, intrinsicSize, normalizedNode],
 	);
 
 	useDegradedHostIssue(hostNode);
@@ -205,11 +298,21 @@ export function useHostLayout(host: LayoutHostName, props: PreviewDomProps) {
 export function withNodeParent(
 	nodeId: string,
 	rect: ReturnType<typeof useRobloxLayout>,
+	contentRect: ComputedRect | null,
 	children: React.ReactNode,
 ) {
 	return (
-		<LayoutNodeParentProvider nodeId={nodeId} rect={rect}>
-			{children}
-		</LayoutNodeParentProvider>
+		<PreviewLayoutChildOrderProvider>
+			<LayoutNodeParentProvider nodeId={nodeId} rect={contentRect ?? rect}>
+				{children}
+			</LayoutNodeParentProvider>
+		</PreviewLayoutChildOrderProvider>
 	);
+}
+
+export function resolveHostContentRect(
+	rect: ComputedRect | null,
+	props: ReturnType<typeof useHostLayout>["hostNode"]["layoutModifiers"],
+) {
+	return resolveContentRect(rect, props?.padding);
 }

@@ -62,6 +62,35 @@ function createTempPreviewPackage(files: Record<string, string>) {
 	return packageRoot;
 }
 
+function findDebugNode(
+	nodes: Array<{ children?: unknown[]; id?: string }>,
+	id: string,
+): {
+	children?: unknown[];
+	id?: string;
+	rect?: { height: number; width: number; x: number; y: number };
+} | null {
+	for (const node of nodes) {
+		if (node.id === id) {
+			return node as {
+				children?: unknown[];
+				id?: string;
+				rect?: { height: number; width: number; x: number; y: number };
+			};
+		}
+
+		const childResult = findDebugNode(
+			(node.children ?? []) as Array<{ children?: unknown[]; id?: string }>,
+			id,
+		);
+		if (childResult) {
+			return childResult;
+		}
+	}
+
+	return null;
+}
+
 describe("createPreviewHeadlessSession", () => {
 	it("renders preview.entry and preview.render entries into execution results", async () => {
 		const packageRoot = createTempPreviewPackage({
@@ -312,6 +341,111 @@ describe("createPreviewHeadlessSession", () => {
 			).toBe(true);
 		} finally {
 			session?.dispose();
+		}
+	});
+
+	it("captures layout modifier semantics in headless layout debug", async () => {
+		const packageRoot = createTempPreviewPackage({
+			"src/LayoutSemanticsEntry.tsx": `
+				export function LayoutSemanticsEntry() {
+					return (
+						<screengui Id="layout-screen">
+							<frame Id="list-frame" Size={UDim2.fromOffset(140, 120)}>
+								<uipadding
+									PaddingBottom={new UDim(0, 10)}
+									PaddingLeft={new UDim(0, 10)}
+									PaddingRight={new UDim(0, 10)}
+									PaddingTop={new UDim(0, 10)}
+								/>
+								<uilistlayout
+									FillDirection={Enum.FillDirection.Vertical}
+									HorizontalAlignment={Enum.HorizontalAlignment.Center}
+									SortOrder={Enum.SortOrder.LayoutOrder}
+									VerticalFlex={Enum.UIFlexAlignment.Fill}
+								/>
+								<frame Id="flex-one" LayoutOrder={1} Size={UDim2.fromOffset(120, 20)}>
+									<uiflexitem FlexMode={Enum.UIFlexMode.Grow} GrowRatio={1} />
+								</frame>
+								<frame Id="flex-two" LayoutOrder={2} Size={UDim2.fromOffset(120, 20)}>
+									<uiflexitem FlexMode={Enum.UIFlexMode.Grow} GrowRatio={2} />
+								</frame>
+							</frame>
+							<frame Id="grid-frame" Position={UDim2.fromOffset(0, 140)} Size={UDim2.fromOffset(220, 140)}>
+								<uigridlayout
+									CellPadding={UDim2.fromOffset(10, 5)}
+									CellSize={UDim2.fromOffset(50, 20)}
+									FillDirection={Enum.FillDirection.Horizontal}
+									FillDirectionMaxCells={3}
+									HorizontalAlignment={Enum.HorizontalAlignment.Center}
+									StartCorner={Enum.StartCorner.TopLeft}
+									VerticalAlignment={Enum.VerticalAlignment.Center}
+								/>
+								<frame Id="grid-1" Size={UDim2.fromOffset(50, 20)} />
+								<frame Id="grid-2" Size={UDim2.fromOffset(50, 20)} />
+								<frame Id="grid-3" Size={UDim2.fromOffset(50, 20)} />
+								<frame Id="grid-4" Size={UDim2.fromOffset(50, 20)} />
+							</frame>
+							<frame Id="constrained-box" Position={UDim2.fromOffset(240, 0)} Size={UDim2.fromOffset(50, 80)}>
+								<uisizeconstraint MaxSize={[160, 120]} MinSize={[100, 40]} />
+								<uiaspectratioconstraint AspectRatio={2} DominantAxis={Enum.DominantAxis.Width} />
+							</frame>
+						</screengui>
+					);
+				}
+
+				export const preview = {
+					entry: LayoutSemanticsEntry,
+				};
+			`,
+		});
+
+		const session = await createPreviewHeadlessSession({ cwd: packageRoot });
+
+		try {
+			const snapshot = session.getSnapshot();
+			const entryId = snapshot.workspaceIndex.entries[0]?.id;
+			expect(entryId).toBeTruthy();
+			if (!entryId) {
+				throw new Error("Expected layout semantics entry to exist.");
+			}
+
+			const execution = snapshot.execution.entries[entryId];
+			expect(execution?.render.status).toBe("rendered");
+			expect(execution?.severity).toBe("pass");
+
+			const roots = execution?.layoutDebug?.roots ?? [];
+			expect(findDebugNode(roots, "flex-one")?.rect).toEqual({
+				height: 40,
+				width: 120,
+				x: 10,
+				y: 10,
+			});
+			expect(findDebugNode(roots, "flex-two")?.rect).toEqual({
+				height: 60,
+				width: 120,
+				x: 10,
+				y: 50,
+			});
+			expect(findDebugNode(roots, "grid-1")?.rect).toEqual({
+				height: 20,
+				width: 50,
+				x: 25,
+				y: 187.5,
+			});
+			expect(findDebugNode(roots, "grid-4")?.rect).toEqual({
+				height: 20,
+				width: 50,
+				x: 25,
+				y: 212.5,
+			});
+			expect(findDebugNode(roots, "constrained-box")?.rect).toEqual({
+				height: 50,
+				width: 100,
+				x: 240,
+				y: 0,
+			});
+		} finally {
+			session.dispose();
 		}
 	});
 

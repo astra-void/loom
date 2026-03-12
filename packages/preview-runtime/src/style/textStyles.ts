@@ -12,6 +12,8 @@ type TextScaleOptions = {
 	fontStyle?: React.CSSProperties["fontStyle"];
 	fontWeight?: React.CSSProperties["fontWeight"];
 	lineHeight?: React.CSSProperties["lineHeight"];
+	maxTextSize?: number;
+	minTextSize?: number;
 	text: string | undefined;
 	wrapped?: boolean;
 };
@@ -227,10 +229,12 @@ function measureScaledFontSize(
 		);
 	};
 
-	let lowerBound = 1;
+	let lowerBound = Math.max(1, Math.floor(options.minTextSize ?? 1));
 	let upperBound = Math.max(
-		1,
-		Math.ceil(Math.max(options.size.width, options.size.height)),
+		lowerBound,
+		Math.ceil(
+			options.maxTextSize ?? Math.max(options.size.width, options.size.height),
+		),
 	);
 
 	while (lowerBound < upperBound) {
@@ -244,6 +248,28 @@ function measureScaledFontSize(
 
 	measurement.remove();
 	return lowerBound;
+}
+
+export function clampPreviewTextSize(
+	value: number | undefined,
+	constraints: {
+		maxTextSize?: number;
+		minTextSize?: number;
+	},
+) {
+	if (value === undefined || !Number.isFinite(value)) {
+		return value;
+	}
+
+	let next = value;
+	if (constraints.minTextSize !== undefined) {
+		next = Math.max(next, constraints.minTextSize);
+	}
+	if (constraints.maxTextSize !== undefined) {
+		next = Math.min(next, constraints.maxTextSize);
+	}
+
+	return next;
 }
 
 export function mapRobloxFont(value: unknown): FontStyleDescriptor {
@@ -295,7 +321,7 @@ export function useTextScaleStyle(
 	}
 
 	return {
-		fontSize: `${fontSize}px`,
+		fontSize: `${clampPreviewTextSize(fontSize, options) ?? fontSize}px`,
 		lineHeight: options.lineHeight ?? DEFAULT_LINE_HEIGHT,
 	};
 }

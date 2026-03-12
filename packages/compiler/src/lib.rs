@@ -28,6 +28,12 @@ fn map_roblox_host_tag(tag: &str) -> Option<&'static str> {
     preview_host_metadata_by_jsx_name(tag).map(|record| record.dom_tag.as_str())
 }
 
+fn should_extract_roblox_style_props(tag: &str) -> bool {
+    preview_host_metadata_by_jsx_name(tag)
+        .map(|record| record.participates_in_layout)
+        .unwrap_or(false)
+}
+
 fn is_roblox_style_prop(name: &str) -> bool {
     matches!(
         name,
@@ -92,6 +98,7 @@ impl VisitMut for LoomPreviewTransformer {
 
             if let Some(mapped_tag) = map_roblox_host_tag(&original_tag) {
                 ident.sym = mapped_tag.into();
+                let extract_style_props = should_extract_roblox_style_props(&original_tag);
 
                 let mut extracted_style_props: Vec<(String, Expr)> = Vec::new();
                 let mut next_attrs = Vec::with_capacity(el.attrs.len() + 2);
@@ -105,7 +112,7 @@ impl VisitMut for LoomPreviewTransformer {
                             };
 
                             if let Some(prop_name) = prop_name {
-                                if is_roblox_style_prop(&prop_name) {
+                                if extract_style_props && is_roblox_style_prop(&prop_name) {
                                     extracted_style_props
                                         .push((prop_name, jsx_attr_value_to_expr(attr.value)));
                                     continue;

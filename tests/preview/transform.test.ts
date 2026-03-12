@@ -122,6 +122,46 @@ describe("preview source transform", () => {
 		expect(result.code).toContain("<Frame");
 	});
 
+	it("preserves decorator props and rewrites layout/flex enums on modifier hosts", () => {
+		const source = `
+      export function Example() {
+        return (
+          <frame>
+            <uilistlayout
+              HorizontalFlex={Enum.UIFlexAlignment.Fill}
+              ItemLineAlignment={Enum.ItemLineAlignment.Center}
+              SortOrder={Enum.SortOrder.LayoutOrder}
+            />
+            <uigridlayout StartCorner={Enum.StartCorner.BottomRight} />
+            <uiaspectratioconstraint DominantAxis={Enum.DominantAxis.Width} />
+            <uiflexitem FlexMode={Enum.UIFlexMode.Grow} GrowRatio={2} />
+            <uipadding PaddingLeft={new UDim(0, 12)} />
+          </frame>
+        );
+      }
+    `;
+
+		const result = transformPreviewSource(source, {
+			filePath: "/virtual/layout-modifiers.tsx",
+			mode: "compatibility",
+			runtimeModule: "@loom-dev/preview-runtime",
+			target: "layout-modifiers",
+		});
+
+		expect(result.diagnostics).toHaveLength(0);
+		expect(result.code).toContain("<UIListLayout");
+		expect(result.code).toContain('HorizontalFlex={"fill"}');
+		expect(result.code).toContain('ItemLineAlignment={"center"}');
+		expect(result.code).toContain('SortOrder={"layout-order"}');
+		expect(result.code).toContain('StartCorner={"bottom-right"}');
+		expect(result.code).toContain('DominantAxis={"width"}');
+		expect(result.code).toContain('FlexMode={"grow"}');
+		expect(result.code).toContain("PaddingLeft={new UDim(0, 12)}");
+		expect(result.code).not.toContain(
+			"__rbxStyle({\n                                PaddingLeft",
+		);
+	});
+
 	it("merges rewritten runtime imports without duplicate bindings", () => {
 		const source = `
       import { React, Slot } from "@loom-dev/core";

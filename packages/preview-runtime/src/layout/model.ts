@@ -8,11 +8,13 @@ import {
 	type SerializedUDim,
 	type SerializedUDim2,
 	type SerializedVector2,
+	serializeUDim,
 	serializeUDim2,
 	serializeVector2,
 	toFiniteNumber,
 	type UDim2Like,
 	type Vector2Like,
+	ZERO_UDIM,
 	ZERO_UDIM2,
 	ZERO_VECTOR2,
 } from "../internal/robloxValues";
@@ -62,6 +64,68 @@ export type PreviewLayoutConstraints = {
 	width?: PreviewLayoutAxisConstraints;
 };
 
+export type PreviewLayoutPaddingInsets = {
+	bottom: SerializedUDim;
+	left: SerializedUDim;
+	right: SerializedUDim;
+	top: SerializedUDim;
+};
+
+export type PreviewLayoutListLayout = {
+	fillDirection: "horizontal" | "vertical";
+	horizontalAlignment: "center" | "left" | "right";
+	horizontalFlex?: string;
+	itemLineAlignment?: string;
+	padding: SerializedUDim;
+	sortOrder: "layout-order" | "name" | "source";
+	verticalAlignment: "bottom" | "center" | "top";
+	verticalFlex?: string;
+	wraps: boolean;
+};
+
+export type PreviewLayoutGridLayout = {
+	cellPadding: SerializedUDim2;
+	cellSize: SerializedUDim2;
+	fillDirection: "horizontal" | "vertical";
+	fillDirectionMaxCells?: number;
+	horizontalAlignment: "center" | "left" | "right";
+	sortOrder: "layout-order" | "name" | "source";
+	startCorner: "bottom-left" | "bottom-right" | "top-left" | "top-right";
+	verticalAlignment: "bottom" | "center" | "top";
+};
+
+export type PreviewLayoutSizeConstraint = {
+	maxSize?: SerializedVector2;
+	minSize?: SerializedVector2;
+};
+
+export type PreviewLayoutTextSizeConstraint = {
+	maxTextSize?: number;
+	minTextSize?: number;
+};
+
+export type PreviewLayoutAspectRatioConstraint = {
+	aspectRatio: number;
+	dominantAxis: "auto" | "height" | "width";
+};
+
+export type PreviewLayoutFlexItem = {
+	flexMode?: string;
+	growRatio?: number;
+	itemLineAlignment?: string;
+	shrinkRatio?: number;
+};
+
+export type PreviewLayoutModifiers = {
+	aspectRatioConstraint?: PreviewLayoutAspectRatioConstraint;
+	flexItem?: PreviewLayoutFlexItem;
+	grid?: PreviewLayoutGridLayout;
+	list?: PreviewLayoutListLayout;
+	padding?: PreviewLayoutPaddingInsets;
+	sizeConstraint?: PreviewLayoutSizeConstraint;
+	textSizeConstraint?: PreviewLayoutTextSizeConstraint;
+};
+
 export type PreviewLayoutPositionMode = "absolute";
 export type PreviewLayoutNodeKind = "host" | "layout" | "root";
 export type PreviewLayoutSource =
@@ -102,9 +166,13 @@ export type PreviewLayoutNode = {
 	id: string;
 	intrinsicSize?: MeasuredNodeSize | null;
 	kind: PreviewLayoutNodeKind;
+	layoutModifiers?: PreviewLayoutModifiers;
+	layoutOrder?: number;
 	layout: PreviewLayoutNodeLayout;
+	name?: string;
 	nodeType: string;
 	parentId?: string;
+	sourceOrder?: number;
 	styleHints?: PreviewLayoutStyleHints;
 };
 
@@ -160,8 +228,12 @@ export type RobloxLayoutRegistrationInput = RobloxLayoutNodeInput & {
 	debugLabel?: string;
 	hostMetadata?: PreviewLayoutHostMetadata;
 	intrinsicSize?: MeasuredNodeSize | null;
+	layoutModifiers?: PreviewLayoutModifiers;
+	layoutOrder?: number;
 	measure?: () => MeasuredNodeSize | null;
 	measurementVersion?: number;
+	name?: string;
+	sourceOrder?: number;
 	styleHints?: PreviewLayoutStyleHints;
 };
 
@@ -266,6 +338,354 @@ function normalizeStyleHints(
 	}
 
 	return { height, width };
+}
+
+function normalizeLowerCaseString(value: unknown): string | undefined {
+	if (typeof value !== "string") {
+		return undefined;
+	}
+
+	const normalized = value.trim().toLowerCase();
+	return normalized.length > 0 ? normalized : undefined;
+}
+
+function isZeroAxisValue(value: SerializedUDim) {
+	return value.Offset === 0 && value.Scale === 0;
+}
+
+function isZeroPaddingInsets(value: PreviewLayoutPaddingInsets) {
+	return (
+		isZeroAxisValue(value.bottom) &&
+		isZeroAxisValue(value.left) &&
+		isZeroAxisValue(value.right) &&
+		isZeroAxisValue(value.top)
+	);
+}
+
+function _isZeroSize(value: SerializedUDim2) {
+	return isZeroAxisValue(value.X) && isZeroAxisValue(value.Y);
+}
+
+function isZeroVector(value: SerializedVector2) {
+	return value.X === 0 && value.Y === 0;
+}
+
+function normalizeFillDirection(
+	value: unknown,
+): PreviewLayoutListLayout["fillDirection"] {
+	return normalizeLowerCaseString(value) === "horizontal"
+		? "horizontal"
+		: "vertical";
+}
+
+function normalizeHorizontalAlignment(
+	value: unknown,
+): PreviewLayoutListLayout["horizontalAlignment"] {
+	const normalized = normalizeLowerCaseString(value);
+	if (normalized === "center" || normalized === "right") {
+		return normalized;
+	}
+
+	return "left";
+}
+
+function normalizeVerticalAlignment(
+	value: unknown,
+): PreviewLayoutListLayout["verticalAlignment"] {
+	const normalized = normalizeLowerCaseString(value);
+	if (normalized === "bottom" || normalized === "center") {
+		return normalized;
+	}
+
+	return "top";
+}
+
+function normalizeSortOrder(
+	value: unknown,
+): PreviewLayoutListLayout["sortOrder"] {
+	const normalized = normalizeLowerCaseString(value);
+	if (normalized === "layout-order" || normalized === "name") {
+		return normalized;
+	}
+
+	return "source";
+}
+
+function normalizeStartCorner(
+	value: unknown,
+): PreviewLayoutGridLayout["startCorner"] {
+	const normalized = normalizeLowerCaseString(value);
+	switch (normalized) {
+		case "top-right":
+		case "bottom-left":
+		case "bottom-right":
+			return normalized;
+		default:
+			return "top-left";
+	}
+}
+
+function normalizeDominantAxis(
+	value: unknown,
+): PreviewLayoutAspectRatioConstraint["dominantAxis"] {
+	const normalized = normalizeLowerCaseString(value);
+	switch (normalized) {
+		case "width":
+		case "height":
+			return normalized;
+		default:
+			return "auto";
+	}
+}
+
+function normalizePaddingInsets(
+	value: unknown,
+): PreviewLayoutPaddingInsets | undefined {
+	if (!value || typeof value !== "object") {
+		return undefined;
+	}
+
+	const record = value as {
+		bottom?: unknown;
+		left?: unknown;
+		right?: unknown;
+		top?: unknown;
+	};
+	const normalized: PreviewLayoutPaddingInsets = {
+		bottom: serializeUDim(record.bottom, ZERO_UDIM),
+		left: serializeUDim(record.left, ZERO_UDIM),
+		right: serializeUDim(record.right, ZERO_UDIM),
+		top: serializeUDim(record.top, ZERO_UDIM),
+	};
+
+	return isZeroPaddingInsets(normalized) ? undefined : normalized;
+}
+
+function normalizeListLayout(
+	value: unknown,
+): PreviewLayoutListLayout | undefined {
+	if (!value || typeof value !== "object") {
+		return undefined;
+	}
+
+	const record = value as {
+		fillDirection?: unknown;
+		horizontalAlignment?: unknown;
+		horizontalFlex?: unknown;
+		itemLineAlignment?: unknown;
+		padding?: unknown;
+		sortOrder?: unknown;
+		verticalAlignment?: unknown;
+		verticalFlex?: unknown;
+		wraps?: unknown;
+	};
+
+	return {
+		fillDirection: normalizeFillDirection(record.fillDirection),
+		horizontalAlignment: normalizeHorizontalAlignment(
+			record.horizontalAlignment,
+		),
+		horizontalFlex: normalizeLowerCaseString(record.horizontalFlex),
+		itemLineAlignment: normalizeLowerCaseString(record.itemLineAlignment),
+		padding: serializeUDim(record.padding, ZERO_UDIM),
+		sortOrder: normalizeSortOrder(record.sortOrder),
+		verticalAlignment: normalizeVerticalAlignment(record.verticalAlignment),
+		verticalFlex: normalizeLowerCaseString(record.verticalFlex),
+		wraps: record.wraps === true,
+	};
+}
+
+function normalizeGridLayout(
+	value: unknown,
+): PreviewLayoutGridLayout | undefined {
+	if (!value || typeof value !== "object") {
+		return undefined;
+	}
+
+	const record = value as {
+		cellPadding?: unknown;
+		cellSize?: unknown;
+		fillDirection?: unknown;
+		fillDirectionMaxCells?: unknown;
+		horizontalAlignment?: unknown;
+		sortOrder?: unknown;
+		startCorner?: unknown;
+		verticalAlignment?: unknown;
+	};
+	const cellPadding = serializeUDim2(record.cellPadding, ZERO_UDIM2);
+	const cellSize = serializeUDim2(record.cellSize, ZERO_UDIM2);
+	if (!cellPadding || !cellSize) {
+		return undefined;
+	}
+
+	return {
+		cellPadding,
+		cellSize,
+		fillDirection: normalizeFillDirection(record.fillDirection),
+		fillDirectionMaxCells: Math.max(
+			0,
+			Math.floor(toFiniteNumber(record.fillDirectionMaxCells, 0)),
+		),
+		horizontalAlignment: normalizeHorizontalAlignment(
+			record.horizontalAlignment,
+		),
+		sortOrder: normalizeSortOrder(record.sortOrder),
+		startCorner: normalizeStartCorner(record.startCorner),
+		verticalAlignment: normalizeVerticalAlignment(record.verticalAlignment),
+	};
+}
+
+function normalizeSizeConstraint(
+	value: unknown,
+): PreviewLayoutSizeConstraint | undefined {
+	if (!value || typeof value !== "object") {
+		return undefined;
+	}
+
+	const record = value as {
+		maxSize?: unknown;
+		minSize?: unknown;
+	};
+	const minSize = record.minSize ? serializeVector2(record.minSize) : undefined;
+	const maxSize = record.maxSize ? serializeVector2(record.maxSize) : undefined;
+	if (!minSize && !maxSize) {
+		return undefined;
+	}
+
+	return {
+		maxSize: maxSize && !isZeroVector(maxSize) ? maxSize : undefined,
+		minSize: minSize && !isZeroVector(minSize) ? minSize : undefined,
+	};
+}
+
+function normalizeTextSizeConstraint(
+	value: unknown,
+): PreviewLayoutTextSizeConstraint | undefined {
+	if (!value || typeof value !== "object") {
+		return undefined;
+	}
+
+	const record = value as {
+		maxTextSize?: unknown;
+		minTextSize?: unknown;
+	};
+	const minTextSize =
+		record.minTextSize === undefined
+			? undefined
+			: Math.max(1, Math.floor(toFiniteNumber(record.minTextSize, 1)));
+	const maxTextSize =
+		record.maxTextSize === undefined
+			? undefined
+			: Math.max(1, Math.floor(toFiniteNumber(record.maxTextSize, 1)));
+
+	if (minTextSize === undefined && maxTextSize === undefined) {
+		return undefined;
+	}
+
+	return {
+		maxTextSize,
+		minTextSize,
+	};
+}
+
+function normalizeAspectRatioConstraint(
+	value: unknown,
+): PreviewLayoutAspectRatioConstraint | undefined {
+	if (!value || typeof value !== "object") {
+		return undefined;
+	}
+
+	const record = value as {
+		aspectRatio?: unknown;
+		dominantAxis?: unknown;
+	};
+	const aspectRatio = toFiniteNumber(record.aspectRatio, 0);
+	if (aspectRatio <= 0) {
+		return undefined;
+	}
+
+	return {
+		aspectRatio,
+		dominantAxis: normalizeDominantAxis(record.dominantAxis),
+	};
+}
+
+function normalizeFlexItem(value: unknown): PreviewLayoutFlexItem | undefined {
+	if (!value || typeof value !== "object") {
+		return undefined;
+	}
+
+	const record = value as {
+		flexMode?: unknown;
+		growRatio?: unknown;
+		itemLineAlignment?: unknown;
+		shrinkRatio?: unknown;
+	};
+	const flexMode = normalizeLowerCaseString(record.flexMode);
+	const growRatio =
+		record.growRatio === undefined
+			? undefined
+			: Math.max(0, toFiniteNumber(record.growRatio, 0));
+	const shrinkRatio =
+		record.shrinkRatio === undefined
+			? undefined
+			: Math.max(0, toFiniteNumber(record.shrinkRatio, 0));
+	const itemLineAlignment = normalizeLowerCaseString(record.itemLineAlignment);
+
+	if (
+		flexMode === undefined &&
+		growRatio === undefined &&
+		shrinkRatio === undefined &&
+		itemLineAlignment === undefined
+	) {
+		return undefined;
+	}
+
+	return {
+		flexMode,
+		growRatio,
+		itemLineAlignment,
+		shrinkRatio,
+	};
+}
+
+function normalizeLayoutModifiers(
+	value: unknown,
+): PreviewLayoutModifiers | undefined {
+	if (!value || typeof value !== "object") {
+		return undefined;
+	}
+
+	const record = value as {
+		aspectRatioConstraint?: unknown;
+		flexItem?: unknown;
+		grid?: unknown;
+		list?: unknown;
+		padding?: unknown;
+		sizeConstraint?: unknown;
+		textSizeConstraint?: unknown;
+	};
+	const normalized: PreviewLayoutModifiers = {
+		aspectRatioConstraint: normalizeAspectRatioConstraint(
+			record.aspectRatioConstraint,
+		),
+		flexItem: normalizeFlexItem(record.flexItem),
+		grid: normalizeGridLayout(record.grid),
+		list: normalizeListLayout(record.list),
+		padding: normalizePaddingInsets(record.padding),
+		sizeConstraint: normalizeSizeConstraint(record.sizeConstraint),
+		textSizeConstraint: normalizeTextSizeConstraint(record.textSizeConstraint),
+	};
+
+	return normalized.aspectRatioConstraint ||
+		normalized.flexItem ||
+		normalized.grid ||
+		normalized.list ||
+		normalized.padding ||
+		normalized.sizeConstraint ||
+		normalized.textSizeConstraint
+		? normalized
+		: undefined;
 }
 
 function normalizeHostMetadata(
@@ -424,6 +844,12 @@ export function adaptRobloxNodeInput(
 ): PreviewLayoutNode {
 	const normalizedParentId = normalizePreviewNodeId(input.parentId ?? parentId);
 	const normalizedId = normalizePreviewNodeId(input.id) ?? input.id;
+	const rawLayoutInput = input as {
+		layoutModifiers?: unknown;
+		layoutOrder?: unknown;
+		name?: unknown;
+		sourceOrder?: unknown;
+	};
 	const measuredSize = normalizeIntrinsicSize(
 		input.intrinsicSize ??
 			(input.canMeasure ? (input.measure?.() ?? null) : null),
@@ -439,6 +865,11 @@ export function adaptRobloxNodeInput(
 			(normalizedParentId === undefined && input.nodeType === "ScreenGui"
 				? "root"
 				: "host"),
+		layoutModifiers: normalizeLayoutModifiers(rawLayoutInput.layoutModifiers),
+		layoutOrder:
+			rawLayoutInput.layoutOrder === undefined
+				? undefined
+				: Math.floor(toFiniteNumber(rawLayoutInput.layoutOrder, 0)),
 		layout: {
 			anchorPoint: toLayoutVector(
 				serializeVector2(input.anchorPoint, ZERO_VECTOR2),
@@ -454,8 +885,19 @@ export function adaptRobloxNodeInput(
 				? toLayoutSize(serializeUDim2(input.size, ZERO_UDIM2) ?? ZERO_UDIM2)
 				: undefined,
 		},
+		name:
+			typeof rawLayoutInput.name === "string" && rawLayoutInput.name.length > 0
+				? rawLayoutInput.name
+				: undefined,
 		nodeType: input.nodeType,
 		parentId: normalizedParentId,
+		sourceOrder:
+			rawLayoutInput.sourceOrder === undefined
+				? undefined
+				: Math.max(
+						0,
+						Math.floor(toFiniteNumber(rawLayoutInput.sourceOrder, 0)),
+					),
 		styleHints: normalizeStyleHints(input.styleHints),
 	};
 
@@ -476,6 +918,92 @@ export function areNodesEqual(
 		(a.intrinsicSize?.width ?? 0) === (b.intrinsicSize?.width ?? 0) &&
 		(a.intrinsicSize?.height ?? 0) === (b.intrinsicSize?.height ?? 0) &&
 		a.kind === b.kind &&
+		a.layoutOrder === b.layoutOrder &&
+		a.layoutModifiers?.aspectRatioConstraint?.aspectRatio ===
+			b.layoutModifiers?.aspectRatioConstraint?.aspectRatio &&
+		a.layoutModifiers?.aspectRatioConstraint?.dominantAxis ===
+			b.layoutModifiers?.aspectRatioConstraint?.dominantAxis &&
+		a.layoutModifiers?.flexItem?.flexMode ===
+			b.layoutModifiers?.flexItem?.flexMode &&
+		(a.layoutModifiers?.flexItem?.growRatio ?? undefined) ===
+			(b.layoutModifiers?.flexItem?.growRatio ?? undefined) &&
+		a.layoutModifiers?.flexItem?.itemLineAlignment ===
+			b.layoutModifiers?.flexItem?.itemLineAlignment &&
+		(a.layoutModifiers?.flexItem?.shrinkRatio ?? undefined) ===
+			(b.layoutModifiers?.flexItem?.shrinkRatio ?? undefined) &&
+		a.layoutModifiers?.grid?.fillDirection ===
+			b.layoutModifiers?.grid?.fillDirection &&
+		(a.layoutModifiers?.grid?.fillDirectionMaxCells ?? undefined) ===
+			(b.layoutModifiers?.grid?.fillDirectionMaxCells ?? undefined) &&
+		a.layoutModifiers?.grid?.horizontalAlignment ===
+			b.layoutModifiers?.grid?.horizontalAlignment &&
+		a.layoutModifiers?.grid?.sortOrder === b.layoutModifiers?.grid?.sortOrder &&
+		a.layoutModifiers?.grid?.startCorner ===
+			b.layoutModifiers?.grid?.startCorner &&
+		a.layoutModifiers?.grid?.verticalAlignment ===
+			b.layoutModifiers?.grid?.verticalAlignment &&
+		(a.layoutModifiers?.grid?.cellPadding.X.Scale ?? 0) ===
+			(b.layoutModifiers?.grid?.cellPadding.X.Scale ?? 0) &&
+		(a.layoutModifiers?.grid?.cellPadding.X.Offset ?? 0) ===
+			(b.layoutModifiers?.grid?.cellPadding.X.Offset ?? 0) &&
+		(a.layoutModifiers?.grid?.cellPadding.Y.Scale ?? 0) ===
+			(b.layoutModifiers?.grid?.cellPadding.Y.Scale ?? 0) &&
+		(a.layoutModifiers?.grid?.cellPadding.Y.Offset ?? 0) ===
+			(b.layoutModifiers?.grid?.cellPadding.Y.Offset ?? 0) &&
+		(a.layoutModifiers?.grid?.cellSize.X.Scale ?? 0) ===
+			(b.layoutModifiers?.grid?.cellSize.X.Scale ?? 0) &&
+		(a.layoutModifiers?.grid?.cellSize.X.Offset ?? 0) ===
+			(b.layoutModifiers?.grid?.cellSize.X.Offset ?? 0) &&
+		(a.layoutModifiers?.grid?.cellSize.Y.Scale ?? 0) ===
+			(b.layoutModifiers?.grid?.cellSize.Y.Scale ?? 0) &&
+		(a.layoutModifiers?.grid?.cellSize.Y.Offset ?? 0) ===
+			(b.layoutModifiers?.grid?.cellSize.Y.Offset ?? 0) &&
+		a.layoutModifiers?.list?.fillDirection ===
+			b.layoutModifiers?.list?.fillDirection &&
+		a.layoutModifiers?.list?.horizontalAlignment ===
+			b.layoutModifiers?.list?.horizontalAlignment &&
+		a.layoutModifiers?.list?.horizontalFlex ===
+			b.layoutModifiers?.list?.horizontalFlex &&
+		a.layoutModifiers?.list?.itemLineAlignment ===
+			b.layoutModifiers?.list?.itemLineAlignment &&
+		a.layoutModifiers?.list?.sortOrder === b.layoutModifiers?.list?.sortOrder &&
+		a.layoutModifiers?.list?.verticalAlignment ===
+			b.layoutModifiers?.list?.verticalAlignment &&
+		a.layoutModifiers?.list?.verticalFlex ===
+			b.layoutModifiers?.list?.verticalFlex &&
+		a.layoutModifiers?.list?.wraps === b.layoutModifiers?.list?.wraps &&
+		(a.layoutModifiers?.list?.padding.Scale ?? 0) ===
+			(b.layoutModifiers?.list?.padding.Scale ?? 0) &&
+		(a.layoutModifiers?.list?.padding.Offset ?? 0) ===
+			(b.layoutModifiers?.list?.padding.Offset ?? 0) &&
+		(a.layoutModifiers?.padding?.left.Scale ?? 0) ===
+			(b.layoutModifiers?.padding?.left.Scale ?? 0) &&
+		(a.layoutModifiers?.padding?.left.Offset ?? 0) ===
+			(b.layoutModifiers?.padding?.left.Offset ?? 0) &&
+		(a.layoutModifiers?.padding?.right.Scale ?? 0) ===
+			(b.layoutModifiers?.padding?.right.Scale ?? 0) &&
+		(a.layoutModifiers?.padding?.right.Offset ?? 0) ===
+			(b.layoutModifiers?.padding?.right.Offset ?? 0) &&
+		(a.layoutModifiers?.padding?.top.Scale ?? 0) ===
+			(b.layoutModifiers?.padding?.top.Scale ?? 0) &&
+		(a.layoutModifiers?.padding?.top.Offset ?? 0) ===
+			(b.layoutModifiers?.padding?.top.Offset ?? 0) &&
+		(a.layoutModifiers?.padding?.bottom.Scale ?? 0) ===
+			(b.layoutModifiers?.padding?.bottom.Scale ?? 0) &&
+		(a.layoutModifiers?.padding?.bottom.Offset ?? 0) ===
+			(b.layoutModifiers?.padding?.bottom.Offset ?? 0) &&
+		(a.layoutModifiers?.sizeConstraint?.minSize?.X ?? undefined) ===
+			(b.layoutModifiers?.sizeConstraint?.minSize?.X ?? undefined) &&
+		(a.layoutModifiers?.sizeConstraint?.minSize?.Y ?? undefined) ===
+			(b.layoutModifiers?.sizeConstraint?.minSize?.Y ?? undefined) &&
+		(a.layoutModifiers?.sizeConstraint?.maxSize?.X ?? undefined) ===
+			(b.layoutModifiers?.sizeConstraint?.maxSize?.X ?? undefined) &&
+		(a.layoutModifiers?.sizeConstraint?.maxSize?.Y ?? undefined) ===
+			(b.layoutModifiers?.sizeConstraint?.maxSize?.Y ?? undefined) &&
+		(a.layoutModifiers?.textSizeConstraint?.minTextSize ?? undefined) ===
+			(b.layoutModifiers?.textSizeConstraint?.minTextSize ?? undefined) &&
+		(a.layoutModifiers?.textSizeConstraint?.maxTextSize ?? undefined) ===
+			(b.layoutModifiers?.textSizeConstraint?.maxTextSize ?? undefined) &&
 		a.layout.anchorPoint.x === b.layout.anchorPoint.x &&
 		a.layout.anchorPoint.y === b.layout.anchorPoint.y &&
 		(a.layout.constraints?.width?.min ?? undefined) ===
@@ -495,8 +1023,10 @@ export function areNodesEqual(
 		(a.layout.size?.x.offset ?? 0) === (b.layout.size?.x.offset ?? 0) &&
 		(a.layout.size?.y.scale ?? 0) === (b.layout.size?.y.scale ?? 0) &&
 		(a.layout.size?.y.offset ?? 0) === (b.layout.size?.y.offset ?? 0) &&
+		a.name === b.name &&
 		a.nodeType === b.nodeType &&
 		a.parentId === b.parentId &&
+		a.sourceOrder === b.sourceOrder &&
 		a.styleHints?.height === b.styleHints?.height &&
 		a.styleHints?.width === b.styleHints?.width
 	);

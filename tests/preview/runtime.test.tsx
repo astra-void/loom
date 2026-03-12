@@ -19,11 +19,16 @@ import {
 	subscribePreviewRuntimeIssues,
 	TextLabel,
 	UDim2,
+	UIAspectRatioConstraint,
 	UICorner,
+	UIFlexItem,
+	UIGridLayout,
 	UIListLayout,
 	UIPadding,
 	UIScale,
+	UISizeConstraint,
 	UIStroke,
+	UITextSizeConstraint,
 	VideoFrame,
 	ViewportFrame,
 } from "@loom-dev/preview-runtime";
@@ -859,6 +864,177 @@ describe("preview runtime host mapping", () => {
 			expect(
 				viewportFrame.getAttribute("data-layout-placeholder-behavior"),
 			).toBe("opaque");
+		});
+	});
+
+	it("applies padding and list layout semantics in provider fallback DOM", async () => {
+		render(
+			<LayoutProvider debounceMs={0} viewportHeight={200} viewportWidth={300}>
+				<ScreenGui>
+					<Frame Id="list-frame" Size={UDim2.fromOffset(200, 120)}>
+						<UIPadding
+							PaddingBottom={{ Offset: 10, Scale: 0 }}
+							PaddingLeft={{ Offset: 10, Scale: 0 }}
+							PaddingRight={{ Offset: 10, Scale: 0 }}
+							PaddingTop={{ Offset: 10, Scale: 0 }}
+						/>
+						<UIListLayout
+							FillDirection="vertical"
+							HorizontalAlignment="center"
+							Padding={{ Offset: 8, Scale: 0 }}
+							SortOrder="layout-order"
+							VerticalAlignment="center"
+						/>
+						<TextLabel
+							Id="list-second"
+							LayoutOrder={2}
+							Size={UDim2.fromOffset(40, 20)}
+							Text="Second"
+						/>
+						<TextLabel
+							Id="list-first"
+							LayoutOrder={1}
+							Size={UDim2.fromOffset(60, 30)}
+							Text="First"
+						/>
+					</Frame>
+				</ScreenGui>
+			</LayoutProvider>,
+		);
+
+		const frame = document.querySelector(
+			'[data-preview-node-id="list-frame"]',
+		) as HTMLElement;
+		const first = document.querySelector(
+			'[data-preview-node-id="list-first"]',
+		) as HTMLElement;
+		const second = document.querySelector(
+			'[data-preview-node-id="list-second"]',
+		) as HTMLElement;
+
+		await waitFor(() => {
+			expect(frame.style.paddingLeft).toBe("10px");
+			expect(frame.style.paddingTop).toBe("10px");
+			expect(first.style.left).toBe("70px");
+			expect(first.style.top).toBe("31px");
+			expect(first.style.width).toBe("60px");
+			expect(first.style.height).toBe("30px");
+			expect(second.style.left).toBe("80px");
+			expect(second.style.top).toBe("69px");
+			expect(second.style.width).toBe("40px");
+			expect(second.style.height).toBe("20px");
+		});
+	});
+
+	it("applies grid placement semantics in provider fallback DOM", async () => {
+		render(
+			<LayoutProvider debounceMs={0} viewportHeight={200} viewportWidth={300}>
+				<ScreenGui>
+					<Frame Id="grid-frame" Size={UDim2.fromOffset(220, 140)}>
+						<UIGridLayout
+							CellPadding={{
+								X: { Offset: 10, Scale: 0 },
+								Y: { Offset: 5, Scale: 0 },
+							}}
+							CellSize={{
+								X: { Offset: 50, Scale: 0 },
+								Y: { Offset: 20, Scale: 0 },
+							}}
+							FillDirection="horizontal"
+							FillDirectionMaxCells={3}
+							HorizontalAlignment="center"
+							StartCorner="top-left"
+							VerticalAlignment="center"
+						/>
+						<Frame Id="grid-1" Size={UDim2.fromOffset(50, 20)} />
+						<Frame Id="grid-2" Size={UDim2.fromOffset(50, 20)} />
+						<Frame Id="grid-3" Size={UDim2.fromOffset(50, 20)} />
+						<Frame Id="grid-4" Size={UDim2.fromOffset(50, 20)} />
+					</Frame>
+				</ScreenGui>
+			</LayoutProvider>,
+		);
+
+		const first = document.querySelector(
+			'[data-preview-node-id="grid-1"]',
+		) as HTMLElement;
+		const fourth = document.querySelector(
+			'[data-preview-node-id="grid-4"]',
+		) as HTMLElement;
+
+		await waitFor(() => {
+			expect(first.style.left).toBe("25px");
+			expect(first.style.top).toBe("47.5px");
+			expect(fourth.style.left).toBe("25px");
+			expect(fourth.style.top).toBe("72.5px");
+		});
+	});
+
+	it("applies size, aspect, and text-size constraints in provider fallback DOM", async () => {
+		render(
+			<LayoutProvider debounceMs={0} viewportHeight={240} viewportWidth={320}>
+				<ScreenGui>
+					<Frame Id="constraint-frame" Size={UDim2.fromOffset(200, 120)}>
+						<Frame Id="constrained-box" Size={UDim2.fromOffset(50, 80)}>
+							<UISizeConstraint MaxSize={[160, 120]} MinSize={[100, 40]} />
+							<UIAspectRatioConstraint AspectRatio={2} DominantAxis="width" />
+						</Frame>
+						<TextLabel
+							Id="constrained-label"
+							Position={UDim2.fromOffset(0, 90)}
+							Size={UDim2.fromOffset(120, 20)}
+							Text="Scaled text"
+							TextSize={8}
+						>
+							<UITextSizeConstraint MaxTextSize={18} MinTextSize={16} />
+						</TextLabel>
+					</Frame>
+				</ScreenGui>
+			</LayoutProvider>,
+		);
+
+		const box = document.querySelector(
+			'[data-preview-node-id="constrained-box"]',
+		) as HTMLElement;
+		const label = document.querySelector(
+			'[data-preview-node-id="constrained-label"]',
+		) as HTMLElement;
+
+		await waitFor(() => {
+			expect(box.style.width).toBe("100px");
+			expect(box.style.height).toBe("50px");
+			expect(label.style.fontSize).toBe("16px");
+		});
+	});
+
+	it("distributes remaining list space through UIFlexItem grow ratios", async () => {
+		render(
+			<LayoutProvider debounceMs={0} viewportHeight={240} viewportWidth={320}>
+				<ScreenGui>
+					<Frame Id="flex-frame" Size={UDim2.fromOffset(120, 100)}>
+						<UIListLayout FillDirection="vertical" VerticalFlex="fill" />
+						<Frame Id="flex-first" Size={UDim2.fromOffset(120, 20)}>
+							<UIFlexItem FlexMode="grow" GrowRatio={1} />
+						</Frame>
+						<Frame Id="flex-second" Size={UDim2.fromOffset(120, 20)}>
+							<UIFlexItem FlexMode="grow" GrowRatio={2} />
+						</Frame>
+					</Frame>
+				</ScreenGui>
+			</LayoutProvider>,
+		);
+
+		const first = document.querySelector(
+			'[data-preview-node-id="flex-first"]',
+		) as HTMLElement;
+		const second = document.querySelector(
+			'[data-preview-node-id="flex-second"]',
+		) as HTMLElement;
+
+		await waitFor(() => {
+			expect(first.style.height).toBe("40px");
+			expect(second.style.top).toBe("40px");
+			expect(second.style.height).toBe("60px");
 		});
 	});
 
