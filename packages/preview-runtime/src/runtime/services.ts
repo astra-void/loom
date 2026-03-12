@@ -5,6 +5,7 @@ import {
 	RunService,
 } from "./RunService";
 import robloxMock from "./robloxMock";
+import { createPreviewTweenController } from "./tween";
 import {
 	normalizePreviewRuntimeError,
 	publishPreviewRuntimeIssue,
@@ -491,77 +492,47 @@ function createWorkspaceService(): PreviewWorkspace {
 	});
 }
 
-function applyTweenGoal(target: unknown, goal: Record<string, unknown>) {
-	if (!target || typeof target !== "object") {
-		return;
-	}
-
-	const record = target as Record<string, unknown>;
-	for (const [key, value] of Object.entries(goal)) {
-		record[key] = value;
-	}
-}
-
 function createTween(
 	instance: unknown,
 	tweenInfo: TweenInfo,
 	goal: Record<string, unknown>,
 ): PreviewTween {
 	const completed = new Signal<[playbackState: unknown]>();
-	let playbackState = previewEnum.PlaybackState.Begin;
-	let destroyed = false;
+	const controller = createPreviewTweenController({
+		goal,
+		instance,
+		onCompleted(playbackState) {
+			completed.fire(playbackState);
+		},
+		playbackStates: {
+			Begin: previewEnum.PlaybackState.Begin,
+			Cancelled: previewEnum.PlaybackState.Cancelled,
+			Completed: previewEnum.PlaybackState.Completed,
+			Delayed: previewEnum.PlaybackState.Delayed,
+			Paused: previewEnum.PlaybackState.Paused,
+			Playing: previewEnum.PlaybackState.Playing,
+		},
+		tweenInfo,
+	});
 
 	return withRobloxFallback({
 		Completed: completed,
 		Instance: instance,
 		get PlaybackState() {
-			return playbackState;
+			return controller.playbackState;
 		},
 		TweenInfo: tweenInfo,
 		Cancel() {
-			if (
-				destroyed ||
-				playbackState === previewEnum.PlaybackState.Cancelled ||
-				playbackState === previewEnum.PlaybackState.Completed
-			) {
-				return;
-			}
-
-			playbackState = previewEnum.PlaybackState.Cancelled;
+			controller.cancel();
 		},
 		Destroy() {
-			if (destroyed) {
-				return;
-			}
-
-			destroyed = true;
-			if (playbackState !== previewEnum.PlaybackState.Completed) {
-				playbackState = previewEnum.PlaybackState.Cancelled;
-			}
+			controller.destroy();
 		},
 		Pause() {
-			if (
-				destroyed ||
-				playbackState === previewEnum.PlaybackState.Cancelled ||
-				playbackState === previewEnum.PlaybackState.Completed
-			) {
-				return;
-			}
-
-			playbackState = previewEnum.PlaybackState.Paused;
+			controller.pause();
 		},
 		Play() {
-			if (destroyed || playbackState === previewEnum.PlaybackState.Completed) {
-				return;
-			}
-
-			if (playbackState === previewEnum.PlaybackState.Cancelled) {
-				return;
-			}
-
-			applyTweenGoal(instance, goal);
-			playbackState = previewEnum.PlaybackState.Completed;
-			completed.fire(previewEnum.PlaybackState.Completed);
+			controller.play();
 		},
 	});
 }

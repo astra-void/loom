@@ -5,7 +5,9 @@ import {
 	CanvasGroup,
 	Color3,
 	clearPreviewRuntimeIssues,
+	Enum,
 	Frame,
+	game,
 	getPreviewRuntimeIssues,
 	ImageButton,
 	isPreviewElement,
@@ -18,6 +20,7 @@ import {
 	SurfaceGui,
 	subscribePreviewRuntimeIssues,
 	TextLabel,
+	TweenInfo,
 	UDim2,
 	UIAspectRatioConstraint,
 	UICorner,
@@ -32,7 +35,7 @@ import {
 	VideoFrame,
 	ViewportFrame,
 } from "@loom-dev/preview-runtime";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -75,6 +78,50 @@ type ComputeDirty = (
 	viewportWidth: number,
 	viewportHeight: number,
 ) => LayoutSessionResult;
+
+class RafController {
+	private readonly callbacks = new Map<number, FrameRequestCallback>();
+	private readonly originalCancelAnimationFrame =
+		globalThis.cancelAnimationFrame;
+	private readonly originalRequestAnimationFrame =
+		globalThis.requestAnimationFrame;
+	private readonly performanceNowMock = vi
+		.spyOn(performance, "now")
+		.mockImplementation(() => this.now);
+	private nextHandle = 1;
+	private now = 0;
+
+	public constructor() {
+		globalThis.requestAnimationFrame = (callback: FrameRequestCallback) => {
+			const handle = this.nextHandle++;
+			this.callbacks.set(handle, callback);
+			return handle;
+		};
+
+		globalThis.cancelAnimationFrame = (handle: number) => {
+			this.callbacks.delete(handle);
+		};
+	}
+
+	public async step(milliseconds: number) {
+		this.now += milliseconds;
+
+		const callbacks = [...this.callbacks.values()];
+		this.callbacks.clear();
+
+		for (const callback of callbacks) {
+			callback(this.now);
+		}
+
+		await Promise.resolve();
+	}
+
+	public restore() {
+		this.performanceNowMock.mockRestore();
+		globalThis.requestAnimationFrame = this.originalRequestAnimationFrame;
+		globalThis.cancelAnimationFrame = this.originalCancelAnimationFrame;
+	}
+}
 
 const layoutEngineMocks = vi.hoisted(() => ({
 	computeDirty: vi.fn<ComputeDirty>(
@@ -133,6 +180,7 @@ const layoutEngineMocks = vi.hoisted(() => ({
 }));
 
 let restoreExpectedLogs: (() => void) | undefined;
+let rafController: RafController | undefined;
 
 vi.mock("@loom-dev/layout-engine", () => ({
 	createLayoutSession: layoutEngineMocks.createLayoutSession,
@@ -276,6 +324,8 @@ beforeEach(() => {
 afterEach(() => {
 	restoreExpectedLogs?.();
 	restoreExpectedLogs = undefined;
+	rafController?.restore();
+	rafController = undefined;
 	cleanup();
 	vi.restoreAllMocks();
 });
@@ -301,6 +351,91 @@ describe("preview runtime host mapping", () => {
 		expect(frame.style.top).toBe("18px");
 		expect(frame.style.width).toBe("120px");
 		expect(frame.style.height).toBe("48px");
+	});
+
+	it("tweens bridged host properties through the preview render pipeline", async () => {
+		rafController = new RafController();
+
+		render(
+			<Frame
+				BackgroundColor3={Color3.fromRGB(0, 0, 0)}
+				Position={UDim2.fromOffset(10, 20)}
+				Size={UDim2.fromOffset(40, 20)}
+				ZIndex={1}
+			>
+				Tween frame
+			</Frame>,
+		);
+
+		const frame = document.querySelector(
+			'[data-preview-host="frame"]',
+		) as HTMLElement & {
+			BackgroundColor3?: unknown;
+			Position?: unknown;
+			Size?: unknown;
+			Visible?: unknown;
+			ZIndex?: unknown;
+		};
+		const tweenService = game.GetService("TweenService") as {
+			Create(
+				instance: unknown,
+				tweenInfo: TweenInfo,
+				goal: Record<string, unknown>,
+			): {
+				Play(): void;
+			};
+		};
+		const tween = tweenService.Create(
+			frame,
+			new TweenInfo(
+				0.1,
+				Enum.EasingStyle.Linear,
+				Enum.EasingDirection.In,
+			),
+			{
+				BackgroundColor3: Color3.fromRGB(255, 0, 0),
+				Position: UDim2.fromOffset(30, 50),
+				Size: UDim2.fromOffset(100, 60),
+				Visible: false,
+				ZIndex: 5,
+			},
+		);
+
+		expect(frame.Position).toBeDefined();
+		expect(frame.Size).toBeDefined();
+		expect(frame.BackgroundColor3).toBeDefined();
+		expect(frame.Visible).toBeUndefined();
+		expect(frame.ZIndex).toBe(1);
+
+		tween.Play();
+
+		await act(async () => {
+			await rafController?.step(50);
+		});
+
+		await waitFor(() => {
+			expect(frame.style.left).toBe("20px");
+			expect(frame.style.top).toBe("35px");
+			expect(frame.style.width).toBe("70px");
+			expect(frame.style.height).toBe("40px");
+			expect(frame.style.backgroundColor).toContain("128, 0, 0");
+			expect(frame.style.display).not.toBe("none");
+			expect(frame.style.zIndex).toBe("3");
+		});
+
+		await act(async () => {
+			await rafController?.step(50);
+		});
+
+		await waitFor(() => {
+			expect(frame.style.left).toBe("30px");
+			expect(frame.style.top).toBe("50px");
+			expect(frame.style.width).toBe("100px");
+			expect(frame.style.height).toBe("60px");
+			expect(frame.style.backgroundColor).toContain("255, 0, 0");
+			expect(frame.style.display).toBe("none");
+			expect(frame.style.zIndex).toBe("5");
+		});
 	});
 
 	it("supports Roblox-style UDim2 construction and add chaining", () => {

@@ -7,7 +7,7 @@ High-precision browser polyfills for the Roblox runtime APIs that Loom previews 
 - `task`
 - `RunService`
 - `Enum`
-- `TweenService` (immediate preview-safe subset)
+- `TweenService` (`Create` with time-based preview-safe playback)
 - `setupRobloxEnvironment`
 
 ## Usage

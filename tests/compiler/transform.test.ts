@@ -1,4 +1,5 @@
 import { transformPreviewSource } from "@loom-dev/compiler";
+import { __previewGlobal, setupRobloxEnvironment } from "@loom-dev/preview-runtime";
 import { describe, expect, it } from "vitest";
 
 describe("@loom-dev/compiler preview transform", () => {
@@ -238,5 +239,36 @@ describe("@loom-dev/compiler preview transform", () => {
 			kind: "design-time",
 		});
 		expect(transformed.diagnostics).toHaveLength(0);
+	});
+
+	it("keeps rewritten preview globals constructable inside `new` expressions", () => {
+		setupRobloxEnvironment();
+
+		const transformed = transformPreviewSource(
+			`export const tween = new TweenInfo(0.1);`,
+			{
+				filePath: "/virtual/new-tween-info.tsx",
+				mode: "compatibility",
+				runtimeModule: "@loom-dev/preview-runtime",
+				target: "new-tween-info",
+			},
+		);
+
+		expect(transformed.diagnostics).toHaveLength(0);
+		expect(transformed.code).toContain(
+			'new (__previewGlobal("TweenInfo"))(0.1)',
+		);
+
+		const expression = transformed.code.match(
+			/new \(__previewGlobal\("TweenInfo"\)\)\(0\.1\)/,
+		)?.[0];
+		expect(expression).toBeDefined();
+
+		const tweenInfo = Function(
+			"__previewGlobal",
+			`"use strict"; return ${expression ?? "undefined"};`,
+		)(__previewGlobal) as { Time: number };
+
+		expect(tweenInfo.Time).toBe(0.1);
 	});
 });

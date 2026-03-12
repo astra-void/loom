@@ -16,6 +16,11 @@ import {
 	type PreviewHostNode,
 	patchPreviewHostNodeDomProps,
 } from "./domAdapter";
+import {
+	cleanupPreviewHostBridge,
+	installPreviewHostPropertyBridge,
+	usePreviewHostOverrides,
+} from "./hostOverrides";
 import { isDegradedPreviewHost } from "./metadata";
 import type { LayoutHostName, PreviewDomProps } from "./types";
 
@@ -236,10 +241,23 @@ function useDegradedHostIssue(hostNode: PreviewHostNode) {
 
 export function useHostLayout(host: LayoutHostName, props: PreviewDomProps) {
 	const elementRef = React.useRef<HTMLElement | null>(null);
+	const basePropsRef = React.useRef(props);
+	basePropsRef.current = props;
 	const generatedId = useGeneratedPreviewNodeId();
 	const nodeId = React.useMemo(
 		() => resolveNodeId(generatedId, props),
 		[generatedId, props],
+	);
+	const overrides = usePreviewHostOverrides(nodeId);
+	const mergedProps = React.useMemo(
+		() =>
+			Object.keys(overrides).length === 0
+				? props
+				: ({
+						...props,
+						...overrides,
+					} as PreviewDomProps),
+		[overrides, props],
 	);
 	const normalizedParentId = React.useMemo(
 		() => normalizePreviewNodeId(getLayoutParentId(props)),
@@ -253,11 +271,26 @@ export function useHostLayout(host: LayoutHostName, props: PreviewDomProps) {
 				host,
 				nodeId,
 				parentId: normalizedParentId,
-				props,
+				props: mergedProps,
 				sourceOrder,
 			}),
-		[host, nodeId, normalizedParentId, props, sourceOrder],
+		[host, mergedProps, nodeId, normalizedParentId, sourceOrder],
 	);
+
+	React.useLayoutEffect(() => {
+		const element = elementRef.current;
+		if (!element) {
+			return;
+		}
+
+		installPreviewHostPropertyBridge(element, nodeId, (property) => {
+			return (basePropsRef.current as Record<string, unknown>)[property];
+		});
+
+		return () => {
+			cleanupPreviewHostBridge(element, nodeId);
+		};
+	}, [nodeId]);
 
 	const intrinsicSize = useObservedIntrinsicSize(
 		elementRef,

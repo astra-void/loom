@@ -8,7 +8,9 @@ import {
 	type SetupRobloxEnvironmentTarget,
 	setupRobloxEnvironment,
 	TweenInfo,
+	UDim2,
 	task,
+	Vector2,
 	workspace,
 } from "@loom-dev/preview-runtime";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -322,7 +324,8 @@ describe.sequential("@loom-dev/preview-runtime", () => {
 		expect(lastInputTypes.slice(-1)).toEqual(["Keyboard"]);
 	});
 
-	it("applies tween goals immediately and fires Completed on preview tweens", () => {
+	it("advances preview tweens over time and fires Completed once", async () => {
+		rafController = new RafController();
 		setupRobloxEnvironment();
 
 		const tweenService = game.GetService("TweenService") as {
@@ -337,13 +340,17 @@ describe.sequential("@loom-dev/preview-runtime", () => {
 			};
 		};
 		const target = {
-			Position: 1,
+			Position: 0,
 			Visible: false,
 		};
-		const tweenInfo = new TweenInfo(0.15);
+		const tweenInfo = new TweenInfo(
+			0.1,
+			Enum.EasingStyle.Linear,
+			Enum.EasingDirection.In,
+		);
 		const completed = vi.fn();
 		const tween = tweenService.Create(target, tweenInfo, {
-			Position: 2,
+			Position: 10,
 			Visible: true,
 		});
 
@@ -352,16 +359,27 @@ describe.sequential("@loom-dev/preview-runtime", () => {
 		});
 		tween.Play();
 
-		expect(tweenInfo.Time).toBe(0.15);
+		expect(String(tween.PlaybackState)).toBe("Enum.PlaybackState.Playing");
+
+		await rafController.step(50);
+
+		expect(tweenInfo.Time).toBe(0.1);
+		expect(target.Position).toBeCloseTo(5, 3);
+		expect(target.Visible).toBe(false);
+
+		await rafController.step(50);
+
 		expect(target).toEqual({
-			Position: 2,
+			Position: 10,
 			Visible: true,
 		});
 		expect(String(tween.PlaybackState)).toBe("Enum.PlaybackState.Completed");
+		expect(completed).toHaveBeenCalledTimes(1);
 		expect(completed).toHaveBeenCalledWith("Enum.PlaybackState.Completed");
 	});
 
-	it("keeps preview tweens stateful and idempotent", () => {
+	it("supports pause, cancel, and replay from the current tweened value", async () => {
+		rafController = new RafController();
 		setupRobloxEnvironment();
 
 		const tweenService = game.GetService("TweenService") as {
@@ -378,56 +396,185 @@ describe.sequential("@loom-dev/preview-runtime", () => {
 				Play(): void;
 			};
 		};
-		const cancelledTarget = {
-			Position: 1,
+		const target = {
+			Position: 0,
 		};
-		const destroyedTarget = {
-			Position: 3,
-		};
-		const cancelled = vi.fn();
-		const destroyed = vi.fn();
-		const cancelledTween = tweenService.Create(
-			cancelledTarget,
-			new TweenInfo(0.1),
+		const completedStates: string[] = [];
+		const tween = tweenService.Create(
+			target,
+			new TweenInfo(0.1, Enum.EasingStyle.Linear, Enum.EasingDirection.In),
 			{
-				Position: 2,
-			},
-		);
-		const destroyedTween = tweenService.Create(
-			destroyedTarget,
-			new TweenInfo(0.1),
-			{
-				Position: 4,
+				Position: 10,
 			},
 		);
 
-		cancelledTween.Completed.Connect((state) => {
-			cancelled(String(state));
-		});
-		destroyedTween.Completed.Connect((state) => {
-			destroyed(String(state));
+		tween.Completed.Connect((state) => {
+			completedStates.push(String(state));
 		});
 
-		cancelledTween.Pause();
-		expect(String(cancelledTween.PlaybackState)).toBe(
-			"Enum.PlaybackState.Paused",
+		tween.Play();
+		await rafController.step(40);
+		expect(target.Position).toBeCloseTo(4, 3);
+
+		tween.Pause();
+		expect(String(tween.PlaybackState)).toBe("Enum.PlaybackState.Paused");
+
+		await rafController.step(40);
+		expect(target.Position).toBeCloseTo(4, 3);
+
+		tween.Play();
+		await rafController.step(10);
+		expect(target.Position).toBeCloseTo(5, 3);
+
+		tween.Cancel();
+		expect(String(tween.PlaybackState)).toBe("Enum.PlaybackState.Cancelled");
+
+		await rafController.step(50);
+		expect(target.Position).toBeCloseTo(5, 3);
+
+		tween.Play();
+		expect(String(tween.PlaybackState)).toBe("Enum.PlaybackState.Playing");
+
+		await rafController.step(50);
+		expect(target.Position).toBeCloseTo(7.5, 3);
+
+		await rafController.step(50);
+		expect(target.Position).toBeCloseTo(10, 3);
+		expect(String(tween.PlaybackState)).toBe("Enum.PlaybackState.Completed");
+		expect(completedStates).toEqual([
+			"Enum.PlaybackState.Cancelled",
+			"Enum.PlaybackState.Completed",
+		]);
+	});
+
+	it("supports repeat and reverse cycles before completing", async () => {
+		rafController = new RafController();
+		setupRobloxEnvironment();
+
+		const tweenService = game.GetService("TweenService") as {
+			Create(
+				instance: unknown,
+				tweenInfo: TweenInfo,
+				goal: Record<string, unknown>,
+			): {
+				Completed: { Connect(listener: (state: unknown) => void): void };
+				PlaybackState: unknown;
+				Play(): void;
+			};
+		};
+		const target = {
+			Position: 0,
+		};
+		const completed = vi.fn();
+		const tween = tweenService.Create(
+			target,
+			new TweenInfo(
+				0.05,
+				Enum.EasingStyle.Linear,
+				Enum.EasingDirection.In,
+				1,
+				true,
+			),
+			{
+				Position: 10,
+			},
 		);
-		cancelledTween.Cancel();
-		cancelledTween.Play();
 
-		destroyedTween.Destroy();
-		destroyedTween.Play();
+		tween.Completed.Connect((state) => {
+			completed(String(state));
+		});
+		tween.Play();
 
-		expect(cancelledTarget.Position).toBe(1);
-		expect(destroyedTarget.Position).toBe(3);
-		expect(String(cancelledTween.PlaybackState)).toBe(
+		await rafController.step(50);
+		expect(target.Position).toBeCloseTo(10, 3);
+		expect(String(tween.PlaybackState)).toBe("Enum.PlaybackState.Playing");
+
+		await rafController.step(50);
+		expect(target.Position).toBeCloseTo(0, 3);
+
+		await rafController.step(50);
+		expect(target.Position).toBeCloseTo(10, 3);
+
+		await rafController.step(50);
+		expect(target.Position).toBeCloseTo(0, 3);
+		expect(String(tween.PlaybackState)).toBe("Enum.PlaybackState.Completed");
+		expect(completed).toHaveBeenCalledWith("Enum.PlaybackState.Completed");
+	});
+
+	it("cancels overlapping tween properties and interpolates preview-safe value types", async () => {
+		rafController = new RafController();
+		setupRobloxEnvironment();
+
+		const tweenService = game.GetService("TweenService") as {
+			Create(
+				instance: unknown,
+				tweenInfo: TweenInfo,
+				goal: Record<string, unknown>,
+			): {
+				Completed: { Connect(listener: (state: unknown) => void): void };
+				PlaybackState: unknown;
+				Play(): void;
+			};
+		};
+		const target = {
+			Position: 0,
+			Size: UDim2.fromOffset(0, 0),
+			Tint: Color3.fromRGB(0, 0, 0),
+			Velocity: new Vector2(0, 0),
+		};
+		const firstStates: string[] = [];
+		const secondStates: string[] = [];
+		const firstTween = tweenService.Create(
+			target,
+			new TweenInfo(0.1, Enum.EasingStyle.Linear, Enum.EasingDirection.In),
+			{
+				Position: 10,
+			},
+		);
+		const secondTween = tweenService.Create(
+			target,
+			new TweenInfo(0.1, Enum.EasingStyle.Linear, Enum.EasingDirection.In),
+			{
+				Position: 20,
+				Size: UDim2.fromOffset(100, 40),
+				Tint: Color3.fromRGB(255, 128, 0),
+				Velocity: new Vector2(12, 8),
+			},
+		);
+
+		firstTween.Completed.Connect((state) => {
+			firstStates.push(String(state));
+		});
+		secondTween.Completed.Connect((state) => {
+			secondStates.push(String(state));
+		});
+
+		firstTween.Play();
+		await rafController.step(50);
+		expect(target.Position).toBeCloseTo(5, 3);
+
+		secondTween.Play();
+		expect(String(firstTween.PlaybackState)).toBe(
 			"Enum.PlaybackState.Cancelled",
 		);
-		expect(String(destroyedTween.PlaybackState)).toBe(
-			"Enum.PlaybackState.Cancelled",
-		);
-		expect(cancelled).not.toHaveBeenCalled();
-		expect(destroyed).not.toHaveBeenCalled();
+		expect(firstStates).toEqual(["Enum.PlaybackState.Cancelled"]);
+
+		await rafController.step(50);
+		expect(target.Position).toBeCloseTo(12.5, 3);
+		expect(target.Size.X.Offset).toBeCloseTo(50, 3);
+		expect(target.Size.Y.Offset).toBeCloseTo(20, 3);
+		expect(target.Tint.R).toBeCloseTo(0.5, 3);
+		expect(target.Tint.G).toBeCloseTo(0.25098, 3);
+		expect(target.Velocity.X).toBeCloseTo(6, 3);
+		expect(target.Velocity.Y).toBeCloseTo(4, 3);
+
+		await rafController.step(50);
+		expect(target.Position).toBeCloseTo(20, 3);
+		expect(target.Size.X.Offset).toBeCloseTo(100, 3);
+		expect(target.Size.Y.Offset).toBeCloseTo(40, 3);
+		expect(target.Velocity.X).toBeCloseTo(12, 3);
+		expect(target.Velocity.Y).toBeCloseTo(8, 3);
+		expect(secondStates).toEqual(["Enum.PlaybackState.Completed"]);
 	});
 
 	it("installs Luau-style globals and prototype helpers", () => {

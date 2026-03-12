@@ -18,11 +18,11 @@ use swc_core::{
             ForOfStmt, ForStmt, Function, Ident, IdentName, ImportDecl, ImportNamedSpecifier,
             ImportPhase, ImportSpecifier, JSXClosingElement, JSXElementName, JSXOpeningElement,
             KeyValueProp, Lit, MemberExpr, MemberProp, Module, ModuleDecl, ModuleItem, NamedExport,
-            Null, ObjectPatProp, ParamOrTsParamProp, Pat, Prop, PropName, Stmt, Str, SwitchCase,
-            TsEntityName, TsGetterSignature, TsImportEqualsDecl, TsKeywordType, TsKeywordTypeKind,
-            TsMethodSignature, TsModuleBlock, TsParamPropParam, TsPropertySignature,
-            TsSetterSignature, TsType, TsTypeRef, TsUnionOrIntersectionType, TsUnionType,
-            UpdateExpr, VarDeclOrExpr,
+            NewExpr, Null, ObjectPatProp, ParamOrTsParamProp, ParenExpr, Pat, Prop, PropName, Stmt,
+            Str, SwitchCase, TsEntityName, TsGetterSignature, TsImportEqualsDecl, TsKeywordType,
+            TsKeywordTypeKind, TsMethodSignature, TsModuleBlock, TsParamPropParam,
+            TsPropertySignature, TsSetterSignature, TsType, TsTypeRef, TsUnionOrIntersectionType,
+            TsUnionType, UpdateExpr, VarDeclOrExpr,
         },
         codegen::{text_writer::JsWriter, Config as CodegenConfig, Emitter},
         parser::{parse_file_as_module, Syntax, TsSyntax},
@@ -292,6 +292,17 @@ impl VisitMut for PreviewTransform<'_> {
         }
 
         named_export.visit_mut_children_with(self);
+    }
+
+    fn visit_mut_new_expr(&mut self, new_expr: &mut NewExpr) {
+        new_expr.visit_mut_children_with(self);
+
+        if matches!(new_expr.callee.as_ref(), Expr::Call(_)) {
+            new_expr.callee = Box::new(Expr::Paren(ParenExpr {
+                span: DUMMY_SP,
+                expr: new_expr.callee.clone(),
+            }));
+        }
     }
 
     fn visit_mut_expr(&mut self, expr: &mut Expr) {
