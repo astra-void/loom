@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { PreviewExecutionMode } from "@loom-dev/preview-engine";
+import ts from "typescript";
 import { searchForWorkspaceRoot } from "vite";
 import type {
 	LoadPreviewConfigOptions,
@@ -9,6 +10,7 @@ import type {
 } from "../config";
 import { loadPreviewConfig, resolvePreviewConfigObject } from "../config";
 import { createAutoMockPropsPlugin } from "./autoMockPlugin";
+import { isFilePathUnderRoot, resolveRealFilePath } from "./pathUtils";
 import { createPreviewVitePlugin } from "./plugin";
 import type {
 	PreviewPluginOption,
@@ -27,6 +29,7 @@ const PREVIEW_OPTIMIZE_DEPS_INCLUDE = [
 	"react/jsx-dev-runtime",
 ];
 const DEFAULT_REACT_PLUGIN_EXCLUDE_RE = /\/node_modules\//;
+const UNSUPPORTED_RUNTIME_EXTENSIONS = new Set([".lua", ".luau"]);
 
 export type StartPreviewServerOptions = {
 	configFile?: string;
@@ -98,6 +101,163 @@ function normalizeResolvedImporter(importer?: string) {
 		.split("?", 1)[0]
 		?.replace(/^\/@fs\//, "/")
 		.replace(/^\/@id\/__x00__/, "\0");
+}
+
+function isAbsoluteFileSpecifier(specifier: string) {
+	return /^[A-Za-z]:[\\/]/.test(specifier);
+}
+
+function hasUriScheme(specifier: string) {
+	return /^[A-Za-z][A-Za-z+.-]*:/.test(specifier);
+}
+
+function isBareModuleSpecifier(specifier: string) {
+	return !(
+		specifier.startsWith(".") ||
+		specifier.startsWith("/") ||
+		specifier.startsWith("\\") ||
+		specifier.startsWith("\0") ||
+		isAbsoluteFileSpecifier(specifier) ||
+		hasUriScheme(specifier)
+	);
+}
+
+function isDeclarationFilePath(filePath: string) {
+	const normalizedPath = filePath.replace(/\\/g, "/").toLowerCase();
+	return (
+		normalizedPath.endsWith(".d.ts") ||
+		normalizedPath.endsWith(".d.mts") ||
+		normalizedPath.endsWith(".d.cts")
+	);
+}
+
+function isNodeModulesFilePath(filePath: string) {
+	return filePath.replace(/\\/g, "/").includes("/node_modules/");
+}
+
+function isUnsupportedRuntimeFilePath(filePath: string) {
+	return UNSUPPORTED_RUNTIME_EXTENSIONS.has(
+		path.extname(filePath).toLowerCase(),
+	);
+}
+
+function findNearestTsconfig(filePath: string) {
+	return ts.findConfigFile(
+		path.dirname(filePath),
+		ts.sys.fileExists,
+		"tsconfig.json",
+	);
+}
+
+function parseTsconfig(tsconfigPath: string) {
+	const configFile = ts.readConfigFile(tsconfigPath, ts.sys.readFile);
+	if (configFile.error) {
+		const message = ts.formatDiagnostic(configFile.error, {
+			getCanonicalFileName: (value) => value,
+			getCurrentDirectory: () => process.cwd(),
+			getNewLine: () => "\n",
+		});
+		throw new Error(
+			`Failed to read TypeScript config ${tsconfigPath}: ${message}`,
+		);
+	}
+
+	const parsed = ts.parseJsonConfigFileContent(
+		configFile.config,
+		ts.sys,
+		path.dirname(tsconfigPath),
+		undefined,
+		tsconfigPath,
+	);
+	if (parsed.errors.length > 0) {
+		const message = ts.formatDiagnostics(parsed.errors, {
+			getCanonicalFileName: (value) => value,
+			getCurrentDirectory: () => process.cwd(),
+			getNewLine: () => "\n",
+		});
+		throw new Error(
+			`Failed to parse TypeScript config ${tsconfigPath}: ${message}`,
+		);
+	}
+
+	return parsed;
+}
+
+function createTsconfigPathResolvePlugin(
+	workspaceRoot: string,
+): PreviewPluginOption {
+	const configCache = new Map<string, ts.ParsedCommandLine>();
+	const resolvedWorkspaceRoot = resolveRealFilePath(workspaceRoot);
+
+	return {
+		enforce: "pre",
+		name: "loom-preview-tsconfig-path-resolve",
+		resolveId(id, importer) {
+			if (!isBareModuleSpecifier(id)) {
+				return undefined;
+			}
+
+			const normalizedImporter = normalizeResolvedImporter(importer);
+			if (
+				!normalizedImporter ||
+				normalizedImporter.startsWith("\0") ||
+				!path.isAbsolute(normalizedImporter)
+			) {
+				return undefined;
+			}
+
+			const importerFilePath = resolveRealFilePath(normalizedImporter);
+			if (
+				(importerFilePath !== resolvedWorkspaceRoot &&
+					!isFilePathUnderRoot(resolvedWorkspaceRoot, importerFilePath)) ||
+				isNodeModulesFilePath(importerFilePath)
+			) {
+				return undefined;
+			}
+
+			const tsconfigPath = findNearestTsconfig(importerFilePath);
+			if (!tsconfigPath) {
+				return undefined;
+			}
+
+			const parsedConfig =
+				configCache.get(tsconfigPath) ??
+				(() => {
+					const nextParsed = parseTsconfig(tsconfigPath);
+					configCache.set(tsconfigPath, nextParsed);
+					return nextParsed;
+				})();
+			const resolution = ts.resolveModuleName(
+				id,
+				importerFilePath,
+				parsedConfig.options,
+				ts.sys,
+			);
+			const rawResolvedFilePath = resolution.resolvedModule?.resolvedFileName;
+			if (!rawResolvedFilePath) {
+				return undefined;
+			}
+
+			if (
+				isNodeModulesFilePath(rawResolvedFilePath) ||
+				isDeclarationFilePath(rawResolvedFilePath) ||
+				isUnsupportedRuntimeFilePath(rawResolvedFilePath)
+			) {
+				return undefined;
+			}
+
+			const resolvedFilePath = resolveRealFilePath(rawResolvedFilePath);
+			if (
+				!isFilePathUnderRoot(resolvedWorkspaceRoot, resolvedFilePath) ||
+				isDeclarationFilePath(resolvedFilePath) ||
+				isUnsupportedRuntimeFilePath(resolvedFilePath)
+			) {
+				return undefined;
+			}
+
+			return resolvedFilePath;
+		},
+	};
 }
 
 function createRuntimeDependencyResolvePlugin(): PreviewPluginOption {
@@ -309,6 +469,7 @@ export async function createPreviewViteServer(
 			...(options.middlewareMode
 				? [createRuntimeDependencyResolvePlugin()]
 				: []),
+			createTsconfigPathResolvePlugin(resolvedConfig.workspaceRoot),
 			createAutoMockPropsPlugin({ targets: resolvedConfig.targets }),
 			previewPlugin,
 			reactPlugin({

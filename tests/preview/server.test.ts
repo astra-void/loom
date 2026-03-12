@@ -15,6 +15,40 @@ afterEach(() => {
 	}
 });
 
+function writeFakeRbxtsReact(packageRoot: string) {
+	const fakeReactRoot = path.join(packageRoot, "node_modules/@rbxts/react/src");
+	fs.mkdirSync(fakeReactRoot, { recursive: true });
+	fs.writeFileSync(
+		path.join(packageRoot, "node_modules/@rbxts/react/package.json"),
+		JSON.stringify(
+			{
+				name: "@rbxts/react",
+				types: "src/index.d.ts",
+			},
+			null,
+			2,
+		),
+		"utf8",
+	);
+	fs.writeFileSync(
+		path.join(fakeReactRoot, "index.d.ts"),
+		[
+			"declare namespace React {",
+			"\tfunction createElement(...args: any[]): any;",
+			"\tconst Fragment: any;",
+			"}",
+			"",
+			"declare const React: {",
+			"\tcreateElement: typeof React.createElement;",
+			"\tFragment: typeof React.Fragment;",
+			"};",
+			"",
+			"export = React;",
+		].join("\n"),
+		"utf8",
+	);
+}
+
 function createTempPreviewPackage() {
 	const tempPackageRoot = fs.mkdtempSync(
 		path.join(os.tmpdir(), "loom-preview-server-"),
@@ -23,9 +57,7 @@ function createTempPreviewPackage() {
 	temporaryRoots.push(packageRoot);
 
 	const sourceRoot = path.join(packageRoot, "src");
-	const fakeReactRoot = path.join(packageRoot, "node_modules/@rbxts/react/src");
 	fs.mkdirSync(sourceRoot, { recursive: true });
-	fs.mkdirSync(fakeReactRoot, { recursive: true });
 
 	fs.writeFileSync(
 		path.join(packageRoot, "package.json"),
@@ -68,12 +100,36 @@ function createTempPreviewPackage() {
 		].join("\n"),
 		"utf8",
 	);
+	writeFakeRbxtsReact(packageRoot);
+
+	return {
+		packageRoot,
+		sourceFilePath: fs.realpathSync(path.join(sourceRoot, "Test.tsx")),
+		sourceRoot: fs.realpathSync(sourceRoot),
+		workspaceRoot: packageRoot,
+	};
+}
+
+function createTempPreviewPackageWithPathAlias() {
+	const tempWorkspaceRoot = fs.mkdtempSync(
+		path.join(os.tmpdir(), "loom-preview-server-workspace-"),
+	);
+	const workspaceRoot = fs.realpathSync(tempWorkspaceRoot);
+	temporaryRoots.push(workspaceRoot);
+
+	const packageRoot = path.join(workspaceRoot, "packages/ui");
+	const sourceRoot = path.join(packageRoot, "src");
+	const sharedRoot = path.join(workspaceRoot, "packages/shared");
+	const sharedSourceRoot = path.join(sharedRoot, "src");
+	fs.mkdirSync(sourceRoot, { recursive: true });
+	fs.mkdirSync(sharedSourceRoot, { recursive: true });
+
 	fs.writeFileSync(
-		path.join(packageRoot, "node_modules/@rbxts/react/package.json"),
+		path.join(workspaceRoot, "package.json"),
 		JSON.stringify(
 			{
-				name: "@rbxts/react",
-				types: "src/index.d.ts",
+				private: true,
+				workspaces: ["packages/*"],
 			},
 			null,
 			2,
@@ -81,24 +137,165 @@ function createTempPreviewPackage() {
 		"utf8",
 	);
 	fs.writeFileSync(
-		path.join(fakeReactRoot, "index.d.ts"),
+		path.join(packageRoot, "package.json"),
+		JSON.stringify({ name: "@fixtures/ui" }, null, 2),
+		"utf8",
+	);
+	fs.writeFileSync(
+		path.join(sharedRoot, "package.json"),
+		JSON.stringify({ name: "@fixtures/shared" }, null, 2),
+		"utf8",
+	);
+	fs.writeFileSync(
+		path.join(packageRoot, "tsconfig.json"),
+		JSON.stringify(
+			{
+				compilerOptions: {
+					allowSyntheticDefaultImports: true,
+					baseUrl: "./src",
+					jsx: "react",
+					jsxFactory: "React.createElement",
+					jsxFragmentFactory: "React.Fragment",
+					module: "commonjs",
+					moduleResolution: "Node",
+					paths: {
+						"shared/*": ["../../shared/src/*"],
+					},
+					strict: true,
+					target: "ESNext",
+				},
+				include: ["src"],
+			},
+			null,
+			2,
+		),
+		"utf8",
+	);
+	fs.writeFileSync(
+		path.join(sharedRoot, "tsconfig.json"),
+		JSON.stringify(
+			{
+				compilerOptions: {
+					jsx: "react",
+					module: "commonjs",
+					moduleResolution: "Node",
+					strict: true,
+					target: "ESNext",
+				},
+				include: ["src"],
+			},
+			null,
+			2,
+		),
+		"utf8",
+	);
+	fs.writeFileSync(
+		path.join(sharedSourceRoot, "buildInfo.ts"),
 		[
-			"declare namespace React {",
-			"\tfunction createElement(...args: any[]): any;",
-			"\tconst Fragment: any;",
-			"}",
-			"",
-			"declare const React: {",
-			"\tcreateElement: typeof React.createElement;",
-			"\tFragment: typeof React.Fragment;",
-			"};",
-			"",
-			"export = React;",
+			"// Generated File. Don't edit directly.",
+			"export const BUILD_INFO = {",
+			'\tlabel: "resolved-label",',
+			"} as const;",
 		].join("\n"),
 		"utf8",
 	);
+	fs.writeFileSync(
+		path.join(sourceRoot, "Test.tsx"),
+		[
+			'import React from "@rbxts/react";',
+			"",
+			'import { BUILD_INFO } from "shared/buildInfo";',
+			"",
+			"function Test() {",
+			"\treturn <textlabel Text={BUILD_INFO.label} />;",
+			"}",
+			"",
+			"export const preview = {",
+			"\trender: () => <Test />,",
+			"};",
+		].join("\n"),
+		"utf8",
+	);
+	writeFakeRbxtsReact(packageRoot);
 
 	return {
+		buildInfoPath: fs.realpathSync(path.join(sharedSourceRoot, "buildInfo.ts")),
+		packageRoot,
+		sourceFilePath: fs.realpathSync(path.join(sourceRoot, "Test.tsx")),
+		sourceRoot: fs.realpathSync(sourceRoot),
+		workspaceRoot,
+	};
+}
+
+function createTempPreviewPackageWithBaseUrlAlias() {
+	const tempPackageRoot = fs.mkdtempSync(
+		path.join(os.tmpdir(), "loom-preview-server-base-url-"),
+	);
+	const packageRoot = fs.realpathSync(tempPackageRoot);
+	temporaryRoots.push(packageRoot);
+
+	const sourceRoot = path.join(packageRoot, "src");
+	const sharedSourceRoot = path.join(sourceRoot, "shared");
+	fs.mkdirSync(sharedSourceRoot, { recursive: true });
+
+	fs.writeFileSync(
+		path.join(packageRoot, "package.json"),
+		JSON.stringify({ name: "rbxts-react-preview-base-url" }, null, 2),
+		"utf8",
+	);
+	fs.writeFileSync(
+		path.join(packageRoot, "tsconfig.json"),
+		JSON.stringify(
+			{
+				compilerOptions: {
+					allowSyntheticDefaultImports: true,
+					baseUrl: "./src",
+					jsx: "react",
+					jsxFactory: "React.createElement",
+					jsxFragmentFactory: "React.Fragment",
+					module: "commonjs",
+					moduleResolution: "Node",
+					strict: true,
+					target: "ESNext",
+				},
+				include: ["src"],
+			},
+			null,
+			2,
+		),
+		"utf8",
+	);
+	fs.writeFileSync(
+		path.join(sharedSourceRoot, "buildInfo.ts"),
+		[
+			"// Generated File. Don't edit directly.",
+			"export const BUILD_INFO = {",
+			'\tlabel: "base-url-label",',
+			"} as const;",
+		].join("\n"),
+		"utf8",
+	);
+	fs.writeFileSync(
+		path.join(sourceRoot, "Test.tsx"),
+		[
+			'import React from "@rbxts/react";',
+			"",
+			'import { BUILD_INFO } from "shared/buildInfo";',
+			"",
+			"function Test() {",
+			"\treturn <textlabel Text={BUILD_INFO.label} />;",
+			"}",
+			"",
+			"export const preview = {",
+			"\trender: () => <Test />,",
+			"};",
+		].join("\n"),
+		"utf8",
+	);
+	writeFakeRbxtsReact(packageRoot);
+
+	return {
+		buildInfoPath: fs.realpathSync(path.join(sharedSourceRoot, "buildInfo.ts")),
 		packageRoot,
 		sourceFilePath: fs.realpathSync(path.join(sourceRoot, "Test.tsx")),
 		sourceRoot: fs.realpathSync(sourceRoot),
@@ -121,6 +318,23 @@ function toLoadedCode(result: unknown) {
 	}
 
 	throw new Error("Expected Vite to return loaded module code.");
+}
+
+function toResolvedId(result: unknown) {
+	if (typeof result === "string") {
+		return result;
+	}
+
+	if (
+		typeof result === "object" &&
+		result !== null &&
+		"id" in result &&
+		typeof result.id === "string"
+	) {
+		return result.id;
+	}
+
+	throw new Error("Expected Vite to return a resolved id.");
 }
 
 describe("createPreviewViteServer", () => {
@@ -204,6 +418,82 @@ describe("createPreviewViteServer", () => {
 			);
 			expect(transformedOptimizedDependency?.code).not.toContain(
 				"RefreshRuntime",
+			);
+		} finally {
+			await server.close();
+		}
+	});
+
+	it("resolves tsconfig paths aliases before unresolved package mocking", async () => {
+		const fixture = createTempPreviewPackageWithPathAlias();
+		const resolvedConfig = await resolvePreviewServerConfig({
+			cwd: fixture.packageRoot,
+			packageName: "@fixtures/ui",
+			packageRoot: fixture.packageRoot,
+			sourceRoot: fixture.sourceRoot,
+		});
+		const server = await createPreviewViteServer(resolvedConfig, {
+			appType: "custom",
+		});
+
+		try {
+			const resolvedImportId = toResolvedId(
+				await server.pluginContainer.resolveId(
+					"shared/buildInfo",
+					fixture.sourceFilePath,
+				),
+			);
+			expect(resolvedImportId).toBe(fixture.buildInfoPath);
+
+			const transformedSource = await server.transformRequest(
+				fixture.sourceFilePath,
+			);
+			expect(transformedSource?.code).not.toContain(
+				"loom-preview-unresolved-env",
+			);
+			expect(transformedSource?.code).not.toContain(
+				"__loomUnresolvedEnvMock.BUILD_INFO",
+			);
+			expect(transformedSource?.code).toContain(
+				fixture.buildInfoPath.replace(/\\/g, "/"),
+			);
+		} finally {
+			await server.close();
+		}
+	});
+
+	it("resolves baseUrl-backed workspace imports before unresolved package mocking", async () => {
+		const fixture = createTempPreviewPackageWithBaseUrlAlias();
+		const resolvedConfig = await resolvePreviewServerConfig({
+			cwd: fixture.packageRoot,
+			packageName: "rbxts-react-preview-base-url",
+			packageRoot: fixture.packageRoot,
+			sourceRoot: fixture.sourceRoot,
+		});
+		const server = await createPreviewViteServer(resolvedConfig, {
+			appType: "custom",
+		});
+
+		try {
+			const resolvedImportId = toResolvedId(
+				await server.pluginContainer.resolveId(
+					"shared/buildInfo",
+					fixture.sourceFilePath,
+				),
+			);
+			expect(resolvedImportId).toBe(fixture.buildInfoPath);
+
+			const transformedSource = await server.transformRequest(
+				fixture.sourceFilePath,
+			);
+			expect(transformedSource?.code).not.toContain(
+				"loom-preview-unresolved-env",
+			);
+			expect(transformedSource?.code).not.toContain(
+				"__loomUnresolvedEnvMock.BUILD_INFO",
+			);
+			expect(transformedSource?.code).toContain(
+				fixture.buildInfoPath.replace(/\\/g, "/"),
 			);
 		} finally {
 			await server.close();
