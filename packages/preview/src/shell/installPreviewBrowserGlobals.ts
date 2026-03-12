@@ -88,12 +88,15 @@ function snapshotTargetProperties(
 	target: object,
 	keys: readonly PropertyKey[],
 ): PreviewGlobalRestoreEntry[] {
-	return keys.map((key) => ({
-		descriptor: Object.getOwnPropertyDescriptor(target, key),
-		hadOwnProperty: Object.hasOwn(target, key),
-		key,
-		target,
-	}));
+	return keys.map((key) => {
+		const descriptor = Object.getOwnPropertyDescriptor(target, key);
+		return {
+			descriptor,
+			hadOwnProperty: descriptor !== undefined,
+			key,
+			target,
+		};
+	});
 }
 
 function restoreTargetProperties(entries: PreviewGlobalRestoreEntry[]) {

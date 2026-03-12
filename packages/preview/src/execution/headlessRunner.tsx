@@ -258,9 +258,10 @@ function installDomGlobals(window: Window) {
 	const restoreEntries: GlobalRestoreEntry[] = [];
 
 	for (const key of DOM_GLOBAL_KEYS) {
+		const descriptor = Object.getOwnPropertyDescriptor(globalThis, key);
 		restoreEntries.push({
-			descriptor: Object.getOwnPropertyDescriptor(globalThis, key),
-			hadOwnProperty: Object.hasOwn(globalThis, key),
+			descriptor,
+			hadOwnProperty: descriptor !== undefined,
 			key,
 		});
 
