@@ -658,7 +658,10 @@ impl LayoutSession {
 
     fn get_dirty_root_ids(&self) -> Vec<String> {
         let mut dirty_root_ids = if !self.dirty_root_ids.is_empty() {
-            self.dirty_root_ids.iter().cloned().collect::<Vec<_>>()
+            self.dirty_root_ids
+                .iter()
+                .filter_map(|node_id| self.resolve_root_id(node_id))
+                .collect::<Vec<_>>()
         } else if self.last_rects.is_empty() {
             self.root_ids()
         } else {

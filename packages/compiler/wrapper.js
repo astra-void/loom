@@ -1,4 +1,31 @@
-const native = require("./index.js");
+const { existsSync, readFileSync } = require("node:fs");
+const { resolve } = require("node:path");
+
+function loadLocalNativeBinding() {
+	if (process.env.NAPI_RS_NATIVE_LIBRARY_PATH) {
+		return null;
+	}
+
+	const manifestPath = resolve(__dirname, ".native", "manifest.json");
+	if (!existsSync(manifestPath)) {
+		return null;
+	}
+
+	try {
+		const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+		if (typeof manifest.entry !== "string" || manifest.entry.length === 0) {
+			return null;
+		}
+
+		// Local development builds use versioned filenames so Windows file locks
+		// do not block recompiles while another process still has an older build loaded.
+		return require(resolve(__dirname, manifest.entry));
+	} catch {
+		return null;
+	}
+}
+
+const native = loadLocalNativeBinding() ?? require("./index.js");
 
 const PREVIEW_GLOBAL_CALL_PATTERN = /__previewGlobal\("([^"]+)"\)/g;
 

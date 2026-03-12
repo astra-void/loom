@@ -36,7 +36,7 @@
 	},
 	"scripts": {
 		"artifacts": "napi artifacts --output-dir ./artifacts --npm-dir ./npm",
-		"build": "napi build --platform",
+		"build": "node ./scripts/build-local.mjs",
 		"build:release": "node ./scripts/build-release.mjs",
 		"build:release:native": "node ./scripts/build-release-native.mjs",
 		"create-npm-dirs": "napi create-npm-dirs --npm-dir ./npm",
