@@ -8,8 +8,8 @@ import {
 	type SetupRobloxEnvironmentTarget,
 	setupRobloxEnvironment,
 	TweenInfo,
-	UDim2,
 	task,
+	UDim2,
 	Vector2,
 	workspace,
 } from "@loom-dev/preview-runtime";
@@ -74,6 +74,14 @@ type TestPreviewEnumMember = {
 };
 
 type TestPreviewEnum = {
+	EasingDirection: {
+		In: TestPreviewEnumMember;
+		Out: TestPreviewEnumMember;
+	};
+	EasingStyle: {
+		Linear: TestPreviewEnumMember;
+		Quad: TestPreviewEnumMember;
+	};
 	KeyCode: {
 		Return: TestPreviewEnumMember;
 	};
@@ -84,6 +92,8 @@ type TestPreviewEnum = {
 	};
 };
 
+const previewEnum = Enum as unknown as TestPreviewEnum;
+
 afterEach(() => {
 	rafController?.restore();
 	rafController = undefined;
@@ -93,8 +103,6 @@ afterEach(() => {
 
 describe.sequential("@loom-dev/preview-runtime", () => {
 	it("provides a deep Enum proxy with stable Name and Value access", () => {
-		const previewEnum = Enum as unknown as TestPreviewEnum;
-
 		expect(previewEnum.KeyCode.Return.Name).toBe("Return");
 		expect(previewEnum.KeyCode.Return.EnumType.Name).toBe("KeyCode");
 		expect(previewEnum.TextXAlignment.Center.Name).toBe("Center");
@@ -345,8 +353,8 @@ describe.sequential("@loom-dev/preview-runtime", () => {
 		};
 		const tweenInfo = new TweenInfo(
 			0.1,
-			Enum.EasingStyle.Linear,
-			Enum.EasingDirection.In,
+			previewEnum.EasingStyle.Linear,
+			previewEnum.EasingDirection.In,
 		);
 		const completed = vi.fn();
 		const tween = tweenService.Create(target, tweenInfo, {
@@ -402,7 +410,11 @@ describe.sequential("@loom-dev/preview-runtime", () => {
 		const completedStates: string[] = [];
 		const tween = tweenService.Create(
 			target,
-			new TweenInfo(0.1, Enum.EasingStyle.Linear, Enum.EasingDirection.In),
+			new TweenInfo(
+				0.1,
+				previewEnum.EasingStyle.Linear,
+				previewEnum.EasingDirection.In,
+			),
 			{
 				Position: 10,
 			},
@@ -470,8 +482,8 @@ describe.sequential("@loom-dev/preview-runtime", () => {
 			target,
 			new TweenInfo(
 				0.05,
-				Enum.EasingStyle.Linear,
-				Enum.EasingDirection.In,
+				previewEnum.EasingStyle.Linear,
+				previewEnum.EasingDirection.In,
 				1,
 				true,
 			),
@@ -526,14 +538,22 @@ describe.sequential("@loom-dev/preview-runtime", () => {
 		const secondStates: string[] = [];
 		const firstTween = tweenService.Create(
 			target,
-			new TweenInfo(0.1, Enum.EasingStyle.Linear, Enum.EasingDirection.In),
+			new TweenInfo(
+				0.1,
+				previewEnum.EasingStyle.Linear,
+				previewEnum.EasingDirection.In,
+			),
 			{
 				Position: 10,
 			},
 		);
 		const secondTween = tweenService.Create(
 			target,
-			new TweenInfo(0.1, Enum.EasingStyle.Linear, Enum.EasingDirection.In),
+			new TweenInfo(
+				0.1,
+				previewEnum.EasingStyle.Linear,
+				previewEnum.EasingDirection.In,
+			),
 			{
 				Position: 20,
 				Size: UDim2.fromOffset(100, 40),

@@ -22,8 +22,7 @@ export const bridgedPreviewHostProperties = [
 	"ZIndex",
 ] as const;
 
-type BridgedPreviewHostProperty =
-	(typeof bridgedPreviewHostProperties)[number];
+type BridgedPreviewHostProperty = (typeof bridgedPreviewHostProperties)[number];
 
 type HostOverrideListener = () => void;
 
@@ -55,6 +54,10 @@ type GlobalHostOverrideStore = typeof globalThis & {
 type PreviewHostElement = HTMLElement & {
 	[HOST_BRIDGE_STATE_KEY]?: HostBridgeState;
 };
+
+function hasOwn(value: object, property: PropertyKey) {
+	return Object.getOwnPropertyDescriptor(value, property) !== undefined;
+}
 
 function createHostOverrideStore(): HostOverrideStore {
 	const entries = new Map<string, HostOverrideEntry>();
@@ -120,17 +123,14 @@ function createHostOverrideStore(): HostOverrideStore {
 			}
 
 			return {
-				hasValue: Object.prototype.hasOwnProperty.call(snapshot, property),
+				hasValue: hasOwn(snapshot, property),
 				value: snapshot[property],
 			};
 		},
 		setValue(nodeId, property, value) {
 			const entry = ensureEntry(nodeId);
 			const current = entry.snapshot;
-			if (
-				Object.prototype.hasOwnProperty.call(current, property) &&
-				Object.is(current[property], value)
-			) {
+			if (hasOwn(current, property) && Object.is(current[property], value)) {
 				return;
 			}
 
@@ -165,7 +165,7 @@ function definePreviewHostBridgeProperty(
 	property: BridgedPreviewHostProperty,
 	state: HostBridgeState,
 ) {
-	if (Object.prototype.hasOwnProperty.call(element, property)) {
+	if (hasOwn(element, property)) {
 		return;
 	}
 

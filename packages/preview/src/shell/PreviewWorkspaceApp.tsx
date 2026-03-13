@@ -8,8 +8,8 @@ import {
 } from "@loom-dev/preview-runtime";
 import React from "react";
 import {
-	type PreviewWorkspaceModuleImporter,
 	loadPreviewModule,
+	type PreviewWorkspaceModuleImporter,
 } from "./loadPreviewModule";
 import { PreviewApp } from "./PreviewApp";
 import {

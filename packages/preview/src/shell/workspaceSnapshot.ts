@@ -1,12 +1,12 @@
-import type {
-	PreviewEntryPayload,
-	PreviewWorkspaceIndex,
-} from "@loom-dev/preview-engine";
 import {
 	previewEntryPayloads,
 	previewImporters,
 	previewWorkspaceIndex,
 } from "virtual:loom-preview-workspace-index";
+import type {
+	PreviewEntryPayload,
+	PreviewWorkspaceIndex,
+} from "@loom-dev/preview-engine";
 import type { PreviewWorkspaceModuleImporter } from "./loadPreviewModule";
 
 const RESOLVED_WORKSPACE_MODULE_URL =

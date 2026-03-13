@@ -5,11 +5,11 @@ import {
 	RunService,
 } from "./RunService";
 import robloxMock from "./robloxMock";
-import { createPreviewTweenController } from "./tween";
 import {
 	normalizePreviewRuntimeError,
 	publishPreviewRuntimeIssue,
 } from "./runtimeError";
+import { createPreviewTweenController } from "./tween";
 
 const SERVICES_KEY = Symbol.for("loom-dev.preview-runtime.services");
 const TWEEN_INFO_KEY = Symbol.for("loom-dev.preview-runtime.TweenInfo");

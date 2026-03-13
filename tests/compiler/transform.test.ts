@@ -1,5 +1,8 @@
 import { transformPreviewSource } from "@loom-dev/compiler";
-import { __previewGlobal, setupRobloxEnvironment } from "@loom-dev/preview-runtime";
+import {
+	__previewGlobal,
+	setupRobloxEnvironment,
+} from "@loom-dev/preview-runtime";
 import { describe, expect, it } from "vitest";
 
 describe("@loom-dev/compiler preview transform", () => {

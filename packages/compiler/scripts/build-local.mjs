@@ -3,7 +3,6 @@ import {
 	copyFile,
 	mkdir,
 	readdir,
-	readFile,
 	rm,
 	stat,
 	unlink,
@@ -29,7 +28,13 @@ async function main() {
 	await mkdir(LOCAL_BINARIES_DIR, { recursive: true });
 
 	const result = runNapi(
-		["build", "--platform", "--output-dir", TEMP_OUTPUT_DIR, ...getPassthroughArgs()],
+		[
+			"build",
+			"--platform",
+			"--output-dir",
+			TEMP_OUTPUT_DIR,
+			...getPassthroughArgs(),
+		],
 		{
 			check: false,
 			cwd: PACKAGE_DIR,

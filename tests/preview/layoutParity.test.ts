@@ -4,9 +4,9 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { LayoutController } from "../../packages/preview-runtime/src/layout/controller";
-import {
-	type PreviewLayoutDebugNode,
-	type PreviewLayoutNode,
+import type {
+	PreviewLayoutDebugNode,
+	PreviewLayoutNode,
 } from "../../packages/preview-runtime/src/layout/model";
 import {
 	createWasmLayoutSession,

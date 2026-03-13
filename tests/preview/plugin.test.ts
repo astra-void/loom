@@ -205,6 +205,55 @@ describe("createPreviewVitePlugin", () => {
 		).toBe(undefined);
 	});
 
+	it("treats tracked workspace dependencies outside the target source root as hot-update candidates", () => {
+		const { fixtureRoot, sourceRoot } = createFixtureRoot();
+		const sharedRoot = path.join(fixtureRoot, "shared");
+		const sourceFile = path.join(sourceRoot, "AnimatedSlot.tsx");
+		const dependencyFile = path.join(sharedRoot, "buildInfo.ts");
+		fs.mkdirSync(sharedRoot, { recursive: true });
+		fs.writeFileSync(dependencyFile, 'export const LABEL = "one";\n', "utf8");
+		fs.writeFileSync(
+			sourceFile,
+			`
+        import { LABEL } from "../shared/buildInfo";
+
+        export function AnimatedSlot() {
+          return <textlabel Text={LABEL} />;
+        }
+
+        export const preview = {
+          entry: AnimatedSlot,
+        };
+      `,
+			"utf8",
+		);
+
+		const previewPlugin = createPreviewPlugin(fixtureRoot, sourceRoot);
+		const configureServer = getHookHandler<TestConfigureServerHook>(
+			previewPlugin.configureServer as TestConfigureServerHook | undefined,
+		);
+		const handleHotUpdate = getHookHandler<TestHotUpdateHook>(
+			previewPlugin.handleHotUpdate as TestHotUpdateHook | undefined,
+		);
+		const mockServer = createMockServer();
+
+		configureServer?.(mockServer);
+
+		fs.writeFileSync(dependencyFile, 'export const LABEL = "two";\n', "utf8");
+
+		expect(handleHotUpdate?.({ file: dependencyFile })).toEqual([]);
+		expect(mockServer.moduleGraph.invalidateModule).toHaveBeenCalledTimes(1);
+		expect(mockServer.ws.send).toHaveBeenCalledWith(
+			expect.objectContaining({
+				data: expect.objectContaining({
+					changedEntryIds: ["fixture:AnimatedSlot.tsx"],
+				}),
+				event: "loom-preview:update",
+				type: "custom",
+			}),
+		);
+	});
+
 	it("refreshes the workspace index and sends custom hmr updates for add, delete, rename, and non-target watcher events", () => {
 		const { fixtureRoot, sourceRoot } = createFixtureRoot();
 		const sourceFile = path.join(sourceRoot, "AnimatedSlot.tsx");

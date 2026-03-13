@@ -364,7 +364,9 @@ function getLoomRuntimeDependencyNames(manifest: PackageManifest) {
 }
 
 function resolvePreviewRuntimeDependencyRoots(runtimeEntryPath: string) {
-	const resolvedRuntimeEntryPath = resolveRealFilePath(path.resolve(runtimeEntryPath));
+	const resolvedRuntimeEntryPath = resolveRealFilePath(
+		path.resolve(runtimeEntryPath),
+	);
 	const runtimePackageRoot = findPackageRoot(resolvedRuntimeEntryPath);
 	if (!runtimePackageRoot) {
 		return [];
@@ -388,9 +390,7 @@ function resolvePreviewRuntimeDependencyRoots(runtimeEntryPath: string) {
 		}
 	}
 
-	return [...dependencyRoots].sort((left, right) =>
-		left.localeCompare(right),
-	);
+	return [...dependencyRoots].sort((left, right) => left.localeCompare(right));
 }
 
 function createPreviewFsAllowRoots(

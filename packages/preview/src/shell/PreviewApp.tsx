@@ -718,6 +718,9 @@ export function PreviewApp(props: PreviewAppProps) {
 	const [runtimeIssues, setRuntimeIssues] = React.useState<
 		PreviewRuntimeIssue[]
 	>([]);
+	const selectedEntryRef = React.useRef<PreviewEntryDescriptor | undefined>(
+		undefined,
+	);
 	const runtimeIssueRenderMeta = React.useMemo(
 		() => createRuntimeIssueRenderMeta(runtimeIssues),
 		[runtimeIssues],
@@ -795,6 +798,7 @@ export function PreviewApp(props: PreviewAppProps) {
 	const [collapsedFolderIds, setCollapsedFolderIds] = React.useState<
 		Set<string>
 	>(() => new Set());
+	selectedEntryRef.current = selectedEntry;
 
 	React.useEffect(() => {
 		if (!selectedEntryId || typeof window === "undefined") {
@@ -869,7 +873,10 @@ export function PreviewApp(props: PreviewAppProps) {
 			})
 			.catch((error: unknown) => {
 				if (!cancelled) {
-					setLoadIssue(createPreviewLoadIssue(selectedEntry, error));
+					const currentSelectedEntry = selectedEntryRef.current;
+					if (currentSelectedEntry) {
+						setLoadIssue(createPreviewLoadIssue(currentSelectedEntry, error));
+					}
 				}
 			});
 

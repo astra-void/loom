@@ -335,7 +335,9 @@ function buildDebugNodeMap(
 	return map;
 }
 
-function getNodeLayoutCapabilities(node: PreviewLayoutNode): LayoutCapability[] {
+function getNodeLayoutCapabilities(
+	node: PreviewLayoutNode,
+): LayoutCapability[] {
 	const capabilities: LayoutCapability[] = [];
 	if (node.layoutModifiers?.aspectRatioConstraint) {
 		capabilities.push("aspect-ratio-constraint");
@@ -1064,8 +1066,7 @@ export class LayoutController {
 		for (const node of this.nodes.values()) {
 			if (
 				getNodeLayoutCapabilities(node).some(
-					(capability) =>
-						!SUPPORTED_WASM_LAYOUT_CAPABILITIES.has(capability),
+					(capability) => !SUPPORTED_WASM_LAYOUT_CAPABILITIES.has(capability),
 				)
 			) {
 				return true;

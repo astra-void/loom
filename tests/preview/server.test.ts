@@ -630,7 +630,10 @@ describe("createPreviewViteServer", () => {
 			expect(runtimeResponse.statusCode).toBe(200);
 
 			const layoutWasmModuleUrl = toFsUrl(
-				path.resolve(process.cwd(), "packages/preview-runtime/src/layout/wasm.ts"),
+				path.resolve(
+					process.cwd(),
+					"packages/preview-runtime/src/layout/wasm.ts",
+				),
 			);
 			const layoutWasmModuleResponse = await requestServerPath(
 				server,

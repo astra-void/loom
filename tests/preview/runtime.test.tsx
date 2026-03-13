@@ -391,11 +391,7 @@ describe("preview runtime host mapping", () => {
 		};
 		const tween = tweenService.Create(
 			frame,
-			new TweenInfo(
-				0.1,
-				Enum.EasingStyle.Linear,
-				Enum.EasingDirection.In,
-			),
+			new TweenInfo(0.1, Enum.EasingStyle.Linear, Enum.EasingDirection.In),
 			{
 				BackgroundColor3: Color3.fromRGB(255, 0, 0),
 				Position: UDim2.fromOffset(30, 50),

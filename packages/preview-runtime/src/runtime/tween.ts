@@ -11,7 +11,10 @@ const TWEEN_EPSILON = 1e-6;
 
 type TweenDirection = "forward" | "reverse";
 
-type ActiveTweenRegistry = WeakMap<object, Map<string, PreviewTweenControllerImpl>>;
+type ActiveTweenRegistry = WeakMap<
+	object,
+	Map<string, PreviewTweenControllerImpl>
+>;
 
 type InterpolatedPropertyPlan =
 	| {
@@ -180,7 +183,6 @@ function resolveEaseIn(style: unknown) {
 			return (value: number) => easePower(value, 5);
 		case "Sine":
 			return easeSine;
-		case "Quad":
 		default:
 			return (value: number) => easePower(value, 2);
 	}
@@ -202,7 +204,6 @@ function applyEasingDirection(
 				return easeIn(normalized * 2) / 2;
 			}
 			return 1 - easeIn((1 - normalized) * 2) / 2;
-		case "Out":
 		default:
 			return 1 - easeIn(1 - normalized);
 	}
@@ -231,7 +232,9 @@ function isUDimLike(value: unknown) {
 	}
 
 	if (Array.isArray(value)) {
-		return value.length >= 2 && !Array.isArray(value[0]) && !Array.isArray(value[1]);
+		return (
+			value.length >= 2 && !Array.isArray(value[0]) && !Array.isArray(value[1])
+		);
 	}
 
 	if (!value || typeof value !== "object") {
@@ -293,7 +296,12 @@ function isVector2Like(value: unknown) {
 		return false;
 	}
 
-	const record = value as { X?: unknown; Y?: unknown; x?: unknown; y?: unknown };
+	const record = value as {
+		X?: unknown;
+		Y?: unknown;
+		x?: unknown;
+		y?: unknown;
+	};
 	return (
 		typeof (record.X ?? record.x) === "number" &&
 		typeof (record.Y ?? record.y) === "number"
@@ -497,7 +505,10 @@ class PreviewTweenControllerImpl implements PreviewTweenController {
 				continue;
 			}
 
-			this.writeProperty(property, alpha >= 0.5 ? plan.endValue : plan.startValue);
+			this.writeProperty(
+				property,
+				alpha >= 0.5 ? plan.endValue : plan.startValue,
+			);
 		}
 	}
 
@@ -619,7 +630,10 @@ class PreviewTweenControllerImpl implements PreviewTweenController {
 		this.plans.clear();
 
 		for (const [property, value] of Object.entries(this.options.goal)) {
-			this.plans.set(property, createPropertyPlan(this.readProperty(property), value));
+			this.plans.set(
+				property,
+				createPropertyPlan(this.readProperty(property), value),
+			);
 		}
 	}
 
