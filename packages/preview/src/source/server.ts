@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { createRequire } from "node:module";
 import path from "node:path";
 import type { PreviewExecutionMode } from "@loom-dev/preview-engine";
 import ts from "typescript";
@@ -30,6 +31,7 @@ const PREVIEW_OPTIMIZE_DEPS_INCLUDE = [
 ];
 const DEFAULT_REACT_PLUGIN_EXCLUDE_RE = /\/node_modules\//;
 const UNSUPPORTED_RUNTIME_EXTENSIONS = new Set([".lua", ".luau"]);
+const PACKAGE_JSON_FILE_NAME = "package.json";
 
 export type StartPreviewServerOptions = {
 	configFile?: string;
@@ -51,6 +53,12 @@ export type StartPreviewServerInput =
 export type CreatePreviewViteServerOptions = {
 	appType?: "custom" | "spa";
 	middlewareMode?: boolean;
+};
+
+type PackageManifest = {
+	dependencies?: Record<string, string>;
+	optionalDependencies?: Record<string, string>;
+	peerDependencies?: Record<string, string>;
 };
 
 function resolvePreviewPackageEntry(candidates: string[], label: string) {
@@ -317,6 +325,90 @@ function resolvePreviewViteCacheDir(workspaceRoot: string) {
 	return path.resolve(workspaceRoot, PREVIEW_VITE_CACHE_DIR);
 }
 
+function findPackageRoot(filePath: string) {
+	let currentPath = path.dirname(resolveRealFilePath(filePath));
+
+	while (true) {
+		const packageJsonPath = path.join(currentPath, PACKAGE_JSON_FILE_NAME);
+		if (fs.existsSync(packageJsonPath)) {
+			return currentPath;
+		}
+
+		const parentPath = path.dirname(currentPath);
+		if (parentPath === currentPath) {
+			return undefined;
+		}
+
+		currentPath = parentPath;
+	}
+}
+
+function readPackageManifest(packageRoot: string): PackageManifest {
+	return JSON.parse(
+		fs.readFileSync(path.join(packageRoot, PACKAGE_JSON_FILE_NAME), "utf8"),
+	) as PackageManifest;
+}
+
+function getLoomRuntimeDependencyNames(manifest: PackageManifest) {
+	return [
+		...new Set(
+			[
+				manifest.dependencies,
+				manifest.optionalDependencies,
+				manifest.peerDependencies,
+			]
+				.flatMap((dependencies) => Object.keys(dependencies ?? {}))
+				.filter((dependencyName) => dependencyName.startsWith("@loom-dev/")),
+		),
+	].sort((left, right) => left.localeCompare(right));
+}
+
+function resolvePreviewRuntimeDependencyRoots(runtimeEntryPath: string) {
+	const resolvedRuntimeEntryPath = resolveRealFilePath(path.resolve(runtimeEntryPath));
+	const runtimePackageRoot = findPackageRoot(resolvedRuntimeEntryPath);
+	if (!runtimePackageRoot) {
+		return [];
+	}
+
+	const runtimeRequire = createRequire(resolvedRuntimeEntryPath);
+	const runtimeManifest = readPackageManifest(runtimePackageRoot);
+	const dependencyRoots = new Set<string>([
+		resolveRealFilePath(runtimePackageRoot),
+	]);
+
+	for (const dependencyName of getLoomRuntimeDependencyNames(runtimeManifest)) {
+		try {
+			const dependencyEntryPath = runtimeRequire.resolve(dependencyName);
+			const dependencyPackageRoot = findPackageRoot(dependencyEntryPath);
+			if (dependencyPackageRoot) {
+				dependencyRoots.add(resolveRealFilePath(dependencyPackageRoot));
+			}
+		} catch {
+			// Unresolved runtime deps should still surface through Vite resolution.
+		}
+	}
+
+	return [...dependencyRoots].sort((left, right) =>
+		left.localeCompare(right),
+	);
+}
+
+function createPreviewFsAllowRoots(
+	shellRoot: string,
+	configuredRoots: string[],
+	runtimeEntryPath: string,
+) {
+	return [
+		...new Set(
+			[
+				shellRoot,
+				...configuredRoots,
+				...resolvePreviewRuntimeDependencyRoots(runtimeEntryPath),
+			].map((rootPath) => resolveRealFilePath(path.resolve(rootPath))),
+		),
+	].sort((left, right) => left.localeCompare(right));
+}
+
 function escapeRegExp(value: string) {
 	return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -443,6 +535,11 @@ export async function createPreviewViteServer(
 	const previewViteCacheDir = resolvePreviewViteCacheDir(
 		resolvedConfig.workspaceRoot,
 	);
+	const previewFsAllowRoots = createPreviewFsAllowRoots(
+		shellRoot,
+		resolvedConfig.server.fsAllow,
+		previewRuntimeRootEntry,
+	);
 	const previewPlugin = createPreviewVitePlugin({
 		projectName: resolvedConfig.projectName,
 		runtimeModule: previewRuntimeRootEntry,
@@ -491,7 +588,7 @@ export async function createPreviewViteServer(
 		root: shellRoot,
 		server: {
 			fs: {
-				allow: [shellRoot, ...resolvedConfig.server.fsAllow],
+				allow: previewFsAllowRoots,
 			},
 			host: resolvedConfig.server.host,
 			...(options.middlewareMode

@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { Writable } from "node:stream";
 import { afterEach, describe, expect, it } from "vitest";
 import {
 	createPreviewViteServer,
@@ -14,6 +15,24 @@ afterEach(() => {
 		fs.rmSync(root, { force: true, recursive: true });
 	}
 });
+
+type MiddlewareResponse = {
+	body: string;
+	headers: Record<string, unknown>;
+	statusCode: number;
+};
+
+type TestWritableResponse = Writable & {
+	end: (chunk?: unknown) => void;
+	getHeader: (name: string) => unknown;
+	headers: Record<string, unknown>;
+	setHeader: (name: string, value: unknown) => void;
+	statusCode: number;
+	writeHead: (
+		statusCode: number,
+		headers?: Record<string, unknown>,
+	) => TestWritableResponse;
+};
 
 function writeFakeRbxtsReact(packageRoot: string) {
 	const fakeReactRoot = path.join(packageRoot, "node_modules/@rbxts/react/src");
@@ -337,6 +356,88 @@ function toResolvedId(result: unknown) {
 	throw new Error("Expected Vite to return a resolved id.");
 }
 
+function readCapturedGroup(value: string, pattern: RegExp) {
+	const match = value.match(pattern);
+	const capturedValue = match?.[1];
+	if (!capturedValue) {
+		throw new Error(
+			`Unable to find ${pattern.toString()} in response:\n${value.slice(0, 400)}`,
+		);
+	}
+
+	return capturedValue;
+}
+
+function toFsUrl(filePath: string) {
+	return `/@fs/${filePath.replace(/\\/g, "/")}`;
+}
+
+function requestServerPath(
+	server: Awaited<ReturnType<typeof createPreviewViteServer>>,
+	url: string,
+): Promise<MiddlewareResponse> {
+	return new Promise((resolve, reject) => {
+		const chunks: Buffer[] = [];
+		const request = {
+			headers: { host: "localhost" },
+			method: "GET",
+			originalUrl: url,
+			url,
+		} as const;
+		const response = new Writable({
+			write(chunk, _encoding, callback) {
+				chunks.push(
+					Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk)),
+				);
+				callback();
+			},
+		}) as TestWritableResponse;
+
+		response.statusCode = 200;
+		response.headers = {};
+		response.setHeader = (name, value) => {
+			response.headers[name.toLowerCase()] = value;
+		};
+		response.getHeader = (name) => response.headers[name.toLowerCase()];
+		response.writeHead = (statusCode, headers = {}) => {
+			response.statusCode = statusCode;
+			for (const [name, value] of Object.entries(headers)) {
+				response.setHeader(name, value);
+			}
+			return response;
+		};
+		response.end = (chunk) => {
+			if (chunk) {
+				chunks.push(
+					Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk)),
+				);
+			}
+			resolve({
+				body: Buffer.concat(chunks).toString("utf8"),
+				headers: response.headers,
+				statusCode: response.statusCode,
+			});
+		};
+
+		server.middlewares.handle(
+			request as never,
+			response as never,
+			(error?: unknown) => {
+				if (error) {
+					reject(error);
+					return;
+				}
+
+				resolve({
+					body: Buffer.concat(chunks).toString("utf8"),
+					headers: response.headers,
+					statusCode: response.statusCode,
+				});
+			},
+		);
+	});
+}
+
 describe("createPreviewViteServer", () => {
 	it("uses a project-scoped cache and pre-optimizes React deps for @rbxts/react previews", async () => {
 		const fixture = createTempPreviewPackage();
@@ -495,6 +596,69 @@ describe("createPreviewViteServer", () => {
 			expect(transformedSource?.code).toContain(
 				fixture.buildInfoPath.replace(/\\/g, "/"),
 			);
+		} finally {
+			await server.close();
+		}
+	});
+
+	it("serves runtime dependency roots for external package previews", async () => {
+		const fixture = createTempPreviewPackage();
+		const resolvedConfig = await resolvePreviewServerConfig({
+			cwd: fixture.packageRoot,
+			packageName: "rbxts-react-preview",
+			packageRoot: fixture.packageRoot,
+			sourceRoot: fixture.sourceRoot,
+		});
+		const server = await createPreviewViteServer(resolvedConfig, {
+			appType: "custom",
+		});
+
+		try {
+			const entryResponse = await requestServerPath(
+				server,
+				`/@id/__x00__virtual:loom-preview-entry:${encodeURIComponent(
+					"rbxts-react-preview:Test.tsx",
+				)}`,
+			);
+			expect(entryResponse.statusCode).toBe(200);
+
+			const runtimeModuleUrl = readCapturedGroup(
+				entryResponse.body,
+				/import \* as __previewRuntimeModule from "([^"]+)";/,
+			);
+			const runtimeResponse = await requestServerPath(server, runtimeModuleUrl);
+			expect(runtimeResponse.statusCode).toBe(200);
+
+			const layoutWasmModuleUrl = toFsUrl(
+				path.resolve(process.cwd(), "packages/preview-runtime/src/layout/wasm.ts"),
+			);
+			const layoutWasmModuleResponse = await requestServerPath(
+				server,
+				layoutWasmModuleUrl,
+			);
+			expect(layoutWasmModuleResponse.statusCode).toBe(200);
+
+			const layoutEngineJsUrl = readCapturedGroup(
+				layoutWasmModuleResponse.body,
+				/import initLayoutEngine, \{ createLayoutSession \} from "([^"]+\/packages\/layout-engine\/pkg\/layout_engine\.js)";/,
+			);
+			const layoutEngineJsResponse = await requestServerPath(
+				server,
+				layoutEngineJsUrl,
+			);
+			expect(layoutEngineJsResponse.statusCode).toBe(200);
+			expect(layoutEngineJsResponse.body).toContain("LayoutSession");
+			expect(layoutEngineJsResponse.body).not.toContain("403 Restricted");
+
+			const layoutEngineWasmUrl = readCapturedGroup(
+				layoutEngineJsResponse.body,
+				/new URL\((?:'|")([^"']*layout_engine_bg\.wasm(?:\?[^"']*)?)(?:'|"),\s*import\.meta\.url\)/,
+			);
+			const layoutEngineWasmResponse = await requestServerPath(
+				server,
+				layoutEngineWasmUrl,
+			);
+			expect(layoutEngineWasmResponse.statusCode).toBe(200);
 		} finally {
 			await server.close();
 		}
