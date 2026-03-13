@@ -14,6 +14,13 @@ export default defineConfig({
 	resolve: {
 		alias: [
 			{
+				find: "virtual:loom-preview-workspace-index",
+				replacement: path.resolve(
+					workspaceRoot,
+					"tests/mocks/virtualPreviewWorkspaceIndex.ts",
+				),
+			},
+			{
 				find: "@loom-dev/compiler",
 				replacement: path.resolve(
 					workspaceRoot,
