@@ -60,13 +60,17 @@ type LayoutNode = {
 	id: string;
 	intrinsicSize?: { height: number; width: number } | null;
 	kind?: string;
+	layoutModifiers?: Record<string, unknown>;
+	layoutOrder?: number;
 	layout?: {
 		anchorPoint?: { x: number; y: number };
 		position?: { x: SerializedAxis; y: SerializedAxis };
 		size?: { x: SerializedAxis; y: SerializedAxis };
 	};
+	name?: string;
 	nodeType?: string;
 	parentId?: string;
+	sourceOrder?: number;
 };
 type LayoutSessionResult = {
 	debug: LayoutDebugPayload;
@@ -907,7 +911,7 @@ describe("preview runtime host mapping", () => {
 	});
 
 	it("derives nested scale fallback rects from parent rects when Wasm is unavailable", async () => {
-		layoutEngineMocks.init.mockRejectedValueOnce(new Error("init failed"));
+		layoutEngineMocks.init.mockRejectedValue(new Error("init failed"));
 
 		render(
 			<LayoutProvider viewportHeight={600} viewportWidth={800}>
@@ -944,7 +948,7 @@ describe("preview runtime host mapping", () => {
 	});
 
 	it("uses measurable host bounds in provider fallback layout when size is omitted", async () => {
-		layoutEngineMocks.init.mockRejectedValueOnce(new Error("init failed"));
+		layoutEngineMocks.init.mockRejectedValue(new Error("init failed"));
 
 		const getBoundingClientRectSpy = vi
 			.spyOn(HTMLElement.prototype, "getBoundingClientRect")
@@ -1008,7 +1012,7 @@ describe("preview runtime host mapping", () => {
 	});
 
 	it("uses metadata-driven full-size defaults for degraded hosts when Wasm is unavailable", async () => {
-		layoutEngineMocks.init.mockRejectedValueOnce(new Error("init failed"));
+		layoutEngineMocks.init.mockRejectedValue(new Error("init failed"));
 
 		render(
 			<LayoutProvider viewportHeight={480} viewportWidth={640}>
@@ -1037,6 +1041,10 @@ describe("preview runtime host mapping", () => {
 	});
 
 	it("applies padding and list layout semantics in provider fallback DOM", async () => {
+		layoutEngineMocks.computeDirty.mockImplementation(() => {
+			throw new Error("compute failed");
+		});
+
 		render(
 			<LayoutProvider debounceMs={0} viewportHeight={200} viewportWidth={300}>
 				<ScreenGui>
@@ -1096,6 +1104,10 @@ describe("preview runtime host mapping", () => {
 	});
 
 	it("applies grid placement semantics in provider fallback DOM", async () => {
+		layoutEngineMocks.computeDirty.mockImplementation(() => {
+			throw new Error("compute failed");
+		});
+
 		render(
 			<LayoutProvider debounceMs={0} viewportHeight={200} viewportWidth={300}>
 				<ScreenGui>
@@ -1140,6 +1152,10 @@ describe("preview runtime host mapping", () => {
 	});
 
 	it("applies size, aspect, and text-size constraints in provider fallback DOM", async () => {
+		layoutEngineMocks.computeDirty.mockImplementation(() => {
+			throw new Error("compute failed");
+		});
+
 		render(
 			<LayoutProvider debounceMs={0} viewportHeight={240} viewportWidth={320}>
 				<ScreenGui>
@@ -1177,6 +1193,10 @@ describe("preview runtime host mapping", () => {
 	});
 
 	it("distributes remaining list space through UIFlexItem grow ratios", async () => {
+		layoutEngineMocks.computeDirty.mockImplementation(() => {
+			throw new Error("compute failed");
+		});
+
 		render(
 			<LayoutProvider debounceMs={0} viewportHeight={240} viewportWidth={320}>
 				<ScreenGui>
@@ -1207,7 +1227,7 @@ describe("preview runtime host mapping", () => {
 		});
 	});
 
-	it("serializes frame metadata defaults and textlabel layout props before calling Wasm", async () => {
+	it("serializes layout metadata, ordering, and modifiers before calling Wasm", async () => {
 		layoutEngineMocks.computeDirty.mockImplementation(
 			(nodes, viewportWidth, viewportHeight) => {
 				expect(viewportWidth).toBe(800);
@@ -1230,23 +1250,68 @@ describe("preview runtime host mapping", () => {
 							y: { offset: 0, scale: 0 },
 						},
 					},
-					nodeType: "Frame",
-					parentId: "preview-node-screen",
-				});
-				expect(findNode(nodes, "preview-node-label")).toMatchObject({
-					id: "preview-node-label",
-					layout: {
-						anchorPoint: { x: 0.5, y: 0.5 },
-						position: {
-							x: { offset: 0, scale: 0.5 },
-							y: { offset: 0, scale: 0.5 },
+					layoutModifiers: {
+						list: {
+							fillDirection: "vertical",
+							horizontalAlignment: "left",
+							padding: { Offset: 8, Scale: 0 },
+							sortOrder: "name",
+							verticalAlignment: "top",
+							wraps: false,
 						},
-						size: {
-							x: { offset: 420, scale: 0 },
-							y: { offset: 40, scale: 0 },
+						padding: {
+							bottom: { Offset: 10, Scale: 0 },
+							left: { Offset: 10, Scale: 0 },
+							right: { Offset: 10, Scale: 0 },
+							top: { Offset: 10, Scale: 0 },
 						},
 					},
+					name: "Container",
+					nodeType: "Frame",
+					parentId: "preview-node-screen",
+					sourceOrder: 0,
+				});
+				expect(findNode(nodes, "preview-node-label-alpha")).toMatchObject({
+					id: "preview-node-label-alpha",
+					layout: {
+						position: {
+							x: { offset: 0, scale: 0 },
+							y: { offset: 0, scale: 0 },
+						},
+						size: {
+							x: { offset: 120, scale: 0 },
+							y: { offset: 20, scale: 0 },
+						},
+					},
+					layoutModifiers: {
+						textSizeConstraint: {
+							maxTextSize: 18,
+							minTextSize: 16,
+						},
+					},
+					layoutOrder: 2,
+					name: "Beta",
 					nodeType: "TextLabel",
+					parentId: "preview-node-frame",
+					sourceOrder: 0,
+				});
+				expect(findNode(nodes, "preview-node-label-beta")).toMatchObject({
+					id: "preview-node-label-beta",
+					layout: {
+						position: {
+							x: { offset: 0, scale: 0 },
+							y: { offset: 0, scale: 0 },
+						},
+						size: {
+							x: { offset: 120, scale: 0 },
+							y: { offset: 20, scale: 0 },
+						},
+					},
+					layoutOrder: 1,
+					name: "Alpha",
+					nodeType: "TextLabel",
+					parentId: "preview-node-frame",
+					sourceOrder: 1,
 				});
 				expect(
 					findNode(nodes, "preview-node-frame")?.layout?.size,
@@ -1256,7 +1321,18 @@ describe("preview runtime host mapping", () => {
 					{
 						"preview-node-screen": { height: 600, width: 800, x: 0, y: 0 },
 						"preview-node-frame": { height: 600, width: 800, x: 0, y: 0 },
-						"preview-node-label": { height: 40, width: 420, x: 190, y: 280 },
+						"preview-node-label-alpha": {
+							height: 20,
+							width: 120,
+							x: 10,
+							y: 10,
+						},
+						"preview-node-label-beta": {
+							height: 20,
+							width: 120,
+							x: 10,
+							y: 38,
+						},
 					},
 					viewportWidth,
 					viewportHeight,
@@ -1267,13 +1343,33 @@ describe("preview runtime host mapping", () => {
 		render(
 			<LayoutProvider debounceMs={0} viewportHeight={600} viewportWidth={800}>
 				<ScreenGui Id="preview-node-screen">
-					<Frame Id="preview-node-frame">
+					<Frame Id="preview-node-frame" Name="Container">
+						<UIPadding
+							PaddingBottom={{ Offset: 10, Scale: 0 }}
+							PaddingLeft={{ Offset: 10, Scale: 0 }}
+							PaddingRight={{ Offset: 10, Scale: 0 }}
+							PaddingTop={{ Offset: 10, Scale: 0 }}
+						/>
+						<UIListLayout
+							FillDirection="vertical"
+							Padding={{ Offset: 8, Scale: 0 }}
+							SortOrder="name"
+						/>
 						<TextLabel
-							AnchorPoint={[0.5, 0.5]}
-							Id="preview-node-label"
-							Position={[0.5, 0, 0.5, 0]}
-							Size={[0, 420, 0, 40]}
-							Text="Centered"
+							Id="preview-node-label-alpha"
+							LayoutOrder={2}
+							Name="Beta"
+							Size={[0, 120, 0, 20]}
+							Text="Beta"
+						>
+							<UITextSizeConstraint MaxTextSize={18} MinTextSize={16} />
+						</TextLabel>
+						<TextLabel
+							Id="preview-node-label-beta"
+							LayoutOrder={1}
+							Name="Alpha"
+							Size={[0, 120, 0, 20]}
+							Text="Alpha"
 						/>
 					</Frame>
 				</ScreenGui>
@@ -1283,17 +1379,24 @@ describe("preview runtime host mapping", () => {
 		const frame = document.querySelector(
 			'[data-preview-node-id="preview-node-frame"]',
 		) as HTMLElement;
-		const label = document.querySelector(
-			'[data-preview-node-id="preview-node-label"]',
+		const firstLabel = document.querySelector(
+			'[data-preview-node-id="preview-node-label-alpha"]',
+		) as HTMLElement;
+		const secondLabel = document.querySelector(
+			'[data-preview-node-id="preview-node-label-beta"]',
 		) as HTMLElement;
 
 		await waitFor(() => {
 			expect(frame.style.width).toBe("800px");
 			expect(frame.style.height).toBe("600px");
-			expect(label.style.left).toBe("190px");
-			expect(label.style.top).toBe("280px");
-			expect(label.style.width).toBe("420px");
-			expect(label.style.height).toBe("40px");
+			expect(firstLabel.style.left).toBe("10px");
+			expect(firstLabel.style.top).toBe("10px");
+			expect(firstLabel.style.width).toBe("120px");
+			expect(firstLabel.style.height).toBe("20px");
+			expect(secondLabel.style.left).toBe("10px");
+			expect(secondLabel.style.top).toBe("38px");
+			expect(secondLabel.style.width).toBe("120px");
+			expect(secondLabel.style.height).toBe("20px");
 		});
 	});
 

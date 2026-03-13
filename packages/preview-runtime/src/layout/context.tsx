@@ -191,15 +191,6 @@ const LayoutContext = sharedLayoutContexts.layout;
 const ParentNodeContext = sharedLayoutContexts.parentNode;
 const ParentRectContext = sharedLayoutContexts.parentRect;
 
-function scheduleMicrotask(callback: () => void): void {
-	if (typeof globalThis.queueMicrotask === "function") {
-		globalThis.queueMicrotask(callback);
-		return;
-	}
-
-	void Promise.resolve().then(callback);
-}
-
 function toErrorMessage(error: unknown): string {
 	if (error instanceof Error) {
 		return error.message;
@@ -327,11 +318,12 @@ export function LayoutProvider(props: LayoutProviderProps) {
 
 	const [isReady, setIsReady] = React.useState(false);
 	const [error, setError] = React.useState<string | null>(null);
-	const [_treeVersion, setTreeVersion] = React.useState(0);
-	const [_settledTreeVersion, setSettledTreeVersion] = React.useState(0);
+	const [treeVersion, setTreeVersion] = React.useState(0);
 	const [layoutResult, setLayoutResult] = React.useState<PreviewLayoutResult>(
 		() => createEmptyLayoutResult(ZERO_VIEWPORT),
 	);
+	const latestTreeVersionRef = React.useRef(treeVersion);
+	latestTreeVersionRef.current = treeVersion;
 	const containerStyle = React.useMemo<React.CSSProperties>(
 		() => ({
 			display: "block",
@@ -398,20 +390,8 @@ export function LayoutProvider(props: LayoutProviderProps) {
 	);
 
 	React.useEffect(() => {
-		let cancelled = false;
+		const scheduledTreeVersion = treeVersion;
 
-		scheduleMicrotask(() => {
-			if (!cancelled) {
-				setSettledTreeVersion((previous) => previous + 1);
-			}
-		});
-
-		return () => {
-			cancelled = true;
-		};
-	}, []);
-
-	React.useEffect(() => {
 		if (!viewportReady) {
 			setLayoutResult(
 				createEmptyLayoutResult({
@@ -440,6 +420,10 @@ export function LayoutProvider(props: LayoutProviderProps) {
 
 		const timeoutId = globalThis.setTimeout(
 			() => {
+				if (latestTreeVersionRef.current !== scheduledTreeVersion) {
+					return;
+				}
+
 				try {
 					const nextResult = controller.compute(isReady);
 					setLayoutResult(nextResult);
@@ -504,6 +488,7 @@ export function LayoutProvider(props: LayoutProviderProps) {
 		controller,
 		debounceMs,
 		isReady,
+		treeVersion,
 		viewportHeight,
 		viewportReady,
 		viewportWidth,

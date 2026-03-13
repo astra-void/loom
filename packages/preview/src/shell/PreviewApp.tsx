@@ -876,7 +876,7 @@ export function PreviewApp(props: PreviewAppProps) {
 		return () => {
 			cancelled = true;
 		};
-	}, [loadEntry, selectedEntryId, selectedEntryStatus, selectedEntry]);
+	}, [loadEntry, selectedEntryId, selectedEntryStatus]);
 
 	React.useEffect(() => {
 		setCollapsedFolderIds((previous) => {

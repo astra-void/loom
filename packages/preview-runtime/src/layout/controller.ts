@@ -27,6 +27,25 @@ type LayoutControllerOptions = {
 	sessionFactory?: () => LayoutSessionLike;
 };
 
+type LayoutCapability =
+	| "aspect-ratio-constraint"
+	| "flex-item"
+	| "grid"
+	| "list"
+	| "padding"
+	| "size-constraint"
+	| "text-size-constraint";
+
+const SUPPORTED_WASM_LAYOUT_CAPABILITIES = new Set<LayoutCapability>([
+	"aspect-ratio-constraint",
+	"flex-item",
+	"grid",
+	"list",
+	"padding",
+	"size-constraint",
+	"text-size-constraint",
+]);
+
 function compareIds(left: string, right: string) {
 	return left.localeCompare(right);
 }
@@ -314,6 +333,32 @@ function buildDebugNodeMap(
 	}
 
 	return map;
+}
+
+function getNodeLayoutCapabilities(node: PreviewLayoutNode): LayoutCapability[] {
+	const capabilities: LayoutCapability[] = [];
+	if (node.layoutModifiers?.aspectRatioConstraint) {
+		capabilities.push("aspect-ratio-constraint");
+	}
+	if (node.layoutModifiers?.flexItem) {
+		capabilities.push("flex-item");
+	}
+	if (node.layoutModifiers?.grid) {
+		capabilities.push("grid");
+	}
+	if (node.layoutModifiers?.list) {
+		capabilities.push("list");
+	}
+	if (node.layoutModifiers?.padding) {
+		capabilities.push("padding");
+	}
+	if (node.layoutModifiers?.sizeConstraint) {
+		capabilities.push("size-constraint");
+	}
+	if (node.layoutModifiers?.textSizeConstraint) {
+		capabilities.push("text-size-constraint");
+	}
+	return capabilities;
 }
 
 export class LayoutController {
@@ -910,7 +955,7 @@ export class LayoutController {
 	}
 
 	private computeWithSession(): PreviewLayoutResult {
-		if (this.hasAdvancedLayoutNodes()) {
+		if (this.hasUnsupportedLayoutNodes()) {
 			return this.computeFallback();
 		}
 
@@ -1015,16 +1060,13 @@ export class LayoutController {
 			});
 	}
 
-	private hasAdvancedLayoutNodes() {
+	private hasUnsupportedLayoutNodes() {
 		for (const node of this.nodes.values()) {
 			if (
-				node.layoutModifiers?.aspectRatioConstraint ||
-				node.layoutModifiers?.flexItem ||
-				node.layoutModifiers?.grid ||
-				node.layoutModifiers?.list ||
-				node.layoutModifiers?.padding ||
-				node.layoutModifiers?.sizeConstraint ||
-				node.layoutModifiers?.textSizeConstraint
+				getNodeLayoutCapabilities(node).some(
+					(capability) =>
+						!SUPPORTED_WASM_LAYOUT_CAPABILITIES.has(capability),
+				)
 			) {
 				return true;
 			}
