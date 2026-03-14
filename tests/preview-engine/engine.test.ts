@@ -582,6 +582,63 @@ describe("createPreviewEngine", () => {
 		});
 	});
 
+	it("surfaces unresolved free identifiers as ready compatibility warnings", () => {
+		const { packageRoot, sourceRoot } = createTempPreviewPackage({
+			"src/Broken.tsx": `
+        export const value = gamee.GetService("Players");
+
+        export function Broken() {
+          return <frame />;
+        }
+
+        export const preview = {
+          entry: Broken,
+        };
+      `,
+		});
+
+		const engine = createEngineForPackage(
+			packageRoot,
+			sourceRoot,
+			"compatibility",
+		);
+
+		expect(engine.getWorkspaceIndex().entries[0]).toMatchObject({
+			relativePath: "Broken.tsx",
+			status: "ready",
+			statusDetails: {
+				fidelity: "degraded",
+				kind: "ready",
+				warningCodes: ["UNRESOLVED_FREE_IDENTIFIER"],
+			},
+		});
+		expect(engine.getEntryPayload("fixture:Broken.tsx")).toMatchObject({
+			descriptor: {
+				status: "ready",
+				statusDetails: {
+					fidelity: "degraded",
+					kind: "ready",
+					warningCodes: ["UNRESOLVED_FREE_IDENTIFIER"],
+				},
+			},
+			diagnostics: [
+				expect.objectContaining({
+					blocking: false,
+					code: "UNRESOLVED_FREE_IDENTIFIER",
+					phase: "transform",
+					severity: "warning",
+					symbol: "gamee",
+				}),
+			],
+			transform: {
+				mode: "compatibility",
+				outcome: {
+					kind: "compatibility",
+				},
+			},
+		});
+	});
+
 	it("keeps degraded runtime warnings in ready status details", () => {
 		const { packageRoot, sourceRoot } = createTempPreviewPackage({
 			"src/Runtime.tsx": `
@@ -683,6 +740,61 @@ describe("createPreviewEngine", () => {
 					reason: "transform-diagnostics",
 				},
 			},
+			transform: {
+				mode: "strict-fidelity",
+				outcome: {
+					kind: "blocked",
+				},
+			},
+		});
+	});
+
+	it("blocks unresolved free identifiers in strict-fidelity workspace status", () => {
+		const { packageRoot, sourceRoot } = createTempPreviewPackage({
+			"src/Broken.tsx": `
+        export const value = gamee.GetService("Players");
+
+        export function Broken() {
+          return <frame />;
+        }
+
+        export const preview = {
+          entry: Broken,
+        };
+      `,
+		});
+
+		const engine = createEngineForPackage(
+			packageRoot,
+			sourceRoot,
+			"strict-fidelity",
+		);
+
+		expect(engine.getWorkspaceIndex().entries[0]).toMatchObject({
+			relativePath: "Broken.tsx",
+			status: "blocked_by_transform",
+			statusDetails: {
+				kind: "blocked_by_transform",
+				reason: "transform-diagnostics",
+			},
+		});
+		expect(engine.getEntryPayload("fixture:Broken.tsx")).toMatchObject({
+			descriptor: {
+				status: "blocked_by_transform",
+				statusDetails: {
+					kind: "blocked_by_transform",
+					reason: "transform-diagnostics",
+				},
+			},
+			diagnostics: [
+				expect.objectContaining({
+					blocking: true,
+					code: "UNRESOLVED_FREE_IDENTIFIER",
+					phase: "transform",
+					severity: "error",
+					symbol: "gamee",
+				}),
+			],
 			transform: {
 				mode: "strict-fidelity",
 				outcome: {

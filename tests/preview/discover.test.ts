@@ -241,6 +241,7 @@ describe("preview target discovery adapters", () => {
 			},
 		);
 
+		expect(resolvedConfig.mode).toBe("config-object");
 		expect(resolvedConfig.targets).toEqual([
 			{
 				name: "@fixtures/button",

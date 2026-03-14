@@ -32,7 +32,7 @@ export interface CliResolvedPreviewConfig {
 	configDir: string;
 	configFilePath?: string;
 	cwd: string;
-	mode: "config-file" | "package-root";
+	mode: "config-file" | "config-object" | "package-root";
 	projectName: string;
 	runtimeModule?: string;
 	server: {

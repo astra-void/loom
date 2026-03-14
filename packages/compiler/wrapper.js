@@ -1,6 +1,56 @@
 const { existsSync, readFileSync } = require("node:fs");
 const { resolve } = require("node:path");
 
+/**
+ * @typedef {"strict-fidelity" | "compatibility" | "mocked" | "design-time"} PreviewTransformMode
+ * @typedef {"error" | "info" | "warning"} PreviewTransformSeverity
+ *
+ * @typedef {object} UnsupportedPatternError
+ * @property {string} code
+ * @property {string} message
+ * @property {string} file
+ * @property {number} line
+ * @property {number} column
+ * @property {string | undefined} [symbol]
+ * @property {string} target
+ *
+ * @typedef {object} PreviewTransformDiagnostic
+ * @property {boolean} blocking
+ * @property {string} code
+ * @property {string | undefined} [details]
+ * @property {string} file
+ * @property {number} line
+ * @property {number} column
+ * @property {PreviewTransformSeverity} severity
+ * @property {string} summary
+ * @property {string | undefined} [symbol]
+ * @property {string} target
+ *
+ * @typedef {object} PreviewTransformOutcome
+ * @property {"preserved" | "degraded" | "metadata-only"} fidelity
+ * @property {"ready" | "compatibility" | "mocked" | "blocked" | "design-time"} kind
+ *
+ * @typedef {object} TransformPreviewSourceOptions
+ * @property {string} filePath
+ * @property {PreviewTransformMode | undefined} [mode]
+ * @property {string} runtimeModule
+ * @property {string} target
+ *
+ * @typedef {object} TransformPreviewSourceResult
+ * @property {string | null} code
+ * @property {UnsupportedPatternError[]} errors
+ * @property {PreviewTransformDiagnostic[]} diagnostics
+ * @property {PreviewTransformOutcome} outcome
+ *
+ * @typedef {typeof import("./index.js")} NativeCompilerModule
+ * @typedef {Omit<NativeCompilerModule, "transformPreviewSource"> & {
+ * 	transformPreviewSource(code: string, options: TransformPreviewSourceOptions): TransformPreviewSourceResult;
+ * }} CompilerModule
+ */
+
+/**
+ * @returns {NativeCompilerModule | null}
+ */
 function loadLocalNativeBinding() {
 	if (process.env.NAPI_RS_NATIVE_LIBRARY_PATH) {
 		return null;
@@ -25,14 +75,24 @@ function loadLocalNativeBinding() {
 	}
 }
 
+/** @type {NativeCompilerModule} */
 const native = loadLocalNativeBinding() ?? require("./index.js");
 
 const PREVIEW_GLOBAL_CALL_PATTERN = /__previewGlobal\("([^"]+)"\)/g;
+const UNRESOLVED_FREE_IDENTIFIER_CODE = "UNRESOLVED_FREE_IDENTIFIER";
 
+/**
+ * @param {string} value
+ * @returns {string}
+ */
 function escapeRegExp(value) {
 	return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+/**
+ * @param {PreviewTransformMode} mode
+ * @returns {PreviewTransformOutcome}
+ */
 function createDefaultTransformOutcome(mode) {
 	if (mode === "design-time") {
 		return {
@@ -47,6 +107,11 @@ function createDefaultTransformOutcome(mode) {
 	};
 }
 
+/**
+ * @param {PreviewTransformMode} mode
+ * @param {UnsupportedPatternError} error
+ * @returns {PreviewTransformDiagnostic}
+ */
 function toTransformDiagnostic(mode, error) {
 	const blocking = mode === "strict-fidelity";
 
@@ -64,6 +129,11 @@ function toTransformDiagnostic(mode, error) {
 	};
 }
 
+/**
+ * @param {PreviewTransformMode} mode
+ * @param {PreviewTransformDiagnostic[]} diagnostics
+ * @returns {PreviewTransformOutcome}
+ */
 function inferTransformOutcome(mode, diagnostics) {
 	if (mode === "design-time") {
 		return createDefaultTransformOutcome(mode);
@@ -86,6 +156,11 @@ function inferTransformOutcome(mode, diagnostics) {
 	};
 }
 
+/**
+ * @param {string} sourceText
+ * @param {string} identifier
+ * @returns {{ column: number; line: number }}
+ */
 function findIdentifierLocation(sourceText, identifier) {
 	const match = new RegExp(`\\b${escapeRegExp(identifier)}\\b`).exec(
 		sourceText,
@@ -106,13 +181,31 @@ function findIdentifierLocation(sourceText, identifier) {
 	};
 }
 
-function collectMockDiagnostics(sourceText, transformedCode, options) {
+/**
+ * @param {string} sourceText
+ * @param {string} transformedCode
+ * @param {TransformPreviewSourceOptions} options
+ * @param {PreviewTransformDiagnostic[]} existingDiagnostics
+ * @returns {PreviewTransformDiagnostic[]}
+ */
+function collectMockDiagnostics(sourceText, transformedCode, options, existingDiagnostics) {
+	/** @type {PreviewTransformDiagnostic[]} */
 	const diagnostics = [];
+	/** @type {Set<string>} */
 	const seenSymbols = new Set();
+	const unresolvedSymbols = new Set(
+		existingDiagnostics
+			.filter(
+				(diagnostic) =>
+					diagnostic.code === UNRESOLVED_FREE_IDENTIFIER_CODE &&
+					typeof diagnostic.symbol === "string",
+			)
+			.map((diagnostic) => diagnostic.symbol),
+	);
 
 	for (const match of transformedCode.matchAll(PREVIEW_GLOBAL_CALL_PATTERN)) {
 		const symbol = match[1];
-		if (!symbol || seenSymbols.has(symbol)) {
+		if (!symbol || seenSymbols.has(symbol) || unresolvedSymbols.has(symbol)) {
 			continue;
 		}
 
@@ -135,18 +228,24 @@ function collectMockDiagnostics(sourceText, transformedCode, options) {
 	return diagnostics;
 }
 
+/**
+ * @param {string} code
+ * @param {TransformPreviewSourceOptions} options
+ * @returns {TransformPreviewSourceResult}
+ */
 function transformPreviewSource(code, options) {
+	/** @type {PreviewTransformMode} */
 	const mode =
-		options && typeof options.mode === "string"
-			? options.mode
-			: "strict-fidelity";
+		typeof options.mode === "string" ? options.mode : "strict-fidelity";
 	const result = native.transformPreviewSource(code, options);
 	const diagnostics = Array.isArray(result.errors)
 		? result.errors.map((error) => toTransformDiagnostic(mode, error))
 		: [];
 
 	if (mode === "mocked" && typeof result.code === "string") {
-		diagnostics.push(...collectMockDiagnostics(code, result.code, options));
+		diagnostics.push(
+			...collectMockDiagnostics(code, result.code, options, diagnostics),
+		);
 	}
 
 	const outcome = inferTransformOutcome(mode, diagnostics);
@@ -162,7 +261,10 @@ function transformPreviewSource(code, options) {
 	};
 }
 
-module.exports = {
+/** @type {CompilerModule} */
+const compiler = {
 	...native,
 	transformPreviewSource,
 };
+
+module.exports = compiler;

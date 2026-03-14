@@ -542,11 +542,15 @@ export function LayoutProvider(props: LayoutProviderProps) {
 			viewport: resolvedViewport ?? ZERO_VIEWPORT,
 			viewportReady,
 		});
+	}, [error, isReady, layoutResult.debug, resolvedViewport, viewportReady]);
+
+	React.useEffect(() => {
+		const probeStore = getPreviewLayoutProbeStore();
 
 		return () => {
 			probeStore.reset();
 		};
-	}, [error, isReady, layoutResult.debug, resolvedViewport, viewportReady]);
+	}, []);
 
 	return (
 		<LayoutContext.Provider value={contextValue}>

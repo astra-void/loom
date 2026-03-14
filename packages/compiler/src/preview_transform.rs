@@ -31,8 +31,61 @@ use swc_core::{
 };
 
 const PREVIEW_GLOBAL_HELPER_NAME: &str = "__previewGlobal";
-const NEVER_REWRITE_IDENTIFIER_NAMES: [&str; 3] =
-    [PREVIEW_GLOBAL_HELPER_NAME, "arguments", "require"];
+const NEVER_REWRITE_IDENTIFIER_NAMES: &[&str] = &[
+    PREVIEW_GLOBAL_HELPER_NAME,
+    "arguments",
+    "require",
+    "undefined",
+];
+const KNOWN_PREVIEW_GLOBAL_NAMES: &[&str] = &[
+    "Enum",
+    "RunService",
+    "TweenInfo",
+    "game",
+    "print",
+    "task",
+    "tostring",
+    "workspace",
+];
+const STANDARD_GLOBAL_IDENTIFIER_NAMES: &[&str] = &[
+    "Array",
+    "BigInt",
+    "Boolean",
+    "Date",
+    "Error",
+    "JSON",
+    "Map",
+    "Math",
+    "Number",
+    "Object",
+    "Promise",
+    "Reflect",
+    "RegExp",
+    "Set",
+    "String",
+    "Symbol",
+    "URL",
+    "URLSearchParams",
+    "WeakMap",
+    "WeakSet",
+    "clearInterval",
+    "clearTimeout",
+    "console",
+    "decodeURI",
+    "decodeURIComponent",
+    "document",
+    "encodeURI",
+    "encodeURIComponent",
+    "globalThis",
+    "isFinite",
+    "isNaN",
+    "parseFloat",
+    "parseInt",
+    "queueMicrotask",
+    "setInterval",
+    "setTimeout",
+    "window",
+];
 const RUNTIME_HELPER_NAMES: [&str; 9] = [
     PREVIEW_GLOBAL_HELPER_NAME,
     "Color3",
@@ -72,11 +125,17 @@ pub struct TransformPreviewSourceResult {
     pub errors: Vec<UnsupportedPatternError>,
 }
 
+enum PreviewGlobalRewriteKind {
+    Silent,
+    Warn,
+}
+
 struct PreviewTransform<'a> {
     options: &'a TransformPreviewSourceOptions,
     cm: Lrc<SourceMap>,
     scope_stack: Vec<HashSet<String>>,
     errors: Vec<UnsupportedPatternError>,
+    reported_unresolved_identifier_names: HashSet<String>,
     suppress_identifier_rewrite_depth: usize,
 }
 
@@ -87,6 +146,7 @@ impl<'a> PreviewTransform<'a> {
             cm,
             scope_stack: vec![runtime_binding_names()],
             errors: Vec::new(),
+            reported_unresolved_identifier_names: HashSet::new(),
             suppress_identifier_rewrite_depth: 0,
         }
     }
@@ -116,13 +176,56 @@ impl<'a> PreviewTransform<'a> {
             .any(|scope| scope.contains(name))
     }
 
-    fn should_rewrite_identifier(&self, ident: &Ident) -> bool {
+    fn preview_global_rewrite_kind(&self, ident: &Ident) -> Option<PreviewGlobalRewriteKind> {
         if self.suppress_identifier_rewrite_depth > 0 {
-            return false;
+            return None;
         }
 
         let name = ident.sym.as_ref();
-        !NEVER_REWRITE_IDENTIFIER_NAMES.contains(&name) && !self.has_binding(name)
+        if self.has_binding(name)
+            || NEVER_REWRITE_IDENTIFIER_NAMES.contains(&name)
+            || STANDARD_GLOBAL_IDENTIFIER_NAMES.contains(&name)
+        {
+            return None;
+        }
+
+        if KNOWN_PREVIEW_GLOBAL_NAMES.contains(&name) {
+            return Some(PreviewGlobalRewriteKind::Silent);
+        }
+
+        Some(PreviewGlobalRewriteKind::Warn)
+    }
+
+    fn maybe_report_unresolved_free_identifier(&mut self, ident: &Ident) {
+        let symbol = ident.sym.to_string();
+        if !self
+            .reported_unresolved_identifier_names
+            .insert(symbol.clone())
+        {
+            return;
+        }
+
+        self.push_unsupported_error(
+            ident.span,
+            "UNRESOLVED_FREE_IDENTIFIER",
+            format!(
+                "Unresolved free identifier `{symbol}` will be rewritten to preview global access. Import or declare it explicitly to avoid preview drift."
+            ),
+            Some(symbol),
+        );
+    }
+
+    fn rewrite_identifier(&mut self, ident: &Ident) -> Option<Expr> {
+        match self.preview_global_rewrite_kind(ident) {
+            Some(PreviewGlobalRewriteKind::Silent) => {
+                Some(create_preview_global_access_expression(ident.sym.as_ref()))
+            }
+            Some(PreviewGlobalRewriteKind::Warn) => {
+                self.maybe_report_unresolved_free_identifier(ident);
+                Some(create_preview_global_access_expression(ident.sym.as_ref()))
+            }
+            None => None,
+        }
     }
 
     fn create_unsupported_error(
@@ -355,8 +458,8 @@ impl VisitMut for PreviewTransform<'_> {
             return;
         }
         if let Expr::Ident(ident) = expr {
-            if self.should_rewrite_identifier(ident) {
-                *expr = create_preview_global_access_expression(ident.sym.as_ref());
+            if let Some(rewritten_expr) = self.rewrite_identifier(ident) {
+                *expr = rewritten_expr;
                 return;
             }
         }
@@ -372,9 +475,9 @@ impl VisitMut for PreviewTransform<'_> {
 
     fn visit_mut_prop(&mut self, prop: &mut Prop) {
         if let Prop::Shorthand(ident) = prop {
-            if self.should_rewrite_identifier(ident) {
+            if let Some(rewritten_value) = self.rewrite_identifier(ident) {
                 let key = PropName::Ident(IdentName::new(ident.sym.clone(), ident.span));
-                let value = Box::new(create_preview_global_access_expression(ident.sym.as_ref()));
+                let value = Box::new(rewritten_value);
                 *prop = Prop::KeyValue(KeyValueProp { key, value });
                 return;
             }

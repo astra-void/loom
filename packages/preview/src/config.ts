@@ -95,7 +95,7 @@ export type ResolvedPreviewConfig = {
 	configDir: string;
 	configFilePath?: string;
 	cwd: string;
-	mode: "config-file" | "package-root";
+	mode: "config-file" | "config-object" | "package-root";
 	projectName: string;
 	runtimeModule?: string;
 	server: {
@@ -384,7 +384,7 @@ async function resolvePreviewConfigValue(
 		configDir: options.configDir,
 		configFilePath: options.configFilePath,
 		cwd: options.cwd,
-		mode: options.configFilePath ? "config-file" : "config-file",
+		mode: options.configFilePath ? "config-file" : "config-object",
 		projectName: config.projectName ?? createDefaultProjectName(targets),
 		runtimeModule: resolvePreviewRuntimeModule(
 			config.runtimeModule,

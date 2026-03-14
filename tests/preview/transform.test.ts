@@ -349,6 +349,79 @@ describe("buildPreviewModules", () => {
 		).toBe(true);
 	});
 
+	it("keeps unresolved free identifiers as non-blocking compatibility builds", async () => {
+		const fixtureRoot = fs.mkdtempSync(
+			path.join(os.tmpdir(), "loom-preview-unresolved-compat-"),
+		);
+		const sourceRoot = path.join(fixtureRoot, "src");
+		const outDir = path.join(fixtureRoot, "generated");
+
+		fs.mkdirSync(sourceRoot, { recursive: true });
+		fs.writeFileSync(
+			path.join(sourceRoot, "index.tsx"),
+			'export const value = gamee.GetService("Players");\nexport function Ready() { return <frame />; }\n',
+			"utf8",
+		);
+
+		const result = await buildPreviewModules({
+			outDir,
+			targets: [
+				{
+					name: "compat-unresolved",
+					sourceRoot,
+				},
+			],
+			transformMode: "compatibility",
+		});
+
+		expect(
+			result.writtenFiles.some((filePath) =>
+				filePath.endsWith(path.join("compat-unresolved", "index.tsx")),
+			),
+		).toBe(true);
+		expect(
+			fs.readFileSync(path.join(outDir, "compat-unresolved", "index.tsx"), "utf8"),
+		).toContain('__previewGlobal("gamee")');
+	});
+
+	it("blocks unresolved free identifiers in strict-fidelity preview builds", async () => {
+		const fixtureRoot = fs.mkdtempSync(
+			path.join(os.tmpdir(), "loom-preview-unresolved-strict-"),
+		);
+		const sourceRoot = path.join(fixtureRoot, "src");
+		const outDir = path.join(fixtureRoot, "generated");
+
+		fs.mkdirSync(sourceRoot, { recursive: true });
+		fs.writeFileSync(
+			path.join(sourceRoot, "index.tsx"),
+			'export const value = gamee.GetService("Players");\nexport function Broken() { return <frame />; }\n',
+			"utf8",
+		);
+
+		await expect(
+			buildPreviewModules({
+				outDir,
+				targets: [
+					{
+						name: "strict-unresolved",
+						sourceRoot,
+					},
+				],
+				transformMode: "strict-fidelity",
+			}),
+		).rejects.toMatchObject({
+			errors: [
+				expect.objectContaining({
+					blocking: true,
+					code: "UNRESOLVED_FREE_IDENTIFIER",
+					severity: "error",
+					symbol: "gamee",
+				}),
+			],
+			name: "PreviewBuildError",
+		});
+	});
+
 	it("continues to reject design-time module builds from the wrapper", async () => {
 		const fixtureRoot = fs.mkdtempSync(
 			path.join(os.tmpdir(), "loom-preview-design-time-build-"),

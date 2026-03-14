@@ -12,7 +12,9 @@
 		"test": "pnpm run build:native && pnpm exec vitest run",
 		"format": "pnpm biome format --write",
 		"lint": "pnpm biome check",
-		"lint:fix": "pnpm biome check --write --unsafe"
+		"lint:fix": "pnpm biome check --write --unsafe",
+		"verify:dts": "pnpm run build:native && pnpm --filter @loom-dev/preview-runtime build && pnpm --filter @loom-dev/preview-engine build && pnpm --filter @loom-dev/preview build && pnpm --filter @loom-dev/cli build && node ./scripts/verify-generated-dts.mjs",
+		"verify:preview-package": "node ./scripts/verify-preview-package.mjs"
 	},
 	"license": "MIT",
 	"devDependencies": {

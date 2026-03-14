@@ -8,6 +8,7 @@ import {
 	Enum,
 	Frame,
 	game,
+	getPreviewLayoutProbeSnapshot,
 	getPreviewRuntimeIssues,
 	ImageButton,
 	isPreviewElement,
@@ -18,6 +19,7 @@ import {
 	ScreenGui,
 	Slot,
 	SurfaceGui,
+	subscribePreviewLayoutProbe,
 	subscribePreviewRuntimeIssues,
 	TextLabel,
 	TweenInfo,
@@ -1580,6 +1582,101 @@ describe("preview runtime host mapping", () => {
 			expect(frame.style.width).toBe("80px");
 			expect(frame.style.height).toBe("32px");
 		});
+	});
+
+	it("does not reset the layout probe store between normal provider updates", async () => {
+		const snapshots: ReturnType<typeof getPreviewLayoutProbeSnapshot>[] = [];
+		const unsubscribe = subscribePreviewLayoutProbe((snapshot) => {
+			snapshots.push(snapshot);
+		});
+		const rendered = render(
+			<LayoutProvider debounceMs={0} viewportHeight={240} viewportWidth={320}>
+				<ScreenGui>
+					<Frame Id="probe-frame" Size={UDim2.fromOffset(80, 32)} />
+				</ScreenGui>
+			</LayoutProvider>,
+		);
+
+		try {
+			await waitFor(() => {
+				expect(getPreviewLayoutProbeSnapshot()).toMatchObject({
+					isReady: true,
+					viewport: { height: 240, width: 320 },
+					viewportReady: true,
+				});
+			});
+
+			snapshots.length = 0;
+			rendered.rerender(
+				<LayoutProvider debounceMs={0} viewportHeight={480} viewportWidth={640}>
+					<ScreenGui>
+						<Frame Id="probe-frame" Size={UDim2.fromOffset(80, 32)} />
+					</ScreenGui>
+				</LayoutProvider>,
+			);
+
+			await waitFor(() => {
+				expect(getPreviewLayoutProbeSnapshot()).toMatchObject({
+					viewport: { height: 480, width: 640 },
+					viewportReady: true,
+				});
+			});
+
+			expect(snapshots.length).toBeGreaterThan(0);
+			expect(snapshots.some((snapshot) => snapshot.viewportReady === false)).toBe(
+				false,
+			);
+		} finally {
+			unsubscribe();
+			rendered.unmount();
+		}
+	});
+
+	it("resets the layout probe store when LayoutProvider unmounts", async () => {
+		const snapshots: ReturnType<typeof getPreviewLayoutProbeSnapshot>[] = [];
+		const unsubscribe = subscribePreviewLayoutProbe((snapshot) => {
+			snapshots.push(snapshot);
+		});
+		const rendered = render(
+			<LayoutProvider debounceMs={0} viewportHeight={240} viewportWidth={320}>
+				<ScreenGui>
+					<Frame Id="probe-unmount" Size={UDim2.fromOffset(80, 32)} />
+				</ScreenGui>
+			</LayoutProvider>,
+		);
+
+		try {
+			await waitFor(() => {
+				expect(getPreviewLayoutProbeSnapshot()).toMatchObject({
+					isReady: true,
+					viewport: { height: 240, width: 320 },
+					viewportReady: true,
+				});
+			});
+
+			snapshots.length = 0;
+			rendered.unmount();
+
+			await waitFor(() => {
+				expect(getPreviewLayoutProbeSnapshot()).toMatchObject({
+					error: null,
+					isReady: false,
+					viewport: { height: 0, width: 0 },
+					viewportReady: false,
+				});
+			});
+
+			expect(snapshots).toEqual([
+				expect.objectContaining({
+					error: null,
+					isReady: false,
+					viewport: { height: 0, width: 0 },
+					viewportReady: false,
+				}),
+			]);
+		} finally {
+			unsubscribe();
+		}
 	});
 
 	it("normalizes runtime issues with the public taxonomy", () => {

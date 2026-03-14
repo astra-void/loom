@@ -15,6 +15,9 @@
 		"target"
 	],
 	"properties": {
+		"blocking": {
+			"type": "boolean"
+		},
 		"code": {
 			"type": "string"
 		},
@@ -52,6 +55,9 @@
 		},
 		"relativeFile": {
 			"type": "string"
+		},
+		"severity": {
+			"enum": ["error", "info", "warning"]
 		},
 		"summary": {
 			"type": "string"

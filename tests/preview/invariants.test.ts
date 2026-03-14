@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import entryPayloadSchema from "../../packages/preview-engine/schemas/entry-payload.schema.json";
 import workspaceIndexSchema from "../../packages/preview-engine/schemas/workspace-index.schema.json";
 import layoutDebugPayloadSchema from "../../packages/preview-runtime/schemas/layout-debug-payload.schema.json";
+import runtimeIssueSchema from "../../packages/preview-runtime/schemas/runtime-issue.schema.json";
 import {
 	supportedIsaNames,
 	supportedTypeRewriteNames,
@@ -20,10 +21,12 @@ type JsonSchemaNode = {
 	enum?: string[];
 	oneOf?: JsonSchemaNode[];
 	properties?: Record<string, JsonSchemaNode>;
+	type?: string;
 };
 
 const entryPayloadSchemaNode = entryPayloadSchema as unknown as JsonSchemaNode;
 const layoutDebugPayloadSchemaNode = layoutDebugPayloadSchema as JsonSchemaNode;
+const runtimeIssueSchemaNode = runtimeIssueSchema as JsonSchemaNode;
 const workspaceIndexSchemaNode =
 	workspaceIndexSchema as unknown as JsonSchemaNode;
 
@@ -127,6 +130,17 @@ ${isaChecks}
 		expect(countMatches(result.code ?? "", /isPreviewElement\(host, "/g)).toBe(
 			supportedIsaNames.length,
 		);
+	});
+
+	it("keeps runtime issue schema aligned with blocking and severity fields", () => {
+		expect(runtimeIssueSchemaNode.properties).toMatchObject({
+			blocking: {
+				type: "boolean",
+			},
+			severity: {
+				enum: ["error", "info", "warning"],
+			},
+		});
 	});
 
 	it("accepts full-size-default layout debug payloads and ready warning schema fields", () => {

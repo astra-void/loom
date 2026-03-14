@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+﻿import { existsSync } from "node:fs";
 import {
 	copyFile,
 	mkdir,
@@ -10,6 +10,7 @@ import {
 } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
+import { buildWrapperTypes } from "./build-wrapper-types.mjs";
 import { getPassthroughArgs, runNapi } from "./napi-cli.mjs";
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
@@ -52,6 +53,7 @@ async function main() {
 
 	await copyFile(sourceBinaryPath, localBinaryPath);
 	await copyGeneratedBindings();
+	buildWrapperTypes();
 	await writeManifest(localBinaryPath);
 	await pruneOldLocalBinaries(versionedBinaryFileName);
 	await rm(TEMP_OUTPUT_DIR, { force: true, recursive: true });

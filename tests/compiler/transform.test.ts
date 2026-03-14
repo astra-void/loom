@@ -194,6 +194,106 @@ describe("@loom-dev/compiler preview transform", () => {
 		expect(transformed.code).toContain('__previewGlobal("game")');
 	});
 
+	it("silently rewrites known preview globals without unresolved diagnostics", () => {
+		const transformed = transformPreviewSource(
+			`
+        export const service = game.GetService("Players");
+        export const playback = Enum.PlaybackState.Completed;
+        export const deferred = task.delay;
+      `,
+			{
+				filePath: "/virtual/known-preview-globals.tsx",
+				mode: "compatibility",
+				runtimeModule: "@loom-dev/preview-runtime",
+				target: "known-preview-globals",
+			},
+		);
+
+		expect(transformed.diagnostics).toHaveLength(0);
+		expect(transformed.code).toContain('__previewGlobal("game")');
+		expect(transformed.code).toContain(
+			'__previewGlobal("Enum").PlaybackState.Completed',
+		);
+		expect(transformed.code).toContain('__previewGlobal("task").delay');
+	});
+
+	it("emits unresolved free-identifier diagnostics for unknown globals", () => {
+		const transformed = transformPreviewSource(
+			`export const value = gamee.GetService("Players");`,
+			{
+				filePath: "/virtual/unresolved-global.tsx",
+				mode: "compatibility",
+				runtimeModule: "@loom-dev/preview-runtime",
+				target: "unresolved-global",
+			},
+		);
+
+		expect(transformed.outcome).toEqual({
+			fidelity: "degraded",
+			kind: "compatibility",
+		});
+		expect(transformed.diagnostics).toEqual([
+			expect.objectContaining({
+				blocking: false,
+				code: "UNRESOLVED_FREE_IDENTIFIER",
+				severity: "warning",
+				symbol: "gamee",
+			}),
+		]);
+		expect(transformed.code).toContain('__previewGlobal("gamee")');
+	});
+
+	it("blocks unresolved free identifiers in strict-fidelity mode", () => {
+		const transformed = transformPreviewSource(
+			`export const value = gamee.GetService("Players");`,
+			{
+				filePath: "/virtual/unresolved-global-strict.tsx",
+				mode: "strict-fidelity",
+				runtimeModule: "@loom-dev/preview-runtime",
+				target: "unresolved-global-strict",
+			},
+		);
+
+		expect(transformed.code).toBeNull();
+		expect(transformed.outcome).toEqual({
+			fidelity: "degraded",
+			kind: "blocked",
+		});
+		expect(transformed.diagnostics).toEqual([
+			expect.objectContaining({
+				blocking: true,
+				code: "UNRESOLVED_FREE_IDENTIFIER",
+				severity: "error",
+				symbol: "gamee",
+			}),
+		]);
+	});
+
+	it("suppresses duplicate mocked-global warnings when unresolved identifiers already surfaced", () => {
+		const transformed = transformPreviewSource(
+			`export const value = gamee.GetService("Players");`,
+			{
+				filePath: "/virtual/unresolved-global-mocked.tsx",
+				mode: "mocked",
+				runtimeModule: "@loom-dev/preview-runtime",
+				target: "unresolved-global-mocked",
+			},
+		);
+
+		expect(transformed.outcome).toEqual({
+			fidelity: "degraded",
+			kind: "mocked",
+		});
+		expect(transformed.diagnostics).toEqual([
+			expect.objectContaining({
+				blocking: false,
+				code: "UNRESOLVED_FREE_IDENTIFIER",
+				severity: "warning",
+				symbol: "gamee",
+			}),
+		]);
+	});
+
 	it("rewrites expanded enum literal surfaces for preview-friendly comparisons", () => {
 		const transformed = transformPreviewSource(
 			`
@@ -261,6 +361,10 @@ describe("@loom-dev/compiler preview transform", () => {
 		expect(transformed.code).toContain(
 			'new (__previewGlobal("TweenInfo"))(0.1)',
 		);
+
+		if (transformed.code === null) {
+			throw new Error("Expected transformed preview code for TweenInfo test.");
+		}
 
 		const expression = transformed.code.match(
 			/new \(__previewGlobal\("TweenInfo"\)\)\(0\.1\)/,
