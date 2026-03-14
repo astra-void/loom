@@ -1,9 +1,10 @@
-import fs from "node:fs";
+﻿import fs from "node:fs";
 import path from "node:path";
 import { compile_tsx, transformPreviewSource } from "@loom-dev/compiler";
 import {
 	createPreviewEngine,
 	PREVIEW_ENGINE_PROTOCOL_VERSION,
+	type PreviewEngine,
 	type PreviewExecutionMode,
 	type PreviewSourceTarget,
 } from "@loom-dev/preview-engine";
@@ -43,6 +44,7 @@ type TransformPreviewSourceInvocationOptions = Parameters<
 };
 
 export type CreatePreviewVitePluginOptions = {
+	previewEngine?: PreviewEngine;
 	projectName: string;
 	runtimeModule?: string;
 	targets: PreviewSourceTarget[];
@@ -213,17 +215,28 @@ function resolveWatchRoots(targets: PreviewSourceTarget[]) {
 	].sort((left, right) => left.localeCompare(right));
 }
 
+function isIgnorablePreviewRefreshError(error: unknown) {
+	if (!error || typeof error !== "object") {
+		return false;
+	}
+
+	const code = "code" in error ? (error as { code?: unknown }).code : undefined;
+	return code === "ENOENT" || code === "ENOTDIR";
+}
+
 export function createPreviewVitePlugin(
 	options: CreatePreviewVitePluginOptions,
 ): PreviewPluginOption {
-	const runtimeEntryPath = options.runtimeModule ?? resolveRuntimeEntryPath();
+	const runtimeEntryPath = (options.runtimeModule ?? resolveRuntimeEntryPath()).replace(/\\/g, "/");
 	const mockEntryPath = resolveMockEntryPath();
-	const previewEngine = createPreviewEngine({
-		projectName: options.projectName,
-		runtimeModule: runtimeEntryPath,
-		targets: options.targets,
-		transformMode: options.transformMode ?? "strict-fidelity",
-	});
+	const previewEngine =
+		options.previewEngine ??
+		createPreviewEngine({
+			projectName: options.projectName,
+			runtimeModule: runtimeEntryPath,
+			targets: options.targets,
+			transformMode: options.transformMode ?? "strict-fidelity",
+		});
 	const watchRoots = resolveWatchRoots(options.targets);
 	let server: PreviewDevServer | undefined;
 
@@ -250,7 +263,15 @@ export function createPreviewVitePlugin(
 	};
 
 	const refreshPreviewEngine = (filePath: string) => {
-		const update = previewEngine.invalidateSourceFiles([filePath]);
+		let update;
+		try {
+			update = previewEngine.invalidateSourceFiles([filePath]);
+		} catch (error) {
+			if (isIgnorablePreviewRefreshError(error)) {
+				return undefined;
+			}
+			throw error;
+		}
 		invalidateVirtualModules(update.changedEntryIds);
 
 		if (server) {
@@ -317,7 +338,7 @@ export function createPreviewVitePlugin(
 			}
 
 			if (id === RESOLVED_RUNTIME_MODULE_ID) {
-				return `export * from ${JSON.stringify(resolveRuntimeEntryPath())};\n`;
+				return `export * from ${JSON.stringify(runtimeEntryPath)};\n`;
 			}
 
 			if (id.startsWith(RESOLVED_ENTRY_MODULE_ID_PREFIX)) {

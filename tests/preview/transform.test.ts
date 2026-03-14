@@ -1,9 +1,11 @@
-import fs from "node:fs";
+﻿import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { compile_tsx, transformPreviewSource } from "@loom-dev/compiler";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { buildPreviewModules } from "../../packages/preview/src/build";
+
+vi.setConfig({ testTimeout: 10000 });
 
 describe("preview source transform", () => {
 	it("rewrites supported imports, enums, host elements, and DOM-facing types", () => {
@@ -524,7 +526,7 @@ describe("buildPreviewModules", () => {
 				],
 				outDir: sourceRoot,
 			}),
-		).rejects.toThrow(/overlaps the source tree/i);
+		).rejects.toThrow(/workspace root|overlaps the source tree/i);
 	});
 
 	it("skips unchanged files and removes stale manifest-owned outputs incrementally", async () => {

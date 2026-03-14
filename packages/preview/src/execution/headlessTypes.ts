@@ -33,7 +33,7 @@ export type PreviewHeadlessEntryExecutionResult = {
 	render: PreviewHeadlessEntryRenderResult;
 	renderIssue: PreviewRuntimeIssue | null;
 	runtimeIssues: PreviewRuntimeIssue[];
-	severity: "error" | "pass" | "warning";
+	severity: "error" | "pass" | "skipped" | "warning";
 	viewport: PreviewHeadlessEntryViewport;
 	warningState: PreviewReadyWarningState;
 };
@@ -116,6 +116,8 @@ export function summarizeHeadlessExecution(
 				break;
 			case "pass":
 				pass += 1;
+				break;
+			case "skipped":
 				break;
 		}
 	}

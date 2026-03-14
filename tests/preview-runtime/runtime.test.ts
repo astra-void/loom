@@ -98,6 +98,7 @@ afterEach(() => {
 	rafController?.restore();
 	rafController = undefined;
 	document.body.innerHTML = "";
+	vi.useRealTimers();
 	vi.restoreAllMocks();
 });
 

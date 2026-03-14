@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
-import type { PreviewExecutionMode } from "@loom-dev/preview-engine";
+import type { PreviewEngine, PreviewExecutionMode } from "@loom-dev/preview-engine";
 import ts from "typescript";
 import { searchForWorkspaceRoot } from "vite";
 import type {
@@ -12,8 +12,15 @@ import type {
 import { loadPreviewConfig, resolvePreviewConfigObject } from "../config";
 import { createAutoMockPropsPlugin } from "./autoMockPlugin";
 import { isFilePathUnderRoot, resolveRealFilePath } from "./pathUtils";
+import {
+	createTsconfigParseCache,
+	findNearestTsconfig,
+	isTsconfigLikeFile,
+	type TsconfigParseCache,
+} from "./tsconfigUtils";
 import { createPreviewVitePlugin } from "./plugin";
 import type {
+	PreviewDevServer,
 	PreviewPluginOption,
 	ReactPluginModule,
 	ViteModule,
@@ -53,6 +60,7 @@ export type StartPreviewServerInput =
 export type CreatePreviewViteServerOptions = {
 	appType?: "custom" | "spa";
 	middlewareMode?: boolean;
+	previewEngine?: PreviewEngine;
 };
 
 type PackageManifest = {
@@ -87,7 +95,7 @@ export function resolvePreviewRuntimeRootEntry() {
 			path.resolve(__dirname, "../../../preview-runtime/dist/index.js"),
 		],
 		"preview runtime root",
-	);
+	).replace(/\\/g, "/");
 }
 
 function resolveReactShimEntry(fileName: string) {
@@ -149,57 +157,12 @@ function isUnsupportedRuntimeFilePath(filePath: string) {
 	);
 }
 
-function findNearestTsconfig(filePath: string) {
-	return ts.findConfigFile(
-		path.dirname(filePath),
-		ts.sys.fileExists,
-		"tsconfig.json",
-	);
-}
-
-function parseTsconfig(tsconfigPath: string) {
-	const configFile = ts.readConfigFile(tsconfigPath, ts.sys.readFile);
-	if (configFile.error) {
-		const message = ts.formatDiagnostic(configFile.error, {
-			getCanonicalFileName: (value) => value,
-			getCurrentDirectory: () => process.cwd(),
-			getNewLine: () => "\n",
-		});
-		throw new Error(
-			`Failed to read TypeScript config ${tsconfigPath}: ${message}`,
-		);
-	}
-
-	const parsed = ts.parseJsonConfigFileContent(
-		configFile.config,
-		ts.sys,
-		path.dirname(tsconfigPath),
-		undefined,
-		tsconfigPath,
-	);
-	if (parsed.errors.length > 0) {
-		const message = ts.formatDiagnostics(parsed.errors, {
-			getCanonicalFileName: (value) => value,
-			getCurrentDirectory: () => process.cwd(),
-			getNewLine: () => "\n",
-		});
-		throw new Error(
-			`Failed to parse TypeScript config ${tsconfigPath}: ${message}`,
-		);
-	}
-
-	return parsed;
-}
-
-function createTsconfigPathResolvePlugin(
-	allowedRoots: string[],
-): PreviewPluginOption {
-	const configCache = new Map<string, ts.ParsedCommandLine>();
+function createAllowedFilePathPredicate(allowedRoots: string[]) {
 	const resolvedAllowedRoots = [
 		...new Set(allowedRoots.map((rootPath) => resolveRealFilePath(rootPath))),
 	];
 
-	const isAllowedFilePath = (filePath: string) => {
+	return (filePath: string) => {
 		const resolvedFilePath = resolveRealFilePath(filePath);
 		return resolvedAllowedRoots.some(
 			(rootPath) =>
@@ -207,6 +170,13 @@ function createTsconfigPathResolvePlugin(
 				isFilePathUnderRoot(rootPath, resolvedFilePath),
 		);
 	};
+}
+
+function createTsconfigPathResolvePlugin(
+	allowedRoots: string[],
+	tsconfigParseCache: TsconfigParseCache,
+): PreviewPluginOption {
+	const isAllowedFilePath = createAllowedFilePathPredicate(allowedRoots);
 
 	return {
 		enforce: "pre",
@@ -238,13 +208,7 @@ function createTsconfigPathResolvePlugin(
 				return undefined;
 			}
 
-			const parsedConfig =
-				configCache.get(tsconfigPath) ??
-				(() => {
-					const nextParsed = parseTsconfig(tsconfigPath);
-					configCache.set(tsconfigPath, nextParsed);
-					return nextParsed;
-				})();
+			const parsedConfig = tsconfigParseCache.getParsed(tsconfigPath);
 			const resolution = ts.resolveModuleName(
 				id,
 				importerFilePath,
@@ -274,6 +238,40 @@ function createTsconfigPathResolvePlugin(
 			}
 
 			return resolvedFilePath;
+		},
+	};
+}
+
+function createTsconfigCacheInvalidationPlugin(
+	allowedRoots: string[],
+	tsconfigParseCache: TsconfigParseCache,
+): PreviewPluginOption {
+	const isAllowedFilePath = createAllowedFilePathPredicate(allowedRoots);
+	let server: PreviewDevServer | undefined;
+
+	const invalidateTsconfigCaches = (filePath: string) => {
+		if (!isTsconfigLikeFile(filePath) || !isAllowedFilePath(filePath)) {
+			return;
+		}
+
+		tsconfigParseCache.clear();
+		if (!server) {
+			return;
+		}
+
+		(server.moduleGraph as typeof server.moduleGraph & {
+			invalidateAll?: () => void;
+		}).invalidateAll?.();
+		server.ws.send({ type: "full-reload" });
+	};
+
+	return {
+		name: "loom-preview-tsconfig-cache-invalidation",
+		configureServer(configuredServer) {
+			server = configuredServer;
+			configuredServer.watcher.on("add", invalidateTsconfigCaches);
+			configuredServer.watcher.on("change", invalidateTsconfigCaches);
+			configuredServer.watcher.on("unlink", invalidateTsconfigCaches);
 		},
 	};
 }
@@ -540,8 +538,9 @@ export async function createPreviewViteServer(
 	).default;
 
 	const shellRoot = resolveShellRoot();
-	const previewRuntimeRootEntry =
-		resolvedConfig.runtimeModule ?? resolvePreviewRuntimeRootEntry();
+	const previewRuntimeRootEntry = (
+		resolvedConfig.runtimeModule ?? resolvePreviewRuntimeRootEntry()
+	).replace(/\\/g, "/");
 	const previewViteCacheDir = resolvePreviewViteCacheDir(
 		resolvedConfig.workspaceRoot,
 	);
@@ -550,7 +549,9 @@ export async function createPreviewViteServer(
 		resolvedConfig.server.fsAllow,
 		previewRuntimeRootEntry,
 	);
+	const tsconfigParseCache = createTsconfigParseCache();
 	const previewPlugin = createPreviewVitePlugin({
+		previewEngine: options.previewEngine,
 		projectName: resolvedConfig.projectName,
 		runtimeModule: previewRuntimeRootEntry,
 		targets: resolvedConfig.targets,
@@ -576,8 +577,18 @@ export async function createPreviewViteServer(
 			...(options.middlewareMode
 				? [createRuntimeDependencyResolvePlugin()]
 				: []),
-			createTsconfigPathResolvePlugin(resolvedConfig.server.fsAllow),
-			createAutoMockPropsPlugin({ targets: resolvedConfig.targets }),
+			createTsconfigCacheInvalidationPlugin(
+				resolvedConfig.server.fsAllow,
+				tsconfigParseCache,
+			),
+			createTsconfigPathResolvePlugin(
+				resolvedConfig.server.fsAllow,
+				tsconfigParseCache,
+			),
+			createAutoMockPropsPlugin({
+				targets: resolvedConfig.targets,
+				tsconfigParseCache,
+			}),
 			previewPlugin,
 			reactPlugin({
 				exclude: createPreviewReactPluginExclude(previewViteCacheDir),

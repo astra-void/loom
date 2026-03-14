@@ -1,4 +1,4 @@
-import fs from "node:fs";
+﻿import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createPreviewEngine } from "@loom-dev/preview-engine";
@@ -126,7 +126,7 @@ function sanitizePaths<T>(value: T, packageRoot: string): T {
 	]);
 	const visit = (current: unknown): unknown => {
 		if (typeof current === "string") {
-			let next = current;
+			let next = current.replace(/\\/g, "/");
 			for (const normalizedRoot of normalizedRoots) {
 				next = next.replaceAll(normalizedRoot, "<pkg>");
 			}

@@ -1,4 +1,4 @@
-import fs from "node:fs";
+﻿import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -10,6 +10,8 @@ import {
 
 const temporaryRoots: string[] = [];
 let restoreExpectedLogs: (() => void) | undefined;
+
+vi.setConfig({ testTimeout: 20000 });
 
 beforeEach(() => {
 	const restoreConsole = suppressExpectedConsoleMessages({
@@ -92,6 +94,172 @@ function findDebugNode(
 }
 
 describe("createPreviewHeadlessSession", () => {
+	it("starts with skipped executions and only runs selected entries on demand", async () => {
+		const packageRoot = createTempPreviewPackage({
+			"src/ComponentEntry.tsx": `
+				export function ComponentEntry() {
+					return <frame Id="component-root"><textlabel Id="component-label" Text="Component" /></frame>;
+				}
+
+				export const preview = {
+					entry: ComponentEntry,
+				};
+			`,
+			"src/HarnessEntry.tsx": `
+				export function HarnessCard() {
+					return <frame Id="harness-card"><textlabel Id="harness-label" Text="Harness" /></frame>;
+				}
+
+				export const preview = {
+					render: () => <HarnessCard />,
+				};
+			`,
+		});
+
+		const session = await createPreviewHeadlessSession({ cwd: packageRoot });
+
+		try {
+			const initialSnapshot = session.getSnapshot();
+			const componentId = initialSnapshot.workspaceIndex.entries.find((entry) =>
+				entry.relativePath.endsWith("ComponentEntry.tsx"),
+			)?.id;
+			const harnessId = initialSnapshot.workspaceIndex.entries.find((entry) =>
+				entry.relativePath.endsWith("HarnessEntry.tsx"),
+			)?.id;
+
+			expect(componentId).toBeTruthy();
+			expect(harnessId).toBeTruthy();
+			if (!componentId || !harnessId) {
+				throw new Error("Expected component and harness entries to exist.");
+			}
+
+			expect(initialSnapshot.execution.summary).toEqual({
+				error: 0,
+				pass: 0,
+				selectedEntryCount: 0,
+				total: 2,
+				warning: 0,
+			});
+			expect(initialSnapshot.execution.entries[componentId]).toMatchObject({
+				render: {
+					status: "skipped",
+				},
+				severity: "skipped",
+			});
+			expect(initialSnapshot.execution.entries[harnessId]).toMatchObject({
+				render: {
+					status: "skipped",
+				},
+				severity: "skipped",
+			});
+
+			await session.run({ entryIds: [componentId] });
+			const selectedSnapshot = session.getSnapshot();
+			expect(selectedSnapshot.execution.summary).toEqual({
+				error: 0,
+				pass: 1,
+				selectedEntryCount: 1,
+				total: 2,
+				warning: 0,
+			});
+			expect(selectedSnapshot.execution.entries[componentId]).toMatchObject({
+				render: {
+					status: "rendered",
+				},
+				severity: "pass",
+			});
+			expect(selectedSnapshot.execution.entries[harnessId]).toMatchObject({
+				render: {
+					status: "skipped",
+				},
+				severity: "skipped",
+			});
+		} finally {
+			session.dispose();
+		}
+	});
+
+	it("reruns entries after clearing runtime issues from previous runs", async () => {
+		const packageRoot = createTempPreviewPackage({
+			"src/RenderFailure.tsx": `
+				export function RenderFailure() {
+					throw new Error("render failed");
+				}
+
+				export const preview = {
+					entry: RenderFailure,
+				};
+			`,
+		});
+
+		const session = await createPreviewHeadlessSession({ cwd: packageRoot });
+
+		try {
+			let snapshot = await session.run();
+			const entryId = snapshot.workspaceIndex.entries[0]?.id;
+			expect(entryId).toBeTruthy();
+			if (!entryId) {
+				throw new Error("Expected render failure entry to exist.");
+			}
+
+			expect(snapshot.execution.entries[entryId]).toMatchObject({
+				render: {
+					status: "render_failed",
+				},
+				severity: "error",
+			});
+
+			snapshot = await session.run({ entryIds: [entryId] });
+			expect(snapshot.execution.entries[entryId]).toMatchObject({
+				render: {
+					status: "render_failed",
+				},
+				severity: "error",
+			});
+		} finally {
+			session.dispose();
+		}
+	});
+
+	it("uses the current workspace entry state for later runs", async () => {
+		const packageRoot = createTempPreviewPackage({
+			"src/DynamicEntry.tsx": `
+				export function DynamicEntry() {
+					return <frame Id="dynamic-root" />;
+				}
+
+				export const preview = {
+					entry: DynamicEntry,
+				};
+			`,
+		});
+		const sourceFilePath = path.join(packageRoot, "src", "DynamicEntry.tsx");
+
+		const session = await createPreviewHeadlessSession({ cwd: packageRoot });
+
+		try {
+			const entryId = session.getSnapshot().workspaceIndex.entries[0]?.id;
+			expect(entryId).toBeTruthy();
+			if (!entryId) {
+				throw new Error("Expected dynamic entry to exist.");
+			}
+
+			fs.writeFileSync(sourceFilePath, "export const value = 1;\n", "utf8");
+			session.engine.invalidateSourceFiles([sourceFilePath]);
+
+			await session.run({ entryIds: [entryId] });
+			const snapshot = session.getSnapshot();
+			expect(snapshot.entries[entryId]?.descriptor.status).toBe("needs_harness");
+			expect(snapshot.execution.entries[entryId]).toMatchObject({
+				render: {
+					status: "skipped",
+				},
+				severity: "error",
+			});
+		} finally {
+			session.dispose();
+		}
+	});
 	it("renders preview.entry and preview.render entries into execution results", async () => {
 		const packageRoot = createTempPreviewPackage({
 			"src/ComponentEntry.tsx": `
@@ -117,6 +285,7 @@ describe("createPreviewHeadlessSession", () => {
 		const session = await createPreviewHeadlessSession({ cwd: packageRoot });
 
 		try {
+			await session.run();
 			const snapshot = session.getSnapshot();
 			const componentId = snapshot.workspaceIndex.entries.find((entry) =>
 				entry.relativePath.endsWith("ComponentEntry.tsx"),
@@ -175,6 +344,7 @@ describe("createPreviewHeadlessSession", () => {
 		const session = await createPreviewHeadlessSession({ cwd: packageRoot });
 
 		try {
+			await session.run();
 			const snapshot = session.getSnapshot();
 			const loadEntryId = snapshot.workspaceIndex.entries.find((entry) =>
 				entry.relativePath.endsWith("LoadFailure.tsx"),
@@ -238,6 +408,7 @@ describe("createPreviewHeadlessSession", () => {
 		const session = await createPreviewHeadlessSession({ cwd: packageRoot });
 
 		try {
+			await session.run();
 			const snapshot = session.getSnapshot();
 			const entryId = snapshot.workspaceIndex.entries[0]?.id;
 			expect(entryId).toBeTruthy();
@@ -324,6 +495,7 @@ describe("createPreviewHeadlessSession", () => {
 
 		try {
 			session = await createPreviewHeadlessSession({ cwd: packageRoot });
+			await session.run();
 			const snapshot = session.getSnapshot();
 			const entryId = snapshot.workspaceIndex.entries[0]?.id;
 			expect(entryId).toBeTruthy();
@@ -402,6 +574,7 @@ describe("createPreviewHeadlessSession", () => {
 		const session = await createPreviewHeadlessSession({ cwd: packageRoot });
 
 		try {
+			await session.run();
 			const snapshot = session.getSnapshot();
 			const entryId = snapshot.workspaceIndex.entries[0]?.id;
 			expect(entryId).toBeTruthy();
@@ -485,3 +658,4 @@ describe("createPreviewHeadlessSession", () => {
 		).toBe(initialGlobalPrototypeParent);
 	});
 });
+

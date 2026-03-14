@@ -61,7 +61,7 @@ The main exports are:
 - `createStaticTargetsDiscovery`
 - `createWorkspaceTargetsDiscovery`
 
-`createPreviewHeadlessSession()` now executes previewable entries headlessly. Its snapshot keeps the engine payload at the top level and adds an `execution` field with per-entry render status, runtime/layout issues, layout debug, degraded-host warnings, and viewport metadata.
+`createPreviewHeadlessSession()` now creates a lazy headless session. Call `session.run()` to execute all or selected preview entries, and read `session.getSnapshot()` for the current engine payload plus the `execution` field with per-entry render status, runtime/layout issues, layout debug, degraded-host warnings, and viewport metadata.
 
 `buildPreviewModules` is the raw target-array, module-only wrapper and continues to reject `design-time`.
 

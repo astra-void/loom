@@ -345,6 +345,39 @@ describe("preview target discovery adapters", () => {
 		);
 	});
 
+	it("createWorkspaceTargetsDiscovery prefers workspace manifests over stray package scans", async () => {
+		const workspaceRoot = createTempRoot("loom-preview-workspace-manifest-");
+		createPackage(workspaceRoot, "packages/button", "@fixtures/button");
+		createPackage(workspaceRoot, "packages/dialog", "@fixtures/dialog");
+		createPackage(workspaceRoot, "examples/sandbox", "@fixtures/sandbox");
+		fs.writeFileSync(
+			path.join(workspaceRoot, "pnpm-workspace.yaml"),
+			'packages:\n  - "packages/*"\n',
+			"utf8",
+		);
+
+		const resolvedConfig = await resolvePreviewConfigObject(
+			{
+				projectName: "Workspace Targets",
+				targetDiscovery: createWorkspaceTargetsDiscovery({
+					workspaceRoot,
+				}),
+			},
+			{
+				configDir: workspaceRoot,
+				cwd: workspaceRoot,
+			},
+		);
+
+		expect(resolvedConfig.targets).toEqual([
+			expect.objectContaining({ name: "button" }),
+			expect.objectContaining({ name: "dialog" }),
+		]);
+		expect(
+			resolvedConfig.targets.some((target) => target.packageName === "@fixtures/sandbox"),
+		).toBe(false);
+	});
+
 	it("createWorkspaceTargetsDiscovery finds workspace packages and respects include/exclude filters", async () => {
 		const workspaceRoot = createTempRoot("loom-preview-workspace-discovery-");
 		const buttonTarget = createPackage(

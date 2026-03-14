@@ -1,4 +1,4 @@
-import {
+﻿import {
 	createPreviewEngine,
 	type PreviewEngine,
 	type PreviewEngineSnapshot,
@@ -99,20 +99,25 @@ function validateSelectedEntryIds(
 	return dedupedEntryIds;
 }
 
-function buildExecutionEntryResult(
-	entryPayload: PreviewEntryPayload,
-	collectedExecution: CollectedExecutionResult | undefined,
-): PreviewHeadlessEntryExecutionResult {
-	const execution = collectedExecution ?? {
+function createSkippedExecution(): CollectedExecutionResult {
+	return {
 		issues: [],
 		layoutDebug: null,
 		loadIssue: null,
 		render: {
-			status: "skipped" as const,
+			status: "skipped",
 		},
 		renderIssue: null,
 		viewport: createDefaultHeadlessViewport(),
 	};
+}
+
+function buildExecutionEntryResult(
+	entryPayload: PreviewEntryPayload,
+	collectedExecution: CollectedExecutionResult | undefined,
+	selected: boolean,
+): PreviewHeadlessEntryExecutionResult {
+	const execution = collectedExecution ?? createSkippedExecution();
 	const runtimeIssues = execution.issues.filter(
 		(issue) => issue.phase === "runtime",
 	);
@@ -142,25 +147,26 @@ function buildExecutionEntryResult(
 
 	return {
 		...baseExecutionResult,
-		severity: classifyHeadlessExecutionResult(
-			entryPayload,
-			baseExecutionResult,
-		),
+		severity: selected
+			? classifyHeadlessExecutionResult(entryPayload, baseExecutionResult)
+			: "skipped",
 	};
 }
 
 function buildHeadlessSnapshot(
 	engine: PreviewEngine,
 	collectedExecutionsById: Map<string, CollectedExecutionResult>,
-	selectedEntryCount: number,
+	selectedEntryIds: string[],
 ): PreviewHeadlessSnapshot {
 	const engineSnapshot = getEngineSnapshot(engine);
+	const selectedEntryIdSet = new Set(selectedEntryIds);
 	const executionEntries = Object.fromEntries(
 		Object.entries(engineSnapshot.entries).map(([entryId, entryPayload]) => [
 			entryId,
 			buildExecutionEntryResult(
 				entryPayload,
 				collectedExecutionsById.get(entryId),
+				selectedEntryIdSet.has(entryId),
 			),
 		]),
 	);
@@ -172,7 +178,7 @@ function buildHeadlessSnapshot(
 			summary: summarizeHeadlessExecution(
 				engineSnapshot.entries,
 				executionEntries,
-				selectedEntryCount,
+				selectedEntryIds.length,
 			),
 		},
 	};
@@ -180,10 +186,12 @@ function buildHeadlessSnapshot(
 
 async function createHeadlessPreviewServer(
 	resolvedConfig: ResolvedPreviewConfig,
+	engine: PreviewEngine,
 ) {
 	const serverOptions: CreatePreviewViteServerOptions = {
 		appType: "custom",
 		middlewareMode: true,
+		previewEngine: engine,
 	};
 
 	return createPreviewViteServer(resolvedConfig, serverOptions);
@@ -193,30 +201,49 @@ export async function createPreviewHeadlessSession(
 	options: CreatePreviewHeadlessSessionOptions = {},
 ): Promise<PreviewHeadlessSession> {
 	const resolvedConfig = await resolvePreviewServerConfig(options);
+	const runtimeModuleId = (
+		resolvedConfig.runtimeModule ?? resolvePreviewRuntimeRootEntry()
+	).replace(/\\/g, "/");
 	const engine = createPreviewEngine({
 		projectName: resolvedConfig.projectName,
-		runtimeModule: resolvedConfig.runtimeModule,
+		runtimeModule: runtimeModuleId,
 		targets: resolvedConfig.targets,
 		transformMode: resolvedConfig.transformMode,
 	});
-	const initialSnapshot = getEngineSnapshot(engine);
-	const runnableEntryIds = new Set(
-		initialSnapshot.workspaceIndex.entries
-			.filter((entry) => entry.status === "ready")
-			.map((entry) => entry.id),
-	);
-	const collectedExecutionsById = new Map<string, CollectedExecutionResult>();
+	let collectedExecutionsById = new Map<string, CollectedExecutionResult>();
+	let selectedEntryIds: string[] = [];
+	let disposed = false;
+	let syncingRuntimeIssues = false;
 	const server = (await createHeadlessPreviewServer(
 		resolvedConfig,
-	)) as PreviewDevServer;
-	const runtimeModuleId =
-		resolvedConfig.runtimeModule ?? resolvePreviewRuntimeRootEntry();
-	let latestSnapshot = buildHeadlessSnapshot(
 		engine,
-		collectedExecutionsById,
-		initialSnapshot.workspaceIndex.entries.length,
-	);
-	let disposed = false;
+	)) as PreviewDevServer;
+
+	const resetExecutionState = () => {
+		collectedExecutionsById = new Map<string, CollectedExecutionResult>();
+		selectedEntryIds = [];
+	};
+	const syncRuntimeIssues = (issues: PreviewRuntimeIssue[]) => {
+		syncingRuntimeIssues = true;
+		try {
+			engine.replaceRuntimeIssues(issues);
+		} finally {
+			syncingRuntimeIssues = false;
+		}
+	};
+	const unsubscribeEngineUpdates = engine.onUpdate(() => {
+		if (disposed || syncingRuntimeIssues) {
+			return;
+		}
+
+		resetExecutionState();
+	});
+	const getCurrentSnapshot = () =>
+		buildHeadlessSnapshot(
+			engine,
+			collectedExecutionsById,
+			selectedEntryIds,
+		);
 
 	const session: PreviewHeadlessSession = {
 		dispose() {
@@ -225,12 +252,23 @@ export async function createPreviewHeadlessSession(
 			}
 
 			disposed = true;
+			try {
+				server.watcher.removeAllListeners();
+			} catch {
+				// Ignore watcher teardown errors during synchronous disposal.
+			}
+			try {
+				void server.watcher.close().catch(() => {});
+			} catch {
+				// Ignore watcher teardown errors during synchronous disposal.
+			}
+			unsubscribeEngineUpdates();
 			engine.dispose();
 			void server.close().catch(() => {});
 		},
 		engine,
 		getSnapshot() {
-			return latestSnapshot;
+			return getCurrentSnapshot();
 		},
 		resolvedConfig,
 		async run(runOptions: PreviewHeadlessSessionRunOptions = {}) {
@@ -238,53 +276,46 @@ export async function createPreviewHeadlessSession(
 				throw new Error("Preview headless session has already been disposed.");
 			}
 
+			syncRuntimeIssues([]);
 			const currentEntries = engine.getWorkspaceIndex().entries;
-			const selectedEntryIds = validateSelectedEntryIds(
+			const nextSelectedEntryIds = validateSelectedEntryIds(
 				currentEntries,
 				runOptions.entryIds,
 			);
+			const entriesById = new Map(
+				currentEntries.map((entry) => [entry.id, entry]),
+			);
+			const nextCollectedExecutionsById = new Map<
+				string,
+				CollectedExecutionResult
+			>();
 
-			for (const entryId of selectedEntryIds) {
-				const entry = initialSnapshot.workspaceIndex.entries.find(
-					(candidateEntry) => candidateEntry.id === entryId,
-				);
+			for (const entryId of nextSelectedEntryIds) {
+				const entry = entriesById.get(entryId);
 				if (!entry) {
 					throw new Error(`Unknown preview entry: ${entryId}`);
 				}
 
-				if (!runnableEntryIds.has(entryId)) {
-					collectedExecutionsById.set(entryId, {
-						issues: [],
-						layoutDebug: null,
-						loadIssue: null,
-						render: {
-							status: "skipped",
-						},
-						renderIssue: null,
-						viewport: createDefaultHeadlessViewport(),
-					});
+				if (entry.status !== "ready") {
+					nextCollectedExecutionsById.set(entryId, createSkippedExecution());
 					continue;
 				}
 
-				collectedExecutionsById.set(
+				nextCollectedExecutionsById.set(
 					entryId,
 					await executeHeadlessEntry(server, entry, runtimeModuleId),
 				);
 			}
 
+			selectedEntryIds = nextSelectedEntryIds;
+			collectedExecutionsById = nextCollectedExecutionsById;
 			const allRuntimeIssues: PreviewRuntimeIssue[] = [
 				...collectedExecutionsById.values(),
 			].flatMap((execution) => execution.issues);
-			engine.replaceRuntimeIssues(allRuntimeIssues);
-			latestSnapshot = buildHeadlessSnapshot(
-				engine,
-				collectedExecutionsById,
-				selectedEntryIds.length,
-			);
-			return latestSnapshot;
+			syncRuntimeIssues(allRuntimeIssues);
+			return getCurrentSnapshot();
 		},
 	};
 
-	await session.run();
 	return session;
 }

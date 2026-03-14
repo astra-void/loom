@@ -1,10 +1,10 @@
-// @vitest-environment jsdom
+﻿// @vitest-environment jsdom
 
 import type {
 	PreviewEntryDescriptor,
 	PreviewEntryPayload,
 } from "@loom-dev/preview-engine";
-import { cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, render, screen } from "@testing-library/react";
 import type React from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { loadPreviewModule } from "../../packages/preview/src/shell/loadPreviewModule";
@@ -106,10 +106,13 @@ function createRetryableOptimizerError() {
 
 afterEach(() => {
 	cleanup();
+	vi.useRealTimers();
 });
 
 describe("loadPreviewModule", () => {
 	it("retries transient optimized dependency invalidation errors and renders the preview", async () => {
+		vi.useFakeTimers();
+
 		const entry = createEntryDescriptor({
 			id: "fixture:Test.tsx",
 			relativePath: "Test.tsx",
@@ -137,13 +140,17 @@ describe("loadPreviewModule", () => {
 			/>,
 		);
 
-		expect(
-			await screen.findByRole("button", { name: "Recovered preview" }),
-		).toBeTruthy();
+		await act(async () => {
+			await vi.advanceTimersByTimeAsync(81);
+		});
+
+		expect(screen.getByRole("button", { name: "Recovered preview" })).toBeTruthy();
 		expect(importer).toHaveBeenCalledTimes(2);
 	});
 
 	it("surfaces a load error after the retryable import failure persists", async () => {
+		vi.useFakeTimers();
+
 		const entry = createEntryDescriptor({
 			id: "fixture:Broken.tsx",
 			relativePath: "Broken.tsx",
@@ -167,9 +174,11 @@ describe("loadPreviewModule", () => {
 			/>,
 		);
 
-		expect(
-			await screen.findByText("Preview module failed to load."),
-		).toBeTruthy();
+		await act(async () => {
+			await vi.advanceTimersByTimeAsync(81);
+		});
+
+		expect(screen.getByText("Preview module failed to load.")).toBeTruthy();
 		expect(importer).toHaveBeenCalledTimes(2);
 	});
 });

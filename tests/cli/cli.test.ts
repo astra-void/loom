@@ -503,6 +503,8 @@ describe("loom cli", () => {
 		});
 
 		expect(JSON.parse(stdoutWriter.read())).toEqual(stdoutModule.snapshot);
+		expect(stdoutModule.run).toHaveBeenCalledTimes(1);
+		expect(stdoutModule.run).toHaveBeenCalledWith();
 		expect(stdoutModule.dispose).toHaveBeenCalledTimes(1);
 
 		const outputRoot = createTempRoot("loom-cli-snapshot-");
@@ -522,6 +524,8 @@ describe("loom cli", () => {
 		expect(JSON.parse(fs.readFileSync(outputPath, "utf8"))).toEqual(
 			fileModule.snapshot,
 		);
+		expect(fileModule.run).toHaveBeenCalledTimes(1);
+		expect(fileModule.run).toHaveBeenCalledWith();
 		expect(
 			fileModule.previewModule.createPreviewHeadlessSession,
 		).toHaveBeenCalledWith(
@@ -547,6 +551,7 @@ describe("loom cli", () => {
 		});
 
 		expect(prettyWriter.read()).toContain("Loom Preview");
+		expect(prettyModule.run).toHaveBeenCalledWith();
 		expect(prettyWriter.read()).toContain("WARNING preview:Viewport.tsx");
 		expect(prettyWriter.read()).toContain("ERROR preview:Broken.tsx");
 
@@ -562,6 +567,7 @@ describe("loom cli", () => {
 			message: expect.stringContaining("Preview check failed"),
 		});
 
+		expect(jsonModule.run).toHaveBeenCalledWith();
 		expect(JSON.parse(jsonWriter.read())).toEqual(
 			expect.objectContaining({
 				failOn: "warning",

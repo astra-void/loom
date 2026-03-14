@@ -112,6 +112,16 @@ export type ResolvedPreviewConfig = {
 
 type PackageMetadata = {
 	name?: string;
+	workspaces?:
+		| string[]
+		| {
+			packages?: string[];
+		  };
+};
+
+type WorkspacePackagePatterns = {
+	exclude: string[];
+	include: string[];
 };
 
 function resolveExistingRealPath(filePath: string) {
@@ -144,6 +154,126 @@ function resolveMaybeRelativePath(filePath: string, baseDir: string) {
 
 function normalizeSlashPath(filePath: string) {
 	return filePath.split(path.sep).join("/");
+}
+
+function normalizeWorkspacePattern(pattern: string) {
+	const normalizedPattern = pattern
+		.trim()
+		.replace(/\\/g, "/")
+		.replace(/^\.\//, "")
+		.replace(/\/+$/, "");
+	return normalizedPattern === "." ? "" : normalizedPattern;
+}
+
+function parseWorkspacePackagePatterns(patterns: string[]): WorkspacePackagePatterns {
+	const include: string[] = [];
+	const exclude: string[] = [];
+
+	for (const pattern of patterns) {
+		const isExcluded = pattern.startsWith("!");
+		const normalizedPattern = normalizeWorkspacePattern(
+			isExcluded ? pattern.slice(1) : pattern,
+		);
+		if (!isExcluded || normalizedPattern.length > 0 || pattern === "!.") {
+			(isExcluded ? exclude : include).push(normalizedPattern);
+		}
+	}
+
+	return {
+		exclude,
+		include,
+	};
+}
+
+function resolveWorkspacePatternScanRoots(
+	workspaceRoot: string,
+	includePatterns: string[],
+) {
+	return [
+		...new Set(
+			includePatterns.map((pattern) => {
+				if (pattern.length === 0) {
+					return path.resolve(workspaceRoot);
+				}
+
+				const baseSegments: string[] = [];
+				for (const segment of pattern.split("/")) {
+					if (segment.includes("*")) {
+						break;
+					}
+
+					baseSegments.push(segment);
+				}
+
+				return path.resolve(workspaceRoot, ...baseSegments);
+			}),
+		),
+	].sort((left, right) => left.localeCompare(right));
+}
+
+function readPnpmWorkspacePatterns(workspaceRoot: string) {
+	const pnpmWorkspacePath = path.join(workspaceRoot, "pnpm-workspace.yaml");
+	if (!fs.existsSync(pnpmWorkspacePath)) {
+		return undefined;
+	}
+
+	const lines = fs.readFileSync(pnpmWorkspacePath, "utf8").split(/\r?\n/);
+	const patterns: string[] = [];
+	let packagesIndent: number | undefined;
+
+	for (const line of lines) {
+		const trimmedLine = line.trim();
+		if (packagesIndent === undefined) {
+			if (trimmedLine === "packages:") {
+				packagesIndent = line.search(/\S|$/);
+			}
+			continue;
+		}
+
+		if (trimmedLine.length === 0 || trimmedLine.startsWith("#")) {
+			continue;
+		}
+
+		const lineIndent = line.search(/\S|$/);
+		if (lineIndent <= packagesIndent && !trimmedLine.startsWith("-")) {
+			break;
+		}
+
+		const match = trimmedLine.match(/^-\s*(.+?)\s*$/);
+		if (!match) {
+			continue;
+		}
+
+		const nextPattern = match[1]?.replace(/^['"]|['"]$/g, "");
+		if (nextPattern) {
+			patterns.push(nextPattern);
+		}
+	}
+
+	return patterns.length > 0 ? patterns : undefined;
+}
+
+function readPackageWorkspacePatterns(workspaceRoot: string) {
+	const packageMetadata = readPackageMetadata(workspaceRoot);
+	const workspacePatterns = packageMetadata.workspaces;
+	if (Array.isArray(workspacePatterns)) {
+		return workspacePatterns;
+	}
+
+	if (workspacePatterns && typeof workspacePatterns === "object") {
+		return Array.isArray(workspacePatterns.packages)
+			? workspacePatterns.packages
+			: undefined;
+	}
+
+	return undefined;
+}
+
+function readWorkspaceManifestPatterns(workspaceRoot: string) {
+	return (
+		readPnpmWorkspacePatterns(workspaceRoot) ??
+		readPackageWorkspacePatterns(workspaceRoot)
+	);
 }
 
 function readPackageMetadata(packageRoot: string): PackageMetadata {
@@ -314,6 +444,56 @@ function scanWorkspacePackageRoots(
 	return packageRoots;
 }
 
+function isWorkspacePackageRootIncludedByManifest(
+	packageRoot: string,
+	workspaceRoot: string,
+	patterns: WorkspacePackagePatterns,
+) {
+	const relativePackageRoot = normalizeSlashPath(
+		path.relative(workspaceRoot, packageRoot),
+	);
+	if (patterns.include.length === 0) {
+		return false;
+	}
+
+	return (
+		patterns.include.some((pattern) => matchesPatterns(relativePackageRoot, [pattern])) &&
+		!patterns.exclude.some((pattern) =>
+			matchesPatterns(relativePackageRoot, [pattern]),
+		)
+	);
+}
+
+function discoverWorkspacePackageRoots(workspaceRoot: string) {
+	const manifestPatterns = readWorkspaceManifestPatterns(workspaceRoot);
+	if (!manifestPatterns || manifestPatterns.length === 0) {
+		return scanWorkspacePackageRoots(workspaceRoot);
+	}
+
+	const parsedPatterns = parseWorkspacePackagePatterns(manifestPatterns);
+	const packageRoots: string[] = [];
+	const visited = new Set<string>();
+
+	for (const scanRoot of resolveWorkspacePatternScanRoots(
+		workspaceRoot,
+		parsedPatterns.include,
+	)) {
+		if (!fs.existsSync(scanRoot) || !fs.statSync(scanRoot).isDirectory()) {
+			continue;
+		}
+
+		scanWorkspacePackageRoots(scanRoot, packageRoots, visited);
+	}
+
+	return packageRoots.filter((packageRoot) =>
+		isWorkspacePackageRootIncludedByManifest(
+			packageRoot,
+			workspaceRoot,
+			parsedPatterns,
+		),
+	);
+}
+
 function findPreviewConfigPath(startPath: string) {
 	let currentPath = path.resolve(startPath);
 
@@ -424,7 +604,7 @@ export function resolvePreviewRuntimeModule(
 		return undefined;
 	}
 
-	return resolveMaybeRelativePath(runtimeModule, baseDir);
+	return resolveMaybeRelativePath(runtimeModule, baseDir).replace(/\\/g, "/");
 }
 
 function resolveFsAllow(
@@ -582,7 +762,7 @@ export function createWorkspaceTargetsDiscovery(
 					context.configDir,
 				),
 			);
-			const packageRoots = scanWorkspacePackageRoots(workspaceRoot);
+			const packageRoots = discoverWorkspacePackageRoots(workspaceRoot);
 			const targets = packageRoots.flatMap((packageRoot) => {
 				const packageMetadata = readPackageMetadata(packageRoot);
 				const sourceRoot = path.join(

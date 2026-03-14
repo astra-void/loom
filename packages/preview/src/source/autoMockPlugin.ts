@@ -12,6 +12,11 @@ import {
 	resolveRealFilePath,
 	stripFileIdDecorations,
 } from "./pathUtils";
+import {
+	createTsconfigParseCache,
+	findNearestTsconfig,
+	type TsconfigParseCache,
+} from "./tsconfigUtils";
 
 const SUPPORTED_COMPONENT_EXTENSIONS = new Set([".jsx", ".tsx"]);
 const MAX_SERIALIZED_OBJECT_PROPERTIES = 16;
@@ -32,6 +37,7 @@ type ProgramConfig = {
 
 export type CreateAutoMockPropsPluginOptions = {
 	targets: PreviewSourceTarget[];
+	tsconfigParseCache?: TsconfigParseCache;
 };
 
 function normalizeFilePath(filePath: string) {
@@ -69,52 +75,10 @@ function isDefaultExport(node: ts.Node) {
 	);
 }
 
-function findNearestTsconfig(filePath: string) {
-	return ts.findConfigFile(
-		path.dirname(filePath),
-		ts.sys.fileExists,
-		"tsconfig.json",
-	);
-}
-
-function parseTsconfig(tsconfigPath: string) {
-	const configFile = ts.readConfigFile(tsconfigPath, ts.sys.readFile);
-	if (configFile.error) {
-		const message = ts.formatDiagnostic(configFile.error, {
-			getCanonicalFileName: (value) => value,
-			getCurrentDirectory: () => process.cwd(),
-			getNewLine: () => "\n",
-		});
-		throw new Error(
-			`Failed to read TypeScript config ${tsconfigPath}: ${message}`,
-		);
-	}
-
-	const parsed = ts.parseJsonConfigFileContent(
-		configFile.config,
-		ts.sys,
-		path.dirname(tsconfigPath),
-		undefined,
-		tsconfigPath,
-	);
-	if (parsed.errors.length > 0) {
-		const message = ts.formatDiagnostics(parsed.errors, {
-			getCanonicalFileName: (value) => value,
-			getCurrentDirectory: () => process.cwd(),
-			getNewLine: () => "\n",
-		});
-		throw new Error(
-			`Failed to parse TypeScript config ${tsconfigPath}: ${message}`,
-		);
-	}
-
-	return parsed;
-}
-
 function createProgram(
 	filePath: string,
 	code: string,
-	configCache: Map<string, ts.ParsedCommandLine>,
+	configCache: TsconfigParseCache,
 ) {
 	const tsconfigPath = findNearestTsconfig(filePath);
 	const parsedConfig: ProgramConfig =
@@ -129,13 +93,7 @@ function createProgram(
 					fileNames: [filePath],
 				}
 			: (() => {
-					const parsed =
-						configCache.get(tsconfigPath) ??
-						(() => {
-							const nextParsed = parseTsconfig(tsconfigPath);
-							configCache.set(tsconfigPath, nextParsed);
-							return nextParsed;
-						})();
+					const parsed = configCache.getParsed(tsconfigPath);
 
 					return {
 						fileNames: parsed.fileNames,
@@ -830,7 +788,7 @@ function injectComponentMetadata(
 export function createAutoMockPropsPlugin(
 	options: CreateAutoMockPropsPluginOptions,
 ): Plugin {
-	const configCache = new Map<string, ts.ParsedCommandLine>();
+	const configCache = options.tsconfigParseCache ?? createTsconfigParseCache();
 
 	return {
 		name: "loom-preview-auto-mock-props",

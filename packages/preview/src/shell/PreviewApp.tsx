@@ -1,4 +1,4 @@
-import type {
+﻿import type {
 	PreviewDiagnostic,
 	PreviewEntryDescriptor,
 	PreviewEntryPayload,
@@ -798,6 +798,9 @@ export function PreviewApp(props: PreviewAppProps) {
 	const [collapsedFolderIds, setCollapsedFolderIds] = React.useState<
 		Set<string>
 	>(() => new Set());
+	const loadEntryEvent = React.useEffectEvent((entryId: string) =>
+		loadEntry(entryId),
+	);
 	selectedEntryRef.current = selectedEntry;
 
 	React.useEffect(() => {
@@ -865,7 +868,7 @@ export function PreviewApp(props: PreviewAppProps) {
 		setLoadIssue(null);
 		setRenderIssue(null);
 
-		loadEntry(selectedEntryId)
+		loadEntryEvent(selectedEntryId)
 			.then((entryResult) => {
 				if (!cancelled) {
 					setLoadedEntry(entryResult);
@@ -883,7 +886,7 @@ export function PreviewApp(props: PreviewAppProps) {
 		return () => {
 			cancelled = true;
 		};
-	}, [loadEntry, selectedEntryId, selectedEntryStatus]);
+	}, [selectedEntryId, selectedEntryStatus]);
 
 	React.useEffect(() => {
 		setCollapsedFolderIds((previous) => {

@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+﻿import { readFile } from "node:fs/promises";
 import path from "node:path";
 import type { PreviewEntryDescriptor } from "@loom-dev/preview-engine";
 import type {
@@ -161,7 +161,6 @@ const DOM_GLOBAL_KEYS = [
 	"MutationObserver",
 	"navigator",
 	"Node",
-	"performance",
 	"ResizeObserver",
 	"requestAnimationFrame",
 	"cancelAnimationFrame",

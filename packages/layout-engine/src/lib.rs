@@ -1759,7 +1759,7 @@ mod tests {
         ]);
         session.set_viewport_internal(Viewport {
             height: 480.0,
-            width: 640.0,
+            width: 640.0,   
         });
 
         let result = session

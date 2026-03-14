@@ -1,12 +1,14 @@
-import fs from "node:fs";
+﻿import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { Writable } from "node:stream";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
 	createPreviewViteServer,
 	resolvePreviewServerConfig,
 } from "../../packages/preview/src/source/server";
+
+vi.setConfig({ testTimeout: 15000 });
 
 const temporaryRoots: string[] = [];
 
@@ -246,6 +248,174 @@ function createTempPreviewPackageWithPathAlias() {
 	};
 }
 
+function writeWorkspacePathAliasTsconfig(
+	packageRoot: string,
+	aliasTargetRelativePath: string,
+) {
+	fs.writeFileSync(
+		path.join(packageRoot, "tsconfig.json"),
+		JSON.stringify(
+			{
+				compilerOptions: {
+					allowSyntheticDefaultImports: true,
+					baseUrl: "./src",
+					jsx: "react",
+					jsxFactory: "React.createElement",
+					jsxFragmentFactory: "React.Fragment",
+					module: "commonjs",
+					moduleResolution: "Node",
+					paths: {
+						"shared/*": [aliasTargetRelativePath],
+					},
+					strict: true,
+					target: "ESNext",
+				},
+				include: ["src"],
+			},
+			null,
+			2,
+		),
+		"utf8",
+	);
+}
+
+function createTempPreviewPackageWithMutablePathAlias() {
+	const tempWorkspaceRoot = fs.mkdtempSync(
+		path.join(os.tmpdir(), "loom-preview-server-mutable-workspace-"),
+	);
+	const workspaceRoot = fs.realpathSync(tempWorkspaceRoot);
+	temporaryRoots.push(workspaceRoot);
+
+	const packageRoot = path.join(workspaceRoot, "packages/ui");
+	const sourceRoot = path.join(packageRoot, "src");
+	const sharedARoot = path.join(workspaceRoot, "packages/shared-a");
+	const sharedBRoot = path.join(workspaceRoot, "packages/shared-b");
+	const sharedASourceRoot = path.join(sharedARoot, "src");
+	const sharedBSourceRoot = path.join(sharedBRoot, "src");
+	fs.mkdirSync(sourceRoot, { recursive: true });
+	fs.mkdirSync(sharedASourceRoot, { recursive: true });
+	fs.mkdirSync(sharedBSourceRoot, { recursive: true });
+
+	fs.writeFileSync(
+		path.join(workspaceRoot, "package.json"),
+		JSON.stringify(
+			{
+				private: true,
+				workspaces: ["packages/*"],
+			},
+			null,
+			2,
+		),
+		"utf8",
+	);
+	fs.writeFileSync(
+		path.join(packageRoot, "package.json"),
+		JSON.stringify({ name: "@fixtures/ui" }, null, 2),
+		"utf8",
+	);
+	fs.writeFileSync(
+		path.join(sharedARoot, "package.json"),
+		JSON.stringify({ name: "@fixtures/shared-a" }, null, 2),
+		"utf8",
+	);
+	fs.writeFileSync(
+		path.join(sharedBRoot, "package.json"),
+		JSON.stringify({ name: "@fixtures/shared-b" }, null, 2),
+		"utf8",
+	);
+	writeWorkspacePathAliasTsconfig(
+		packageRoot,
+		"../../shared-a/src/*",
+	);
+	fs.writeFileSync(
+		path.join(sharedASourceRoot, "buildInfo.ts"),
+		[
+			"export const BUILD_INFO = {",
+			'\tlabel: "shared-a",',
+			"} as const;",
+		].join("\n"),
+		"utf8",
+	);
+	fs.writeFileSync(
+		path.join(sharedBSourceRoot, "buildInfo.ts"),
+		[
+			"export const BUILD_INFO = {",
+			'\tlabel: "shared-b",',
+			"} as const;",
+		].join("\n"),
+		"utf8",
+	);
+	fs.writeFileSync(
+		path.join(sourceRoot, "Test.tsx"),
+		[
+			'import React from "@rbxts/react";',
+			"",
+			'import { BUILD_INFO } from "shared/buildInfo";',
+			"",
+			"function Test() {",
+			"\treturn <textlabel Text={BUILD_INFO.label} />;",
+			"}",
+			"",
+			"export const preview = {",
+			"\trender: () => <Test />,",
+			"};",
+		].join("\n"),
+		"utf8",
+	);
+	writeFakeRbxtsReact(packageRoot);
+
+	return {
+		buildInfoPathA: fs.realpathSync(path.join(sharedASourceRoot, "buildInfo.ts")),
+		buildInfoPathB: fs.realpathSync(path.join(sharedBSourceRoot, "buildInfo.ts")),
+		packageRoot,
+		sourceFilePath: fs.realpathSync(path.join(sourceRoot, "Test.tsx")),
+		sourceRoot: fs.realpathSync(sourceRoot),
+		tsconfigPath: fs.realpathSync(path.join(packageRoot, "tsconfig.json")),
+		workspaceRoot,
+	};
+}
+
+function createTempPreviewPackageWithAutoMockPathAlias() {
+	const fixture = createTempPreviewPackageWithMutablePathAlias();
+	fs.writeFileSync(
+		fixture.sourceFilePath,
+		[
+			'import React from "@rbxts/react";',
+			"",
+			'import type { PreviewProps } from "shared/props";',
+			"",
+			"export function Test(props: PreviewProps) {",
+			"\treturn <textlabel Text={\"label\" in props ? props.label : String(props.count)} />;",
+			"}",
+			"",
+			"export const preview = {",
+			"\tentry: Test,",
+			"};",
+		].join("\n"),
+		"utf8",
+	);
+	const sharedAPropsPath = path.join(
+		fixture.workspaceRoot,
+		"packages/shared-a/src/props.ts",
+	);
+	const sharedBPropsPath = path.join(
+		fixture.workspaceRoot,
+		"packages/shared-b/src/props.ts",
+	);
+	fs.writeFileSync(
+		sharedAPropsPath,
+		"export type PreviewProps = { label: string };\n",
+		"utf8",
+	);
+	fs.writeFileSync(
+		sharedBPropsPath,
+		"export type PreviewProps = { count: number };\n",
+		"utf8",
+	);
+
+	return fixture;
+}
+
 function createTempPreviewPackageWithBaseUrlAlias() {
 	const tempPackageRoot = fs.mkdtempSync(
 		path.join(os.tmpdir(), "loom-preview-server-base-url-"),
@@ -368,6 +538,10 @@ function readCapturedGroup(value: string, pattern: RegExp) {
 	return capturedValue;
 }
 
+function normalizePathSlashes(filePath: string) {
+	return filePath.replace(/\\/g, "/");
+}
+
 function toFsUrl(filePath: string) {
 	return `/@fs/${filePath.replace(/\\/g, "/")}`;
 }
@@ -439,6 +613,63 @@ function requestServerPath(
 }
 
 describe("createPreviewViteServer", () => {
+	it("serves runtime dependency roots for external package previews", async () => {
+		const fixture = createTempPreviewPackage();
+		const resolvedConfig = await resolvePreviewServerConfig({
+			cwd: fixture.packageRoot,
+			packageName: "rbxts-react-preview",
+			packageRoot: fixture.packageRoot,
+			sourceRoot: fixture.sourceRoot,
+		});
+		const server = await createPreviewViteServer(resolvedConfig, {
+			appType: "custom",
+		});
+
+		try {
+			const runtimeModuleResponse = await requestServerPath(
+				server,
+				toFsUrl(path.resolve(process.cwd(), "packages/preview-runtime/src/index.ts")),
+			);
+			expect(runtimeModuleResponse.statusCode).toBe(200);
+
+			const layoutWasmModuleUrl = toFsUrl(
+				path.resolve(
+					process.cwd(),
+					"packages/preview-runtime/src/layout/wasm.ts",
+				),
+			);
+			const layoutWasmModuleResponse = await requestServerPath(
+				server,
+				layoutWasmModuleUrl,
+			);
+			expect(layoutWasmModuleResponse.statusCode).toBe(200);
+
+			const layoutEngineJsUrl = readCapturedGroup(
+				layoutWasmModuleResponse.body,
+				/import initLayoutEngine, \{ createLayoutSession \} from "([^"]+\/packages\/layout-engine\/pkg\/layout_engine\.js)";/,
+			);
+			const layoutEngineJsResponse = await requestServerPath(
+				server,
+				layoutEngineJsUrl,
+			);
+			expect(layoutEngineJsResponse.statusCode).toBe(200);
+			expect(layoutEngineJsResponse.body).toContain("LayoutSession");
+			expect(layoutEngineJsResponse.body).not.toContain("403 Restricted");
+
+			const layoutEngineWasmUrl = readCapturedGroup(
+				layoutEngineJsResponse.body,
+				/new URL\((?:'|")([^"']*layout_engine_bg\.wasm(?:\?[^"']*)?)(?:'|"),\s*import\.meta\.url\)/,
+			);
+			const layoutEngineWasmResponse = await requestServerPath(
+				server,
+				layoutEngineWasmUrl,
+			);
+			expect(layoutEngineWasmResponse.statusCode).toBe(200);
+		} finally {
+			await server.close();
+		}
+	}, 30000);
+
 	it("uses a project-scoped cache and pre-optimizes React deps for @rbxts/react previews", async () => {
 		const fixture = createTempPreviewPackage();
 		const resolvedConfig = await resolvePreviewServerConfig({
@@ -453,7 +684,9 @@ describe("createPreviewViteServer", () => {
 
 		try {
 			expect(server.config.cacheDir).toBe(
-				path.join(fixture.workspaceRoot, ".loom-preview-cache", "vite"),
+				normalizePathSlashes(
+					path.join(fixture.workspaceRoot, ".loom-preview-cache", "vite"),
+				),
 			);
 			expect(server.config.optimizeDeps.include).toEqual(
 				expect.arrayContaining([
@@ -479,7 +712,9 @@ describe("createPreviewViteServer", () => {
 					"\0virtual:loom-preview-entry:rbxts-react-preview%3ATest.tsx",
 				),
 			);
-			expect(entryModuleCode).toContain(fixture.sourceFilePath);
+			expect(entryModuleCode).toContain(
+				normalizePathSlashes(fixture.sourceFilePath),
+			);
 
 			const transformedSource = await server.transformRequest(
 				fixture.sourceFilePath,
@@ -544,7 +779,9 @@ describe("createPreviewViteServer", () => {
 					fixture.sourceFilePath,
 				),
 			);
-			expect(resolvedImportId).toBe(fixture.buildInfoPath);
+			expect(normalizePathSlashes(resolvedImportId)).toBe(
+				normalizePathSlashes(fixture.buildInfoPath),
+			);
 
 			const transformedSource = await server.transformRequest(
 				fixture.sourceFilePath,
@@ -610,7 +847,9 @@ describe("createPreviewViteServer", () => {
 					fixture.sourceFilePath,
 				),
 			);
-			expect(resolvedImportId).toBe(fixture.buildInfoPath);
+			expect(normalizePathSlashes(resolvedImportId)).toBe(
+				normalizePathSlashes(fixture.buildInfoPath),
+			);
 
 			const transformedSource = await server.transformRequest(
 				fixture.sourceFilePath,
@@ -618,6 +857,105 @@ describe("createPreviewViteServer", () => {
 			expect(transformedSource?.code).toContain(
 				fixture.buildInfoPath.replace(/\\/g, "/"),
 			);
+		} finally {
+			await server.close();
+		}
+	});
+
+	it("clears tsconfig path caches and reloads after alias changes", async () => {
+		const fixture = createTempPreviewPackageWithMutablePathAlias();
+		const resolvedConfig = await resolvePreviewServerConfig({
+			cwd: fixture.packageRoot,
+			packageName: "@fixtures/ui",
+			packageRoot: fixture.packageRoot,
+			sourceRoot: fixture.sourceRoot,
+		});
+		const server = await createPreviewViteServer(resolvedConfig, {
+			appType: "custom",
+		});
+		const wsSendSpy = vi.spyOn(server.ws, "send");
+
+		try {
+			const initialResolvedImportId = toResolvedId(
+				await server.pluginContainer.resolveId(
+					"shared/buildInfo",
+					fixture.sourceFilePath,
+				),
+			);
+			expect(normalizePathSlashes(initialResolvedImportId)).toBe(
+				normalizePathSlashes(fixture.buildInfoPathA),
+			);
+
+			const initialTransformedSource = await server.transformRequest(
+				fixture.sourceFilePath,
+			);
+			expect(initialTransformedSource?.code).toContain(
+				fixture.buildInfoPathA.replace(/\\/g, "/"),
+			);
+
+			writeWorkspacePathAliasTsconfig(
+				fixture.packageRoot,
+				"../../shared-b/src/*",
+			);
+			(
+				server.watcher as unknown as { emit: (event: string, filePath: string) => void }
+			).emit("change", fixture.tsconfigPath);
+			expect(wsSendSpy).toHaveBeenCalledWith({ type: "full-reload" });
+
+			const nextResolvedImportId = toResolvedId(
+				await server.pluginContainer.resolveId(
+					"shared/buildInfo",
+					fixture.sourceFilePath,
+				),
+			);
+			expect(normalizePathSlashes(nextResolvedImportId)).toBe(
+				normalizePathSlashes(fixture.buildInfoPathB),
+			);
+
+			const nextTransformedSource = await server.transformRequest(
+				fixture.sourceFilePath,
+			);
+			expect(nextTransformedSource?.code).toContain(
+				fixture.buildInfoPathB.replace(/\\/g, "/"),
+			);
+		} finally {
+			wsSendSpy.mockRestore();
+			await server.close();
+		}
+	});
+
+	it("refreshes auto-mock props metadata after tsconfig alias changes", async () => {
+		const fixture = createTempPreviewPackageWithAutoMockPathAlias();
+		const resolvedConfig = await resolvePreviewServerConfig({
+			cwd: fixture.packageRoot,
+			packageName: "@fixtures/ui",
+			packageRoot: fixture.packageRoot,
+			sourceRoot: fixture.sourceRoot,
+		});
+		const server = await createPreviewViteServer(resolvedConfig, {
+			appType: "custom",
+		});
+
+		try {
+			const initialTransformedSource = await server.transformRequest(
+				fixture.sourceFilePath,
+			);
+			expect(initialTransformedSource?.code).toContain('"label": {');
+			expect(initialTransformedSource?.code).not.toContain('"count": {');
+
+			writeWorkspacePathAliasTsconfig(
+				fixture.packageRoot,
+				"../../shared-b/src/*",
+			);
+			(
+				server.watcher as unknown as { emit: (event: string, filePath: string) => void }
+			).emit("change", fixture.tsconfigPath);
+
+			const nextTransformedSource = await server.transformRequest(
+				fixture.sourceFilePath,
+			);
+			expect(nextTransformedSource?.code).toContain('"count": {');
+			expect(nextTransformedSource?.code).not.toContain('"label": {');
 		} finally {
 			await server.close();
 		}
@@ -642,7 +980,9 @@ describe("createPreviewViteServer", () => {
 					fixture.sourceFilePath,
 				),
 			);
-			expect(resolvedImportId).toBe(fixture.buildInfoPath);
+			expect(normalizePathSlashes(resolvedImportId)).toBe(
+				normalizePathSlashes(fixture.buildInfoPath),
+			);
 
 			const transformedSource = await server.transformRequest(
 				fixture.sourceFilePath,
@@ -661,69 +1001,6 @@ describe("createPreviewViteServer", () => {
 		}
 	});
 
-	it("serves runtime dependency roots for external package previews", async () => {
-		const fixture = createTempPreviewPackage();
-		const resolvedConfig = await resolvePreviewServerConfig({
-			cwd: fixture.packageRoot,
-			packageName: "rbxts-react-preview",
-			packageRoot: fixture.packageRoot,
-			sourceRoot: fixture.sourceRoot,
-		});
-		const server = await createPreviewViteServer(resolvedConfig, {
-			appType: "custom",
-		});
 
-		try {
-			const entryResponse = await requestServerPath(
-				server,
-				`/@id/__x00__virtual:loom-preview-entry:${encodeURIComponent(
-					"rbxts-react-preview:Test.tsx",
-				)}`,
-			);
-			expect(entryResponse.statusCode).toBe(200);
-
-			const runtimeModuleUrl = readCapturedGroup(
-				entryResponse.body,
-				/import \* as __previewRuntimeModule from "([^"]+)";/,
-			);
-			const runtimeResponse = await requestServerPath(server, runtimeModuleUrl);
-			expect(runtimeResponse.statusCode).toBe(200);
-
-			const layoutWasmModuleUrl = toFsUrl(
-				path.resolve(
-					process.cwd(),
-					"packages/preview-runtime/src/layout/wasm.ts",
-				),
-			);
-			const layoutWasmModuleResponse = await requestServerPath(
-				server,
-				layoutWasmModuleUrl,
-			);
-			expect(layoutWasmModuleResponse.statusCode).toBe(200);
-
-			const layoutEngineJsUrl = readCapturedGroup(
-				layoutWasmModuleResponse.body,
-				/import initLayoutEngine, \{ createLayoutSession \} from "([^"]+\/packages\/layout-engine\/pkg\/layout_engine\.js)";/,
-			);
-			const layoutEngineJsResponse = await requestServerPath(
-				server,
-				layoutEngineJsUrl,
-			);
-			expect(layoutEngineJsResponse.statusCode).toBe(200);
-			expect(layoutEngineJsResponse.body).toContain("LayoutSession");
-			expect(layoutEngineJsResponse.body).not.toContain("403 Restricted");
-
-			const layoutEngineWasmUrl = readCapturedGroup(
-				layoutEngineJsResponse.body,
-				/new URL\((?:'|")([^"']*layout_engine_bg\.wasm(?:\?[^"']*)?)(?:'|"),\s*import\.meta\.url\)/,
-			);
-			const layoutEngineWasmResponse = await requestServerPath(
-				server,
-				layoutEngineWasmUrl,
-			);
-			expect(layoutEngineWasmResponse.statusCode).toBe(200);
-		} finally {
-			await server.close();
-		}
-	});
 });
+

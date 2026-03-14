@@ -1,4 +1,4 @@
-import fs from "node:fs";
+﻿import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -97,7 +97,11 @@ describe("createAutoMockPropsPlugin", () => {
 			"utf8",
 		);
 		fs.writeFileSync(sourceFile, source, "utf8");
-		fs.symlinkSync(realSourceRoot, linkedSourceRoot);
+		fs.symlinkSync(
+			realSourceRoot,
+			linkedSourceRoot,
+			process.platform === "win32" ? "junction" : "dir",
+		);
 
 		const plugin = createAutoMockPropsPlugin({
 			targets: [

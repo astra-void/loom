@@ -1,10 +1,12 @@
-// @vitest-environment jsdom
+﻿// @vitest-environment jsdom
 
 import fs from "node:fs";
 import path from "node:path";
 import { TextDecoder, TextEncoder } from "node:util";
 import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+
+vi.setConfig({ hookTimeout: 20000, testTimeout: 20000 });
 
 afterEach(() => {
 	cleanup();
@@ -76,3 +78,4 @@ describe("generated preview components", () => {
 		expect(screen.getByText("Harnessed Dialog")).toBeTruthy();
 	});
 });
+

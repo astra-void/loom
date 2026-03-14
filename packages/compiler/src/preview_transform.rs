@@ -59,6 +59,7 @@ const STANDARD_GLOBAL_IDENTIFIER_NAMES: &[&str] = &[
     "Number",
     "Object",
     "Promise",
+    "Proxy",
     "Reflect",
     "RegExp",
     "Set",
@@ -1361,3 +1362,51 @@ fn relative_path(from_dir: &Path, to_path: &Path) -> Option<String> {
         Some(parts.join("/"))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{transform_preview_source, TransformPreviewSourceOptions};
+
+    #[test]
+    fn standard_proxy_global_does_not_report_unresolved_identifier() {
+        let source = r#"
+const target = {};
+const proxied = new Proxy(target, {
+    get() {
+        return "value";
+    },
+});
+"#;
+
+        let result = transform_preview_source(
+            source.to_owned(),
+            TransformPreviewSourceOptions {
+                file_path: "src/example.ts".to_owned(),
+                runtime_module: "@loom-dev/preview-runtime".to_owned(),
+                target: "compatibility".to_owned(),
+            },
+        )
+        .expect("preview transform should succeed");
+
+        assert!(
+            result.errors.is_empty(),
+            "unexpected transform errors: {:?}",
+            result
+                .errors
+                .iter()
+                .map(|error| (&error.code, &error.symbol, &error.message))
+                .collect::<Vec<_>>()
+        );
+        assert!(
+            result.code.contains("new Proxy("),
+            "expected Proxy constructor to remain intact, got: {}",
+            result.code
+        );
+        assert!(
+            !result.code.contains(r#"__previewGlobal("Proxy")"#),
+            "expected Proxy constructor to avoid preview global rewriting, got: {}",
+            result.code
+        );
+    }
+}
+

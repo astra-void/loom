@@ -38,9 +38,11 @@ function createFixtureRoot() {
 function createPreviewPlugin(
 	fixtureRoot: string,
 	sourceRoot: string,
+	runtimeModule?: string,
 ): PreviewPlugin {
 	const plugins = createPreviewVitePlugin({
 		projectName: "Fixture Preview",
+		...(runtimeModule ? { runtimeModule } : {}),
 		targets: [
 			{
 				name: "fixture",
@@ -185,6 +187,52 @@ function readEntryPayload(previewPlugin: PreviewPlugin, entryId: string) {
 }
 
 describe("createPreviewVitePlugin", () => {
+	it("uses the configured runtime module for virtual runtime and entry modules", () => {
+		const { fixtureRoot, sourceRoot } = createFixtureRoot();
+		const sourceFile = path.join(sourceRoot, "CustomRuntimeEntry.tsx");
+		const runtimeModulePath = path.join(fixtureRoot, "runtime", "custom-runtime.ts");
+		fs.mkdirSync(path.dirname(runtimeModulePath), { recursive: true });
+		fs.writeFileSync(runtimeModulePath, "export const customRuntime = true;\n", "utf8");
+		fs.writeFileSync(
+			sourceFile,
+			[
+				"export function CustomRuntimeEntry() { return <frame />; }",
+				"",
+				"export const preview = {",
+				"\tentry: CustomRuntimeEntry,",
+				"};",
+			].join("\n"),
+			"utf8",
+		);
+
+		const previewPlugin = createPreviewPlugin(
+			fixtureRoot,
+			sourceRoot,
+			runtimeModulePath,
+		);
+		const resolveId = getHookHandler<TestResolveIdHook>(
+			previewPlugin.resolveId as TestResolveIdHook | undefined,
+		);
+		const load = getHookHandler<TestLoadHook>(
+			previewPlugin.load as TestLoadHook | undefined,
+		);
+
+		const resolvedRuntimeId = resolveId?.("virtual:loom-preview-runtime");
+		const runtimeModuleCode = load?.(
+			resolvedRuntimeId ?? "virtual:loom-preview-runtime",
+		);
+		expect(runtimeModuleCode).toContain(runtimeModulePath.replace(/\\/g, "/"));
+
+		const resolvedEntryId = resolveId?.(
+			"virtual:loom-preview-entry:" +
+				encodeURIComponent("fixture:CustomRuntimeEntry.tsx"),
+		);
+		const entryModuleCode = load?.(
+			resolvedEntryId ?? "fixture:CustomRuntimeEntry.tsx",
+		);
+		expect(entryModuleCode).toContain(runtimeModulePath.replace(/\\/g, "/"));
+	});
+
 	it("registers preview target source roots with the Vite watcher", () => {
 		const { fixtureRoot, sourceRoot } = createFixtureRoot();
 		const previewPlugin = createPreviewPlugin(fixtureRoot, sourceRoot);

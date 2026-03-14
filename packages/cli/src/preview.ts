@@ -86,7 +86,7 @@ export interface CliPreviewHeadlessExecutionEntry {
 	};
 	renderIssue: CliPreviewRuntimeIssue | null;
 	runtimeIssues: CliPreviewRuntimeIssue[];
-	severity: "error" | "pass" | "warning";
+	severity: "error" | "pass" | "skipped" | "warning";
 	viewport: {
 		height: number;
 		ready: boolean;
@@ -447,7 +447,8 @@ export async function runSnapshotCommand(
 		await previewModule.createPreviewHeadlessSession(effectiveConfig);
 
 	try {
-		const serializedSnapshot = `${JSON.stringify(session.getSnapshot(), null, 2)}\n`;
+		const snapshot = await session.run();
+		const serializedSnapshot = `${JSON.stringify(snapshot, null, 2)}\n`;
 		if (options.outputPath) {
 			await runtime.writeFileFn(
 				path.resolve(options.outputPath),
@@ -485,6 +486,8 @@ export async function runCheckCommand(
 
 		if (options.entryId) {
 			await session.run({ entryIds: [options.entryId] });
+		} else {
+			await session.run();
 		}
 
 		const snapshot = readHeadlessSnapshot(session.getSnapshot());
