@@ -3,6 +3,7 @@ import type { LayoutSessionLike } from "./controller";
 import { normalizePreviewLayoutResult, type PreviewLayoutNode } from "./model";
 
 const LAYOUT_ENGINE_LOADER_KEY = "__loom_preview_layout_engine_loader__";
+const EXPECTED_WASM_MAGIC_HEADER = [0x00, 0x61, 0x73, 0x6d] as const;
 
 export type PreviewLayoutEngineModuleOrPath =
 	| ArrayBuffer
@@ -11,6 +12,10 @@ export type PreviewLayoutEngineModuleOrPath =
 	| URL
 	| WebAssembly.Module
 	| string;
+
+export type PreviewLayoutEngineInitOptions = {
+	module_or_path?: PreviewLayoutEngineModuleOrPath;
+};
 
 export type PreviewLayoutEngineLoader = () => PreviewLayoutEngineModuleOrPath;
 
@@ -88,39 +93,68 @@ function createLazyPromise<T>(factory: () => Promise<T>): Promise<T> {
 	}) as Promise<T>;
 }
 
+function isValidLayoutEngineWasmMagic(bytes: Uint8Array): boolean {
+	return EXPECTED_WASM_MAGIC_HEADER.every(
+		(value, index) => bytes[index] === value,
+	);
+}
+
+function formatLayoutEngineWasmHeader(bytes: Uint8Array): string {
+	return Array.from(bytes.slice(0, EXPECTED_WASM_MAGIC_HEADER.length))
+		.map((value) => value.toString(16).padStart(2, "0"))
+		.join(" ");
+}
+
+export async function loadPreviewLayoutEngineWasmBytes(): Promise<Uint8Array> {
+	if (typeof window === "undefined" || typeof fetch !== "function") {
+		throw new Error(
+			"Layout engine Wasm fetch path is unavailable outside a browser-like environment.",
+		);
+	}
+
+	const { default: layoutEngineWasmUrl } = await import(
+		"@loom-dev/layout-engine/layout_engine_bg.wasm?url"
+	);
+	const response = await fetch(resolveLayoutEngineWasmUrl(layoutEngineWasmUrl));
+	if (!response.ok) {
+		throw new Error(
+			`Failed to fetch layout engine Wasm (${response.status}) from ${layoutEngineWasmUrl}`,
+		);
+	}
+
+	const bytes = new Uint8Array(await response.arrayBuffer());
+	if (!isValidLayoutEngineWasmMagic(bytes)) {
+		throw new Error(
+			`Invalid Wasm binary header from ${layoutEngineWasmUrl}. Expected 00 61 73 6d, received ${formatLayoutEngineWasmHeader(bytes)}`,
+		);
+	}
+
+	return bytes;
+}
+
 function getDefaultPreviewLayoutEngineLoader(): PreviewLayoutEngineLoader | null {
 	if (typeof window === "undefined" || typeof fetch !== "function") {
 		return null;
 	}
 
-	return () =>
-		createLazyPromise(async () => {
-			const { default: layoutEngineWasmUrl } = await import(
-				"@loom-dev/layout-engine/layout_engine_bg.wasm?url"
-			);
-			const response = await fetch(
-				resolveLayoutEngineWasmUrl(layoutEngineWasmUrl),
-			);
-			if (!response.ok) {
-				throw new Error(
-					`Failed to fetch layout engine Wasm (${response.status}) from ${layoutEngineWasmUrl}`,
-				);
-			}
-
-			return new Uint8Array(await response.arrayBuffer());
-		});
+	return () => createLazyPromise(loadPreviewLayoutEngineWasmBytes);
 }
 
-export function initializeLayoutEngine(): Promise<void> {
+export function initializeLayoutEngine(
+	options?: PreviewLayoutEngineInitOptions,
+): Promise<void> {
 	if (!layoutEngineInitPromise) {
 		const loader =
-			getPreviewLayoutEngineLoader() ?? getDefaultPreviewLayoutEngineLoader();
+			options?.module_or_path === undefined
+				? (getPreviewLayoutEngineLoader() ?? getDefaultPreviewLayoutEngineLoader())
+				: null;
+		const moduleOrPath = options?.module_or_path ?? loader?.();
 		layoutEngineInitPromise = initLayoutEngine(
-			loader
-				? {
-						module_or_path: loader(),
-					}
-				: undefined,
+			moduleOrPath === undefined
+				? undefined
+				: {
+						module_or_path: moduleOrPath,
+				  },
 		)
 			.then(() => undefined)
 			.catch((error: unknown) => {

@@ -2,7 +2,7 @@ export = compiler;
 /** @type {CompilerModule} */
 declare const compiler: CompilerModule;
 declare namespace compiler {
-    export { PreviewTransformMode, PreviewTransformSeverity, UnsupportedPatternError, PreviewTransformDiagnostic, PreviewTransformOutcome, TransformPreviewSourceOptions, TransformPreviewSourceResult, NativeCompilerModule, CompilerModule };
+    export { PreviewTransformMode, PreviewTransformSeverity, UnsupportedPatternError, PreviewTransformDiagnostic, PreviewTransformOutcome, TransformPreviewSourceOptions, TransformPreviewSourceResultInput, NormalizedTransformPreviewSourceResult, TransformPreviewSourceResult, NativeCompilerModule, CompilerModule };
 }
 type PreviewTransformMode = "strict-fidelity" | "compatibility" | "mocked" | "design-time";
 type PreviewTransformSeverity = "error" | "info" | "warning";
@@ -37,6 +37,17 @@ type TransformPreviewSourceOptions = {
     runtimeModule: string;
     target: string;
 };
+type TransformPreviewSourceResultInput = {
+    code?: string | null | undefined;
+    errors?: UnsupportedPatternError[] | undefined;
+    diagnostics?: PreviewTransformDiagnostic[] | undefined;
+    outcome?: PreviewTransformOutcome | undefined;
+};
+type NormalizedTransformPreviewSourceResult = {
+    code?: string | undefined;
+    diagnostics: PreviewTransformDiagnostic[];
+    outcome: PreviewTransformOutcome;
+};
 type TransformPreviewSourceResult = {
     code: string | null;
     errors: UnsupportedPatternError[];
@@ -45,5 +56,6 @@ type TransformPreviewSourceResult = {
 };
 type NativeCompilerModule = typeof import("./index.js");
 type CompilerModule = Omit<NativeCompilerModule, "transformPreviewSource"> & {
+    normalizeTransformPreviewSourceResult(result: TransformPreviewSourceResultInput, mode: PreviewTransformMode): NormalizedTransformPreviewSourceResult;
     transformPreviewSource(code: string, options: TransformPreviewSourceOptions): TransformPreviewSourceResult;
 };

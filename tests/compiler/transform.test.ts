@@ -1,4 +1,7 @@
-import { transformPreviewSource } from "@loom-dev/compiler";
+import {
+	normalizeTransformPreviewSourceResult,
+	transformPreviewSource,
+} from "@loom-dev/compiler";
 import {
 	__previewGlobal,
 	setupRobloxEnvironment,
@@ -6,6 +9,42 @@ import {
 import { describe, expect, it } from "vitest";
 
 describe("@loom-dev/compiler preview transform", () => {
+	it("exports a shared transform result normalizer", () => {
+		const normalized = normalizeTransformPreviewSourceResult(
+			{
+				code: `export const value = gamee.GetService("Players");`,
+				errors: [
+					{
+						code: "UNRESOLVED_FREE_IDENTIFIER",
+						column: 22,
+						file: "/virtual/normalized-result.tsx",
+						line: 1,
+						message:
+							"Unresolved free identifier `gamee` will be rewritten to preview global access. Import or declare it explicitly to avoid preview drift.",
+						symbol: "gamee",
+						target: "normalized-result",
+					},
+				],
+			},
+			"compatibility",
+		);
+
+		expect(normalized).toEqual({
+			code: `export const value = gamee.GetService("Players");`,
+			diagnostics: [
+				expect.objectContaining({
+					blocking: false,
+					code: "UNRESOLVED_FREE_IDENTIFIER",
+					severity: "warning",
+					symbol: "gamee",
+				}),
+			],
+			outcome: {
+				fidelity: "degraded",
+				kind: "compatibility",
+			},
+		});
+	});
 	it("returns preview transform results with rewritten runtime imports and DOM-facing types", () => {
 		const source = `
       import { React, Slot } from "@loom-dev/core";

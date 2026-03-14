@@ -36,6 +36,17 @@ const { resolve } = require("node:path");
  * @property {string} runtimeModule
  * @property {string} target
  *
+ * @typedef {object} TransformPreviewSourceResultInput
+ * @property {string | null | undefined} [code]
+ * @property {UnsupportedPatternError[] | undefined} [errors]
+ * @property {PreviewTransformDiagnostic[] | undefined} [diagnostics]
+ * @property {PreviewTransformOutcome | undefined} [outcome]
+ *
+ * @typedef {object} NormalizedTransformPreviewSourceResult
+ * @property {string | undefined} [code]
+ * @property {PreviewTransformDiagnostic[]} diagnostics
+ * @property {PreviewTransformOutcome} outcome
+ *
  * @typedef {object} TransformPreviewSourceResult
  * @property {string | null} code
  * @property {UnsupportedPatternError[]} errors
@@ -44,6 +55,7 @@ const { resolve } = require("node:path");
  *
  * @typedef {typeof import("./index.js")} NativeCompilerModule
  * @typedef {Omit<NativeCompilerModule, "transformPreviewSource"> & {
+ * 	normalizeTransformPreviewSourceResult(result: TransformPreviewSourceResultInput, mode: PreviewTransformMode): NormalizedTransformPreviewSourceResult;
  * 	transformPreviewSource(code: string, options: TransformPreviewSourceOptions): TransformPreviewSourceResult;
  * }} CompilerModule
  */
@@ -157,6 +169,29 @@ function inferTransformOutcome(mode, diagnostics) {
 }
 
 /**
+ * @param {TransformPreviewSourceResultInput} result
+ * @param {PreviewTransformMode} mode
+ * @returns {NormalizedTransformPreviewSourceResult}
+ */
+function normalizeTransformPreviewSourceResult(result, mode) {
+	const diagnostics = Array.isArray(result.diagnostics)
+		? result.diagnostics
+		: Array.isArray(result.errors)
+			? result.errors.map((error) => toTransformDiagnostic(mode, error))
+			: [];
+	const outcome = result.outcome ?? inferTransformOutcome(mode, diagnostics);
+
+	return {
+		code:
+			outcome.kind === "blocked" || outcome.kind === "design-time"
+				? undefined
+				: (typeof result.code === "string" ? result.code : undefined),
+		diagnostics,
+		outcome,
+	};
+}
+
+/**
  * @param {string} sourceText
  * @param {string} identifier
  * @returns {{ column: number; line: number }}
@@ -248,22 +283,26 @@ function transformPreviewSource(code, options) {
 		);
 	}
 
-	const outcome = inferTransformOutcome(mode, diagnostics);
+	const normalized = normalizeTransformPreviewSourceResult(
+		{
+			...result,
+			diagnostics,
+		},
+		mode,
+	);
 
 	return {
 		...result,
-		code:
-			outcome.kind === "blocked" || outcome.kind === "design-time"
-				? null
-				: (result.code ?? null),
-		diagnostics,
-		outcome,
+		code: normalized.code ?? null,
+		diagnostics: normalized.diagnostics,
+		outcome: normalized.outcome,
 	};
 }
 
 /** @type {CompilerModule} */
 const compiler = {
 	...native,
+	normalizeTransformPreviewSourceResult,
 	transformPreviewSource,
 };
 

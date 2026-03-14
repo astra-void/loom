@@ -1,5 +1,8 @@
-import initLayoutEngine, { compute_layout } from "@loom-dev/layout-engine";
-import layoutEngineWasmUrl from "@loom-dev/layout-engine/layout_engine_bg.wasm?url";
+import { compute_layout } from "@loom-dev/layout-engine";
+import {
+	initializeLayoutEngine,
+	loadPreviewLayoutEngineWasmBytes,
+} from "@loom-dev/preview-runtime";
 import React from "react";
 import { PreviewThemeControl } from "./theme";
 
@@ -75,22 +78,6 @@ function toErrorMessage(error: unknown): string {
 	}
 
 	return String(error);
-}
-
-function isValidWasmMagic(bytes: Uint8Array): boolean {
-	return (
-		bytes.length >= 4 &&
-		bytes[0] === 0x00 &&
-		bytes[1] === 0x61 &&
-		bytes[2] === 0x73 &&
-		bytes[3] === 0x6d
-	);
-}
-
-function formatHeader(bytes: Uint8Array): string {
-	return Array.from(bytes.slice(0, 4))
-		.map((value) => value.toString(16).padStart(2, "0"))
-		.join(" ");
 }
 
 function isComputedRect(value: unknown): value is ComputedRect {
@@ -173,7 +160,6 @@ export function WasmTestApp() {
 
 	React.useEffect(() => {
 		let cancelled = false;
-		let blobUrl: string | null = null;
 
 		const onUnhandledRejection = (event: PromiseRejectionEvent) => {
 			event.preventDefault();
@@ -183,24 +169,8 @@ export function WasmTestApp() {
 
 		const initialize = async () => {
 			try {
-				const response = await fetch(layoutEngineWasmUrl);
-				if (!response.ok) {
-					throw new Error(
-						`Failed to fetch Wasm binary (${response.status}) from ${layoutEngineWasmUrl}`,
-					);
-				}
-
-				const bytes = new Uint8Array(await response.arrayBuffer());
-				if (!isValidWasmMagic(bytes)) {
-					throw new Error(
-						`Invalid Wasm binary header from ${layoutEngineWasmUrl}. Expected 00 61 73 6d, received ${formatHeader(bytes)}`,
-					);
-				}
-
-				blobUrl = URL.createObjectURL(
-					new Blob([bytes], { type: "application/wasm" }),
-				);
-				await initLayoutEngine({ module_or_path: blobUrl });
+				const wasmBytes = await loadPreviewLayoutEngineWasmBytes();
+				await initializeLayoutEngine({ module_or_path: wasmBytes });
 
 				if (cancelled) {
 					return;
@@ -239,9 +209,6 @@ export function WasmTestApp() {
 
 		return () => {
 			cancelled = true;
-			if (blobUrl) {
-				URL.revokeObjectURL(blobUrl);
-			}
 			window.removeEventListener("unhandledrejection", onUnhandledRejection);
 		};
 	}, []);

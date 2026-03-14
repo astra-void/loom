@@ -265,6 +265,9 @@ declare module "@loom-dev/preview-runtime" {
 		viewport: ViewportSize;
 		viewportReady: boolean;
 	};
+	export type PreviewLayoutEngineInitOptions = {
+		module_or_path?: PreviewLayoutEngineModuleOrPath;
+	};
 	export type PreviewLayoutEngineLoader = () => PreviewLayoutEngineModuleOrPath;
 
 	export type PreviewRuntimeIssueKind =
@@ -609,6 +612,10 @@ declare module "@loom-dev/preview-runtime" {
 	): ViewportSize | null;
 	export function createWindowViewport(): ViewportSize;
 	export function getPreviewLayoutProbeSnapshot(): PreviewLayoutProbeSnapshot;
+	export function initializeLayoutEngine(
+		options?: PreviewLayoutEngineInitOptions,
+	): Promise<void>;
+	export function loadPreviewLayoutEngineWasmBytes(): Promise<Uint8Array>;
 	export function isViewportLargeEnough(
 		viewport: ViewportSize | null | undefined,
 		minDimension?: number,

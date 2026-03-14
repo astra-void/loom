@@ -48,6 +48,44 @@ describe("preview runtime layout engine initialization", () => {
 		expect(layoutEngineMocks.init).toHaveBeenCalledWith(undefined);
 	});
 
+	it("loads and validates the browser Wasm asset through the shared helper", async () => {
+		const wasmUrl = (
+			await import("@loom-dev/layout-engine/layout_engine_bg.wasm?url")
+		).default;
+		const expectedFetchUrl = new URL(wasmUrl, "http://localhost/").toString();
+		const wasmBytes = new Uint8Array([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00]);
+		const fetchMock = vi
+			.spyOn(globalThis, "fetch")
+			.mockResolvedValue(new Response(wasmBytes, { status: 200 }));
+
+		vi.stubGlobal("window", {
+			location: { href: "http://localhost/" },
+		});
+		const previewRuntime = await loadPreviewRuntime();
+
+		await expect(previewRuntime.loadPreviewLayoutEngineWasmBytes()).resolves.toEqual(
+			wasmBytes,
+		);
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+		expect(fetchMock).toHaveBeenCalledWith(expectedFetchUrl);
+	});
+
+	it("fails shared Wasm loading when the magic header is invalid", async () => {
+		const invalidBytes = new Uint8Array([0x50, 0x4b, 0x03, 0x04]);
+		vi.spyOn(globalThis, "fetch").mockResolvedValue(
+			new Response(invalidBytes, { status: 200 }),
+		);
+
+		vi.stubGlobal("window", {
+			location: { href: "http://localhost/" },
+		});
+		const previewRuntime = await loadPreviewRuntime();
+
+		await expect(previewRuntime.loadPreviewLayoutEngineWasmBytes()).rejects.toThrow(
+			/Invalid Wasm binary header .* received 50 4b 03 04/i,
+		);
+	});
+
 	it("fetches the browser Wasm asset when window is available and no loader is registered", async () => {
 		const wasmUrl = (
 			await import("@loom-dev/layout-engine/layout_engine_bg.wasm?url")
@@ -93,6 +131,28 @@ describe("preview runtime layout engine initialization", () => {
 		expect(loader).toHaveBeenCalledTimes(1);
 		expect(layoutEngineMocks.init).toHaveBeenCalledWith({
 			module_or_path: wasmBytes,
+		});
+	});
+
+	it("uses explicit init input without consulting the default or registered loaders", async () => {
+		const explicitBytes = new Uint8Array([0x00, 0x61, 0x73, 0x6d]);
+		const loader = vi.fn(() => new Uint8Array([0x01, 0x02, 0x03, 0x04]));
+		const fetchMock = vi.spyOn(globalThis, "fetch");
+
+		vi.stubGlobal("window", {
+			location: { href: "http://localhost/" },
+		});
+		const previewRuntime = await loadPreviewRuntime();
+		previewRuntime.setPreviewLayoutEngineLoader(loader);
+
+		await previewRuntime.initializeLayoutEngine({
+			module_or_path: explicitBytes,
+		});
+
+		expect(fetchMock).not.toHaveBeenCalled();
+		expect(loader).not.toHaveBeenCalled();
+		expect(layoutEngineMocks.init).toHaveBeenCalledWith({
+			module_or_path: explicitBytes,
 		});
 	});
 });
