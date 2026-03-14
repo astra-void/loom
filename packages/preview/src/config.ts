@@ -114,6 +114,18 @@ type PackageMetadata = {
 	name?: string;
 };
 
+function resolveExistingRealPath(filePath: string) {
+	const resolvedPath = path.resolve(filePath);
+
+	try {
+		return (
+			fs.realpathSync.native?.(resolvedPath) ?? fs.realpathSync(resolvedPath)
+		);
+	} catch {
+		return resolvedPath;
+	}
+}
+
 function isRelativeSpecifier(specifier: string) {
 	return specifier.startsWith("./") || specifier.startsWith("../");
 }
@@ -422,13 +434,20 @@ function resolveFsAllow(
 	workspaceRoot: string,
 ) {
 	const explicitAllow = (configFsAllow ?? []).map((entry) =>
-		path.resolve(resolveMaybeRelativePath(entry, baseDir)),
+		resolveExistingRealPath(resolveMaybeRelativePath(entry, baseDir)),
+	);
+	const targetWorkspaceRoots = targets.map((target) =>
+		resolveExistingRealPath(searchForWorkspaceRoot(target.packageRoot)),
 	);
 	return [
 		...new Set([
-			workspaceRoot,
+			resolveExistingRealPath(workspaceRoot),
 			...explicitAllow,
-			...targets.flatMap((target) => [target.packageRoot, target.sourceRoot]),
+			...targetWorkspaceRoots,
+			...targets.flatMap((target) => [
+				resolveExistingRealPath(target.packageRoot),
+				resolveExistingRealPath(target.sourceRoot),
+			]),
 		]),
 	].sort((left, right) => left.localeCompare(right));
 }

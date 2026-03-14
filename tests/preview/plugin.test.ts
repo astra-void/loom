@@ -88,6 +88,7 @@ function createMockServer() {
 			invalidateModule: vi.fn(),
 		},
 		watcher: {
+			add: vi.fn(),
 			on: vi.fn((event: string, handler: (filePath: string) => void) => {
 				const handlers = watcherHandlers.get(event) ?? [];
 				handlers.push(handler);
@@ -184,6 +185,21 @@ function readEntryPayload(previewPlugin: PreviewPlugin, entryId: string) {
 }
 
 describe("createPreviewVitePlugin", () => {
+	it("registers preview target source roots with the Vite watcher", () => {
+		const { fixtureRoot, sourceRoot } = createFixtureRoot();
+		const previewPlugin = createPreviewPlugin(fixtureRoot, sourceRoot);
+		const configureServer = getHookHandler<TestConfigureServerHook>(
+			previewPlugin.configureServer as TestConfigureServerHook | undefined,
+		);
+		const mockServer = createMockServer();
+
+		configureServer?.(mockServer);
+
+		expect(mockServer.watcher.add).toHaveBeenCalledWith([
+			fs.realpathSync(sourceRoot),
+		]);
+	});
+
 	it("allows normal hot updates when the registry shape is unchanged", async () => {
 		const { fixtureRoot, sourceRoot } = createFixtureRoot();
 		const sourceFile = path.join(sourceRoot, "AnimatedSlot.tsx");

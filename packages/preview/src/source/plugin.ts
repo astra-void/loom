@@ -195,6 +195,24 @@ function getTransformTarget(targets: PreviewSourceTarget[], filePath: string) {
 	);
 }
 
+function resolveWatchRoots(targets: PreviewSourceTarget[]) {
+	return [
+		...new Set(
+			targets.map((target) => {
+				const resolvedPath = path.resolve(target.sourceRoot);
+				try {
+					return (
+						fs.realpathSync.native?.(resolvedPath) ??
+						fs.realpathSync(resolvedPath)
+					);
+				} catch {
+					return resolvedPath;
+				}
+			}),
+		),
+	].sort((left, right) => left.localeCompare(right));
+}
+
 export function createPreviewVitePlugin(
 	options: CreatePreviewVitePluginOptions,
 ): PreviewPluginOption {
@@ -206,6 +224,7 @@ export function createPreviewVitePlugin(
 		targets: options.targets,
 		transformMode: options.transformMode ?? "strict-fidelity",
 	});
+	const watchRoots = resolveWatchRoots(options.targets);
 	let server: PreviewDevServer | undefined;
 
 	const invalidateVirtualModules = (entryIds: string[]) => {
@@ -254,6 +273,7 @@ export function createPreviewVitePlugin(
 		enforce: "pre",
 		configureServer(configuredServer: PreviewDevServer) {
 			server = configuredServer;
+			configuredServer.watcher.add(watchRoots);
 			(
 				configuredServer.ws as PreviewDevServer["ws"] & {
 					on?: (

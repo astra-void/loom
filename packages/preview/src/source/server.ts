@@ -192,10 +192,21 @@ function parseTsconfig(tsconfigPath: string) {
 }
 
 function createTsconfigPathResolvePlugin(
-	workspaceRoot: string,
+	allowedRoots: string[],
 ): PreviewPluginOption {
 	const configCache = new Map<string, ts.ParsedCommandLine>();
-	const resolvedWorkspaceRoot = resolveRealFilePath(workspaceRoot);
+	const resolvedAllowedRoots = [
+		...new Set(allowedRoots.map((rootPath) => resolveRealFilePath(rootPath))),
+	];
+
+	const isAllowedFilePath = (filePath: string) => {
+		const resolvedFilePath = resolveRealFilePath(filePath);
+		return resolvedAllowedRoots.some(
+			(rootPath) =>
+				resolvedFilePath === rootPath ||
+				isFilePathUnderRoot(rootPath, resolvedFilePath),
+		);
+	};
 
 	return {
 		enforce: "pre",
@@ -216,8 +227,7 @@ function createTsconfigPathResolvePlugin(
 
 			const importerFilePath = resolveRealFilePath(normalizedImporter);
 			if (
-				(importerFilePath !== resolvedWorkspaceRoot &&
-					!isFilePathUnderRoot(resolvedWorkspaceRoot, importerFilePath)) ||
+				!isAllowedFilePath(importerFilePath) ||
 				isNodeModulesFilePath(importerFilePath)
 			) {
 				return undefined;
@@ -256,7 +266,7 @@ function createTsconfigPathResolvePlugin(
 
 			const resolvedFilePath = resolveRealFilePath(rawResolvedFilePath);
 			if (
-				!isFilePathUnderRoot(resolvedWorkspaceRoot, resolvedFilePath) ||
+				!isAllowedFilePath(resolvedFilePath) ||
 				isDeclarationFilePath(resolvedFilePath) ||
 				isUnsupportedRuntimeFilePath(resolvedFilePath)
 			) {
@@ -566,7 +576,7 @@ export async function createPreviewViteServer(
 			...(options.middlewareMode
 				? [createRuntimeDependencyResolvePlugin()]
 				: []),
-			createTsconfigPathResolvePlugin(resolvedConfig.workspaceRoot),
+			createTsconfigPathResolvePlugin(resolvedConfig.server.fsAllow),
 			createAutoMockPropsPlugin({ targets: resolvedConfig.targets }),
 			previewPlugin,
 			reactPlugin({

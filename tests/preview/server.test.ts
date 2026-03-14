@@ -563,6 +563,66 @@ describe("createPreviewViteServer", () => {
 		}
 	});
 
+	it("resolves external workspace tsconfig path aliases when config workspace differs", async () => {
+		const fixture = createTempPreviewPackageWithPathAlias();
+		const configRoot = fs.mkdtempSync(
+			path.join(os.tmpdir(), "loom-preview-server-config-root-"),
+		);
+		temporaryRoots.push(configRoot);
+
+		const server = await createPreviewViteServer(
+			{
+				configDir: configRoot,
+				cwd: configRoot,
+				mode: "config-file",
+				projectName: "External Workspace Preview",
+				server: {
+					fsAllow: [
+						configRoot,
+						fixture.workspaceRoot,
+						fixture.packageRoot,
+						fixture.sourceRoot,
+					],
+					open: false,
+					port: 4174,
+				},
+				targetDiscovery: [],
+				targets: [
+					{
+						name: "ui",
+						packageName: "@fixtures/ui",
+						packageRoot: fixture.packageRoot,
+						sourceRoot: fixture.sourceRoot,
+					},
+				],
+				transformMode: "strict-fidelity",
+				workspaceRoot: configRoot,
+			},
+			{
+				appType: "custom",
+			},
+		);
+
+		try {
+			const resolvedImportId = toResolvedId(
+				await server.pluginContainer.resolveId(
+					"shared/buildInfo",
+					fixture.sourceFilePath,
+				),
+			);
+			expect(resolvedImportId).toBe(fixture.buildInfoPath);
+
+			const transformedSource = await server.transformRequest(
+				fixture.sourceFilePath,
+			);
+			expect(transformedSource?.code).toContain(
+				fixture.buildInfoPath.replace(/\\/g, "/"),
+			);
+		} finally {
+			await server.close();
+		}
+	});
+
 	it("resolves baseUrl-backed workspace imports before unresolved package mocking", async () => {
 		const fixture = createTempPreviewPackageWithBaseUrlAlias();
 		const resolvedConfig = await resolvePreviewServerConfig({

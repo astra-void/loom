@@ -300,6 +300,50 @@ describe("preview target discovery adapters", () => {
 		]);
 	});
 
+	it("includes external target workspace roots in fsAllow", async () => {
+		const configWorkspaceRoot = createTempRoot("loom-preview-config-root-");
+		const externalWorkspaceRoot = createTempRoot(
+			"loom-preview-external-workspace-",
+		);
+		fs.writeFileSync(
+			path.join(externalWorkspaceRoot, "pnpm-workspace.yaml"),
+			'packages:\n  - "packages/*"\n',
+			"utf8",
+		);
+		const externalTarget = createPackage(
+			externalWorkspaceRoot,
+			"packages/button",
+			"@fixtures/external-button",
+		);
+
+		const resolvedConfig = await resolvePreviewConfigObject(
+			{
+				projectName: "External Targets",
+				targetDiscovery: createStaticTargetsDiscovery([
+					{
+						name: "external-button",
+						packageName: externalTarget.packageName,
+						packageRoot: externalTarget.packageRoot,
+						sourceRoot: externalTarget.sourceRoot,
+					},
+				]),
+			},
+			{
+				configDir: configWorkspaceRoot,
+				cwd: configWorkspaceRoot,
+			},
+		);
+
+		expect(resolvedConfig.server.fsAllow).toEqual(
+			expect.arrayContaining([
+				fs.realpathSync(configWorkspaceRoot),
+				fs.realpathSync(externalWorkspaceRoot),
+				fs.realpathSync(externalTarget.packageRoot),
+				fs.realpathSync(externalTarget.sourceRoot),
+			]),
+		);
+	});
+
 	it("createWorkspaceTargetsDiscovery finds workspace packages and respects include/exclude filters", async () => {
 		const workspaceRoot = createTempRoot("loom-preview-workspace-discovery-");
 		const buttonTarget = createPackage(
