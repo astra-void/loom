@@ -33,6 +33,18 @@ export class Vector2 {
 	}
 }
 
+export class Vector3 {
+	readonly X: number;
+	readonly Y: number;
+	readonly Z: number;
+
+	constructor(x: number, y: number, z: number) {
+		this.X = x;
+		this.Y = y;
+		this.Z = z;
+	}
+}
+
 export class UDim2 {
 	readonly X: UDim;
 	readonly Y: UDim;
@@ -100,6 +112,77 @@ export class Color3 {
 	}
 }
 
+function truncateTowardZero(value: number) {
+	return value < 0 ? Math.ceil(value) : Math.floor(value);
+}
+
+function roundHalfAwayFromZero(value: number) {
+	return value < 0 ? Math.ceil(value - 0.5) : Math.floor(value + 0.5);
+}
+
+function mathLog(value: number, base?: number) {
+	if (base === undefined) {
+		return Math.log(value);
+	}
+
+	return Math.log(value) / Math.log(base);
+}
+
+function mathRandom(): number;
+function mathRandom(upper: number): number;
+function mathRandom(lower: number, upper: number): number;
+function mathRandom(lower?: number, upper?: number) {
+	if (lower === undefined) {
+		return Math.random();
+	}
+
+	if (upper === undefined) {
+		return Math.floor(Math.random() * lower) + 1;
+	}
+
+	const min = Math.ceil(lower);
+	const max = Math.floor(upper);
+	if (max < min) {
+		return min;
+	}
+
+	return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+export const math = Object.freeze({
+	abs: Math.abs,
+	acos: Math.acos,
+	asin: Math.asin,
+	atan: (value: number, x?: number) =>
+		x === undefined ? Math.atan(value) : Math.atan2(value, x),
+	atan2: Math.atan2,
+	ceil: Math.ceil,
+	clamp: (value: number, min: number, max: number) =>
+		Math.min(Math.max(value, min), max),
+	cos: Math.cos,
+	deg: (value: number) => (value * 180) / Math.PI,
+	exp: Math.exp,
+	floor: Math.floor,
+	fmod: (left: number, right: number) => left % right,
+	huge: Number.POSITIVE_INFINITY,
+	log: mathLog,
+	max: Math.max,
+	min: Math.min,
+	modf: (value: number): readonly [number, number] => {
+		const integerPart = truncateTowardZero(value);
+		return [integerPart, value - integerPart] as const;
+	},
+	pi: Math.PI,
+	pow: Math.pow,
+	rad: (value: number) => (value * Math.PI) / 180,
+	random: mathRandom,
+	round: roundHalfAwayFromZero,
+	sign: (value: number) => (value === 0 ? 0 : value < 0 ? -1 : 1),
+	sin: Math.sin,
+	sqrt: Math.sqrt,
+	tan: Math.tan,
+});
+
 export function typeIs(
 	value: unknown,
 	typeName: "string" | "number" | "boolean" | "function" | "table",
@@ -128,6 +211,10 @@ export function* pairs(value: unknown) {
 
 export function error(message: string): never {
 	throw new Error(message);
+}
+
+export function warn(...args: unknown[]) {
+	console.warn(...args);
 }
 
 export function isPreviewElement(

@@ -55,10 +55,13 @@ const previewGlobalPropertyKeys = [
 	"Enum",
 	"RunService",
 	"TweenInfo",
+	"Vector3",
 	"game",
+	"math",
 	"print",
 	"task",
 	"tostring",
+	"warn",
 	"workspace",
 	previewRuntimePolyfillsMarker,
 	previewRuntimeEnumKey,
@@ -69,6 +72,17 @@ const previewGlobalPropertyKeys = [
 	previewRuntimeTweenInfoKey,
 	previewRuntimeUserInputTrackerKey,
 ] as const;
+
+type PreviewGlobalStringKey = Extract<
+	(typeof previewGlobalPropertyKeys)[number],
+	string
+>;
+
+const previewGlobalStringKeys = new Set<string>(
+	previewGlobalPropertyKeys.filter(
+		(key): key is PreviewGlobalStringKey => typeof key === "string",
+	),
+);
 
 function isObjectLike(value: unknown): value is object {
 	return (
@@ -211,6 +225,14 @@ function canResolvePreviewFallbackGlobals(fallback: object | null) {
 	);
 }
 
+function resolveKnownPreviewGlobal(property: string) {
+	if (!previewGlobalStringKeys.has(property) || !Reflect.has(robloxMockRecord, property)) {
+		return undefined;
+	}
+
+	return robloxMockRecord[property];
+}
+
 function createMissingGlobalFallback(basePrototype: object | null): object {
 	const fallbackMetadata: PreviewGlobalFallbackMetadata = { basePrototype };
 	const fallbackTarget: PropertyBag = {};
@@ -224,7 +246,7 @@ function createMissingGlobalFallback(basePrototype: object | null): object {
 	});
 
 	return new Proxy<PropertyBag>(fallbackTarget, {
-		get(target, property) {
+		get(target, property, receiver) {
 			if (property === previewGlobalFallbackMarker) {
 				return true;
 			}
@@ -233,22 +255,26 @@ function createMissingGlobalFallback(basePrototype: object | null): object {
 				return fallbackMetadata;
 			}
 
-			if (property in target) {
-				return target[property];
+			if (Reflect.has(target, property)) {
+				return Reflect.get(target, property, receiver);
 			}
 
 			if (typeof property !== "string") {
 				return undefined;
 			}
 
-			return robloxMockRecord[property];
+			return resolveKnownPreviewGlobal(property);
 		},
 		has(target, property) {
-			if (typeof property === "string") {
+			if (Reflect.has(target, property)) {
 				return true;
 			}
 
-			return property in target;
+			if (typeof property !== "string") {
+				return false;
+			}
+
+			return resolveKnownPreviewGlobal(property) !== undefined;
 		},
 	});
 }
@@ -269,10 +295,7 @@ function installMissingGlobalFallback(target: object) {
 		fallbackMetadata?.basePrototype ?? clonePrototypeSurface(currentFallback);
 
 	try {
-		Object.setPrototypeOf(
-			prototypeHost,
-			createMissingGlobalFallback(basePrototype),
-		);
+		Object.setPrototypeOf(prototypeHost, createMissingGlobalFallback(basePrototype));
 	} catch {
 		// Ignore environments that do not allow prototype mutation on the global host.
 	}
@@ -307,3 +330,4 @@ export function installPreviewBrowserGlobals() {
 		restorePrototypeParent(prototypeRestoreEntry);
 	};
 }
+

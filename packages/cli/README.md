@@ -29,7 +29,7 @@ loom <command> [options]
 
 ```bash
 loom preview --cwd apps/preview-harness
-loom build --cwd packages/preview --out-dir ./generated
+loom build --cwd packages/preview --out-dir ../../generated-preview
 loom build --cwd packages/preview --out-dir ./metadata-build --artifact-kind entry-metadata --artifact-kind layout-schema --transform-mode design-time
 loom preview --config ./loom.config.ts --port 4175 --open
 loom snapshot --cwd packages/preview --output ./preview-snapshot.json

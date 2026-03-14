@@ -1,4 +1,4 @@
-﻿import fs from "node:fs";
+import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { compile_tsx, transformPreviewSource } from "@loom-dev/compiler";
@@ -238,6 +238,32 @@ describe("preview source transform", () => {
 		);
 		expect(result.code).toContain("<TextLabel");
 		expect(result.code).toContain("<Frame");
+	});
+
+	it("supports warn, math, and Vector3 without unresolved-identifier drift", () => {
+		const source = `
+      export const maxValue = math.max(1, 3, 2);
+      export const clampedValue = math.clamp(-4, 0, 10);
+      export const direction = new Vector3(1, 2, 3);
+
+      export function Example() {
+        warn("preview", maxValue, clampedValue, direction.Z);
+        return <frame />;
+      }
+    `;
+
+		const result = transformPreviewSource(source, {
+			filePath: "/virtual/preview-globals.tsx",
+			mode: "compatibility",
+			runtimeModule: "@loom-dev/preview-runtime",
+			target: "preview-globals",
+		});
+
+		expect(result.diagnostics).toHaveLength(0);
+		expect(result.code).toContain('__previewGlobal("math").max(1, 3, 2)');
+		expect(result.code).toContain('__previewGlobal("math").clamp(-4, 0, 10)');
+		expect(result.code).toContain('new Vector3(1, 2, 3)');
+		expect(result.code).toContain('__previewGlobal("warn")');
 	});
 
 	it("parses decorated Flamework classes without failing preview discovery", () => {

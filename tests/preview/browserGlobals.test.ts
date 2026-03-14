@@ -1,12 +1,18 @@
 // @vitest-environment jsdom
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { installPreviewBrowserGlobals } from "../../packages/preview/src/shell/installPreviewBrowserGlobals";
 
 type PreviewGlobalRecord = typeof globalThis & {
 	Enum?: unknown;
 	TweenInfo?: new (...args: unknown[]) => unknown;
+	Vector3?: new (x: number, y: number, z: number) => { Z: number };
 	game?: unknown;
+	math?: {
+		clamp: (value: number, min: number, max: number) => number;
+		max: (...values: number[]) => number;
+	};
+	warn?: (...args: unknown[]) => void;
 	workspace?: unknown;
 };
 
@@ -16,7 +22,10 @@ const previewGlobalFallbackMarker = Symbol.for(
 );
 const initialEnum = globalRecord.Enum;
 const initialGame = globalRecord.game;
+const initialMath = globalRecord.math;
 const initialTweenInfo = globalRecord.TweenInfo;
+const initialVector3 = globalRecord.Vector3;
+const initialWarn = globalRecord.warn;
 const initialWorkspace = globalRecord.workspace;
 const globalPrototypeHost = Object.getPrototypeOf(globalThis);
 const initialGlobalPrototypeParent = globalPrototypeHost
@@ -29,6 +38,8 @@ const initialWindowPrototypeParent = windowPrototypeHost
 	: null;
 
 afterEach(() => {
+	vi.restoreAllMocks();
+
 	if (initialEnum === undefined) {
 		delete globalRecord.Enum;
 	} else {
@@ -41,10 +52,28 @@ afterEach(() => {
 		globalRecord.game = initialGame;
 	}
 
+	if (initialMath === undefined) {
+		delete globalRecord.math;
+	} else {
+		globalRecord.math = initialMath;
+	}
+
 	if (initialTweenInfo === undefined) {
 		delete globalRecord.TweenInfo;
 	} else {
 		globalRecord.TweenInfo = initialTweenInfo;
+	}
+
+	if (initialVector3 === undefined) {
+		delete globalRecord.Vector3;
+	} else {
+		globalRecord.Vector3 = initialVector3;
+	}
+
+	if (initialWarn === undefined) {
+		delete globalRecord.warn;
+	} else {
+		globalRecord.warn = initialWarn;
 	}
 
 	if (initialWorkspace === undefined) {
@@ -151,6 +180,51 @@ describe("installPreviewBrowserGlobals", () => {
 			{ X: 0, Y: 0 },
 		]);
 		expect(result.workspaceMatches).toBe(true);
+	});
+
+	it("installs warn, math, and Vector3 globals", () => {
+		delete globalRecord.Enum;
+		const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+		installPreviewBrowserGlobals();
+
+		const result = Function(`
+      "use strict";
+      warn("preview", 7);
+      return {
+        mathClamp: math.clamp(-2, 0, 4),
+        mathMax: math.max(1, 3, 2),
+        vectorZ: new Vector3(1, 2, 3).Z,
+        warnType: typeof warn,
+      };
+    `)() as {
+			mathClamp: number;
+			mathMax: number;
+			vectorZ: number;
+			warnType: string;
+		};
+
+		expect(result.warnType).toBe("function");
+		expect(result.mathClamp).toBe(0);
+		expect(result.mathMax).toBe(3);
+		expect(result.vectorZ).toBe(3);
+		expect(warnSpy).toHaveBeenCalledWith("preview", 7);
+	});
+
+	it("keeps unknown globals absent while exposing known preview globals", () => {
+		delete globalRecord.Enum;
+
+		installPreviewBrowserGlobals();
+
+		expect(
+			(window as typeof window & Record<string, unknown>).MissingPreviewGlobal,
+		).toBeUndefined();
+		expect("MissingPreviewGlobal" in window).toBe(false);
+		expect(
+			Function('"use strict"; return typeof MissingPreviewGlobal;')(),
+		).toBe("undefined");
+		expect("game" in window).toBe(true);
+		expect((window as typeof window & { game?: unknown }).game).toBeDefined();
 	});
 
 	it("repairs a marker-only fallback chain on reinstall", () => {

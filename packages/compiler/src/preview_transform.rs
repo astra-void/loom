@@ -42,9 +42,11 @@ const KNOWN_PREVIEW_GLOBAL_NAMES: &[&str] = &[
     "RunService",
     "TweenInfo",
     "game",
+    "math",
     "print",
     "task",
     "tostring",
+    "warn",
     "workspace",
 ];
 const STANDARD_GLOBAL_IDENTIFIER_NAMES: &[&str] = &[
@@ -87,12 +89,13 @@ const STANDARD_GLOBAL_IDENTIFIER_NAMES: &[&str] = &[
     "setTimeout",
     "window",
 ];
-const RUNTIME_HELPER_NAMES: [&str; 9] = [
+const RUNTIME_HELPER_NAMES: [&str; 10] = [
     PREVIEW_GLOBAL_HELPER_NAME,
     "Color3",
     "UDim2",
     "UDim",
     "Vector2",
+    "Vector3",
     "typeIs",
     "pairs",
     "error",
@@ -1409,4 +1412,3 @@ const proxied = new Proxy(target, {
         );
     }
 }
-

@@ -1,4 +1,4 @@
-ï»¿import type {
+import type {
 	PreviewDiagnostic,
 	PreviewEntryDescriptor,
 	PreviewEntryPayload,
@@ -44,7 +44,6 @@ type PreviewCanvasProps = {
 	isDebugMode: boolean;
 	module: PreviewModule;
 	onRenderError: (error: unknown | null) => void;
-	warningState: PreviewReadyWarningState;
 };
 
 type PreviewNodeRendererProps = {
@@ -168,15 +167,6 @@ function getInitialSelectedId(
 	return entries[0]?.id;
 }
 
-function readPreviewDefinition(module: PreviewModule) {
-	const preview = module.preview;
-
-	if (!preview || typeof preview !== "object") {
-		return undefined;
-	}
-
-	return preview;
-}
 
 function getRuntimeIssueFingerprint(issue: PreviewRuntimeIssue) {
 	return [
@@ -214,31 +204,6 @@ function _isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null;
 }
 
-function getRenderModeLabel(entry: PreviewEntryDescriptor) {
-	if (entry.renderTarget.kind === "harness") {
-		return "preview.render";
-	}
-
-	if (
-		entry.selection.kind === "explicit" &&
-		entry.selection.contract === "preview.entry"
-	) {
-		return "preview.entry";
-	}
-
-	if (
-		entry.renderTarget.kind === "component" &&
-		entry.renderTarget.exportName === "default"
-	) {
-		return "default export";
-	}
-
-	if (entry.renderTarget.kind === "component") {
-		return entry.renderTarget.exportName;
-	}
-
-	return "none";
-}
 
 function getStatusLabel(status: PreviewEntryStatus) {
 	switch (status) {
@@ -634,48 +599,10 @@ function usePreviewViewport() {
 }
 
 function PreviewCanvas(props: PreviewCanvasProps) {
-	const preview = readPreviewDefinition(props.module);
 	const { viewport, viewportRef } = usePreviewViewport();
-	const subtitle =
-		props.entry.renderTarget.kind === "harness"
-			? "Custom harness"
-			: props.entry.renderTarget.kind === "component" &&
-					props.entry.renderTarget.usesPreviewProps
-				? "Component render with preview.props"
-				: "Component render";
 
 	return (
 		<div className="preview-canvas">
-			<div className="canvas-meta">
-				<div>
-					<p className="meta-label">Target</p>
-					<p className="meta-value">{props.entry.targetName}</p>
-				</div>
-				<div>
-					<p className="meta-label">Render</p>
-					<p className="meta-value">{getRenderModeLabel(props.entry)}</p>
-				</div>
-				<div>
-					<p className="meta-label">Mode</p>
-					<p className="meta-value">{subtitle}</p>
-				</div>
-				<div>
-					<p className="meta-label">Title</p>
-					<p className="meta-value">{preview?.title ?? props.entry.title}</p>
-				</div>
-			</div>
-			{props.warningState.fidelity === "degraded" ||
-			props.warningState.warningCodes.length > 0 ? (
-				<aside aria-live="polite" className="preview-warning">
-					<p className="preview-warning-eyebrow">Fidelity warning</p>
-					<p className="preview-warning-title">
-						Rendered with degraded fidelity.
-					</p>
-					<p className="preview-warning-body">
-						{describeWarningState(props.warningState)}
-					</p>
-				</aside>
-			) : undefined}
 			<div className="preview-stage">
 				<div
 					className="preview-stage-viewport"
@@ -701,6 +628,41 @@ function PreviewCanvas(props: PreviewCanvasProps) {
 	);
 }
 
+function getIssueSummaryDescription(
+	warningState: PreviewReadyWarningState,
+	blockingIssueCount: number,
+	warningCount: number,
+	noteCount: number,
+) {
+	if (warningCount > 0) {
+		return describeWarningState(warningState);
+	}
+
+	if (blockingIssueCount > 0) {
+		return "Blocking diagnostics are attached to this preview.";
+	}
+
+	if (noteCount > 0) {
+		return "Preview notes are available for this entry.";
+	}
+
+	return undefined;
+}
+
+function shouldDefaultIssueDisclosureOpen(
+	entry: PreviewEntryDescriptor,
+	blockingIssueCount: number,
+	noteCount: number,
+	loadIssue: PreviewRuntimeIssue | null,
+	renderIssue: PreviewRuntimeIssue | null,
+) {
+	if (blockingIssueCount > 0 || loadIssue || renderIssue) {
+		return true;
+	}
+
+	return entry.status !== "ready" || noteCount > 0;
+}
+
 export function PreviewApp(props: PreviewAppProps) {
 	const { loadEntry } = props;
 	const [selectedId, setSelectedId] = React.useState(() =>
@@ -718,6 +680,7 @@ export function PreviewApp(props: PreviewAppProps) {
 	const [runtimeIssues, setRuntimeIssues] = React.useState<
 		PreviewRuntimeIssue[]
 	>([]);
+	const issueDisclosureRef = React.useRef<HTMLDetailsElement | null>(null);
 	const selectedEntryRef = React.useRef<PreviewEntryDescriptor | undefined>(
 		undefined,
 	);
@@ -775,6 +738,34 @@ export function PreviewApp(props: PreviewAppProps) {
 			(diagnostic) => !isBlockingIssue(diagnostic),
 		).length + selectedEntryRuntimeWarningCount,
 	);
+	const noteCount = selectedEntryDiscoveryDiagnostics.length;
+	const hasDetailedIssueItems =
+		selectedEntryDiagnostics.length > 0 ||
+		noteCount > 0 ||
+		runtimeIssues.length > 0 ||
+		renderIssue != null ||
+		loadIssue != null;
+	const hasIssueDisclosure =
+		blockingIssueCount > 0 ||
+		selectedEntryWarningCount > 0 ||
+		noteCount > 0 ||
+		renderIssue != null ||
+		loadIssue != null;
+	const issueSummaryDescription = getIssueSummaryDescription(
+		selectedEntryWarningState,
+		blockingIssueCount,
+		selectedEntryWarningCount,
+		noteCount,
+	);
+	const issueDisclosureDefaultOpen = selectedEntry
+		? shouldDefaultIssueDisclosureOpen(
+				selectedEntry,
+				blockingIssueCount,
+				noteCount,
+				loadIssue,
+				renderIssue,
+			)
+		: false;
 	const emptyState = selectedEntry
 		? getEntryEmptyState(selectedEntry, selectedEntryDiscoveryDiagnostics)
 		: undefined;
@@ -929,6 +920,13 @@ export function PreviewApp(props: PreviewAppProps) {
 		});
 	}, [selectedEntry]);
 
+	React.useEffect(() => {
+		if (!issueDisclosureRef.current) {
+			return;
+		}
+
+		issueDisclosureRef.current.open = issueDisclosureDefaultOpen;
+	}, [hasIssueDisclosure, issueDisclosureDefaultOpen, selectedEntryId]);
 	const renderSidebarNodes = (
 		nodes: SidebarTreeNode[],
 		depth: number,
@@ -998,9 +996,7 @@ export function PreviewApp(props: PreviewAppProps) {
 							className="sidebar-status-dot"
 							data-status={node.entry.status}
 						/>
-						{node.hasWarning ? (
-							<span className="sidebar-warning-dot" />
-						) : undefined}
+						{node.hasWarning ? <span className="sidebar-warning-dot" /> : undefined}
 					</span>
 				</button>
 			);
@@ -1011,12 +1007,10 @@ export function PreviewApp(props: PreviewAppProps) {
 			<aside className="preview-sidebar">
 				<div className="sidebar-header">
 					<div className="sidebar-brand">
-						<p className="sidebar-eyebrow">Explorer</p>
 						<h1>{props.projectName}</h1>
 					</div>
 					<p className="sidebar-header-note">
-						{props.entries.length} preview file(s) across{" "}
-						{sidebarTree.targets.length} target(s).
+						{props.entries.length} files · {sidebarTree.targets.length} targets
 					</p>
 				</div>
 				<nav aria-label="Preview entries" className="sidebar-tree">
@@ -1041,35 +1035,15 @@ export function PreviewApp(props: PreviewAppProps) {
 					<>
 						<header className="preview-header">
 							<div className="preview-header-copy">
-								<p className="section-eyebrow">Selected preview</p>
 								<div className="preview-header-title">
 									<h2>{selectedEntryFileName}</h2>
-									<span
-										className={`status-pill status-${selectedEntry.status}`}
-									>
+									<span className={`status-pill status-${selectedEntry.status}`}>
 										{getStatusLabel(selectedEntry.status)}
 									</span>
 								</div>
 								<p className="preview-header-path">
 									{selectedEntry.relativePath}
 								</p>
-								<div className="preview-header-meta">
-									<span className="meta-pill">{selectedEntry.targetName}</span>
-									{selectedEntry.title !== selectedEntryFileName ? (
-										<span className="meta-pill">{selectedEntry.title}</span>
-									) : undefined}
-									<span className="meta-pill">
-										{selectedEntry.selection.kind === "explicit"
-											? "Explicit preview contract"
-											: "Unresolved preview contract"}
-									</span>
-								</div>
-								{selectedEntryWarningState.fidelity === "degraded" ||
-								selectedEntryWarningState.warningCodes.length > 0 ? (
-									<p className="header-warning-copy">
-										{describeWarningState(selectedEntryWarningState)}
-									</p>
-								) : undefined}
 							</div>
 							<div className="preview-toolbar">
 								<div className="preview-toolbar-group">
@@ -1087,201 +1061,220 @@ export function PreviewApp(props: PreviewAppProps) {
 						</header>
 
 						<section className="preview-card">
-							{selectedEntry.status === "ready" ? (
-								loadedEntry ? (
-									selectedEntryBlockingDiagnostics.length > 0 ? (
+							<div className="preview-card-body">
+								{selectedEntry.status === "ready" ? (
+									loadedEntry ? (
+										selectedEntryBlockingDiagnostics.length > 0 ? (
+											<div className="preview-empty">
+												<p className="preview-empty-eyebrow">Diagnostics</p>
+												<h2>Transform diagnostics are blocking this preview.</h2>
+												<p>
+													Fix the unsupported patterns below, then save again.
+												</p>
+											</div>
+										) : (
+											<PreviewCanvas
+												entry={selectedEntry}
+												isDebugMode={isDebugMode}
+												module={loadedEntry.module}
+												onRenderError={(error) => {
+													if (error == null) {
+														setRenderIssue(null);
+														return;
+													}
+
+													setRenderIssue(
+														createPreviewRenderIssue(selectedEntry, error),
+													);
+												}}
+											/>
+										)
+									) : loadIssue ? (
 										<div className="preview-empty">
-											<p className="preview-empty-eyebrow">Diagnostics</p>
-											<h2>Transform diagnostics are blocking this preview.</h2>
-											<p>
-												Fix the unsupported patterns below, then save again.
-											</p>
+											<p className="preview-empty-eyebrow">Load error</p>
+											<h2>Preview module failed to load.</h2>
+											<p>{loadIssue.summary}</p>
 										</div>
 									) : (
-										<PreviewCanvas
-											entry={selectedEntry}
-											isDebugMode={isDebugMode}
-											module={loadedEntry.module}
-											onRenderError={(error) => {
-												if (error == null) {
-													setRenderIssue(null);
-													return;
-												}
-
-												setRenderIssue(
-													createPreviewRenderIssue(selectedEntry, error),
-												);
-											}}
-											warningState={selectedEntryWarningState}
-										/>
+										<div className="preview-empty">
+											<p className="preview-empty-eyebrow">Loading</p>
+											<h2>Preparing transformed source.</h2>
+											<p>
+												The selected `@rbxts/react` module is being compiled into
+												the web preview runtime.
+											</p>
+										</div>
 									)
-								) : loadIssue ? (
+								) : selectedEntry.status === "blocked_by_transform" ? (
+									loadedEntry ? (
+										<div className="preview-empty">
+											<p className="preview-empty-eyebrow">Transform blocked</p>
+											<h2>This preview is blocked by transform mode.</h2>
+											<p>
+												Fix the blocking diagnostics below or opt into a
+												non-default transform mode.
+											</p>
+										</div>
+									) : loadIssue ? (
+										<div className="preview-empty">
+											<p className="preview-empty-eyebrow">Load error</p>
+											<h2>Preview diagnostics could not be loaded.</h2>
+											<p>{loadIssue.summary}</p>
+										</div>
+									) : (
+										<div className="preview-empty">
+											<p className="preview-empty-eyebrow">Loading</p>
+											<h2>Preparing transform diagnostics.</h2>
+											<p>
+												The selected entry is blocked, but its diagnostics are
+												still loading.
+											</p>
+										</div>
+									)
+								) : selectedEntry.status === "blocked_by_runtime" ||
+									selectedEntry.status === "blocked_by_layout" ? (
 									<div className="preview-empty">
-										<p className="preview-empty-eyebrow">Load error</p>
-										<h2>Preview module failed to load.</h2>
-										<p>{loadIssue.summary}</p>
+										<p className="preview-empty-eyebrow">Runtime blocked</p>
+										<h2>Preview execution is blocked.</h2>
+										<p>Review the runtime and layout issues below.</p>
 									</div>
 								) : (
 									<div className="preview-empty">
-										<p className="preview-empty-eyebrow">Loading</p>
-										<h2>Preparing transformed source.</h2>
-										<p>
-											The selected `@rbxts/react` module is being compiled into
-											the web preview runtime.
-										</p>
+										<p className="preview-empty-eyebrow">{emptyState?.eyebrow}</p>
+										<h2>{emptyState?.title}</h2>
+										<p>{emptyState?.body}</p>
 									</div>
-								)
-							) : selectedEntry.status === "blocked_by_transform" ? (
-								loadedEntry ? (
-									<div className="preview-empty">
-										<p className="preview-empty-eyebrow">Transform blocked</p>
-										<h2>This preview is blocked by transform mode.</h2>
-										<p>
-											Fix the blocking diagnostics below or opt into a
-											non-default transform mode.
-										</p>
-									</div>
-								) : loadIssue ? (
-									<div className="preview-empty">
-										<p className="preview-empty-eyebrow">Load error</p>
-										<h2>Preview diagnostics could not be loaded.</h2>
-										<p>{loadIssue.summary}</p>
-									</div>
-								) : (
-									<div className="preview-empty">
-										<p className="preview-empty-eyebrow">Loading</p>
-										<h2>Preparing transform diagnostics.</h2>
-										<p>
-											The selected entry is blocked, but its diagnostics are
-											still loading.
-										</p>
-									</div>
-								)
-							) : selectedEntry.status === "blocked_by_runtime" ||
-								selectedEntry.status === "blocked_by_layout" ? (
-								<div className="preview-empty">
-									<p className="preview-empty-eyebrow">Runtime blocked</p>
-									<h2>Preview execution is blocked.</h2>
-									<p>Review the runtime and layout issues below.</p>
-								</div>
-							) : (
-								<div className="preview-empty">
-									<p className="preview-empty-eyebrow">{emptyState?.eyebrow}</p>
-									<h2>{emptyState?.title}</h2>
-									<p>{emptyState?.body}</p>
-								</div>
-							)}
-						</section>
-
-						<section className="diagnostics-card">
-							<div className="diagnostics-header">
-								<div>
-									<p className="section-eyebrow">Diagnostics</p>
-									<h3>Source analysis</h3>
-								</div>
-								<div className="diagnostics-summary">
-									<span className="diagnostics-summary-item">
-										{blockingIssueCount} blocking
-									</span>
-									<span className="diagnostics-summary-item">
-										{selectedEntryWarningCount} warnings
-									</span>
-									<span className="diagnostics-summary-item">
-										{selectedEntryDiscoveryDiagnostics.length} notes
-									</span>
-									{renderIssue ? (
-										<span className="diagnostics-summary-item">
-											render error
-										</span>
-									) : undefined}
-									{loadIssue ? (
-										<span className="diagnostics-summary-item">load error</span>
-									) : undefined}
-								</div>
+								)}
 							</div>
-							{selectedEntryDiagnostics.length === 0 &&
-							selectedEntryDiscoveryDiagnostics.length === 0 &&
-							runtimeIssues.length === 0 &&
-							!renderIssue &&
-							!loadIssue ? (
-								<p className="diagnostics-empty">
-									No diagnostics for this entry.
-								</p>
-							) : (
-								<div className="diagnostics-list">
-									{selectedEntryDiagnostics.map((diagnostic) => (
-										<article
-											className="diagnostic-item"
-											key={`${diagnostic.relativeFile}:${diagnostic.code}:${diagnostic.summary}`}
-										>
-											<p className="diagnostic-code">{diagnostic.code}</p>
-											<p className="diagnostic-message">{diagnostic.summary}</p>
-											<p className="diagnostic-location">
-												{diagnostic.relativeFile}
+							{hasIssueDisclosure ? (
+								<details
+									className="issue-disclosure"
+									ref={issueDisclosureRef}
+								>
+									<summary className="issue-disclosure-summary">
+										<div className="issue-disclosure-summary-copy">
+											<span
+												aria-hidden="true"
+												className="issue-disclosure-arrow"
+											/>
+											<div className="issue-disclosure-heading">
+												<span className="issue-disclosure-title">Issues</span>
+												{issueSummaryDescription ? (
+													<p className="issue-disclosure-description">
+														{issueSummaryDescription}
+													</p>
+												) : undefined}
+											</div>
+										</div>
+										<div className="issue-disclosure-badges">
+											{blockingIssueCount > 0 ? (
+												<span className="issue-badge issue-badge-blocking">
+													{blockingIssueCount} blocking
+												</span>
+											) : undefined}
+											{selectedEntryWarningCount > 0 ? (
+												<span className="issue-badge issue-badge-warning">
+													{selectedEntryWarningCount} warnings
+												</span>
+											) : undefined}
+											{noteCount > 0 ? (
+												<span className="issue-badge issue-badge-note">
+													{noteCount} notes
+												</span>
+											) : undefined}
+										</div>
+									</summary>
+									<div className="issue-disclosure-body">
+										{hasDetailedIssueItems ? (
+											<div className="diagnostics-list">
+												{selectedEntryDiagnostics.map((diagnostic) => (
+													<article
+														className={`diagnostic-item ${
+															isBlockingIssue(diagnostic)
+																? ""
+																: "diagnostic-item-warning"
+														}`.trim()}
+														key={`${diagnostic.relativeFile}:${diagnostic.code}:${diagnostic.summary}`}
+													>
+														<p className="diagnostic-code">{diagnostic.code}</p>
+														<p className="diagnostic-message">{diagnostic.summary}</p>
+														<p className="diagnostic-location">
+															{diagnostic.relativeFile}
+														</p>
+													</article>
+												))}
+												{selectedEntryDiscoveryDiagnostics.map((diagnostic) => (
+													<article
+														className="diagnostic-item diagnostic-item-discovery"
+														key={`${diagnostic.relativeFile}:${diagnostic.code}:${diagnostic.summary}`}
+													>
+														<p className="diagnostic-code">{diagnostic.code}</p>
+														<p className="diagnostic-message">{diagnostic.summary}</p>
+														<p className="diagnostic-location">
+															{diagnostic.relativeFile}
+														</p>
+													</article>
+												))}
+												{runtimeIssues.map((issue) => {
+													const renderMeta = runtimeIssueRenderMeta.get(issue);
+													return (
+														<article
+															className={`diagnostic-item diagnostic-item-runtime ${
+																isBlockingIssue(issue)
+																	? ""
+																	: "diagnostic-item-warning"
+															}`.trim()}
+															key={renderMeta?.key ?? getRuntimeIssueFingerprint(issue)}
+														>
+															<p className="diagnostic-code">{issue.code}</p>
+															<p className="diagnostic-message">{issue.summary}</p>
+															<p className="diagnostic-location">
+																{issue.relativeFile}:{issue.kind}:
+																{renderMeta?.occurrence ?? 1}
+															</p>
+														</article>
+													);
+												})}
+												{loadIssue ? (
+													<article className="diagnostic-item diagnostic-item-runtime">
+														<p className="diagnostic-code">{loadIssue.code}</p>
+														<p className="diagnostic-message">{loadIssue.summary}</p>
+														<p className="diagnostic-location">
+															{loadIssue.relativeFile}:{loadIssue.kind}
+														</p>
+													</article>
+												) : undefined}
+												{renderIssue ? (
+													<article className="diagnostic-item diagnostic-item-runtime">
+														<p className="diagnostic-code">{renderIssue.code}</p>
+														<p className="diagnostic-message">{renderIssue.summary}</p>
+														<p className="diagnostic-location">
+															{renderIssue.relativeFile}:{renderIssue.kind}
+														</p>
+													</article>
+												) : undefined}
+											</div>
+										) : (
+											<p className="issues-empty">
+												No detailed diagnostics were emitted for this entry.
 											</p>
-										</article>
-									))}
-									{selectedEntryDiscoveryDiagnostics.map((diagnostic) => (
-										<article
-											className="diagnostic-item diagnostic-item-discovery"
-											key={`${diagnostic.relativeFile}:${diagnostic.code}:${diagnostic.summary}`}
-										>
-											<p className="diagnostic-code">{diagnostic.code}</p>
-											<p className="diagnostic-message">{diagnostic.summary}</p>
-											<p className="diagnostic-location">
-												{diagnostic.relativeFile}
-											</p>
-										</article>
-									))}
-									{runtimeIssues.map((issue) => {
-										const renderMeta = runtimeIssueRenderMeta.get(issue);
-										return (
-											<article
-												className={`diagnostic-item diagnostic-item-runtime ${
-													isBlockingIssue(issue)
-														? ""
-														: "diagnostic-item-warning"
-												}`.trim()}
-												key={
-													renderMeta?.key ?? getRuntimeIssueFingerprint(issue)
-												}
-											>
-												<p className="diagnostic-code">{issue.code}</p>
-												<p className="diagnostic-message">{issue.summary}</p>
-												<p className="diagnostic-location">
-													{issue.relativeFile}:{issue.kind}:
-													{renderMeta?.occurrence ?? 1}
-												</p>
-											</article>
-										);
-									})}
-									{loadIssue ? (
-										<article className="diagnostic-item diagnostic-item-runtime">
-											<p className="diagnostic-code">{loadIssue.code}</p>
-											<p className="diagnostic-message">{loadIssue.summary}</p>
-										</article>
-									) : undefined}
-									{renderIssue ? (
-										<article className="diagnostic-item diagnostic-item-runtime">
-											<p className="diagnostic-code">{renderIssue.code}</p>
-											<p className="diagnostic-message">
-												{renderIssue.summary}
-											</p>
-										</article>
-									) : undefined}
-								</div>
-							)}
+										)}
+									</div>
+								</details>
+							) : undefined}
 						</section>
 					</>
 				) : (
 					<section className="preview-card preview-card-empty">
-						<div className="preview-empty">
-							<p className="preview-empty-eyebrow">Empty project</p>
-							<h2>No previewable source files were found.</h2>
-							<p>
-								Add <code>{"src/**/*.tsx"}</code> files to one of the configured
-								preview targets.
-							</p>
+						<div className="preview-card-body">
+							<div className="preview-empty">
+								<p className="preview-empty-eyebrow">Empty project</p>
+								<h2>No previewable source files were found.</h2>
+								<p>
+									Add <code>{"src/**/*.tsx"}</code> files to one of the configured
+									preview targets.
+								</p>
+							</div>
 						</div>
 					</section>
 				)}
@@ -1289,3 +1282,4 @@ export function PreviewApp(props: PreviewAppProps) {
 		</main>
 	);
 }
+

@@ -1,5 +1,10 @@
 import { transformPreviewSource } from "@loom-dev/compiler";
-import { previewRuntime } from "@loom-dev/preview-runtime";
+import {
+	math as previewMath,
+	previewRuntime,
+	Vector3 as PreviewVector3,
+	warn as previewWarn,
+} from "@loom-dev/preview-runtime";
 import { describe, expect, it } from "vitest";
 import entryPayloadSchema from "../../packages/preview-engine/schemas/entry-payload.schema.json";
 import workspaceIndexSchema from "../../packages/preview-engine/schemas/workspace-index.schema.json";
@@ -56,6 +61,15 @@ describe("preview host metadata invariants", () => {
 		expect(Object.values(layoutHostNodeType).sort()).toEqual(
 			metadataLayoutRuntimeNames,
 		);
+	});
+
+	it("keeps helper exports wired through the public preview-runtime surface", () => {
+		expect(previewRuntime.helpers.math).toBe(previewMath);
+		expect(previewRuntime.helpers.Vector3).toBe(PreviewVector3);
+		expect(previewRuntime.helpers.warn).toBe(previewWarn);
+		expect(previewMath.max(1, 3, 2)).toBe(3);
+		expect(previewMath.clamp(-1, 0, 2)).toBe(0);
+		expect(new PreviewVector3(1, 2, 3).Z).toBe(3);
 	});
 
 	it("accepts the shared metadata host set without unsupported-host drift", () => {

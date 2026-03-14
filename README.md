@@ -35,7 +35,7 @@ Run `pnpm --filter @loom-dev/compiler run stage:napi` to prepare the staged publ
 After building the workspace packages, the packaged CLI entrypoints are:
 
 - `pnpm --filter @loom-dev/cli exec loom preview --cwd apps/preview-harness`
-- `pnpm --filter @loom-dev/cli exec loom build --cwd packages/preview --out-dir ./generated`
+- `pnpm --filter @loom-dev/cli exec loom build --cwd packages/preview --out-dir ../../generated-preview`
 - `pnpm --filter @loom-dev/cli exec loom config --cwd packages/preview`
 - `pnpm --filter @loom-dev/cli exec loom snapshot --cwd packages/preview --output ./preview-snapshot.json`
 

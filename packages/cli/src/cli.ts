@@ -58,7 +58,7 @@ Examples:
   ${CLI_BINARY_NAME} preview --cwd apps/preview-harness
   ${CLI_BINARY_NAME} preview --config ./loom.config.ts --port 4175 --open
   ${CLI_BINARY_NAME} snapshot --cwd packages/preview --output ./preview-snapshot.json
-  ${CLI_BINARY_NAME} build --cwd packages/preview --out-dir ./generated
+  ${CLI_BINARY_NAME} build --cwd packages/preview --out-dir ../../generated-preview
   ${CLI_BINARY_NAME} check --cwd packages/preview --fail-on warning
   ${CLI_BINARY_NAME} config --cwd packages/preview
 `;

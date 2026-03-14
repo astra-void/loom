@@ -65,14 +65,14 @@ The main exports are:
 
 `buildPreviewModules` is the raw target-array, module-only wrapper and continues to reject `design-time`.
 
-`buildPreviewArtifacts` is the config-aware surface. It reuses `loadPreviewConfig()` / target discovery and can build metadata sidecars in `design-time`.
+`buildPreviewArtifacts` is the config-aware surface. It reuses `loadPreviewConfig()` / target discovery and can build metadata sidecars in `design-time`. Relative filesystem paths passed to `cwd`, `configFile`, and `outDir` resolve from the resolved preview working directory.
 
 ```ts
 import { buildPreviewArtifacts } from "@loom-dev/preview";
 
 await buildPreviewArtifacts({
   cwd: process.cwd(),
-  outDir: "./generated",
+  outDir: "../generated-preview",
 });
 ```
 

@@ -50,6 +50,7 @@ import {
 	game,
 	installPreviewRuntimeGlobals,
 	isPreviewElement,
+	math,
 	pairs,
 	type RunService,
 	TweenInfo,
@@ -58,6 +59,8 @@ import {
 	UDim,
 	UDim2,
 	Vector2,
+	Vector3,
+	warn,
 	workspace,
 } from "./runtime";
 
@@ -66,10 +69,13 @@ export interface SetupRobloxEnvironmentTarget {
 	Enum?: typeof Enum;
 	RunService?: typeof RunService;
 	TweenInfo?: typeof TweenInfo;
+	Vector3?: typeof Vector3;
 	game?: typeof game;
+	math?: typeof math;
 	print?: (...args: unknown[]) => void;
 	task?: typeof task;
 	tostring?: (value: unknown) => string;
+	warn?: typeof warn;
 	workspace?: typeof workspace;
 }
 
@@ -128,12 +134,15 @@ const previewRuntimeHelpers = {
 	UDim,
 	UDim2,
 	Vector2,
+	Vector3,
 	error,
 	game,
 	isPreviewElement,
+	math,
 	pairs,
 	TweenInfo,
 	typeIs,
+	warn,
 	workspace,
 };
 
@@ -263,12 +272,15 @@ export {
 	UDim,
 	UDim2,
 	Vector2,
+	Vector3,
 	typeIs,
 	pairs,
 	error,
 	game,
 	isPreviewElement,
+	math,
 	TweenInfo,
+	warn,
 	workspace,
 };
 export type {

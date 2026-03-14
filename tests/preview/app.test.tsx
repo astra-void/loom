@@ -213,6 +213,21 @@ function renderPreviewApp(app: React.ReactElement) {
 	return render(<PreviewThemeProvider>{app}</PreviewThemeProvider>);
 }
 
+function getIssueDisclosure() {
+	const title = screen.getByText("Issues");
+	const details = title.closest("details");
+	const summary = title.closest("summary");
+
+	if (!details || !summary) {
+		throw new Error("Issue disclosure is not rendered.");
+	}
+
+	return {
+		details: details as HTMLDetailsElement,
+		summary: summary as HTMLElement,
+	};
+}
+
 describe("preview shell", () => {
 	it("renders direct-export preview entries", async () => {
 		renderPreviewApp(
@@ -231,6 +246,12 @@ describe("preview shell", () => {
 		expect(
 			await screen.findByRole("button", { name: /unchecked/i }),
 		).toBeTruthy();
+		expect(screen.queryByText("Target")).toBeNull();
+		expect(screen.queryByText("Render")).toBeNull();
+		expect(screen.queryByText("Mode")).toBeNull();
+		expect(screen.queryByText("Source analysis")).toBeNull();
+		expect(screen.queryByText("No diagnostics for this entry.")).toBeNull();
+		expect(screen.queryByText("Issues")).toBeNull();
 	});
 
 	it("renders harness-based previews from the preview export contract", async () => {
@@ -383,7 +404,11 @@ describe("preview shell", () => {
 		expect(
 			await screen.findByRole("button", { name: "Broken preview" }),
 		).toBeTruthy();
-		expect(screen.getByText("UNSUPPORTED_GLOBAL")).toBeTruthy();
+		const { details } = getIssueDisclosure();
+		expect(details.open).toBe(false);
+		expect(screen.getByText(/1 warnings?/i)).toBeTruthy();
+		expect(screen.getByText("Warnings: UNSUPPORTED_GLOBAL.")).toBeTruthy();
+		expect(screen.getByText(/^UNSUPPORTED_GLOBAL$/)).toBeTruthy();
 	});
 
 	it("surfaces ready-state degraded fidelity warnings in the shell", async () => {
@@ -432,12 +457,13 @@ describe("preview shell", () => {
 		expect(
 			await screen.findByRole("button", { name: "Viewport preview" }),
 		).toBeTruthy();
-		expect(screen.getByText("Rendered with degraded fidelity.")).toBeTruthy();
-		expect(screen.getAllByText(/warning/i).length).toBeGreaterThan(0);
-		expect(
-			screen.getAllByText(/Degraded placeholders: ViewportFrame\./).length,
-		).toBeGreaterThan(0);
+		const { details } = getIssueDisclosure();
+		await waitFor(() => {
+			expect(details.open).toBe(false);
+		});
+		expect(screen.getByText(/Degraded placeholders: ViewportFrame\./)).toBeTruthy();
 		expect(screen.getByText(/1 warnings?/i)).toBeTruthy();
+		expect(screen.getByText(/^DEGRADED_HOST_RENDER$/)).toBeTruthy();
 	});
 
 	it("shows blocked-by-transform guidance without rendering the canvas", async () => {
@@ -487,6 +513,9 @@ describe("preview shell", () => {
 		expect(
 			screen.queryByRole("button", { name: "Blocked preview" }),
 		).toBeNull();
+		const { details } = getIssueDisclosure();
+		expect(details.open).toBe(true);
+		expect(screen.getByText(/^UNSUPPORTED_HOST_ELEMENT$/)).toBeTruthy();
 		expect(loadEntry).toHaveBeenCalledTimes(1);
 	});
 
@@ -534,7 +563,9 @@ describe("preview shell", () => {
 		);
 
 		expect(screen.getByText("The preview export is incomplete.")).toBeTruthy();
-		expect(screen.getByText("PREVIEW_RENDER_MISSING")).toBeTruthy();
+		const { details } = getIssueDisclosure();
+		expect(details.open).toBe(true);
+		expect(screen.getByText(/^PREVIEW_RENDER_MISSING$/)).toBeTruthy();
 		expect(loadEntry).not.toHaveBeenCalled();
 	});
 
@@ -588,7 +619,9 @@ describe("preview shell", () => {
 				/Automatic selection found multiple component exports: Alpha, Beta\./,
 			),
 		).toBeTruthy();
-		expect(screen.getByText("AMBIGUOUS_COMPONENT_EXPORTS")).toBeTruthy();
+		const { details } = getIssueDisclosure();
+		expect(details.open).toBe(true);
+		expect(screen.getByText(/^AMBIGUOUS_COMPONENT_EXPORTS$/)).toBeTruthy();
 		expect(loadEntry).not.toHaveBeenCalled();
 	});
 
@@ -778,3 +811,4 @@ describe("preview shell", () => {
 		).toBeNull();
 	});
 });
+

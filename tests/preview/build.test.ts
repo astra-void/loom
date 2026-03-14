@@ -282,6 +282,35 @@ describe("buildPreviewArtifacts", () => {
 			]),
 		);
 	});
+
+	it("resolves relative outDir values from the resolved cwd", async () => {
+	const workspaceRoot = createTempRoot("loom-preview-build-relative-outdir-");
+	const target = createWorkspacePackage(workspaceRoot, {
+		packageName: "@fixtures/relative-outdir",
+		packagePath: "packages/relative-outdir",
+	});
+	writeInlinePreviewConfig(path.join(workspaceRoot, "loom.config.ts"), {
+		packageName: "@fixtures/relative-outdir",
+		packageRoot: target.packageRoot,
+		projectName: "Relative OutDir",
+		sourceRoot: target.sourceRoot,
+		targetName: "relative-outdir",
+	});
+	const outDir = "../../generated-preview";
+	const expectedOutDir = path.resolve(target.packageRoot, outDir);
+
+	const result = await buildPreviewArtifacts({
+		cwd: target.packageRoot,
+		outDir,
+	});
+
+	expect(result.outDir).toBe(expectedOutDir);
+	expect(result.writtenFiles).toEqual(
+		expect.arrayContaining([
+			path.join(expectedOutDir, "relative-outdir", target.sourceFile),
+		]),
+	);
+	});
 });
 
 describe("buildPreviewModules", () => {

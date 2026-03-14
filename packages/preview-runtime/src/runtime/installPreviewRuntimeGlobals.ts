@@ -1,5 +1,5 @@
-﻿import { Enum } from "./Enum";
-import { Color3 } from "./helpers";
+import { Enum } from "./Enum";
+import { Color3, Vector3, math, warn } from "./helpers";
 import { installPreviewRuntimePolyfills } from "./polyfills";
 import { RunService } from "./RunService";
 import { game, getTweenInfoConstructor, workspace } from "./services";
@@ -10,10 +10,13 @@ export interface PreviewRuntimeGlobalTarget {
 	Enum?: typeof Enum;
 	RunService?: typeof RunService;
 	TweenInfo?: typeof import("./services").TweenInfo;
+	Vector3?: typeof Vector3;
 	game?: typeof game;
+	math?: typeof math;
 	print?: (...args: unknown[]) => void;
 	task?: typeof task;
 	tostring?: (value: unknown) => string;
+	warn?: typeof warn;
 	workspace?: typeof workspace;
 }
 
@@ -34,8 +37,16 @@ export function installPreviewRuntimeGlobals(
 		target.RunService = RunService;
 	}
 
+	if (target.Vector3 === undefined) {
+		target.Vector3 = Vector3;
+	}
+
 	if (target.game === undefined) {
 		target.game = game;
+	}
+
+	if (target.math === undefined) {
+		target.math = math;
 	}
 
 	if (target.task === undefined) {
@@ -44,6 +55,10 @@ export function installPreviewRuntimeGlobals(
 
 	if (target.TweenInfo === undefined) {
 		target.TweenInfo = getTweenInfoConstructor();
+	}
+
+	if (target.warn === undefined) {
+		target.warn = warn;
 	}
 
 	if (target.workspace === undefined) {

@@ -5,6 +5,7 @@ import type {
 	PreviewSourceTarget,
 } from "@loom-dev/preview-engine";
 import { loadConfigFromFile, searchForWorkspaceRoot } from "vite";
+import { matchesGlobPatterns } from "./globMatcher";
 
 const DEFAULT_CONFIG_FILE_NAME = "loom.config.ts";
 const DEFAULT_PREVIEW_PORT = 4174;
@@ -150,6 +151,12 @@ function resolveMaybeRelativePath(filePath: string, baseDir: string) {
 	}
 
 	return path.resolve(baseDir, filePath);
+}
+
+function resolveFileSystemPath(filePath: string, baseDir: string) {
+	return path.isAbsolute(filePath)
+		? filePath
+		: path.resolve(baseDir, filePath);
 }
 
 function normalizeSlashPath(filePath: string) {
@@ -340,45 +347,7 @@ function dedupeTargets(targets: PreviewSourceTarget[], baseDir?: string) {
 	});
 }
 
-function escapeRegExp(value: string) {
-	return value.replace(/[|\\{}()[\]^$+?.]/g, "\\$&");
-}
 
-function createGlobMatcher(pattern: string) {
-	const normalizedPattern = normalizeSlashPath(pattern);
-	let source = "^";
-
-	for (let index = 0; index < normalizedPattern.length; index += 1) {
-		const character = normalizedPattern[index];
-		const nextCharacter = normalizedPattern[index + 1];
-
-		if (character === "*" && nextCharacter === "*") {
-			source += ".*";
-			index += 1;
-			continue;
-		}
-
-		if (character === "*") {
-			source += "[^/]*";
-			continue;
-		}
-
-		source += escapeRegExp(character);
-	}
-
-	source += "$";
-	return new RegExp(source);
-}
-
-function matchesPatterns(value: string, patterns: string[] | undefined) {
-	if (!patterns || patterns.length === 0) {
-		return false;
-	}
-
-	return patterns.some((pattern) =>
-		createGlobMatcher(pattern).test(normalizeSlashPath(value)),
-	);
-}
 
 function isTargetIncluded(
 	target: PreviewSourceTarget,
@@ -398,7 +367,7 @@ function isTargetIncluded(
 	if (
 		include &&
 		include.length > 0 &&
-		!candidateValues.some((value) => matchesPatterns(value, include))
+		!candidateValues.some((value) => matchesGlobPatterns(value, include))
 	) {
 		return false;
 	}
@@ -406,7 +375,7 @@ function isTargetIncluded(
 	if (
 		exclude &&
 		exclude.length > 0 &&
-		candidateValues.some((value) => matchesPatterns(value, exclude))
+		candidateValues.some((value) => matchesGlobPatterns(value, exclude))
 	) {
 		return false;
 	}
@@ -457,9 +426,11 @@ function isWorkspacePackageRootIncludedByManifest(
 	}
 
 	return (
-		patterns.include.some((pattern) => matchesPatterns(relativePackageRoot, [pattern])) &&
+		patterns.include.some((pattern) =>
+			matchesGlobPatterns(relativePackageRoot, [pattern]),
+		) &&
 		!patterns.exclude.some((pattern) =>
-			matchesPatterns(relativePackageRoot, [pattern]),
+			matchesGlobPatterns(relativePackageRoot, [pattern]),
 		)
 	);
 }
@@ -530,6 +501,39 @@ async function resolveTargetDiscovery(
 	return dedupeTargets(targets, context.configDir);
 }
 
+function formatTargetIdentity(target: PreviewSourceTarget) {
+	const packageLabel =
+		target.packageName ?? normalizeSlashPath(target.packageRoot);
+	return `${packageLabel} (${normalizeSlashPath(target.packageRoot)})`;
+}
+
+function validateUniqueTargetNames(targets: PreviewSourceTarget[]) {
+	const targetsByName = new Map<string, PreviewSourceTarget[]>();
+
+	for (const target of targets) {
+		const matchingTargets = targetsByName.get(target.name) ?? [];
+		matchingTargets.push(target);
+		targetsByName.set(target.name, matchingTargets);
+	}
+
+	const duplicates = [...targetsByName.entries()]
+		.filter(([, matchingTargets]) => matchingTargets.length > 1)
+		.sort(([leftName], [rightName]) => leftName.localeCompare(rightName));
+	if (duplicates.length === 0) {
+		return;
+	}
+
+	const duplicateDetails = duplicates.map(([name, matchingTargets]) => {
+		const formattedTargets = matchingTargets
+			.map((target) => formatTargetIdentity(target))
+			.sort((left, right) => left.localeCompare(right));
+		return `${name}: ${formattedTargets.join(", ")}`;
+	});
+	throw new Error(
+		`Duplicate preview target names resolved from target discovery: ${duplicateDetails.join("; ")}. Set explicit unique target names to avoid collisions.`,
+	);
+}
+
 async function resolvePreviewConfigValue(
 	config: PreviewConfig,
 	options: {
@@ -559,6 +563,8 @@ async function resolvePreviewConfigValue(
 			`Preview config did not resolve any targets${options.configFilePath ? `: ${options.configFilePath}` : "."}`,
 		);
 	}
+
+	validateUniqueTargetNames(targets);
 
 	return {
 		configDir: options.configDir,
@@ -822,7 +828,7 @@ async function loadPreviewConfigWithContext(
 ): Promise<ResolvedPreviewConfig> {
 	const cwd = path.resolve(options.cwd ?? process.cwd());
 	const explicitConfigPath = options.configFile
-		? path.resolve(options.configFile)
+		? resolveFileSystemPath(options.configFile, cwd)
 		: undefined;
 	const discoveredConfigPath = explicitConfigPath ?? findPreviewConfigPath(cwd);
 
@@ -868,3 +874,4 @@ export async function resolvePreviewConfigObject(
 		cwd: path.resolve(options.cwd ?? process.cwd()),
 	});
 }
+

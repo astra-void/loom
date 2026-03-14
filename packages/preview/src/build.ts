@@ -145,6 +145,14 @@ async function resolveBuildPreviewConfig(
 	return loadPreviewBuildConfig(options);
 }
 
+function resolveOutputDirectory(outDir: string | undefined, cwd: string) {
+	if (!outDir) {
+		return undefined;
+	}
+
+	return path.isAbsolute(outDir) ? outDir : path.resolve(cwd, outDir);
+}
+
 export async function buildPreviewArtifacts(
 	options: BuildPreviewArtifactsOptions = {},
 ): Promise<PreviewBuildResult> {
@@ -152,7 +160,7 @@ export async function buildPreviewArtifacts(
 
 	return buildPreviewArtifactsFromEngine({
 		artifactKinds: options.artifactKinds ?? ["module"],
-		outDir: options.outDir,
+		outDir: resolveOutputDirectory(options.outDir, resolvedConfig.cwd),
 		projectName: resolvedConfig.projectName,
 		runtimeModule: resolvePreviewRuntimeModule(
 			options.runtimeModule ?? resolvedConfig.runtimeModule,
@@ -201,3 +209,4 @@ export async function buildPreviewModules(
 		writtenFiles: result.writtenFiles,
 	};
 }
+

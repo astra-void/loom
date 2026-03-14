@@ -1,4 +1,4 @@
-﻿import fs from "node:fs";
+import fs from "node:fs";
 import path from "node:path";
 import { compile_tsx, transformPreviewSource } from "@loom-dev/compiler";
 import {
@@ -35,7 +35,10 @@ const RESOLVED_ENTRY_MODULE_ID_PREFIX = `\0${ENTRY_MODULE_ID_PREFIX}`;
 const PREVIEW_UPDATE_EVENT = "loom-preview:update";
 const RUNTIME_ISSUES_EVENT = "loom-preview:runtime-issues";
 const RBX_STYLE_HELPER_NAME = "__rbxStyle";
-const RBX_STYLE_IMPORT = `import { ${RBX_STYLE_HELPER_NAME} } from "@loom-dev/preview-runtime";\n`;
+
+function createRbxStyleImport(runtimeModulePath: string) {
+	return `import { ${RBX_STYLE_HELPER_NAME} } from ${JSON.stringify(runtimeModulePath)};\n`;
+}
 
 type TransformPreviewSourceInvocationOptions = Parameters<
 	typeof transformPreviewSource
@@ -227,7 +230,10 @@ function isIgnorablePreviewRefreshError(error: unknown) {
 export function createPreviewVitePlugin(
 	options: CreatePreviewVitePluginOptions,
 ): PreviewPluginOption {
-	const runtimeEntryPath = (options.runtimeModule ?? resolveRuntimeEntryPath()).replace(/\\/g, "/");
+	const runtimeEntryPath = (
+		options.runtimeModule ?? resolveRuntimeEntryPath()
+	).replace(/\\/g, "/");
+	const rbxStyleImport = createRbxStyleImport(runtimeEntryPath);
 	const mockEntryPath = resolveMockEntryPath();
 	const previewEngine =
 		options.previewEngine ??
@@ -392,9 +398,9 @@ export function createPreviewVitePlugin(
 			transformedCode = stripTypeSyntax(transformedCode, filePath);
 			if (
 				transformedCode.includes(RBX_STYLE_HELPER_NAME) &&
-				!transformedCode.includes(RBX_STYLE_IMPORT.trim())
+				!transformedCode.includes(rbxStyleImport.trim())
 			) {
-				transformedCode = `${RBX_STYLE_IMPORT}${transformedCode}`;
+				transformedCode = `${rbxStyleImport}${transformedCode}`;
 			}
 
 			return {
@@ -410,3 +416,6 @@ export function createPreviewVitePlugin(
 		createUnresolvedPackageMockTransformPlugin(),
 	];
 }
+
+
+

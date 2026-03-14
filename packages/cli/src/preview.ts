@@ -259,6 +259,10 @@ function createRuntime(
 	};
 }
 
+function resolveCommandPathFromCwd(filePath: string, cwd: string) {
+	return path.isAbsolute(filePath) ? filePath : path.resolve(cwd, filePath);
+}
+
 function applyResolvedConfigOverrides(
 	resolvedConfig: CliResolvedPreviewConfig,
 	options: {
@@ -451,7 +455,7 @@ export async function runSnapshotCommand(
 		const serializedSnapshot = `${JSON.stringify(snapshot, null, 2)}\n`;
 		if (options.outputPath) {
 			await runtime.writeFileFn(
-				path.resolve(options.outputPath),
+				resolveCommandPathFromCwd(options.outputPath, effectiveConfig.cwd),
 				serializedSnapshot,
 				"utf8",
 			);
@@ -543,3 +547,4 @@ export async function runConfigCommand(
 
 	writeJson(runtime.stdout, serializeResolvedConfig(resolvedConfig));
 }
+
