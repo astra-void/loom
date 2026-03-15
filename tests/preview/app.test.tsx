@@ -13,6 +13,10 @@ import { PreviewApp } from "../../packages/preview/src/shell/PreviewApp";
 import { PreviewThemeProvider } from "../../packages/preview/src/shell/theme";
 import { PREVIEW_ENGINE_PROTOCOL_VERSION } from "../../packages/preview-engine/src/types";
 import { suppressExpectedConsoleMessages } from "../testLogUtils";
+import {
+	installTestPreviewLayoutEngineLoader,
+	resetTestPreviewLayoutEngineLoader,
+} from "./testLayoutEngineLoader";
 
 let restoreExpectedLogs: (() => void) | undefined;
 
@@ -26,9 +30,11 @@ beforeEach(() => {
 			"PreviewErrorBoundary",
 		],
 	});
+	installTestPreviewLayoutEngineLoader();
 });
 
 afterEach(() => {
+	resetTestPreviewLayoutEngineLoader();
 	restoreExpectedLogs?.();
 	restoreExpectedLogs = undefined;
 	cleanup();

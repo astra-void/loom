@@ -1,4 +1,4 @@
-﻿import fs from "node:fs";
+import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { Writable } from "node:stream";
@@ -7,11 +7,16 @@ import {
 	createPreviewViteServer,
 	resolvePreviewServerConfig,
 } from "../../packages/preview/src/source/server";
-
+import {
+	suppressExpectedConsoleMessages,
+	suppressExpectedStderrMessages,
+} from "../testLogUtils";
 vi.setConfig({ testTimeout: 15000 });
 
 const temporaryRoots: string[] = [];
 
+suppressExpectedConsoleMessages({ error: ["The build was canceled"] });
+suppressExpectedStderrMessages([/The build was canceled/]);
 afterEach(() => {
 	for (const root of temporaryRoots.splice(0)) {
 		fs.rmSync(root, { force: true, recursive: true });
@@ -623,6 +628,7 @@ describe("createPreviewViteServer", () => {
 		});
 		const server = await createPreviewViteServer(resolvedConfig, {
 			appType: "custom",
+			middlewareMode: true,
 		});
 
 		try {
@@ -680,6 +686,7 @@ describe("createPreviewViteServer", () => {
 		});
 		const server = await createPreviewViteServer(resolvedConfig, {
 			appType: "custom",
+			middlewareMode: true,
 		});
 
 		try {
@@ -770,6 +777,7 @@ describe("createPreviewViteServer", () => {
 		});
 		const server = await createPreviewViteServer(resolvedConfig, {
 			appType: "custom",
+			middlewareMode: true,
 		});
 
 		try {
@@ -837,6 +845,7 @@ describe("createPreviewViteServer", () => {
 			},
 			{
 				appType: "custom",
+				middlewareMode: true,
 			},
 		);
 
@@ -872,6 +881,7 @@ describe("createPreviewViteServer", () => {
 		});
 		const server = await createPreviewViteServer(resolvedConfig, {
 			appType: "custom",
+			middlewareMode: true,
 		});
 		const wsSendSpy = vi.spyOn(server.ws, "send");
 
@@ -934,6 +944,7 @@ describe("createPreviewViteServer", () => {
 		});
 		const server = await createPreviewViteServer(resolvedConfig, {
 			appType: "custom",
+			middlewareMode: true,
 		});
 
 		try {
@@ -971,6 +982,7 @@ describe("createPreviewViteServer", () => {
 		});
 		const server = await createPreviewViteServer(resolvedConfig, {
 			appType: "custom",
+			middlewareMode: true,
 		});
 
 		try {

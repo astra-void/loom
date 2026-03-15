@@ -313,7 +313,7 @@ function DelayedNestedTree() {
 
 beforeEach(() => {
 	restoreExpectedLogs = suppressExpectedConsoleMessages({
-		error: ["RUNTIME_MOCK_ERROR"],
+		error: ["RUNTIME_MOCK_ERROR", "LAYOUT_WASM_COMPUTE_FAILED"],
 		warn: ["DEGRADED_HOST_RENDER"],
 	});
 	layoutEngineMocks.computeDirty.mockReset();

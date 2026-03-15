@@ -596,14 +596,22 @@ function loadHeadlessLayoutEngineWasm() {
 	return layoutEngineWasmBytesPromise;
 }
 
+function hasHeadlessLayoutDebugTree(
+	debug: PreviewLayoutDebugPayload | null | undefined,
+) {
+	return Array.isArray(debug?.roots) && debug.roots.length > 0;
+}
+
 async function waitForHeadlessSettled(readSignature: () => string) {
 	const timeoutAt = Date.now() + HEADLESS_SETTLE_TIMEOUT_MS;
 	let previousSignature = "";
 	let stablePasses = 0;
 
 	while (Date.now() <= timeoutAt) {
-		await Promise.resolve();
-		await sleep(HEADLESS_SETTLE_POLL_MS);
+		await act(async () => {
+			await Promise.resolve();
+			await sleep(HEADLESS_SETTLE_POLL_MS);
+		});
 		const nextSignature = readSignature();
 
 		if (nextSignature === previousSignature) {
@@ -791,22 +799,27 @@ export async function executeHeadlessEntry(
 			);
 		});
 
-		await act(async () => {
-			await waitForHeadlessSettled(() =>
-				JSON.stringify({
-					html: container.innerHTML,
-					layoutRevision: latestLayoutProbeSnapshot.revision,
-					renderIssue: renderIssue?.summary ?? "",
-					runtimeVersion,
-				}),
-			);
-		});
+		await waitForHeadlessSettled(() =>
+			JSON.stringify({
+				html: container.innerHTML,
+				layoutRevision: latestLayoutProbeSnapshot.revision,
+				renderIssue: renderIssue?.summary ?? "",
+				runtimeVersion,
+			}),
+		);
 
+		const currentLayoutProbeSnapshot =
+			readHeadlessLayoutProbeSnapshot(previewRuntime);
 		const layoutProbeSnapshot =
-			latestLayoutProbeSnapshot.revision > 0
-				? latestLayoutProbeSnapshot
-				: readHeadlessLayoutProbeSnapshot(previewRuntime);
+			currentLayoutProbeSnapshot.revision >= latestLayoutProbeSnapshot.revision
+				? currentLayoutProbeSnapshot
+				: latestLayoutProbeSnapshot;
 		const domLayoutFallback = collectDomLayoutFallback(container);
+		const layoutDebug =
+			hasHeadlessLayoutDebugTree(layoutProbeSnapshot.debug) ||
+			!hasHeadlessLayoutDebugTree(domLayoutFallback.debug)
+				? layoutProbeSnapshot.debug ?? domLayoutFallback.debug
+				: domLayoutFallback.debug;
 		const combinedIssues = dedupeRuntimeIssues([
 			...runtimeIssues,
 			...(renderIssue ? [renderIssue] : []),
@@ -814,7 +827,7 @@ export async function executeHeadlessEntry(
 
 		return {
 			issues: combinedIssues,
-			layoutDebug: layoutProbeSnapshot.debug ?? domLayoutFallback.debug,
+			layoutDebug,
 			loadIssue: null,
 			render: {
 				status: renderIssue ? "render_failed" : "rendered",

@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
 	createPackageTargetDiscovery,
 	createStaticTargetsDiscovery,
@@ -12,10 +12,17 @@ import {
 import { createPreviewHeadlessSession } from "../../packages/preview/src/headless";
 import { resolvePreviewServerConfig } from "../../packages/preview/src/source/server";
 import { PREVIEW_ENGINE_PROTOCOL_VERSION } from "../../packages/preview-engine/src/types";
-
+import { suppressExpectedStderrMessages } from "../testLogUtils";
 const temporaryRoots: string[] = [];
+let restoreExpectedLogs: (() => void) | undefined;
+
+beforeEach(() => {
+	restoreExpectedLogs = suppressExpectedStderrMessages([/The build was canceled/]);
+});
 
 afterEach(() => {
+	restoreExpectedLogs?.();
+	restoreExpectedLogs = undefined;
 	for (const root of temporaryRoots.splice(0)) {
 		fs.rmSync(root, { force: true, recursive: true });
 	}

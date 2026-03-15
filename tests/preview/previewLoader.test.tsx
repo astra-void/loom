@@ -6,10 +6,14 @@ import type {
 } from "@loom-dev/preview-engine";
 import { act, cleanup, render, screen } from "@testing-library/react";
 import type React from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { loadPreviewModule } from "../../packages/preview/src/shell/loadPreviewModule";
 import { PreviewApp } from "../../packages/preview/src/shell/PreviewApp";
 import { PreviewThemeProvider } from "../../packages/preview/src/shell/theme";
+import {
+	installTestPreviewLayoutEngineLoader,
+	resetTestPreviewLayoutEngineLoader,
+} from "./testLayoutEngineLoader";
 
 const PREVIEW_PROTOCOL_VERSION = 4;
 
@@ -104,7 +108,12 @@ function createRetryableOptimizerError() {
 	);
 }
 
+beforeEach(() => {
+	installTestPreviewLayoutEngineLoader();
+});
+
 afterEach(() => {
+	resetTestPreviewLayoutEngineLoader();
 	cleanup();
 	vi.useRealTimers();
 });

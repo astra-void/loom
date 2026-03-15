@@ -33,6 +33,8 @@ const PREVIEW_VITE_CACHE_DIR = path.join(".loom-preview-cache", "vite");
 const PREVIEW_OPTIMIZE_DEPS_INCLUDE = [
 	"react",
 	"react-dom",
+	"react-dom/client",
+	"react-dom/server",
 	"react/jsx-runtime",
 	"react/jsx-dev-runtime",
 ];
@@ -285,6 +287,9 @@ function createRuntimeDependencyResolvePlugin(): PreviewPluginOption {
 		"react shims root",
 	);
 	const shimEntries = new Map<string, string>([
+		["react-dom/client", resolveReactShimEntry("react-dom-client.js")],
+		["react-dom/server", resolveReactShimEntry("react-dom-server.js")],
+		["react-dom", resolveReactShimEntry("react-dom.js")],
 		[
 			"react/jsx-dev-runtime",
 			resolveReactShimEntry("react-jsx-dev-runtime.js"),
@@ -314,6 +319,18 @@ function createRuntimeDependencyResolvePlugin(): PreviewPluginOption {
 
 function createRuntimeDependencyAliases() {
 	return [
+		{
+			find: "react-dom/client",
+			replacement: resolveReactShimEntry("react-dom-client.js"),
+		},
+		{
+			find: "react-dom/server",
+			replacement: resolveReactShimEntry("react-dom-server.js"),
+		},
+		{
+			find: "react-dom",
+			replacement: resolveReactShimEntry("react-dom.js"),
+		},
 		{
 			find: "react/jsx-dev-runtime",
 			replacement: resolveReactShimEntry("react-jsx-dev-runtime.js"),

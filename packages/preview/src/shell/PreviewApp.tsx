@@ -920,7 +920,7 @@ export function PreviewApp(props: PreviewAppProps) {
 		});
 	}, [selectedEntry]);
 
-	React.useEffect(() => {
+	React.useLayoutEffect(() => {
 		if (!issueDisclosureRef.current) {
 			return;
 		}
@@ -1010,7 +1010,7 @@ export function PreviewApp(props: PreviewAppProps) {
 						<h1>{props.projectName}</h1>
 					</div>
 					<p className="sidebar-header-note">
-						{props.entries.length} files · {sidebarTree.targets.length} targets
+						{props.entries.length} files / {sidebarTree.targets.length} targets
 					</p>
 				</div>
 				<nav aria-label="Preview entries" className="sidebar-tree">
@@ -1149,6 +1149,7 @@ export function PreviewApp(props: PreviewAppProps) {
 							{hasIssueDisclosure ? (
 								<details
 									className="issue-disclosure"
+									key={selectedEntryId ?? "issue-disclosure"}
 									ref={issueDisclosureRef}
 								>
 									<summary className="issue-disclosure-summary">

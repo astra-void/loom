@@ -26,6 +26,7 @@ beforeEach(() => {
 	const restoreStderr = suppressExpectedStderrMessages([
 		/\[vite\] \(ssr\) Error when evaluating SSR module/,
 		/load failed/,
+		/The build was canceled/,
 	]);
 
 	restoreExpectedLogs = () => {
