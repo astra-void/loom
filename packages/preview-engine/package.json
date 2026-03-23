@@ -13,6 +13,9 @@
 	"scripts": {
 		"build": "tsc -p tsconfig.json",
 		"prebuild": "node ./scripts/clean-dist.mjs",
+		"format": "pnpm exec biome format --write .",
+		"lint": "pnpm exec biome check .",
+		"lint:fix": "pnpm exec biome check --write --unsafe .",
 		"prepack": "pnpm run build",
 		"typecheck": "tsc -p tsconfig.json --noEmit",
 		"watch": "tsc -p tsconfig.json -w"
