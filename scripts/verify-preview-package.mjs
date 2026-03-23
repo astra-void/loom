@@ -1,17 +1,17 @@
+import { spawnSync } from "node:child_process";
 import {
-	mkdtempSync,
+	existsSync,
 	mkdirSync,
+	mkdtempSync,
 	readdirSync,
+	renameSync,
 	rmSync,
 	symlinkSync,
 	writeFileSync,
-	existsSync,
-	renameSync,
 } from "node:fs";
+import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
-import { spawnSync } from "node:child_process";
-import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
 const workspaceRoot = process.cwd();
