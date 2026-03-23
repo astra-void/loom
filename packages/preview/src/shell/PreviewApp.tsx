@@ -919,7 +919,11 @@ export function PreviewApp(props: PreviewAppProps) {
 	}, [selectedEntry]);
 
 	React.useLayoutEffect(() => {
-		if (!issueDisclosureRef.current) {
+		if (
+			!issueDisclosureRef.current ||
+			!hasIssueDisclosure ||
+			!selectedEntryId
+		) {
 			return;
 		}
 
