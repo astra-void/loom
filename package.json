@@ -8,6 +8,8 @@
 		"build:packages": "pnpm --filter @loom-dev/preview-runtime build && pnpm --filter @loom-dev/preview-engine build && pnpm --filter @loom-dev/preview build && pnpm --filter @loom-dev/cli build",
 		"build": "pnpm run build:native && pnpm run build:packages && pnpm --filter @loom-dev/preview-harness build",
 		"dev": "pnpm run build:native && pnpm --filter @loom-dev/preview-harness dev",
+		"dts:refresh": "node ./scripts/refresh-dts.mjs",
+		"dts:check": "node ./scripts/check-dts.mjs",
 		"typecheck": "pnpm run build:native && pnpm --filter @loom-dev/preview-runtime build && pnpm --filter @loom-dev/preview-engine build && pnpm --filter @loom-dev/preview-runtime typecheck && pnpm --filter @loom-dev/preview-engine typecheck && pnpm --filter @loom-dev/preview typecheck && pnpm --filter @loom-dev/cli typecheck && pnpm exec tsc -p apps/preview-harness/tsconfig.json --noEmit",
 		"test": "pnpm run build:native && pnpm exec vitest run",
 		"format": "pnpm biome format --write",
