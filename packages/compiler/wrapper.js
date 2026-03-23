@@ -79,8 +79,8 @@ function loadLocalNativeBinding() {
 			return null;
 		}
 
-		// Local development builds use versioned filenames so Windows file locks
-		// do not block recompiles while another process still has an older build loaded.
+		// Local development builds write a stable manifest entry that points at the
+		// current host-native binary inside `.native/local`.
 		return require(resolve(__dirname, manifest.entry));
 	} catch {
 		return null;
