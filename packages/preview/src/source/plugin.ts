@@ -269,30 +269,29 @@ export function createPreviewVitePlugin(
 	};
 
 	const refreshPreviewEngine = (filePath: string) => {
-		let update;
 		try {
-			update = previewEngine.invalidateSourceFiles([filePath]);
+			const update = previewEngine.invalidateSourceFiles([filePath]);
+			invalidateVirtualModules(update.changedEntryIds);
+
+			if (server) {
+				if (update.requiresFullReload) {
+					server.ws.send({ type: "full-reload" });
+				} else {
+					server.ws.send({
+						data: update,
+						event: PREVIEW_UPDATE_EVENT,
+						type: "custom",
+					});
+				}
+			}
+
+			return update;
 		} catch (error) {
 			if (isIgnorablePreviewRefreshError(error)) {
 				return undefined;
 			}
 			throw error;
 		}
-		invalidateVirtualModules(update.changedEntryIds);
-
-		if (server) {
-			if (update.requiresFullReload) {
-				server.ws.send({ type: "full-reload" });
-			} else {
-				server.ws.send({
-					data: update,
-					event: PREVIEW_UPDATE_EVENT,
-					type: "custom",
-				});
-			}
-		}
-
-		return update;
 	};
 
 	const previewPlugin: PreviewPlugin = {
