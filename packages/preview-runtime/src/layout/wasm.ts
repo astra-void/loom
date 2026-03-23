@@ -146,7 +146,8 @@ export function initializeLayoutEngine(
 	if (!layoutEngineInitPromise) {
 		const loader =
 			options?.module_or_path === undefined
-				? (getPreviewLayoutEngineLoader() ?? getDefaultPreviewLayoutEngineLoader())
+				? (getPreviewLayoutEngineLoader() ??
+					getDefaultPreviewLayoutEngineLoader())
 				: null;
 		const moduleOrPath = options?.module_or_path ?? loader?.();
 		layoutEngineInitPromise = initLayoutEngine(
@@ -154,7 +155,7 @@ export function initializeLayoutEngine(
 				? undefined
 				: {
 						module_or_path: moduleOrPath,
-				  },
+					},
 		)
 			.then(() => undefined)
 			.catch((error: unknown) => {
