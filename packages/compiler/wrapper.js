@@ -1,4 +1,4 @@
-const { existsSync, readdirSync, readFileSync } = require("node:fs");
+const { existsSync, readFileSync } = require("node:fs");
 const { resolve } = require("node:path");
 
 /**
@@ -70,8 +70,7 @@ function loadLocalNativeBinding() {
 
 	const manifestPath = resolve(__dirname, ".native", "manifest.json");
 	if (!existsSync(manifestPath)) {
-		const localBinaryPath = findLocalNativeBinaryPath();
-		return localBinaryPath ? require(localBinaryPath) : null;
+		return loadHostNativeBinding();
 	}
 
 	try {
@@ -82,11 +81,23 @@ function loadLocalNativeBinding() {
 
 		// Local development builds write a stable manifest entry that points at the
 		// current host-native binary inside `.native/local`.
-		return require(resolve(__dirname, manifest.entry));
+		const manifestBinaryPath = resolve(__dirname, manifest.entry);
+		if (isHostNativeBinaryPath(manifestBinaryPath)) {
+			return require(manifestBinaryPath);
+		}
 	} catch {
-		const localBinaryPath = findLocalNativeBinaryPath();
-		return localBinaryPath ? require(localBinaryPath) : null;
+		return loadHostNativeBinding();
 	}
+
+	return loadHostNativeBinding();
+}
+
+/**
+ * @returns {NativeCompilerModule | null}
+ */
+function loadHostNativeBinding() {
+	const localBinaryPath = findLocalNativeBinaryPath();
+	return localBinaryPath ? require(localBinaryPath) : null;
 }
 
 /**
@@ -98,15 +109,69 @@ function findLocalNativeBinaryPath() {
 		return null;
 	}
 
-	const nodeFiles = readdirSync(localDir)
-		.filter((name) => name.endsWith(".node"))
-		.sort();
-
-	if (nodeFiles.length !== 1) {
+	const localBinaryPath = resolve(localDir, getExpectedLocalBinaryFileName());
+	if (!existsSync(localBinaryPath)) {
 		return null;
 	}
 
-	return resolve(localDir, nodeFiles[0]);
+	return localBinaryPath;
+}
+
+/**
+ * @param {string} binaryPath
+ * @returns {boolean}
+ */
+function isHostNativeBinaryPath(binaryPath) {
+	return binaryPath === findLocalNativeBinaryPath();
+}
+
+/**
+ * @returns {string}
+ */
+function getExpectedLocalBinaryFileName() {
+	if (process.platform === "darwin") {
+		if (process.arch === "x64") {
+			return "loom_compiler.darwin-x64.node";
+		}
+
+		if (process.arch === "arm64") {
+			return "loom_compiler.darwin-arm64.node";
+		}
+	}
+
+	if (process.platform === "linux") {
+		const suffix = isMusl() ? "musl" : "gnu";
+		if (process.arch === "x64") {
+			return `loom_compiler.linux-x64-${suffix}.node`;
+		}
+
+		if (process.arch === "arm64") {
+			return `loom_compiler.linux-arm64-${suffix}.node`;
+		}
+	}
+
+	if (process.platform === "win32") {
+		if (process.arch === "x64") {
+			return "loom_compiler.win32-x64-msvc.node";
+		}
+
+		if (process.arch === "arm64") {
+			return "loom_compiler.win32-arm64-msvc.node";
+		}
+	}
+
+	return "loom_compiler.node";
+}
+
+function isMusl() {
+	if (process.platform !== "linux") {
+		return false;
+	}
+
+	const report = /** @type {{ header?: { glibcVersionRuntime?: string } }} */ (
+		process.report?.getReport()
+	);
+	return !report.header?.glibcVersionRuntime;
 }
 
 /** @type {NativeCompilerModule} */
