@@ -1,4 +1,4 @@
-const { existsSync, readFileSync } = require("node:fs");
+const { existsSync, readdirSync, readFileSync } = require("node:fs");
 const { resolve } = require("node:path");
 
 /**
@@ -70,7 +70,8 @@ function loadLocalNativeBinding() {
 
 	const manifestPath = resolve(__dirname, ".native", "manifest.json");
 	if (!existsSync(manifestPath)) {
-		return null;
+		const localBinaryPath = findLocalNativeBinaryPath();
+		return localBinaryPath ? require(localBinaryPath) : null;
 	}
 
 	try {
@@ -83,8 +84,29 @@ function loadLocalNativeBinding() {
 		// current host-native binary inside `.native/local`.
 		return require(resolve(__dirname, manifest.entry));
 	} catch {
+		const localBinaryPath = findLocalNativeBinaryPath();
+		return localBinaryPath ? require(localBinaryPath) : null;
+	}
+}
+
+/**
+ * @returns {string | null}
+ */
+function findLocalNativeBinaryPath() {
+	const localDir = resolve(__dirname, ".native", "local");
+	if (!existsSync(localDir)) {
 		return null;
 	}
+
+	const nodeFiles = readdirSync(localDir)
+		.filter((name) => name.endsWith(".node"))
+		.sort();
+
+	if (nodeFiles.length !== 1) {
+		return null;
+	}
+
+	return resolve(localDir, nodeFiles[0]);
 }
 
 /** @type {NativeCompilerModule} */
