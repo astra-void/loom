@@ -87,4 +87,4 @@ await buildPreviewArtifacts({
 });
 ```
 
-For the packaged CLI, install `@loom-dev/cli` and use `loom preview`, `loom build`, `loom config`, `loom snapshot`, or `loom check`.
+For the packaged CLI, install `loom-dev` and use `loom preview`, `loom build`, `loom config`, `loom snapshot`, or `loom check`.
