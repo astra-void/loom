@@ -1,5 +1,5 @@
 {
-	"name": "@loom-dev/cli",
+	"name": "loom-dev",
 	"version": "0.1.0",
 	"private": false,
 	"description": "CLI for the Loom preview and build toolchain.",

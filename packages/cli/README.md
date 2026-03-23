@@ -1,11 +1,11 @@
-# @loom-dev/cli
+# loom-dev
 
 CLI for the Loom preview and build toolchain.
 
-## Install
+## Install (Optional Global)
 
 ```bash
-pnpm add -D @loom-dev/cli
+pnpm add -D loom-dev
 ```
 
 ## Usage
@@ -22,17 +22,17 @@ loom <command> [options]
 - `loom snapshot [--cwd <path>] [--config <path>] [--output <path>] [--transform-mode <strict-fidelity|compatibility>]`
 - `loom check [--cwd <path>] [--config <path>] [--entry <id>] [--format <pretty|json>] [--fail-on <warning|error>] [--transform-mode <strict-fidelity|compatibility>]`
 - `loom config [--cwd <path>] [--config <path>]`
-- `loom help` 
+- `loom help`
 - `loom version`
 
 ### Examples
 
 ```bash
-loom preview --cwd apps/preview-harness
-loom build --cwd packages/preview --out-dir ../../generated-preview
-loom build --cwd packages/preview --out-dir ./metadata-build --artifact-kind entry-metadata --artifact-kind layout-schema --transform-mode design-time
-loom preview --config ./loom.config.ts --port 4175 --open
-loom snapshot --cwd packages/preview --output ./preview-snapshot.json
-loom check --cwd packages/preview --fail-on warning
-loom config --cwd packages/preview
+npx loom-dev preview --cwd apps/preview-harness
+npx loom-dev build --cwd packages/preview --out-dir ../../generated-preview
+npx loom-dev build --cwd packages/preview --out-dir ./metadata-build --artifact-kind entry-metadata --artifact-kind layout-schema --transform-mode design-time
+npx loom-dev preview --config ./loom.config.ts --port 4175 --open
+npx loom-dev snapshot --cwd packages/preview --output ./preview-snapshot.json
+npx loom-dev check --cwd packages/preview --fail-on warning
+npx loom-dev config --cwd packages/preview
 ```
