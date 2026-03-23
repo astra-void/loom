@@ -6,6 +6,9 @@
 	"scripts": {
 		"dev": "vite",
 		"build": "vite build",
+		"format": "pnpm exec biome format --write .",
+		"lint": "pnpm exec biome check .",
+		"lint:fix": "pnpm exec biome check --write --unsafe .",
 		"typecheck": "tsc -p tsconfig.json --noEmit"
 	},
 	"dependencies": {
