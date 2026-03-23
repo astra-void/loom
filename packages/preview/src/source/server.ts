@@ -15,13 +15,13 @@ import type {
 import { loadPreviewConfig, resolvePreviewConfigObject } from "../config";
 import { createAutoMockPropsPlugin } from "./autoMockPlugin";
 import { isFilePathUnderRoot, resolveRealFilePath } from "./pathUtils";
+import { createPreviewVitePlugin } from "./plugin";
 import {
 	createTsconfigParseCache,
 	findNearestTsconfig,
 	isTsconfigLikeFile,
 	type TsconfigParseCache,
 } from "./tsconfigUtils";
-import { createPreviewVitePlugin } from "./plugin";
 import type {
 	PreviewDevServer,
 	PreviewPluginOption,
