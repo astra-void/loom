@@ -262,7 +262,7 @@ describe("preview source transform", () => {
 		expect(result.diagnostics).toHaveLength(0);
 		expect(result.code).toContain('__previewGlobal("math").max(1, 3, 2)');
 		expect(result.code).toContain('__previewGlobal("math").clamp(-4, 0, 10)');
-		expect(result.code).toContain('new Vector3(1, 2, 3)');
+		expect(result.code).toContain("new Vector3(1, 2, 3)");
 		expect(result.code).toContain('__previewGlobal("warn")');
 	});
 
@@ -408,7 +408,10 @@ describe("buildPreviewModules", () => {
 			),
 		).toBe(true);
 		expect(
-			fs.readFileSync(path.join(outDir, "compat-unresolved", "index.tsx"), "utf8"),
+			fs.readFileSync(
+				path.join(outDir, "compat-unresolved", "index.tsx"),
+				"utf8",
+			),
 		).toContain('__previewGlobal("gamee")');
 	});
 

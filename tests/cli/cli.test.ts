@@ -537,41 +537,41 @@ describe("loom cli", () => {
 	});
 
 	it("resolves snapshot --output relative to the resolved cwd", async () => {
-	const packageRoot = createTempRoot("loom-cli-snapshot-relative-output-");
-	const outputPath = path.join(packageRoot, "preview-snapshot.json");
-	const fileModule = createPreviewModule(
-		createResolvedConfig({
-			configDir: packageRoot,
-			configFilePath: path.join(packageRoot, "loom.config.ts"),
+		const packageRoot = createTempRoot("loom-cli-snapshot-relative-output-");
+		const outputPath = path.join(packageRoot, "preview-snapshot.json");
+		const fileModule = createPreviewModule(
+			createResolvedConfig({
+				configDir: packageRoot,
+				configFilePath: path.join(packageRoot, "loom.config.ts"),
+				cwd: packageRoot,
+				server: { fsAllow: [packageRoot] },
+				targets: [
+					{
+						name: "preview",
+						packageName: "@fixtures/preview",
+						packageRoot,
+						sourceRoot: path.join(packageRoot, "src"),
+					},
+				],
+				workspaceRoot: packageRoot,
+			}),
+		);
+
+		await runCli(
+			["snapshot", "--cwd", packageRoot, "--output", "./preview-snapshot.json"],
+			{
+				loadPreviewModuleFn: async () => fileModule.previewModule,
+			},
+		);
+
+		expect(JSON.parse(fs.readFileSync(outputPath, "utf8"))).toEqual(
+			fileModule.snapshot,
+		);
+		expect(fileModule.previewModule.loadPreviewConfig).toHaveBeenCalledWith({
 			cwd: packageRoot,
-			server: { fsAllow: [packageRoot] },
-			targets: [
-				{
-					name: "preview",
-					packageName: "@fixtures/preview",
-					packageRoot,
-					sourceRoot: path.join(packageRoot, "src"),
-				},
-			],
-			workspaceRoot: packageRoot,
-		}),
-	);
-
-	await runCli(
-		["snapshot", "--cwd", packageRoot, "--output", "./preview-snapshot.json"],
-		{
-			loadPreviewModuleFn: async () => fileModule.previewModule,
-		},
-	);
-
-	expect(JSON.parse(fs.readFileSync(outputPath, "utf8"))).toEqual(
-		fileModule.snapshot,
-	);
-	expect(fileModule.previewModule.loadPreviewConfig).toHaveBeenCalledWith({
-		cwd: packageRoot,
+		});
 	});
-});
-it("emits preview checks in pretty and json formats", async () => {
+	it("emits preview checks in pretty and json formats", async () => {
 		const checkSnapshot = createCheckSnapshot();
 		const prettyWriter = createWriter();
 		const prettyModule = createPreviewModule(undefined, checkSnapshot);

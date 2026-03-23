@@ -17,7 +17,9 @@ const temporaryRoots: string[] = [];
 let restoreExpectedLogs: (() => void) | undefined;
 
 beforeEach(() => {
-	restoreExpectedLogs = suppressExpectedStderrMessages([/The build was canceled/]);
+	restoreExpectedLogs = suppressExpectedStderrMessages([
+		/The build was canceled/,
+	]);
 });
 
 afterEach(() => {
@@ -223,34 +225,34 @@ describe("preview bootstrap config", () => {
 	});
 
 	it("resolves explicit relative --config paths from the provided cwd", async () => {
-	const workspaceRoot = createTempRoot("loom-preview-relative-config-");
-	const target = createPackage(
-		workspaceRoot,
-		"packages/button",
-		"@fixtures/button",
-	);
-	const configFilePath = path.join(target.packageRoot, "loom.config.ts");
-	writeInlinePreviewConfig(configFilePath, {
-		packageName: target.packageName,
-		packageRoot: target.packageRoot,
-		projectName: "Relative Config",
-		sourceRoot: target.sourceRoot,
-		targetName: "button-relative-config",
-	});
-
-	const resolvedConfig = await loadPreviewConfig({
-		configFile: "loom.config.ts",
-		cwd: target.packageRoot,
-	});
-
-	expect(resolvedConfig.configFilePath).toBe(configFilePath);
-	expect(resolvedConfig.projectName).toBe("Relative Config");
-	expect(resolvedConfig.targets).toEqual([
-		expect.objectContaining({
-			name: "button-relative-config",
+		const workspaceRoot = createTempRoot("loom-preview-relative-config-");
+		const target = createPackage(
+			workspaceRoot,
+			"packages/button",
+			"@fixtures/button",
+		);
+		const configFilePath = path.join(target.packageRoot, "loom.config.ts");
+		writeInlinePreviewConfig(configFilePath, {
+			packageName: target.packageName,
 			packageRoot: target.packageRoot,
-		}),
-	]);
+			projectName: "Relative Config",
+			sourceRoot: target.sourceRoot,
+			targetName: "button-relative-config",
+		});
+
+		const resolvedConfig = await loadPreviewConfig({
+			configFile: "loom.config.ts",
+			cwd: target.packageRoot,
+		});
+
+		expect(resolvedConfig.configFilePath).toBe(configFilePath);
+		expect(resolvedConfig.projectName).toBe("Relative Config");
+		expect(resolvedConfig.targets).toEqual([
+			expect.objectContaining({
+				name: "button-relative-config",
+				packageRoot: target.packageRoot,
+			}),
+		]);
 	});
 });
 
@@ -412,7 +414,9 @@ describe("preview target discovery adapters", () => {
 			expect.objectContaining({ name: "dialog" }),
 		]);
 		expect(
-			resolvedConfig.targets.some((target) => target.packageName === "@fixtures/sandbox"),
+			resolvedConfig.targets.some(
+				(target) => target.packageName === "@fixtures/sandbox",
+			),
 		).toBe(false);
 	});
 
@@ -461,72 +465,74 @@ describe("preview target discovery adapters", () => {
 	});
 
 	it("matches direct-child workspace package roots for ** include patterns", async () => {
-	const workspaceRoot = createTempRoot("loom-preview-workspace-glob-");
-	createPackage(workspaceRoot, "packages/button", "@fixtures/button");
-	createPackage(workspaceRoot, "packages/dialog", "@fixtures/dialog");
-	fs.writeFileSync(
-		path.join(workspaceRoot, "pnpm-workspace.yaml"),
-		'packages:\n  - "packages/*"\n',
-		"utf8",
-	);
+		const workspaceRoot = createTempRoot("loom-preview-workspace-glob-");
+		createPackage(workspaceRoot, "packages/button", "@fixtures/button");
+		createPackage(workspaceRoot, "packages/dialog", "@fixtures/dialog");
+		fs.writeFileSync(
+			path.join(workspaceRoot, "pnpm-workspace.yaml"),
+			'packages:\n  - "packages/*"\n',
+			"utf8",
+		);
 
-	const resolvedConfig = await resolvePreviewConfigObject(
-		{
-			projectName: "Workspace Glob",
-			targetDiscovery: createWorkspaceTargetsDiscovery({
-				include: ["packages/**/button"],
-				workspaceRoot,
-			}),
-		},
-		{
-			configDir: workspaceRoot,
-			cwd: workspaceRoot,
-		},
-	);
-
-	expect(resolvedConfig.targets).toEqual([
-		expect.objectContaining({
-			name: "button",
-			packageName: "@fixtures/button",
-		}),
-	]);
-});
-
-it("fails early when discovered workspace targets resolve to duplicate names", async () => {
-	const workspaceRoot = createTempRoot("loom-preview-duplicate-targets-");
-	createPackage(workspaceRoot, "packages/foo-button", "@foo/button");
-	createPackage(workspaceRoot, "packages/bar-button", "@bar/button");
-	fs.writeFileSync(
-		path.join(workspaceRoot, "pnpm-workspace.yaml"),
-		'packages:\n  - "packages/*"\n',
-		"utf8",
-	);
-
-	let resolvedError: unknown;
-	try {
-		await resolvePreviewConfigObject(
+		const resolvedConfig = await resolvePreviewConfigObject(
 			{
-				projectName: "Duplicate Workspace Targets",
-				targetDiscovery: createWorkspaceTargetsDiscovery({ workspaceRoot }),
+				projectName: "Workspace Glob",
+				targetDiscovery: createWorkspaceTargetsDiscovery({
+					include: ["packages/**/button"],
+					workspaceRoot,
+				}),
 			},
 			{
 				configDir: workspaceRoot,
 				cwd: workspaceRoot,
 			},
 		);
-	} catch (error) {
-		resolvedError = error;
-	}
 
-	expect(resolvedError).toBeInstanceOf(Error);
-	if (!(resolvedError instanceof Error)) {
-		throw new Error("Expected duplicate workspace target discovery to throw.");
-	}
+		expect(resolvedConfig.targets).toEqual([
+			expect.objectContaining({
+				name: "button",
+				packageName: "@fixtures/button",
+			}),
+		]);
+	});
 
-	expect(resolvedError.message).toContain("Duplicate preview target names");
-	expect(resolvedError.message).toContain("@foo/button");
-	expect(resolvedError.message).toContain("@bar/button");
-	expect(resolvedError.message).toContain("button:");
+	it("fails early when discovered workspace targets resolve to duplicate names", async () => {
+		const workspaceRoot = createTempRoot("loom-preview-duplicate-targets-");
+		createPackage(workspaceRoot, "packages/foo-button", "@foo/button");
+		createPackage(workspaceRoot, "packages/bar-button", "@bar/button");
+		fs.writeFileSync(
+			path.join(workspaceRoot, "pnpm-workspace.yaml"),
+			'packages:\n  - "packages/*"\n',
+			"utf8",
+		);
+
+		let resolvedError: unknown;
+		try {
+			await resolvePreviewConfigObject(
+				{
+					projectName: "Duplicate Workspace Targets",
+					targetDiscovery: createWorkspaceTargetsDiscovery({ workspaceRoot }),
+				},
+				{
+					configDir: workspaceRoot,
+					cwd: workspaceRoot,
+				},
+			);
+		} catch (error) {
+			resolvedError = error;
+		}
+
+		expect(resolvedError).toBeInstanceOf(Error);
+		if (!(resolvedError instanceof Error)) {
+			throw new Error(
+				"Expected duplicate workspace target discovery to throw.",
+			);
+		}
+
+		expect(resolvedError.message).toContain("Duplicate preview target names");
+		expect(resolvedError.message).toContain("@foo/button");
+		expect(resolvedError.message).toContain("@bar/button");
+		expect(resolvedError.message).toContain("button:");
 	});
 });
 

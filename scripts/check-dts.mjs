@@ -1,12 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import {
-	mkdtemp,
-	readFile,
-	readdir,
-	rename,
-	rm,
-} from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rename, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -71,7 +65,9 @@ async function listFiles(directoryPath, prefix = "") {
 	const entries = await readdir(directoryPath, { withFileTypes: true });
 	const files = [];
 
-	for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name))) {
+	for (const entry of entries.sort((left, right) =>
+		left.name.localeCompare(right.name),
+	)) {
 		const relativePath = prefix ? `${prefix}/${entry.name}` : entry.name;
 		const absolutePath = join(directoryPath, entry.name);
 
@@ -127,10 +123,7 @@ async function withHiddenArtifacts(callback) {
 				continue;
 			}
 
-			const hiddenPath = join(
-				tempRoot,
-				artifactPath.replaceAll("/", "__"),
-			);
+			const hiddenPath = join(tempRoot, artifactPath.replaceAll("/", "__"));
 			await rename(absoluteArtifactPath, hiddenPath);
 			movedArtifacts.push({ hiddenPath, originalPath: absoluteArtifactPath });
 		}

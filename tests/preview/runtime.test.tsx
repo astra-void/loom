@@ -1623,9 +1623,9 @@ describe("preview runtime host mapping", () => {
 			});
 
 			expect(snapshots.length).toBeGreaterThan(0);
-			expect(snapshots.some((snapshot) => snapshot.viewportReady === false)).toBe(
-				false,
-			);
+			expect(
+				snapshots.some((snapshot) => snapshot.viewportReady === false),
+			).toBe(false);
 		} finally {
 			unsubscribe();
 			rendered.unmount();

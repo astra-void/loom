@@ -250,7 +250,9 @@ describe("createPreviewHeadlessSession", () => {
 
 			await session.run({ entryIds: [entryId] });
 			const snapshot = session.getSnapshot();
-			expect(snapshot.entries[entryId]?.descriptor.status).toBe("needs_harness");
+			expect(snapshot.entries[entryId]?.descriptor.status).toBe(
+				"needs_harness",
+			);
 			expect(snapshot.execution.entries[entryId]).toMatchObject({
 				render: {
 					status: "skipped",
@@ -659,4 +661,3 @@ describe("createPreviewHeadlessSession", () => {
 		).toBe(initialGlobalPrototypeParent);
 	});
 });
-

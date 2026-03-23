@@ -14,7 +14,10 @@ type TestResolveIdHook = (id: string) => string | undefined;
 type TestLoadHook = (id: string) => string | undefined;
 type TestConfigureServerHook = (server: MockServer) => void;
 type TestHotUpdateHook = (context: { file: string }) => [] | undefined;
-type TestTransformHook = (code: string, id: string) => Promise<unknown> | unknown;
+type TestTransformHook = (
+	code: string,
+	id: string,
+) => Promise<unknown> | unknown;
 
 afterEach(() => {
 	for (const root of temporaryRoots.splice(0)) {
@@ -191,9 +194,17 @@ describe("createPreviewVitePlugin", () => {
 	it("uses the configured runtime module for virtual runtime and entry modules", () => {
 		const { fixtureRoot, sourceRoot } = createFixtureRoot();
 		const sourceFile = path.join(sourceRoot, "CustomRuntimeEntry.tsx");
-		const runtimeModulePath = path.join(fixtureRoot, "runtime", "custom-runtime.ts");
+		const runtimeModulePath = path.join(
+			fixtureRoot,
+			"runtime",
+			"custom-runtime.ts",
+		);
 		fs.mkdirSync(path.dirname(runtimeModulePath), { recursive: true });
-		fs.writeFileSync(runtimeModulePath, "export const customRuntime = true;\n", "utf8");
+		fs.writeFileSync(
+			runtimeModulePath,
+			"export const customRuntime = true;\n",
+			"utf8",
+		);
 		fs.writeFileSync(
 			sourceFile,
 			[
@@ -235,58 +246,66 @@ describe("createPreviewVitePlugin", () => {
 	});
 
 	it("injects the configured runtime module when transformed output references __rbxStyle", async () => {
-	const { fixtureRoot, sourceRoot } = createFixtureRoot();
-	const sourceFile = path.join(sourceRoot, "StyledFrame.tsx");
-	const helperModulePath = path.join(sourceRoot, "styleHelper.ts");
-	const runtimeModulePath = path.join(fixtureRoot, "runtime", "custom-runtime.ts");
-	fs.mkdirSync(path.dirname(runtimeModulePath), { recursive: true });
-	fs.writeFileSync(runtimeModulePath, "export const customRuntime = true;\n", "utf8");
-	fs.writeFileSync(
-		helperModulePath,
-		"export function __rbxStyle(value: unknown) { return value; }\n",
-		"utf8",
-	);
-	fs.writeFileSync(
-		sourceFile,
-		[
-			'import { __rbxStyle } from "./styleHelper";',
-			"",
-			"const previewStyle = __rbxStyle({ BackgroundTransparency: 0.5 });",
-			"",
-			"export function StyledFrame() {",
-			"	void previewStyle;",
-			"	return <frame />;",
-			"}",
-			"",
-			"export const preview = {",
-			"	entry: StyledFrame,",
-			"};",
-		].join("\n"),
-		"utf8",
-	);
+		const { fixtureRoot, sourceRoot } = createFixtureRoot();
+		const sourceFile = path.join(sourceRoot, "StyledFrame.tsx");
+		const helperModulePath = path.join(sourceRoot, "styleHelper.ts");
+		const runtimeModulePath = path.join(
+			fixtureRoot,
+			"runtime",
+			"custom-runtime.ts",
+		);
+		fs.mkdirSync(path.dirname(runtimeModulePath), { recursive: true });
+		fs.writeFileSync(
+			runtimeModulePath,
+			"export const customRuntime = true;\n",
+			"utf8",
+		);
+		fs.writeFileSync(
+			helperModulePath,
+			"export function __rbxStyle(value: unknown) { return value; }\n",
+			"utf8",
+		);
+		fs.writeFileSync(
+			sourceFile,
+			[
+				'import { __rbxStyle } from "./styleHelper";',
+				"",
+				"const previewStyle = __rbxStyle({ BackgroundTransparency: 0.5 });",
+				"",
+				"export function StyledFrame() {",
+				"	void previewStyle;",
+				"	return <frame />;",
+				"}",
+				"",
+				"export const preview = {",
+				"	entry: StyledFrame,",
+				"};",
+			].join("\n"),
+			"utf8",
+		);
 
-	const previewPlugin = createPreviewPlugin(
-		fixtureRoot,
-		sourceRoot,
-		runtimeModulePath,
-	);
-	const transform = getHookHandler<TestTransformHook>(
-		previewPlugin.transform as TestTransformHook | undefined,
-	);
+		const previewPlugin = createPreviewPlugin(
+			fixtureRoot,
+			sourceRoot,
+			runtimeModulePath,
+		);
+		const transform = getHookHandler<TestTransformHook>(
+			previewPlugin.transform as TestTransformHook | undefined,
+		);
 
-	expect(transform).toBeTypeOf("function");
-	const transformResult = await transform?.(
-		fs.readFileSync(sourceFile, "utf8"),
-		sourceFile,
-	);
-	const transformedCode = getHookResultCode(transformResult);
+		expect(transform).toBeTypeOf("function");
+		const transformResult = await transform?.(
+			fs.readFileSync(sourceFile, "utf8"),
+			sourceFile,
+		);
+		const transformedCode = getHookResultCode(transformResult);
 
-	expect(transformedCode).toContain(
-		`import { __rbxStyle } from ${JSON.stringify(runtimeModulePath.replace(/\\/g, "/"))};`,
-	);
-});
+		expect(transformedCode).toContain(
+			`import { __rbxStyle } from ${JSON.stringify(runtimeModulePath.replace(/\\/g, "/"))};`,
+		);
+	});
 
-it("registers preview target source roots with the Vite watcher", () => {
+	it("registers preview target source roots with the Vite watcher", () => {
 		const { fixtureRoot, sourceRoot } = createFixtureRoot();
 		const previewPlugin = createPreviewPlugin(fixtureRoot, sourceRoot);
 		const configureServer = getHookHandler<TestConfigureServerHook>(

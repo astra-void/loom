@@ -153,7 +153,9 @@ describe("loadPreviewModule", () => {
 			await vi.advanceTimersByTimeAsync(81);
 		});
 
-		expect(screen.getByRole("button", { name: "Recovered preview" })).toBeTruthy();
+		expect(
+			screen.getByRole("button", { name: "Recovered preview" }),
+		).toBeTruthy();
 		expect(importer).toHaveBeenCalledTimes(2);
 	});
 

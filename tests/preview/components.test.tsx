@@ -78,4 +78,3 @@ describe("generated preview components", () => {
 		expect(screen.getByText("Harnessed Dialog")).toBeTruthy();
 	});
 });
-

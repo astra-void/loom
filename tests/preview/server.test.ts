@@ -328,26 +328,19 @@ function createTempPreviewPackageWithMutablePathAlias() {
 		JSON.stringify({ name: "@fixtures/shared-b" }, null, 2),
 		"utf8",
 	);
-	writeWorkspacePathAliasTsconfig(
-		packageRoot,
-		"../../shared-a/src/*",
-	);
+	writeWorkspacePathAliasTsconfig(packageRoot, "../../shared-a/src/*");
 	fs.writeFileSync(
 		path.join(sharedASourceRoot, "buildInfo.ts"),
-		[
-			"export const BUILD_INFO = {",
-			'\tlabel: "shared-a",',
-			"} as const;",
-		].join("\n"),
+		["export const BUILD_INFO = {", '\tlabel: "shared-a",', "} as const;"].join(
+			"\n",
+		),
 		"utf8",
 	);
 	fs.writeFileSync(
 		path.join(sharedBSourceRoot, "buildInfo.ts"),
-		[
-			"export const BUILD_INFO = {",
-			'\tlabel: "shared-b",',
-			"} as const;",
-		].join("\n"),
+		["export const BUILD_INFO = {", '\tlabel: "shared-b",', "} as const;"].join(
+			"\n",
+		),
 		"utf8",
 	);
 	fs.writeFileSync(
@@ -370,8 +363,12 @@ function createTempPreviewPackageWithMutablePathAlias() {
 	writeFakeRbxtsReact(packageRoot);
 
 	return {
-		buildInfoPathA: fs.realpathSync(path.join(sharedASourceRoot, "buildInfo.ts")),
-		buildInfoPathB: fs.realpathSync(path.join(sharedBSourceRoot, "buildInfo.ts")),
+		buildInfoPathA: fs.realpathSync(
+			path.join(sharedASourceRoot, "buildInfo.ts"),
+		),
+		buildInfoPathB: fs.realpathSync(
+			path.join(sharedBSourceRoot, "buildInfo.ts"),
+		),
 		packageRoot,
 		sourceFilePath: fs.realpathSync(path.join(sourceRoot, "Test.tsx")),
 		sourceRoot: fs.realpathSync(sourceRoot),
@@ -390,7 +387,7 @@ function createTempPreviewPackageWithAutoMockPathAlias() {
 			'import type { PreviewProps } from "shared/props";',
 			"",
 			"export function Test(props: PreviewProps) {",
-			"\treturn <textlabel Text={\"label\" in props ? props.label : String(props.count)} />;",
+			'\treturn <textlabel Text={"label" in props ? props.label : String(props.count)} />;',
 			"}",
 			"",
 			"export const preview = {",
@@ -634,7 +631,9 @@ describe("createPreviewViteServer", () => {
 		try {
 			const runtimeModuleResponse = await requestServerPath(
 				server,
-				toFsUrl(path.resolve(process.cwd(), "packages/preview-runtime/src/index.ts")),
+				toFsUrl(
+					path.resolve(process.cwd(), "packages/preview-runtime/src/index.ts"),
+				),
 			);
 			expect(runtimeModuleResponse.statusCode).toBe(200);
 
@@ -908,7 +907,9 @@ describe("createPreviewViteServer", () => {
 				"../../shared-b/src/*",
 			);
 			(
-				server.watcher as unknown as { emit: (event: string, filePath: string) => void }
+				server.watcher as unknown as {
+					emit: (event: string, filePath: string) => void;
+				}
 			).emit("change", fixture.tsconfigPath);
 			expect(wsSendSpy).toHaveBeenCalledWith({ type: "full-reload" });
 
@@ -959,7 +960,9 @@ describe("createPreviewViteServer", () => {
 				"../../shared-b/src/*",
 			);
 			(
-				server.watcher as unknown as { emit: (event: string, filePath: string) => void }
+				server.watcher as unknown as {
+					emit: (event: string, filePath: string) => void;
+				}
 			).emit("change", fixture.tsconfigPath);
 
 			const nextTransformedSource = await server.transformRequest(
@@ -1012,7 +1015,4 @@ describe("createPreviewViteServer", () => {
 			await server.close();
 		}
 	});
-
-
 });
-

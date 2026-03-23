@@ -467,7 +467,9 @@ describe("preview shell", () => {
 		await waitFor(() => {
 			expect(details.open).toBe(false);
 		});
-		expect(screen.getByText(/Degraded placeholders: ViewportFrame\./)).toBeTruthy();
+		expect(
+			screen.getByText(/Degraded placeholders: ViewportFrame\./),
+		).toBeTruthy();
 		expect(screen.getByText(/1 warnings?/i)).toBeTruthy();
 		expect(screen.getByText(/^DEGRADED_HOST_RENDER$/)).toBeTruthy();
 	});
@@ -817,4 +819,3 @@ describe("preview shell", () => {
 		).toBeNull();
 	});
 });
-

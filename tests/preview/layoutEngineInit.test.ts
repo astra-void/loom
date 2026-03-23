@@ -63,9 +63,9 @@ describe("preview runtime layout engine initialization", () => {
 		});
 		const previewRuntime = await loadPreviewRuntime();
 
-		await expect(previewRuntime.loadPreviewLayoutEngineWasmBytes()).resolves.toEqual(
-			wasmBytes,
-		);
+		await expect(
+			previewRuntime.loadPreviewLayoutEngineWasmBytes(),
+		).resolves.toEqual(wasmBytes);
 		expect(fetchMock).toHaveBeenCalledTimes(1);
 		expect(fetchMock).toHaveBeenCalledWith(expectedFetchUrl);
 	});
@@ -81,9 +81,9 @@ describe("preview runtime layout engine initialization", () => {
 		});
 		const previewRuntime = await loadPreviewRuntime();
 
-		await expect(previewRuntime.loadPreviewLayoutEngineWasmBytes()).rejects.toThrow(
-			/Invalid Wasm binary header .* received 50 4b 03 04/i,
-		);
+		await expect(
+			previewRuntime.loadPreviewLayoutEngineWasmBytes(),
+		).rejects.toThrow(/Invalid Wasm binary header .* received 50 4b 03 04/i);
 	});
 
 	it("fetches the browser Wasm asset when window is available and no loader is registered", async () => {
