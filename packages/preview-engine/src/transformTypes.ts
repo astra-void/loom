@@ -12,7 +12,8 @@ export type PreviewTransformMode = CompilerPreviewTransformMode;
 export type PreviewTransformSeverity = CompilerPreviewTransformSeverity;
 export type PreviewTransformDiagnostic = CompilerPreviewTransformDiagnostic;
 export type PreviewTransformOutcome = CompilerPreviewTransformOutcome;
-export type TransformPreviewSourceOptions = CompilerTransformPreviewSourceOptions;
+export type TransformPreviewSourceOptions =
+	CompilerTransformPreviewSourceOptions;
 export type TransformPreviewSourceResult = CompilerTransformPreviewSourceResult;
 export type NormalizedTransformPreviewSourceResult =
 	CompilerNormalizedTransformPreviewSourceResult;
