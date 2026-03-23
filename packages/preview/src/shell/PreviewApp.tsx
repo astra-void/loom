@@ -924,7 +924,7 @@ export function PreviewApp(props: PreviewAppProps) {
 		}
 
 		issueDisclosureRef.current.open = issueDisclosureDefaultOpen;
-	}, [issueDisclosureDefaultOpen]);
+	}, [hasIssueDisclosure, issueDisclosureDefaultOpen, selectedEntryId]);
 	const renderSidebarNodes = (
 		nodes: SidebarTreeNode[],
 		depth: number,
