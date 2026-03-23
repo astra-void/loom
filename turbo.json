@@ -16,6 +16,7 @@
 			"outputs": ["dist/**", "pkg/**", "index.js", "index.d.ts", "wrapper.d.ts"]
 		},
 		"build:native": {
+			"env": ["LOOM_NATIVE_TARGET"],
 			"inputs": ["$TURBO_DEFAULT$", "!**/.turbo/**", "!**/.native/**"],
 			"outputLogs": "new-only",
 			"outputs": [

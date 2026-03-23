@@ -4,7 +4,7 @@
 	"private": true,
 	"description": "Loom preview workspace.",
 	"scripts": {
-		"build:native": "turbo run build:native --log-order=grouped --output-logs=new-only --filter=@loom-dev/layout-engine --filter=@loom-dev/compiler",
+		"build:native": "node ./scripts/run-turbo-native.mjs run build:native --log-order=grouped --output-logs=new-only --filter=@loom-dev/layout-engine --filter=@loom-dev/compiler",
 		"build:packages": "turbo run build --log-order=grouped --output-logs=new-only --filter=@loom-dev/preview-runtime --filter=@loom-dev/preview-engine --filter=@loom-dev/preview --filter=loom-dev",
 		"build": "turbo run build --log-order=grouped --output-logs=new-only",
 		"dev": "pnpm run build:native && turbo run dev --filter=@loom-dev/preview-harness",
