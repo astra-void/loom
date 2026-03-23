@@ -238,7 +238,7 @@ function writeConsumerFixture(consumerRoot) {
 			"if (!app) {",
 			'\tthrow new Error("Missing app root for preview smoke build.");',
 			"}",
-			"app.textContent = `preview exports: ${Object.keys(preview).length}`;",
+			'app.textContent = "preview exports: " + Object.keys(preview).length;',
 		].join("\n"),
 		"utf8",
 	);
