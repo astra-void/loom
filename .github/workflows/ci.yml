@@ -9,6 +9,7 @@ on:
 
 env:
   NODE_VERSION: 24
+  WASM_PACK_VERSION: 0.14.0
   TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
   TURBO_TEAM: ${{ vars.TURBO_TEAM }}
 
@@ -53,7 +54,19 @@ jobs:
             ${{ runner.os }}-rust-
 
       - name: Install wasm-pack
-        run: cargo install wasm-pack --locked
+        run: |
+          if command -v wasm-pack >/dev/null 2>&1; then
+            current_version="$(wasm-pack --version | awk '{print $2}')"
+          else
+            current_version=""
+          fi
+
+          if [ "$current_version" = "$WASM_PACK_VERSION" ]; then
+            echo "Using cached wasm-pack ${current_version}"
+          else
+            rm -f "$HOME/.cargo/bin/wasm-pack"
+            cargo install wasm-pack --version "$WASM_PACK_VERSION" --locked
+          fi
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
