@@ -185,7 +185,9 @@ function normalizeTransformPreviewSourceResult(result, mode) {
 		code:
 			outcome.kind === "blocked" || outcome.kind === "design-time"
 				? undefined
-				: (typeof result.code === "string" ? result.code : undefined),
+				: typeof result.code === "string"
+					? result.code
+					: undefined,
 		diagnostics,
 		outcome,
 	};
@@ -223,7 +225,12 @@ function findIdentifierLocation(sourceText, identifier) {
  * @param {PreviewTransformDiagnostic[]} existingDiagnostics
  * @returns {PreviewTransformDiagnostic[]}
  */
-function collectMockDiagnostics(sourceText, transformedCode, options, existingDiagnostics) {
+function collectMockDiagnostics(
+	sourceText,
+	transformedCode,
+	options,
+	existingDiagnostics,
+) {
 	/** @type {PreviewTransformDiagnostic[]} */
 	const diagnostics = [];
 	/** @type {Set<string>} */
