@@ -9,9 +9,17 @@ const PACKAGE_DIR = dirname(SCRIPT_DIR);
 const TSC_PATH = require.resolve("typescript/bin/tsc");
 
 export function buildWrapperTypes() {
-	return runCommand(
+	runCommand(
 		process.execPath,
 		[TSC_PATH, "-p", resolve(PACKAGE_DIR, "tsconfig.types.json")],
+		{
+			cwd: PACKAGE_DIR,
+		},
+	);
+
+	return runCommand(
+		"pnpm",
+		["exec", "biome", "format", "--write", "wrapper.d.ts"],
 		{
 			cwd: PACKAGE_DIR,
 		},
