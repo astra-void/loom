@@ -39,6 +39,19 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
 
+      - name: Cache Rust artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cargo/bin
+            packages/compiler/target
+            packages/layout-engine/target
+          key: ${{ runner.os }}-rust-${{ hashFiles('packages/compiler/Cargo.lock', 'packages/compiler/Cargo.toml', 'packages/layout-engine/Cargo.lock', 'packages/layout-engine/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-rust-
+
       - name: Install wasm-pack
         run: cargo install wasm-pack --locked
 
