@@ -547,4 +547,3 @@ export async function runConfigCommand(
 
 	writeJson(runtime.stdout, serializeResolvedConfig(resolvedConfig));
 }
-
