@@ -26,8 +26,8 @@ const declarationTargets = [
 		typesDir: "packages/preview/types",
 	},
 	{
-		build: ["pnpm", "--filter", "@loom-dev/cli", "build"],
-		label: "@loom-dev/cli",
+		build: ["pnpm", "--filter", "loom-dev", "build"],
+		label: "loom-dev",
 		tsconfig: "packages/cli/tsconfig.json",
 		typesDir: "packages/cli/types",
 	},
