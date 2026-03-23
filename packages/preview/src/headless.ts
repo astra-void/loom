@@ -239,11 +239,7 @@ export async function createPreviewHeadlessSession(
 		resetExecutionState();
 	});
 	const getCurrentSnapshot = () =>
-		buildHeadlessSnapshot(
-			engine,
-			collectedExecutionsById,
-			selectedEntryIds,
-		);
+		buildHeadlessSnapshot(engine, collectedExecutionsById, selectedEntryIds);
 
 	const session: PreviewHeadlessSession = {
 		dispose() {

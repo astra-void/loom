@@ -21,8 +21,6 @@ function normalizeSlashPath(filePath: string) {
 	return resolveFilePath(filePath).replace(/\\/g, "/");
 }
 
-
-
 function getComparablePathVariants(filePath: string) {
 	const resolvedPath = normalizeComparablePath(resolveFilePath(filePath));
 	const comparablePaths = new Set<string>([resolvedPath]);
@@ -118,4 +116,3 @@ export function isFilePathIncludedByTarget(
 
 	return true;
 }
-

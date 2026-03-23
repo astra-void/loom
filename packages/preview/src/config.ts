@@ -116,7 +116,7 @@ type PackageMetadata = {
 	workspaces?:
 		| string[]
 		| {
-			packages?: string[];
+				packages?: string[];
 		  };
 };
 
@@ -154,9 +154,7 @@ function resolveMaybeRelativePath(filePath: string, baseDir: string) {
 }
 
 function resolveFileSystemPath(filePath: string, baseDir: string) {
-	return path.isAbsolute(filePath)
-		? filePath
-		: path.resolve(baseDir, filePath);
+	return path.isAbsolute(filePath) ? filePath : path.resolve(baseDir, filePath);
 }
 
 function normalizeSlashPath(filePath: string) {
@@ -172,7 +170,9 @@ function normalizeWorkspacePattern(pattern: string) {
 	return normalizedPattern === "." ? "" : normalizedPattern;
 }
 
-function parseWorkspacePackagePatterns(patterns: string[]): WorkspacePackagePatterns {
+function parseWorkspacePackagePatterns(
+	patterns: string[],
+): WorkspacePackagePatterns {
 	const include: string[] = [];
 	const exclude: string[] = [];
 
@@ -346,8 +346,6 @@ function dedupeTargets(targets: PreviewSourceTarget[], baseDir?: string) {
 		return left.sourceRoot.localeCompare(right.sourceRoot);
 	});
 }
-
-
 
 function isTargetIncluded(
 	target: PreviewSourceTarget,
@@ -874,4 +872,3 @@ export async function resolvePreviewConfigObject(
 		cwd: path.resolve(options.cwd ?? process.cwd()),
 	});
 }
-

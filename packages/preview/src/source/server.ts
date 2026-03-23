@@ -1,7 +1,10 @@
 import fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
-import type { PreviewEngine, PreviewExecutionMode } from "@loom-dev/preview-engine";
+import type {
+	PreviewEngine,
+	PreviewExecutionMode,
+} from "@loom-dev/preview-engine";
 import ts from "typescript";
 import { searchForWorkspaceRoot } from "vite";
 import type {
@@ -261,9 +264,11 @@ function createTsconfigCacheInvalidationPlugin(
 			return;
 		}
 
-		(server.moduleGraph as typeof server.moduleGraph & {
-			invalidateAll?: () => void;
-		}).invalidateAll?.();
+		(
+			server.moduleGraph as typeof server.moduleGraph & {
+				invalidateAll?: () => void;
+			}
+		).invalidateAll?.();
 		server.ws.send({ type: "full-reload" });
 	};
 

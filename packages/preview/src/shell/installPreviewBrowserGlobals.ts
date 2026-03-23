@@ -226,7 +226,10 @@ function canResolvePreviewFallbackGlobals(fallback: object | null) {
 }
 
 function resolveKnownPreviewGlobal(property: string) {
-	if (!previewGlobalStringKeys.has(property) || !Reflect.has(robloxMockRecord, property)) {
+	if (
+		!previewGlobalStringKeys.has(property) ||
+		!Reflect.has(robloxMockRecord, property)
+	) {
 		return undefined;
 	}
 
@@ -295,7 +298,10 @@ function installMissingGlobalFallback(target: object) {
 		fallbackMetadata?.basePrototype ?? clonePrototypeSurface(currentFallback);
 
 	try {
-		Object.setPrototypeOf(prototypeHost, createMissingGlobalFallback(basePrototype));
+		Object.setPrototypeOf(
+			prototypeHost,
+			createMissingGlobalFallback(basePrototype),
+		);
 	} catch {
 		// Ignore environments that do not allow prototype mutation on the global host.
 	}
@@ -330,4 +336,3 @@ export function installPreviewBrowserGlobals() {
 		restorePrototypeParent(prototypeRestoreEntry);
 	};
 }
-

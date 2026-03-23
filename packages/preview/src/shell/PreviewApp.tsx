@@ -167,7 +167,6 @@ function getInitialSelectedId(
 	return entries[0]?.id;
 }
 
-
 function getRuntimeIssueFingerprint(issue: PreviewRuntimeIssue) {
 	return [
 		issue.entryId,
@@ -203,7 +202,6 @@ function createRuntimeIssueRenderMeta(issues: PreviewRuntimeIssue[]) {
 function _isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null;
 }
-
 
 function getStatusLabel(status: PreviewEntryStatus) {
 	switch (status) {
@@ -996,7 +994,9 @@ export function PreviewApp(props: PreviewAppProps) {
 							className="sidebar-status-dot"
 							data-status={node.entry.status}
 						/>
-						{node.hasWarning ? <span className="sidebar-warning-dot" /> : undefined}
+						{node.hasWarning ? (
+							<span className="sidebar-warning-dot" />
+						) : undefined}
 					</span>
 				</button>
 			);
@@ -1037,7 +1037,9 @@ export function PreviewApp(props: PreviewAppProps) {
 							<div className="preview-header-copy">
 								<div className="preview-header-title">
 									<h2>{selectedEntryFileName}</h2>
-									<span className={`status-pill status-${selectedEntry.status}`}>
+									<span
+										className={`status-pill status-${selectedEntry.status}`}
+									>
 										{getStatusLabel(selectedEntry.status)}
 									</span>
 								</div>
@@ -1067,7 +1069,9 @@ export function PreviewApp(props: PreviewAppProps) {
 										selectedEntryBlockingDiagnostics.length > 0 ? (
 											<div className="preview-empty">
 												<p className="preview-empty-eyebrow">Diagnostics</p>
-												<h2>Transform diagnostics are blocking this preview.</h2>
+												<h2>
+													Transform diagnostics are blocking this preview.
+												</h2>
 												<p>
 													Fix the unsupported patterns below, then save again.
 												</p>
@@ -1100,8 +1104,8 @@ export function PreviewApp(props: PreviewAppProps) {
 											<p className="preview-empty-eyebrow">Loading</p>
 											<h2>Preparing transformed source.</h2>
 											<p>
-												The selected `@rbxts/react` module is being compiled into
-												the web preview runtime.
+												The selected `@rbxts/react` module is being compiled
+												into the web preview runtime.
 											</p>
 										</div>
 									)
@@ -1140,7 +1144,9 @@ export function PreviewApp(props: PreviewAppProps) {
 									</div>
 								) : (
 									<div className="preview-empty">
-										<p className="preview-empty-eyebrow">{emptyState?.eyebrow}</p>
+										<p className="preview-empty-eyebrow">
+											{emptyState?.eyebrow}
+										</p>
 										<h2>{emptyState?.title}</h2>
 										<p>{emptyState?.body}</p>
 									</div>
@@ -1198,7 +1204,9 @@ export function PreviewApp(props: PreviewAppProps) {
 														key={`${diagnostic.relativeFile}:${diagnostic.code}:${diagnostic.summary}`}
 													>
 														<p className="diagnostic-code">{diagnostic.code}</p>
-														<p className="diagnostic-message">{diagnostic.summary}</p>
+														<p className="diagnostic-message">
+															{diagnostic.summary}
+														</p>
 														<p className="diagnostic-location">
 															{diagnostic.relativeFile}
 														</p>
@@ -1210,7 +1218,9 @@ export function PreviewApp(props: PreviewAppProps) {
 														key={`${diagnostic.relativeFile}:${diagnostic.code}:${diagnostic.summary}`}
 													>
 														<p className="diagnostic-code">{diagnostic.code}</p>
-														<p className="diagnostic-message">{diagnostic.summary}</p>
+														<p className="diagnostic-message">
+															{diagnostic.summary}
+														</p>
 														<p className="diagnostic-location">
 															{diagnostic.relativeFile}
 														</p>
@@ -1225,10 +1235,15 @@ export function PreviewApp(props: PreviewAppProps) {
 																	? ""
 																	: "diagnostic-item-warning"
 															}`.trim()}
-															key={renderMeta?.key ?? getRuntimeIssueFingerprint(issue)}
+															key={
+																renderMeta?.key ??
+																getRuntimeIssueFingerprint(issue)
+															}
 														>
 															<p className="diagnostic-code">{issue.code}</p>
-															<p className="diagnostic-message">{issue.summary}</p>
+															<p className="diagnostic-message">
+																{issue.summary}
+															</p>
 															<p className="diagnostic-location">
 																{issue.relativeFile}:{issue.kind}:
 																{renderMeta?.occurrence ?? 1}
@@ -1239,7 +1254,9 @@ export function PreviewApp(props: PreviewAppProps) {
 												{loadIssue ? (
 													<article className="diagnostic-item diagnostic-item-runtime">
 														<p className="diagnostic-code">{loadIssue.code}</p>
-														<p className="diagnostic-message">{loadIssue.summary}</p>
+														<p className="diagnostic-message">
+															{loadIssue.summary}
+														</p>
 														<p className="diagnostic-location">
 															{loadIssue.relativeFile}:{loadIssue.kind}
 														</p>
@@ -1247,8 +1264,12 @@ export function PreviewApp(props: PreviewAppProps) {
 												) : undefined}
 												{renderIssue ? (
 													<article className="diagnostic-item diagnostic-item-runtime">
-														<p className="diagnostic-code">{renderIssue.code}</p>
-														<p className="diagnostic-message">{renderIssue.summary}</p>
+														<p className="diagnostic-code">
+															{renderIssue.code}
+														</p>
+														<p className="diagnostic-message">
+															{renderIssue.summary}
+														</p>
 														<p className="diagnostic-location">
 															{renderIssue.relativeFile}:{renderIssue.kind}
 														</p>
@@ -1272,8 +1293,8 @@ export function PreviewApp(props: PreviewAppProps) {
 								<p className="preview-empty-eyebrow">Empty project</p>
 								<h2>No previewable source files were found.</h2>
 								<p>
-									Add <code>{"src/**/*.tsx"}</code> files to one of the configured
-									preview targets.
+									Add <code>{"src/**/*.tsx"}</code> files to one of the
+									configured preview targets.
 								</p>
 							</div>
 						</div>
@@ -1283,4 +1304,3 @@ export function PreviewApp(props: PreviewAppProps) {
 		</main>
 	);
 }
-

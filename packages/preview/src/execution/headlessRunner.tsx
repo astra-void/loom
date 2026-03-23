@@ -818,7 +818,7 @@ export async function executeHeadlessEntry(
 		const layoutDebug =
 			hasHeadlessLayoutDebugTree(layoutProbeSnapshot.debug) ||
 			!hasHeadlessLayoutDebugTree(domLayoutFallback.debug)
-				? layoutProbeSnapshot.debug ?? domLayoutFallback.debug
+				? (layoutProbeSnapshot.debug ?? domLayoutFallback.debug)
 				: domLayoutFallback.debug;
 		const combinedIssues = dedupeRuntimeIssues([
 			...runtimeIssues,
