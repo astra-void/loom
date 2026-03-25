@@ -83,5 +83,13 @@ jobs:
       - name: Build
         run: pnpm build
 
+      - name: Pack compiler
+        run: pnpm --filter @loom-dev/compiler pack --pack-destination /tmp/compiler-pack
+
+      - name: Verify compiler tarball
+        run: |
+          tarball="$(ls /tmp/compiler-pack/*.tgz | head -n 1)"
+          tar -tf "$tarball" | rg 'package/(wrapper\.js|wrapper\.mjs|wasm\.mjs|wasm/compiler\.js|wasm/compiler_bg\.wasm)'
+
       - name: Verify generated artifacts
         run: pnpm verify:dts
