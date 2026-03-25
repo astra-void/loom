@@ -1,0 +1,354 @@
+:root {
+	--bg: #0b1020;
+	--bg-soft: rgba(15, 21, 42, 0.82);
+	--panel: rgba(13, 18, 34, 0.84);
+	--panel-strong: rgba(16, 23, 43, 0.96);
+	--line: rgba(153, 176, 217, 0.18);
+	--line-strong: rgba(153, 176, 217, 0.32);
+	--text: #eef3ff;
+	--muted: #9aa8c7;
+	--accent: #63d3c9;
+	--accent-strong: #8df1e6;
+	--accent-soft: rgba(99, 211, 201, 0.14);
+	--warning: #ffb65c;
+	--danger: #ff7e7e;
+	--shadow: 0 28px 80px rgba(0, 0, 0, 0.35);
+	color-scheme: dark;
+	font-family: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+	background:
+		radial-gradient(
+			circle at top left,
+			rgba(99, 211, 201, 0.16),
+			transparent 28%
+		),
+		radial-gradient(
+			circle at top right,
+			rgba(255, 182, 92, 0.14),
+			transparent 26%
+		),
+		linear-gradient(180deg, #0b1020 0%, #080c17 100%);
+	color: var(--text);
+}
+
+* {
+	box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+	min-height: 100%;
+}
+
+body {
+	margin: 0;
+	min-height: 100vh;
+	background: var(--bg);
+	color: var(--text);
+}
+
+button,
+textarea {
+	font: inherit;
+}
+
+button {
+	border: 0;
+}
+
+textarea {
+	resize: none;
+}
+
+.compiler-shell {
+	position: relative;
+	display: grid;
+	gap: 18px;
+	min-height: 100vh;
+	padding: 28px;
+	overflow: hidden;
+}
+
+.compiler-shell-glow {
+	position: absolute;
+	inset: auto;
+	width: 32rem;
+	height: 32rem;
+	border-radius: 999px;
+	filter: blur(72px);
+	opacity: 0.45;
+	pointer-events: none;
+}
+
+.compiler-shell-glow-left {
+	top: -10rem;
+	left: -8rem;
+	background: rgba(99, 211, 201, 0.16);
+}
+
+.compiler-shell-glow-right {
+	right: -10rem;
+	bottom: -11rem;
+	background: rgba(255, 182, 92, 0.16);
+}
+
+.compiler-header,
+.sample-strip,
+.compiler-grid {
+	position: relative;
+	z-index: 1;
+}
+
+.compiler-header {
+	display: flex;
+	gap: 18px;
+	align-items: end;
+	justify-content: space-between;
+	flex-wrap: wrap;
+}
+
+.compiler-header-copy {
+	max-width: 48rem;
+}
+
+.eyebrow,
+.panel-kicker,
+.metric-label {
+	margin: 0;
+	text-transform: uppercase;
+	letter-spacing: 0.16em;
+	font-size: 0.74rem;
+	color: var(--muted);
+}
+
+.compiler-header h1 {
+	margin: 0.35rem 0 0.55rem;
+	font-size: clamp(2.1rem, 4vw, 4rem);
+	line-height: 0.95;
+	letter-spacing: -0.05em;
+}
+
+.subtitle {
+	margin: 0;
+	max-width: 38rem;
+	line-height: 1.6;
+	color: var(--muted);
+}
+
+.compiler-metrics {
+	display: grid;
+	grid-template-columns: repeat(3, minmax(0, 1fr));
+	gap: 12px;
+	min-width: min(100%, 28rem);
+}
+
+.metric-card,
+.panel,
+.sample-chip {
+	border: 1px solid var(--line);
+	background: var(--panel);
+	backdrop-filter: blur(18px);
+	box-shadow: var(--shadow);
+}
+
+.metric-card {
+	display: grid;
+	gap: 8px;
+	padding: 14px 16px;
+	border-radius: 18px;
+}
+
+.metric-value {
+	font-size: 1.05rem;
+	letter-spacing: -0.02em;
+}
+
+.metric-value.danger {
+	color: var(--danger);
+}
+
+.sample-strip {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 12px;
+}
+
+.sample-chip {
+	display: grid;
+	gap: 0.2rem;
+	padding: 14px 16px;
+	border-radius: 16px;
+	min-width: 14rem;
+	text-align: left;
+	color: var(--text);
+	cursor: pointer;
+	transition:
+		transform 160ms ease,
+		border-color 160ms ease,
+		background-color 160ms ease;
+}
+
+.sample-chip:hover {
+	transform: translateY(-1px);
+	border-color: var(--line-strong);
+}
+
+.sample-chip.active {
+	border-color: rgba(99, 211, 201, 0.7);
+	background: linear-gradient(
+		180deg,
+		rgba(99, 211, 201, 0.11),
+		rgba(13, 18, 34, 0.88)
+	);
+}
+
+.sample-chip small {
+	color: var(--muted);
+	line-height: 1.4;
+}
+
+.compiler-grid {
+	display: grid;
+	grid-template-columns: minmax(0, 1.08fr) minmax(0, 0.92fr);
+	gap: 18px;
+	align-items: stretch;
+	min-height: 0;
+}
+
+.panel {
+	display: grid;
+	gap: 14px;
+	padding: 18px;
+	border-radius: 24px;
+	min-height: 0;
+	background: var(--panel-strong);
+}
+
+.panel-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+}
+
+.panel-header h2 {
+	margin: 0.2rem 0 0;
+	font-size: 1.02rem;
+	letter-spacing: -0.02em;
+}
+
+.panel-badge {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	padding: 0.4rem 0.8rem;
+	border-radius: 999px;
+	background: var(--accent-soft);
+	border: 1px solid rgba(99, 211, 201, 0.28);
+	color: var(--accent-strong);
+	font-size: 0.82rem;
+	font-weight: 600;
+}
+
+.panel-badge.danger {
+	background: rgba(255, 126, 126, 0.12);
+	border-color: rgba(255, 126, 126, 0.32);
+	color: var(--danger);
+}
+
+.code-editor,
+.code-output,
+.error-shell {
+	border-radius: 20px;
+	border: 1px solid var(--line);
+	background: linear-gradient(
+		180deg,
+		rgba(11, 16, 32, 0.92),
+		rgba(10, 15, 28, 0.98)
+	);
+}
+
+.code-editor {
+	width: 100%;
+	min-height: 26rem;
+	padding: 18px;
+	color: var(--text);
+	line-height: 1.55;
+	letter-spacing: -0.01em;
+	font-family: "IBM Plex Mono", "SFMono-Regular", ui-monospace, monospace;
+	outline: none;
+	tab-size: 2;
+	caret-color: var(--accent-strong);
+}
+
+.code-editor:focus {
+	border-color: rgba(99, 211, 201, 0.6);
+	box-shadow: 0 0 0 3px rgba(99, 211, 201, 0.12);
+}
+
+.code-output,
+.error-copy {
+	margin: 0;
+	padding: 18px;
+	overflow: auto;
+	min-height: 26rem;
+	line-height: 1.6;
+	font-family: "IBM Plex Mono", "SFMono-Regular", ui-monospace, monospace;
+	white-space: pre-wrap;
+	word-break: break-word;
+}
+
+.code-output {
+	color: #d8e3ff;
+}
+
+.error-shell {
+	display: grid;
+	gap: 12px;
+	padding: 18px;
+	min-height: 26rem;
+	border-color: rgba(255, 126, 126, 0.34);
+	background: linear-gradient(
+		180deg,
+		rgba(53, 15, 18, 0.92),
+		rgba(16, 12, 20, 0.98)
+	);
+}
+
+.error-title {
+	margin: 0;
+	font-size: 0.92rem;
+	font-weight: 700;
+	color: var(--danger);
+	text-transform: uppercase;
+	letter-spacing: 0.14em;
+}
+
+.error-copy {
+	border: 1px solid rgba(255, 126, 126, 0.26);
+	background: rgba(26, 10, 14, 0.72);
+	color: #ffd7d7;
+}
+
+@media (max-width: 1040px) {
+	.compiler-grid,
+	.compiler-metrics {
+		grid-template-columns: 1fr;
+	}
+}
+
+@media (max-width: 760px) {
+	.compiler-shell {
+		padding: 18px;
+	}
+
+	.sample-chip {
+		min-width: 100%;
+	}
+
+	.code-editor,
+	.code-output,
+	.error-shell {
+		min-height: 18rem;
+	}
+}
