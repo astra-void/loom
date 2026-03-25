@@ -3,15 +3,19 @@
 import {
 	Color3,
 	Enum,
+	buildAutoMockProps,
 	game,
 	os as previewOs,
 	next,
 	pairs,
 	RunService,
+	robloxMock,
+	type PreviewAutoMockableComponent,
 	type SetupRobloxEnvironmentTarget,
 	setupRobloxEnvironment,
 	string as previewString,
 	typeIs,
+	withAutoMockedProps,
 	TweenInfo,
 	task,
 	UDim2,
@@ -636,5 +640,75 @@ describe.sequential("@loom-dev/preview-runtime", () => {
 		expect("Spell".sub(2, 4)).toBe("pel");
 		expect([1, 2, 3].size()).toBe(3);
 		expect(typeof previewGlobal.print).toBe("function");
+	});
+
+	it("keeps callable mocks invariant-safe for key enumeration", () => {
+		const mockComponent = (() => null) as PreviewAutoMockableComponent<{
+			mockedObject: Record<string, unknown>;
+		}>;
+		mockComponent.__previewProps = {
+			componentName: "MockComponent",
+			props: {
+				mockedObject: {
+					kind: "object",
+					required: true,
+					type: "MockObject",
+					properties: {},
+				},
+			},
+		};
+
+		const mockedProps = buildAutoMockProps(mockComponent);
+		const callableMember = (
+			mockedProps.mockedObject as Record<string, unknown>
+		).run as (...args: unknown[]) => unknown;
+
+		expect(() => Reflect.ownKeys(robloxMock)).not.toThrow();
+		expect(Reflect.ownKeys(robloxMock)).toEqual(
+			expect.arrayContaining(["length", "name", "prototype"]),
+		);
+		expect(() => Reflect.ownKeys(callableMember)).not.toThrow();
+		expect(Reflect.ownKeys(callableMember)).toEqual(
+			expect.arrayContaining(["length", "name"]),
+		);
+	});
+
+	it("exposes string displayName labels on callable mocks", () => {
+		const proxyComponent = robloxMock.SomeComponent as unknown as PreviewAutoMockableComponent<Record<string, unknown>>;
+		const proxyDisplayName = (
+			proxyComponent as { displayName?: unknown }
+		).displayName;
+
+		expect(typeof proxyDisplayName).toBe("string");
+		expect(proxyDisplayName).toBe("SomeComponent");
+
+		const wrappedProxyComponent = withAutoMockedProps(proxyComponent);
+		expect(typeof wrappedProxyComponent.displayName).toBe("string");
+		expect(wrappedProxyComponent.displayName).toBe(
+			"WithAutoMockedProps(SomeComponent)",
+		);
+
+		const mockComponent = (() => null) as PreviewAutoMockableComponent<{
+			mockedObject: Record<string, unknown>;
+		}>;
+		mockComponent.__previewProps = {
+			componentName: "MockComponent",
+			props: {
+				mockedObject: {
+					kind: "object",
+					required: true,
+					type: "MockObject",
+					properties: {},
+				},
+			},
+		};
+
+		const mockedProps = buildAutoMockProps(mockComponent);
+		const callableMember = (
+			mockedProps.mockedObject as Record<string, unknown>
+		).run as { displayName?: unknown };
+
+		expect(typeof callableMember.displayName).toBe("string");
+		expect(callableMember.displayName).toBe("mockedObject.run");
 	});
 });

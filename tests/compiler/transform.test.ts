@@ -256,6 +256,25 @@ describe("@loom-dev/compiler preview transform", () => {
 		expect(transformed.code).toContain('__previewGlobal("task").delay');
 	});
 
+	it("treats Luau string and os helpers as known preview globals", () => {
+		const transformed = transformPreviewSource(
+			`
+        export const lower = string.lower("HELLO");
+        export const clock = os.clock();
+      `,
+			{
+				filePath: "/virtual/luau-helpers.tsx",
+				mode: "compatibility",
+				runtimeModule: "@loom-dev/preview-runtime",
+				target: "luau-helpers",
+			},
+		);
+
+		expect(transformed.diagnostics).toHaveLength(0);
+		expect(transformed.code).toContain('__previewGlobal("string").lower');
+		expect(transformed.code).toContain('__previewGlobal("os").clock');
+	});
+
 	it("emits unresolved free-identifier diagnostics for unknown globals", () => {
 		const transformed = transformPreviewSource(
 			`export const value = gamee.GetService("Players");`,
