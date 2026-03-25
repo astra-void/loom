@@ -58,6 +58,7 @@ export default defineConfig({
 			runtimeModule: previewConfig.runtimeModule ?? previewRuntimeEntry,
 			targets: previewConfig.targets,
 			transformMode,
+			workspaceRoot: previewConfig.workspaceRoot,
 		}),
 		react(),
 		wasm(),
