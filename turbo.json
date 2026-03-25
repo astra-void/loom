@@ -13,7 +13,15 @@
 			"dependsOn": ["^build"],
 			"inputs": ["$TURBO_DEFAULT$", "!**/.turbo/**", "!**/.native/**"],
 			"outputLogs": "new-only",
-			"outputs": ["dist/**", "pkg/**", "index.js", "index.d.ts", "wrapper.d.ts"]
+			"outputs": [
+				"dist/**",
+				"pkg/**",
+				"wasm/**",
+				"wasm.mjs",
+				"index.js",
+				"index.d.ts",
+				"wrapper.d.ts"
+			]
 		},
 		"build:native": {
 			"env": ["LOOM_NATIVE_TARGET"],
