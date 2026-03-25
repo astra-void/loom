@@ -42,3 +42,8 @@ export type {
 	PreviewWorkspaceIndex,
 } from "./types";
 export { PREVIEW_ENGINE_PROTOCOL_VERSION } from "./types";
+export type { WorkspaceGraphService } from "./workspaceGraph";
+export {
+	createWorkspaceGraphService,
+	isTransformableSourceFile,
+} from "./workspaceGraph";

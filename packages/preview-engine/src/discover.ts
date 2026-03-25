@@ -23,12 +23,12 @@ import type {
 import { PREVIEW_ENGINE_PROTOCOL_VERSION } from "./types";
 import {
 	createWorkspaceGraphService,
-	isTransformableSourceFile,
 	type WorkspaceGraphService,
 	type WorkspaceProject,
 } from "./workspaceGraph";
 
 const PREVIEW_PACKAGE_ENTRY_EXCLUDES = ["runtime/", "shell/"];
+const PREVIEW_ENTRY_FILE_SUFFIX = ".loom.tsx";
 
 type PreviewExportInfo = {
 	entryLocalName?: string;
@@ -611,7 +611,7 @@ function parseModuleRecord(
 		graphEdges,
 		importBindings,
 		imports: [...imports].sort((left, right) => left.localeCompare(right)),
-		isTsx: filePath.endsWith(".tsx") && isTransformableSourceFile(filePath),
+		isTsx: filePath.endsWith(PREVIEW_ENTRY_FILE_SUFFIX),
 		localRenderableMetadata,
 		ownerPackageName: fileContext.packageName,
 		ownerPackageRoot: fileContext.packageRoot,

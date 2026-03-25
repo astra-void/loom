@@ -374,6 +374,7 @@ function createCandidateFilePaths(basePath: string) {
 		: normalized;
 	const directCandidates = [
 		normalized,
+		`${withoutExtension}.loom.tsx`,
 		`${withoutExtension}.tsx`,
 		`${withoutExtension}.ts`,
 		`${withoutExtension}.d.ts`,
@@ -381,6 +382,7 @@ function createCandidateFilePaths(basePath: string) {
 	];
 
 	const indexCandidates = [
+		path.posix.join(normalized, "index.loom.tsx"),
 		path.posix.join(normalized, "index.tsx"),
 		path.posix.join(normalized, "index.ts"),
 		path.posix.join(normalized, "index.d.ts"),
