@@ -1,4 +1,9 @@
-import { robloxMock, setupRobloxEnvironment } from "@loom-dev/preview-runtime";
+import {
+	previewRuntimeGlobalNames,
+	previewRuntimeGlobalValues,
+	robloxMock,
+	setupRobloxEnvironment,
+} from "@loom-dev/preview-runtime";
 
 const robloxMockRecord = robloxMock as unknown as Record<PropertyKey, unknown>;
 
@@ -51,18 +56,7 @@ const previewRuntimeUserInputTrackerKey = Symbol.for(
 );
 
 const previewGlobalPropertyKeys = [
-	"Color3",
-	"Enum",
-	"RunService",
-	"TweenInfo",
-	"Vector3",
-	"game",
-	"math",
-	"print",
-	"task",
-	"tostring",
-	"warn",
-	"workspace",
+	...previewRuntimeGlobalNames,
 	previewRuntimePolyfillsMarker,
 	previewRuntimeEnumKey,
 	previewRuntimeFrameSchedulerKey,
@@ -226,14 +220,21 @@ function canResolvePreviewFallbackGlobals(fallback: object | null) {
 }
 
 function resolveKnownPreviewGlobal(property: string) {
-	if (
-		!previewGlobalStringKeys.has(property) ||
-		!Reflect.has(robloxMockRecord, property)
-	) {
+	if (!previewGlobalStringKeys.has(property)) {
 		return undefined;
 	}
 
-	return robloxMockRecord[property];
+	if (Object.hasOwn(previewRuntimeGlobalValues, property)) {
+		return previewRuntimeGlobalValues[
+			property as keyof typeof previewRuntimeGlobalValues
+		];
+	}
+
+	if (Reflect.has(robloxMockRecord, property)) {
+		return robloxMockRecord[property];
+	}
+
+	return undefined;
 }
 
 function createMissingGlobalFallback(basePrototype: object | null): object {

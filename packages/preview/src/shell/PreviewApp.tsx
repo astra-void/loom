@@ -1297,7 +1297,7 @@ export function PreviewApp(props: PreviewAppProps) {
 								<p className="preview-empty-eyebrow">Empty project</p>
 								<h2>No previewable source files were found.</h2>
 								<p>
-									Add <code>{"src/**/*.tsx"}</code> files to one of the
+									Add <code>{"src/**/*.loom.tsx"}</code> files to one of the
 									configured preview targets.
 								</p>
 							</div>

@@ -105,6 +105,25 @@ declare module "@loom-dev/preview-runtime" {
 		GetFullName(): string;
 		IsA(name: string): boolean;
 	};
+	type PreviewStringLibrary = {
+		find(
+			value: string,
+			pattern: string,
+			init?: number,
+			plain?: boolean,
+		): readonly [number, number] | undefined;
+		gsub(
+			value: string,
+			pattern: string,
+			replacement: string | ((match: string, ...captures: string[]) => unknown),
+		): readonly [string, number];
+		lower(value: string): string;
+		sub(value: string, start?: number, finish?: number): string;
+		upper(value: string): string;
+	};
+	type PreviewOsLibrary = {
+		clock(): number;
+	};
 
 	export type PreviewExecutionMode =
 		| "strict-fidelity"
@@ -465,17 +484,32 @@ declare module "@loom-dev/preview-runtime" {
 		GetFullName(): string;
 		IsA(name: string): boolean;
 	}
-	export interface SetupRobloxEnvironmentTarget {
-		Color3?: typeof Color3;
-		Enum?: PreviewEnumRoot;
-		RunService?: PreviewRunService;
-		TweenInfo?: typeof TweenInfo;
-		game?: PreviewGame;
-		print?: (...args: unknown[]) => void;
-		task?: TaskLibrary;
-		tostring?: (value: unknown) => string;
-		workspace?: PreviewWorkspace;
-	}
+	export type PreviewRuntimeGlobalValues = {
+		Color3: typeof Color3;
+		error: typeof error;
+		Enum: PreviewEnumRoot;
+		RunService: PreviewRunService;
+		TweenInfo: typeof TweenInfo;
+		UDim: typeof UDim;
+		UDim2: typeof UDim2;
+		Vector2: typeof Vector2;
+		Vector3: typeof Vector3;
+		game: PreviewGame;
+		math: typeof math;
+		next: typeof next;
+		os: PreviewOsLibrary;
+		pairs: typeof pairs;
+		print: (...args: unknown[]) => void;
+		string: PreviewStringLibrary;
+		task: TaskLibrary;
+		tostring: (value: unknown) => string;
+		typeIs: typeof typeIs;
+		warn: typeof warn;
+		workspace: PreviewWorkspace;
+	};
+	export type SetupRobloxEnvironmentTarget = {
+		-readonly [K in keyof PreviewRuntimeGlobalValues]?: PreviewRuntimeGlobalValues[K];
+	};
 	export type PreviewAutoMockableComponent<
 		Props extends Record<string, unknown> = Record<string, unknown>,
 	> = ReactTypes.ComponentType<Props> & {
@@ -553,13 +587,27 @@ declare module "@loom-dev/preview-runtime" {
 	export const Enum: PreviewEnumRoot;
 	export const RunService: PreviewRunService;
 	export const game: PreviewGame;
+	export const math: typeof math;
+	export const os: PreviewOsLibrary;
+	export const print: (...args: unknown[]) => void;
+	export const string: PreviewStringLibrary;
 	export const task: TaskLibrary;
+	export const tostring: (value: unknown) => string;
+	export const warn: typeof warn;
 	export const workspace: PreviewWorkspace;
 	export const robloxMock: Record<PropertyKey, unknown>;
 	export const robloxModuleMock: Record<PropertyKey, unknown>;
+	export const previewRuntimeGlobalNames: ReadonlyArray<
+		keyof PreviewRuntimeGlobalValues
+	>;
+	export const previewRuntimeGlobalValues: PreviewRuntimeGlobalValues;
 
 	export function __previewGlobal(name: string): unknown;
 	export function error(message: string): never;
+	export function next(
+		value: unknown,
+		index?: PropertyKey | null,
+	): readonly [PropertyKey | undefined, unknown | undefined];
 	export function typeIs(
 		value: unknown,
 		typeName: "string" | "number" | "boolean" | "function" | "table",
@@ -752,19 +800,9 @@ declare module "@loom-dev/preview-runtime" {
 	export const Text: PreviewHostComponent;
 
 	export type PreviewRuntime = {
-		helpers: {
+		helpers: PreviewRuntimeGlobalValues & {
 			__previewGlobal: typeof __previewGlobal;
-			Color3: typeof Color3;
-			TweenInfo: typeof TweenInfo;
-			UDim: typeof UDim;
-			UDim2: typeof UDim2;
-			Vector2: typeof Vector2;
-			error: typeof error;
-			game: typeof game;
 			isPreviewElement: typeof isPreviewElement;
-			pairs: typeof pairs;
-			typeIs: typeof typeIs;
-			workspace: typeof workspace;
 		};
 		hosts: {
 			BillboardGui: typeof BillboardGui;
@@ -889,6 +927,34 @@ declare module "@loom-dev/preview-engine" {
 		packageName?: string;
 		packageRoot: string;
 		sourceRoot: string;
+	};
+	export type WorkspaceGraphService = {
+		collectTransitiveDependencyPaths(filePath: string): string[];
+		getFileContext(filePath: string): {
+			packageName?: string;
+			packageRoot: string;
+			project?: {
+				configDir: string;
+				configPath: string;
+			};
+		};
+		getWorkspaceProjects(): Array<{
+			configDir: string;
+			configPath: string;
+			filePaths: Set<string>;
+			outDir?: string;
+			packageName?: string;
+			packageRoot: string;
+			rootDir: string;
+		}>;
+		listTargetSourceFiles(
+			target: Pick<PreviewSourceTarget, "exclude" | "include" | "sourceRoot">,
+		): string[];
+		resolveImport(options: {
+			importerFilePath: string;
+			specifier: string;
+		}): { followedFilePath?: string } | undefined;
+		workspaceRoot: string;
 	};
 	export type PreviewEntryStatus =
 		| "ready"
@@ -1189,8 +1255,13 @@ declare module "@loom-dev/preview-engine" {
 	export function createPreviewEngine(
 		options: CreatePreviewEngineOptions,
 	): PreviewEngine;
+	export function createWorkspaceGraphService(options: {
+		targets: PreviewSourceTarget[];
+		workspaceRoot?: string;
+	}): WorkspaceGraphService;
 	export function normalizeTransformPreviewSourceResult(
 		result: TransformPreviewSourceResult,
 		mode: PreviewTransformMode,
 	): NormalizedTransformPreviewSourceResult;
+	export function isTransformableSourceFile(fileName: string): boolean;
 }

@@ -113,6 +113,16 @@ function resolveReactShimEntry(fileName: string) {
 	);
 }
 
+function _resolveReactRobloxShimEntry() {
+	return resolvePreviewPackageEntry(
+		[
+			path.resolve(__dirname, "./react-shims/react-roblox.js"),
+			path.resolve(__dirname, "../../src/source/react-shims/react-roblox.js"),
+		],
+		"react-roblox shim",
+	).replace(/\\/g, "/");
+}
+
 function normalizeResolvedImporter(importer?: string) {
 	if (!importer) {
 		return undefined;
@@ -578,6 +588,7 @@ export async function createPreviewViteServer(
 		runtimeModule: previewRuntimeRootEntry,
 		targets: resolvedConfig.targets,
 		transformMode: resolvedConfig.transformMode,
+		workspaceRoot: resolvedConfig.workspaceRoot,
 	});
 
 	const server = await vite.createServer({

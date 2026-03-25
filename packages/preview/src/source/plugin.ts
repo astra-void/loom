@@ -3,10 +3,13 @@ import path from "node:path";
 import { compile_tsx, transformPreviewSource } from "@loom-dev/compiler";
 import {
 	createPreviewEngine,
+	createWorkspaceGraphService,
+	isTransformableSourceFile,
 	PREVIEW_ENGINE_PROTOCOL_VERSION,
 	type PreviewEngine,
 	type PreviewExecutionMode,
 	type PreviewSourceTarget,
+	type WorkspaceGraphService,
 } from "@loom-dev/preview-engine";
 import type { PreviewRuntimeIssue } from "@loom-dev/preview-runtime";
 import ts from "typescript";
@@ -19,6 +22,7 @@ import {
 import {
 	createUnresolvedPackageMockResolvePlugin,
 	createUnresolvedPackageMockTransformPlugin,
+	isBareModuleSpecifier,
 } from "./robloxPackageMockPlugin";
 import type {
 	PreviewDevServer,
@@ -35,6 +39,7 @@ const RESOLVED_ENTRY_MODULE_ID_PREFIX = `\0${ENTRY_MODULE_ID_PREFIX}`;
 const PREVIEW_UPDATE_EVENT = "loom-preview:update";
 const RUNTIME_ISSUES_EVENT = "loom-preview:runtime-issues";
 const RBX_STYLE_HELPER_NAME = "__rbxStyle";
+const PREVIEW_ENTRY_FILE_SUFFIX = ".loom.tsx";
 
 function createRbxStyleImport(runtimeModulePath: string) {
 	return `import { ${RBX_STYLE_HELPER_NAME} } from ${JSON.stringify(runtimeModulePath)};\n`;
@@ -52,7 +57,44 @@ export type CreatePreviewVitePluginOptions = {
 	runtimeModule?: string;
 	targets: PreviewSourceTarget[];
 	transformMode?: PreviewExecutionMode;
+	workspaceRoot: string;
 };
+
+function createWorkspaceSourceResolvePlugin(
+	workspaceGraphService: WorkspaceGraphService,
+): PreviewPluginOption {
+	return {
+		enforce: "pre",
+		name: "loom-preview-workspace-source-resolve",
+		resolveId(id, importer) {
+			if (!isBareModuleSpecifier(id)) {
+				return undefined;
+			}
+
+			const normalizedImporter = stripFileIdDecorations(importer ?? "");
+			if (
+				!normalizedImporter ||
+				normalizedImporter.startsWith("\0") ||
+				!path.isAbsolute(normalizedImporter)
+			) {
+				return undefined;
+			}
+
+			const resolution = workspaceGraphService.resolveImport({
+				importerFilePath: normalizedImporter,
+				specifier: id,
+			});
+			if (
+				!resolution?.followedFilePath ||
+				!isTransformableSourceFile(resolution.followedFilePath)
+			) {
+				return undefined;
+			}
+
+			return resolution.followedFilePath;
+		},
+	};
+}
 
 function resolveRuntimeEntryPath() {
 	const candidates = [
@@ -182,10 +224,8 @@ function isWatchedCandidate(
 function isTransformablePreviewSourceFile(filePath: string) {
 	const normalizedFilePath = stripFileIdDecorations(filePath);
 	return (
-		(normalizedFilePath.endsWith(".ts") ||
-			normalizedFilePath.endsWith(".tsx")) &&
-		!normalizedFilePath.endsWith(".d.ts") &&
-		!normalizedFilePath.endsWith(".d.tsx")
+		normalizedFilePath.endsWith(PREVIEW_ENTRY_FILE_SUFFIX) &&
+		!normalizedFilePath.endsWith(".d.loom.tsx")
 	);
 }
 
@@ -235,6 +275,10 @@ export function createPreviewVitePlugin(
 	).replace(/\\/g, "/");
 	const rbxStyleImport = createRbxStyleImport(runtimeEntryPath);
 	const mockEntryPath = resolveMockEntryPath();
+	const workspaceGraphService = createWorkspaceGraphService({
+		targets: options.targets,
+		workspaceRoot: options.workspaceRoot,
+	});
 	const previewEngine =
 		options.previewEngine ??
 		createPreviewEngine({
@@ -410,6 +454,7 @@ export function createPreviewVitePlugin(
 	};
 
 	return [
+		createWorkspaceSourceResolvePlugin(workspaceGraphService),
 		createUnresolvedPackageMockResolvePlugin(mockEntryPath),
 		previewPlugin,
 		createUnresolvedPackageMockTransformPlugin(),
