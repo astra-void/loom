@@ -112,6 +112,285 @@ export class Color3 {
 	}
 }
 
+export function tostring(value: unknown) {
+	return String(value);
+}
+
+export function print(...args: unknown[]) {
+	console.log(...args);
+}
+
+function normalizeLuaSearchStart(length: number, index?: number) {
+	if (index === undefined || !Number.isFinite(index)) {
+		return 1;
+	}
+
+	const normalizedIndex = Math.trunc(index);
+	if (normalizedIndex === 0) {
+		return 1;
+	}
+
+	if (normalizedIndex < 0) {
+		return Math.max(1, length + normalizedIndex + 1);
+	}
+
+	return Math.min(length + 1, normalizedIndex);
+}
+
+function normalizeLuaStringIndex(
+	length: number,
+	index: number | undefined,
+	fallback: number,
+) {
+	const normalizedIndex =
+		index === undefined || !Number.isFinite(index)
+			? fallback
+			: Math.trunc(index);
+
+	if (normalizedIndex === 0) {
+		return 1;
+	}
+
+	if (normalizedIndex < 0) {
+		return length + normalizedIndex + 1;
+	}
+
+	return normalizedIndex;
+}
+
+function luaSubstring(value: string, start?: number, finish?: number) {
+	if (value.length === 0) {
+		return "";
+	}
+
+	const normalizedStart = Math.max(
+		1,
+		Math.min(value.length + 1, normalizeLuaStringIndex(value.length, start, 1)),
+	);
+	const normalizedFinish = Math.max(
+		0,
+		Math.min(
+			value.length,
+			normalizeLuaStringIndex(value.length, finish, value.length),
+		),
+	);
+
+	if (normalizedStart > normalizedFinish) {
+		return "";
+	}
+
+	return value.slice(normalizedStart - 1, normalizedFinish);
+}
+
+function escapeRegExpCharacter(character: string) {
+	return /[\\^$.*+?()[\]{}|]/.test(character) ? `\\${character}` : character;
+}
+
+function luaPatternClassEscape(character: string) {
+	if (character === "-" || character === "]" || character === "\\") {
+		return `\\${character}`;
+	}
+
+	return escapeRegExpCharacter(character);
+}
+
+function luaPatternToRegExpSource(pattern: string) {
+	let source = "";
+	let inClass = false;
+	let classStart = false;
+
+	for (let index = 0; index < pattern.length; index += 1) {
+		const character = pattern[index] ?? "";
+
+		if (character === "%") {
+			const nextCharacter = pattern[index + 1];
+			if (nextCharacter === undefined) {
+				source += "%";
+				continue;
+			}
+
+			index += 1;
+
+			const outsideClassSource: Record<string, string> = {
+				a: "[A-Za-z]",
+				A: "[^A-Za-z]",
+				c: "[\\x00-\\x1F\\x7F]",
+				C: "[^\\x00-\\x1F\\x7F]",
+				d: "[0-9]",
+				D: "[^0-9]",
+				l: "[a-z]",
+				L: "[^a-z]",
+				p: "[!\"#$%&'()*+,\\-./:;<=>?@[\\\\\\]^_`{|}~]",
+				P: "[^!\"#$%&'()*+,\\-./:;<=>?@[\\\\\\]^_`{|}~]",
+				s: "[\\s]",
+				S: "[^\\s]",
+				u: "[A-Z]",
+				U: "[^A-Z]",
+				w: "[A-Za-z0-9_]",
+				W: "[^A-Za-z0-9_]",
+				x: "[0-9A-Fa-f]",
+				X: "[^0-9A-Fa-f]",
+				z: "\\x00",
+			};
+
+			if (!inClass && outsideClassSource[nextCharacter]) {
+				source += outsideClassSource[nextCharacter];
+				continue;
+			}
+
+			if (inClass) {
+				const insideClassSource: Record<string, string> = {
+					a: "A-Za-z",
+					A: "\\W",
+					c: "\\x00-\\x1F\\x7F",
+					C: "\\W",
+					d: "0-9",
+					D: "\\D",
+					l: "a-z",
+					L: "\\W",
+					p: "!\"#$%&'()*+,\\-./:;<=>?@[\\\\\\]^_`{|}~",
+					P: "\\W",
+					s: "\\s",
+					S: "\\S",
+					u: "A-Z",
+					U: "\\W",
+					w: "A-Za-z0-9_",
+					W: "\\W",
+					x: "0-9A-Fa-f",
+					X: "\\W",
+					z: "\\x00",
+				};
+
+				if (insideClassSource[nextCharacter]) {
+					source += insideClassSource[nextCharacter];
+					continue;
+				}
+
+				source += luaPatternClassEscape(nextCharacter);
+				continue;
+			}
+
+			source += escapeRegExpCharacter(nextCharacter);
+			continue;
+		}
+
+		if (character === "[") {
+			inClass = true;
+			classStart = true;
+			source += "[";
+			continue;
+		}
+
+		if (character === "]" && inClass) {
+			inClass = false;
+			classStart = false;
+			source += "]";
+			continue;
+		}
+
+		if (inClass) {
+			if (classStart && character === "^") {
+				source += "^";
+				classStart = false;
+				continue;
+			}
+
+			source += luaPatternClassEscape(character);
+			classStart = false;
+			continue;
+		}
+
+		if (character === ".") {
+			source += "[\\s\\S]";
+			continue;
+		}
+
+		source += escapeRegExpCharacter(character);
+	}
+
+	return source;
+}
+
+function luaPatternToRegExp(pattern: string) {
+	return new RegExp(luaPatternToRegExpSource(pattern));
+}
+
+function stringFind(
+	value: string,
+	pattern: string,
+	init?: number,
+	plain?: boolean,
+): readonly [number, number] | undefined {
+	const text = String(value);
+	const search = String(pattern);
+	const startIndex = normalizeLuaSearchStart(text.length, init) - 1;
+
+	if (plain) {
+		const foundIndex = text.indexOf(search, startIndex);
+		if (foundIndex < 0) {
+			return undefined;
+		}
+
+		return [foundIndex + 1, foundIndex + search.length] as const;
+	}
+
+	const match = text.slice(startIndex).match(luaPatternToRegExp(search));
+	if (!match || match.index === undefined) {
+		return undefined;
+	}
+
+	const foundIndex = startIndex + match.index;
+	return [foundIndex + 1, foundIndex + match[0].length] as const;
+}
+
+function stringGsub(
+	value: string,
+	pattern: string,
+	replacement: string | ((match: string, ...captures: string[]) => unknown),
+): readonly [string, number] {
+	const text = String(value);
+	const matcher = new RegExp(luaPatternToRegExpSource(String(pattern)), "g");
+	let count = 0;
+
+	const replaced = text.replace(matcher, (...args: unknown[]) => {
+		const match = String(args[0] ?? "");
+		const captures = args.slice(1, -2).map((capture) => String(capture));
+		count += 1;
+
+		if (typeof replacement === "function") {
+			return tostring(replacement(match, ...captures));
+		}
+
+		return replacement;
+	});
+
+	return [replaced, count] as const;
+}
+
+function stringSub(value: string, start?: number, finish?: number) {
+	return luaSubstring(String(value), start, finish);
+}
+
+function stringLower(value: string) {
+	return String(value).toLowerCase();
+}
+
+function stringUpper(value: string) {
+	return String(value).toUpperCase();
+}
+
+export const string = Object.freeze({
+	find: stringFind,
+	gsub: stringGsub,
+	lower: stringLower,
+	sub: stringSub,
+	upper: stringUpper,
+});
+
+export const os = Object.freeze({
+	clock: () => (globalThis.performance?.now?.() ?? Date.now()) / 1000,
+});
+
 function truncateTowardZero(value: number) {
 	return value < 0 ? Math.ceil(value) : Math.floor(value);
 }
@@ -195,18 +474,44 @@ export function typeIs(
 }
 
 export function* pairs(value: unknown) {
+	for (const entry of getEnumerableEntries(value)) {
+		yield entry;
+	}
+}
+
+function getEnumerableEntries(value: unknown) {
 	if (Array.isArray(value)) {
-		for (const [index, item] of value.entries()) {
-			yield [index, item] as const;
-		}
-		return;
+		return [...value.entries()] as Array<readonly [number, unknown]>;
 	}
 
 	if (value && typeof value === "object") {
-		for (const entry of Object.entries(value)) {
-			yield entry;
-		}
+		return Object.entries(value) as Array<readonly [string, unknown]>;
 	}
+
+	return [] as Array<readonly [PropertyKey, unknown]>;
+}
+
+export function next(
+	value: unknown,
+	index?: PropertyKey | null,
+): readonly [PropertyKey | undefined, unknown | undefined] {
+	const entries = getEnumerableEntries(value);
+	if (entries.length === 0) {
+		return [undefined, undefined] as const;
+	}
+
+	if (index === undefined || index === null) {
+		const [key, entryValue] = entries[0] ?? [];
+		return [key, entryValue] as const;
+	}
+
+	const currentIndex = entries.findIndex(([key]) => Object.is(key, index));
+	if (currentIndex < 0) {
+		return [undefined, undefined] as const;
+	}
+
+	const [key, entryValue] = entries[currentIndex + 1] ?? [];
+	return [key, entryValue] as const;
 }
 
 export function error(message: string): never {
@@ -216,6 +521,24 @@ export function error(message: string): never {
 export function warn(...args: unknown[]) {
 	console.warn(...args);
 }
+
+export const previewRuntimeBaseGlobals = Object.freeze({
+	Color3,
+	error,
+	math,
+	next,
+	os,
+	pairs,
+	print,
+	string,
+	tostring,
+	typeIs,
+	warn,
+	UDim,
+	UDim2,
+	Vector2,
+	Vector3,
+});
 
 export function isPreviewElement(
 	value: unknown,
@@ -235,6 +558,12 @@ export function __previewGlobal(name: string) {
 	const globalRecord = globalThis as Record<PropertyKey, unknown>;
 	if (name in globalRecord) {
 		return globalRecord[name];
+	}
+
+	if (name in previewRuntimeBaseGlobals) {
+		return previewRuntimeBaseGlobals[
+			name as keyof typeof previewRuntimeBaseGlobals
+		];
 	}
 
 	return robloxMockRecord[name];

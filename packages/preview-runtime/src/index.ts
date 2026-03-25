@@ -45,16 +45,16 @@ import {
 import {
 	__previewGlobal,
 	Color3,
-	type Enum,
 	error,
 	game,
 	installPreviewRuntimeGlobals,
 	isPreviewElement,
 	math,
+	next,
+	type PreviewRuntimeGlobalTarget,
 	pairs,
-	type RunService,
+	previewRuntimeGlobalValues,
 	TweenInfo,
-	type task,
 	typeIs,
 	UDim,
 	UDim2,
@@ -64,20 +64,7 @@ import {
 	workspace,
 } from "./runtime";
 
-export interface SetupRobloxEnvironmentTarget {
-	Color3?: typeof Color3;
-	Enum?: typeof Enum;
-	RunService?: typeof RunService;
-	TweenInfo?: typeof TweenInfo;
-	Vector3?: typeof Vector3;
-	game?: typeof game;
-	math?: typeof math;
-	print?: (...args: unknown[]) => void;
-	task?: typeof task;
-	tostring?: (value: unknown) => string;
-	warn?: typeof warn;
-	workspace?: typeof workspace;
-}
+export type SetupRobloxEnvironmentTarget = PreviewRuntimeGlobalTarget;
 
 /**
  * Vite alias note:
@@ -130,20 +117,8 @@ const previewRuntimeHosts = {
 
 const previewRuntimeHelpers = {
 	__previewGlobal,
-	Color3,
-	UDim,
-	UDim2,
-	Vector2,
-	Vector3,
-	error,
-	game,
 	isPreviewElement,
-	math,
-	pairs,
-	TweenInfo,
-	typeIs,
-	warn,
-	workspace,
+	...previewRuntimeGlobalValues,
 };
 
 const previewRuntimePrimitives = {
@@ -199,9 +174,14 @@ export {
 	installPreviewRuntimeGlobals,
 	installPreviewRuntimePolyfills,
 	normalizePreviewRuntimeError,
+	os,
+	previewRuntimeGlobalNames,
+	previewRuntimeGlobalValues,
+	print,
 	publishPreviewRuntimeIssue,
 	RunService,
 	setPreviewRuntimeIssueContext,
+	string,
 	subscribePreviewRuntimeIssues,
 	task,
 } from "./runtime";
@@ -273,6 +253,7 @@ export {
 	UDim2,
 	Vector2,
 	Vector3,
+	next,
 	typeIs,
 	pairs,
 	error,
