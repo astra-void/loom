@@ -7,6 +7,7 @@
 		"jsx": "react-jsx",
 		"paths": {
 			"@loom-dev/compiler": ["../../packages/compiler/wrapper.d.ts"],
+			"@loom-dev/compiler/wasm": ["../../packages/compiler/wrapper.d.ts"],
 			"@loom-dev/preview-engine": [
 				"../../packages/preview-engine/src/index.ts"
 			],
@@ -15,7 +16,7 @@
 			]
 		},
 		"lib": ["ES2021", "DOM", "DOM.Iterable"],
-		"types": ["node", "vite/client"]
+		"types": ["node"]
 	},
 	"include": [
 		"src/**/*.ts",
