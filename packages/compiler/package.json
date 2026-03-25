@@ -10,15 +10,27 @@
 		"wrapper.js",
 		"wrapper.d.ts",
 		"wrapper.mjs",
+		"wasm.mjs",
 		"index.js",
-		"index.d.ts"
+		"index.d.ts",
+		"wasm/compiler.js",
+		"wasm/compiler.d.ts",
+		"wasm/compiler_bg.wasm",
+		"wasm/compiler_bg.wasm.d.ts"
 	],
 	"exports": {
 		".": {
 			"types": "./wrapper.d.ts",
+			"browser": "./wasm.mjs",
 			"import": "./wrapper.mjs",
 			"require": "./wrapper.js",
 			"default": "./wrapper.mjs"
+		},
+		"./wasm": {
+			"types": "./wrapper.d.ts",
+			"browser": "./wasm.mjs",
+			"import": "./wasm.mjs",
+			"default": "./wasm.mjs"
 		}
 	},
 	"napi": {
@@ -37,14 +49,16 @@
 	"scripts": {
 		"artifacts": "napi artifacts --output-dir ./artifacts --npm-dir ./npm",
 		"build:native": "node ./scripts/build-native.mjs",
-		"build": "node ./scripts/build-local.mjs",
+		"build:wasm": "node ./scripts/build-wasm.mjs",
+		"build": "pnpm run build:native && pnpm run build:wasm",
+		"build:release:wasm": "node ./scripts/build-release-wasm.mjs",
 		"build:release": "node ./scripts/build-release.mjs",
 		"build:release:native": "node ./scripts/build-release-native.mjs",
 		"format": "pnpm exec biome format --write .",
 		"create-npm-dirs": "napi create-npm-dirs --npm-dir ./npm",
 		"lint": "pnpm exec biome check .",
 		"lint:fix": "pnpm exec biome check --write --unsafe .",
-		"prepack": "pnpm run build:release:native",
+		"prepack": "pnpm run build:release",
 		"prepublish:napi": "pnpm run stage:napi",
 		"publish:napi": "node ./scripts/publish-napi.mjs",
 		"publish:napi:dry-run": "node ./scripts/publish-napi.mjs --dry-run",

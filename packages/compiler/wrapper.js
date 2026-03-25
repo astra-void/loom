@@ -33,6 +33,7 @@ const { resolve } = require("node:path");
  * @typedef {object} TransformPreviewSourceOptions
  * @property {string} filePath
  * @property {PreviewTransformMode | undefined} [mode]
+ * @property {((candidatePath: string) => boolean) | undefined} [fileExists]
  * @property {string} runtimeModule
  * @property {string} target
  *

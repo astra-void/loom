@@ -50,6 +50,7 @@ type PreviewTransformOutcome = {
 type TransformPreviewSourceOptions = {
 	filePath: string;
 	mode?: PreviewTransformMode | undefined;
+	fileExists?: ((candidatePath: string) => boolean) | undefined;
 	runtimeModule: string;
 	target: string;
 };

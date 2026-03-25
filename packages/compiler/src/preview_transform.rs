@@ -1,17 +1,20 @@
 use std::{
-    collections::{HashMap, HashSet},
-    fs,
-    path::{Component, Path, PathBuf},
+	collections::{HashMap, HashSet},
+	path::{Component, Path, PathBuf},
 };
 
+#[cfg(not(target_arch = "wasm32"))]
+use std::fs;
+#[cfg(target_arch = "wasm32")]
+use std::cell::RefCell;
+
 use crate::preview_metadata::{
-    is_supported_preview_host_type, preview_host_metadata_by_jsx_name,
-    preview_host_metadata_records, PreviewTypeSupportKind,
+	is_supported_preview_host_type, preview_host_metadata_by_jsx_name,
+	preview_host_metadata_records, PreviewTypeSupportKind,
 };
-use napi_derive::napi;
 use swc_core::{
-    common::{sync::Lrc, FileName, SourceMap, Span, SyntaxContext, DUMMY_SP},
-    ecma::{
+	common::{sync::Lrc, FileName, SourceMap, Span, SyntaxContext, DUMMY_SP},
+	ecma::{
         ast::{
             ArrowExpr, AssignPat, BindingIdent, BlockStmt, CallExpr, Callee, CatchClause,
             ClassExpr, Constructor, Decl, Expr, ExprOrSpread, FnExpr, ForHead, ForInStmt,
@@ -26,9 +29,19 @@ use swc_core::{
         },
         codegen::{text_writer::JsWriter, Config as CodegenConfig, Emitter},
         parser::{parse_file_as_module, Syntax, TsSyntax},
-        visit::{VisitMut, VisitMutWith},
-    },
+		visit::{VisitMut, VisitMutWith},
+	},
 };
+
+#[cfg(not(target_arch = "wasm32"))]
+use napi_derive::napi;
+#[cfg(target_arch = "wasm32")]
+use serde::{Deserialize, Serialize};
+#[cfg(target_arch = "wasm32")]
+use wasm_bindgen::prelude::*;
+
+#[cfg(target_arch = "wasm32")]
+use js_sys::Function as JsFunction;
 
 const PREVIEW_GLOBAL_HELPER_NAME: &str = "__previewGlobal";
 const NEVER_REWRITE_IDENTIFIER_NAMES: &[&str] = &[
@@ -103,53 +116,107 @@ const RUNTIME_HELPER_NAMES: [&str; 10] = [
 ];
 
 #[allow(non_snake_case)]
-#[napi(object)]
+#[cfg_attr(not(target_arch = "wasm32"), napi(object))]
+#[cfg_attr(target_arch = "wasm32", derive(Serialize, Deserialize))]
 pub struct UnsupportedPatternError {
-    pub code: String,
-    pub message: String,
-    pub file: String,
-    pub line: u32,
-    pub column: u32,
-    pub symbol: Option<String>,
-    pub target: String,
+	pub code: String,
+	pub message: String,
+	pub file: String,
+	pub line: u32,
+	pub column: u32,
+	pub symbol: Option<String>,
+	pub target: String,
 }
 
 #[allow(non_snake_case)]
-#[napi(object)]
+#[cfg_attr(not(target_arch = "wasm32"), napi(object))]
+#[cfg_attr(target_arch = "wasm32", derive(Serialize, Deserialize))]
+#[cfg_attr(target_arch = "wasm32", serde(rename_all = "camelCase"))]
 pub struct TransformPreviewSourceOptions {
-    pub file_path: String,
-    pub runtime_module: String,
-    pub target: String,
+	pub file_path: String,
+	pub runtime_module: String,
+	pub target: String,
 }
 
 #[allow(non_snake_case)]
-#[napi(object)]
+#[cfg_attr(not(target_arch = "wasm32"), napi(object))]
+#[cfg_attr(target_arch = "wasm32", derive(Serialize, Deserialize))]
 pub struct TransformPreviewSourceResult {
-    pub code: String,
-    pub errors: Vec<UnsupportedPatternError>,
+	pub code: String,
+	pub errors: Vec<UnsupportedPatternError>,
+}
+
+trait RelativeModuleCandidateChecker {
+	fn candidate_exists(&self, candidate: &Path) -> bool;
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+struct NativeRelativeModuleCandidateChecker;
+
+#[cfg(not(target_arch = "wasm32"))]
+impl RelativeModuleCandidateChecker for NativeRelativeModuleCandidateChecker {
+	fn candidate_exists(&self, candidate: &Path) -> bool {
+		fs::metadata(candidate)
+			.map(|metadata| metadata.is_file())
+			.unwrap_or(false)
+	}
+}
+
+#[cfg(target_arch = "wasm32")]
+thread_local! {
+	static WASM_RELATIVE_MODULE_CANDIDATE_CHECKER: RefCell<Option<JsFunction>> = const { RefCell::new(None) };
+}
+
+#[cfg(target_arch = "wasm32")]
+struct WasmRelativeModuleCandidateChecker;
+
+#[cfg(target_arch = "wasm32")]
+impl RelativeModuleCandidateChecker for WasmRelativeModuleCandidateChecker {
+	fn candidate_exists(&self, candidate: &Path) -> bool {
+		let candidate = candidate.to_string_lossy().into_owned();
+
+		WASM_RELATIVE_MODULE_CANDIDATE_CHECKER.with(|cell| {
+			let binding = cell.borrow();
+			let Some(function) = binding.as_ref() else {
+				return false;
+			};
+
+			function
+				.call1(&JsValue::UNDEFINED, &JsValue::from_str(&candidate))
+				.ok()
+				.and_then(|value| value.as_bool())
+				.unwrap_or(false)
+		})
+	}
 }
 
 enum PreviewGlobalRewriteKind {
-    Silent,
-    Warn,
+	Silent,
+	Warn,
 }
 
 struct PreviewTransform<'a> {
-    options: &'a TransformPreviewSourceOptions,
-    cm: Lrc<SourceMap>,
-    scope_stack: Vec<HashSet<String>>,
-    errors: Vec<UnsupportedPatternError>,
+	options: &'a TransformPreviewSourceOptions,
+	checker: &'a dyn RelativeModuleCandidateChecker,
+	cm: Lrc<SourceMap>,
+	scope_stack: Vec<HashSet<String>>,
+	errors: Vec<UnsupportedPatternError>,
     reported_unresolved_identifier_names: HashSet<String>,
     suppress_identifier_rewrite_depth: usize,
 }
 
 impl<'a> PreviewTransform<'a> {
-    fn new(options: &'a TransformPreviewSourceOptions, cm: Lrc<SourceMap>) -> Self {
-        Self {
-            options,
-            cm,
-            scope_stack: vec![runtime_binding_names()],
-            errors: Vec::new(),
+	fn new(
+		options: &'a TransformPreviewSourceOptions,
+		cm: Lrc<SourceMap>,
+		checker: &'a dyn RelativeModuleCandidateChecker,
+	) -> Self {
+		Self {
+			options,
+			checker,
+			cm,
+			scope_stack: vec![runtime_binding_names()],
+			errors: Vec::new(),
             reported_unresolved_identifier_names: HashSet::new(),
             suppress_identifier_rewrite_depth: 0,
         }
@@ -366,19 +433,20 @@ impl VisitMut for PreviewTransform<'_> {
         });
     }
 
-    fn visit_mut_import_decl(&mut self, import_decl: &mut ImportDecl) {
-        let module_name = import_decl.src.value.to_string_lossy().into_owned();
-        let next_module = if is_preview_runtime_alias_source(&module_name) {
-            Some(self.options.runtime_module.clone())
-        } else if module_name == "@rbxts/react" {
-            Some("react".to_owned())
-        } else if module_name.starts_with('.') {
-            Some(resolve_relative_module_specifier(
-                &self.options.file_path,
-                &module_name,
-            ))
-        } else {
-            None
+	fn visit_mut_import_decl(&mut self, import_decl: &mut ImportDecl) {
+		let module_name = import_decl.src.value.to_string_lossy().into_owned();
+		let next_module = if is_preview_runtime_alias_source(&module_name) {
+			Some(self.options.runtime_module.clone())
+		} else if module_name == "@rbxts/react" {
+			Some("react".to_owned())
+		} else if module_name.starts_with('.') {
+			Some(resolve_relative_module_specifier(
+				&self.options.file_path,
+				&module_name,
+				self.checker,
+			))
+		} else {
+			None
         };
 
         if let Some(next_module) = next_module {
@@ -388,15 +456,19 @@ impl VisitMut for PreviewTransform<'_> {
         import_decl.visit_mut_children_with(self);
     }
 
-    fn visit_mut_named_export(&mut self, named_export: &mut NamedExport) {
-        if let Some(src) = &named_export.src {
-            let module_name = src.value.to_string_lossy().into_owned();
-            if module_name.starts_with('.') {
-                named_export.src = Some(Box::new(string_literal(
-                    &resolve_relative_module_specifier(&self.options.file_path, &module_name),
-                )));
-            }
-        }
+	fn visit_mut_named_export(&mut self, named_export: &mut NamedExport) {
+		if let Some(src) = &named_export.src {
+			let module_name = src.value.to_string_lossy().into_owned();
+			if module_name.starts_with('.') {
+				named_export.src = Some(Box::new(string_literal(
+					&resolve_relative_module_specifier(
+						&self.options.file_path,
+						&module_name,
+						self.checker,
+					),
+				)));
+			}
+		}
 
         named_export.visit_mut_children_with(self);
     }
@@ -567,64 +639,6 @@ impl VisitMut for PreviewTransform<'_> {
         closing.visit_mut_children_with(self);
         maybe_rewrite_jsx_host_name(&mut closing.name, &mut self.errors, &self.cm, self.options);
     }
-}
-
-#[napi(js_name = "transformPreviewSource")]
-pub fn transform_preview_source(
-    code: String,
-    options: TransformPreviewSourceOptions,
-) -> napi::Result<TransformPreviewSourceResult> {
-    let cm: Lrc<SourceMap> = Default::default();
-    let is_tsx = options.file_path.ends_with(".tsx");
-    let file = cm.new_source_file(FileName::Custom(options.file_path.clone()).into(), code);
-
-    let mut recovered_errors = Vec::new();
-    let mut module = parse_file_as_module(
-        &file,
-        Syntax::Typescript(TsSyntax {
-            decorators: true,
-            tsx: is_tsx,
-            ..Default::default()
-        }),
-        Default::default(),
-        None,
-        &mut recovered_errors,
-    )
-    .map_err(|err| napi::Error::from_reason(format!("Failed to parse preview source: {err:?}")))?;
-
-    if !recovered_errors.is_empty() {
-        return Err(napi::Error::from_reason(format!(
-            "Recovered parse errors in preview source: {recovered_errors:?}"
-        )));
-    }
-
-    let mut transformer = PreviewTransform::new(&options, cm.clone());
-    module.visit_mut_with(&mut transformer);
-
-    let mut output = Vec::new();
-    {
-        let mut emitter = Emitter {
-            cfg: CodegenConfig::default(),
-            cm: cm.clone(),
-            comments: None,
-            wr: JsWriter::new(cm.clone(), "\n", &mut output, None),
-        };
-
-        emitter.emit_module(&module).map_err(|err| {
-            napi::Error::from_reason(format!("Failed to emit preview source: {err:?}"))
-        })?;
-    }
-
-    let emitted = String::from_utf8(output).map_err(|err| {
-        napi::Error::from_reason(format!(
-            "Generated preview output was not valid UTF-8: {err}"
-        ))
-    })?;
-
-    Ok(TransformPreviewSourceResult {
-        code: format!("// Generated by @loom-dev/preview. Do not edit.\n{emitted}\n"),
-        errors: transformer.errors,
-    })
 }
 
 fn runtime_binding_names() -> HashSet<String> {
@@ -1262,10 +1276,14 @@ fn collect_member_chain_segments(expr: &MemberExpr, segments: &mut Vec<String>) 
     Some(())
 }
 
-fn resolve_relative_module_specifier(file_path: &str, module_specifier: &str) -> String {
-    if !module_specifier.starts_with('.') || Path::new(module_specifier).extension().is_some() {
-        return module_specifier.to_owned();
-    }
+fn resolve_relative_module_specifier(
+	file_path: &str,
+	module_specifier: &str,
+	checker: &dyn RelativeModuleCandidateChecker,
+) -> String {
+	if !module_specifier.starts_with('.') || Path::new(module_specifier).extension().is_some() {
+		return module_specifier.to_owned();
+	}
 
     let current_file = path_from_string(file_path);
     let current_dir = current_file
@@ -1280,11 +1298,10 @@ fn resolve_relative_module_specifier(file_path: &str, module_specifier: &str) ->
         resolved_base.join("index.tsx"),
     ];
 
-    let Some(resolved_path) = candidates.into_iter().find(|candidate| {
-        fs::metadata(candidate)
-            .map(|metadata| metadata.is_file())
-            .unwrap_or(false)
-    }) else {
+    let Some(resolved_path) = candidates
+        .into_iter()
+        .find(|candidate| checker.candidate_exists(candidate))
+    else {
         return module_specifier.to_owned();
     };
 
@@ -1366,9 +1383,107 @@ fn relative_path(from_dir: &Path, to_path: &Path) -> Option<String> {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+fn default_relative_module_candidate_checker() -> NativeRelativeModuleCandidateChecker {
+	NativeRelativeModuleCandidateChecker
+}
+
+#[cfg(target_arch = "wasm32")]
+fn default_relative_module_candidate_checker() -> WasmRelativeModuleCandidateChecker {
+	WasmRelativeModuleCandidateChecker
+}
+
+fn transform_preview_source_impl(
+	code: String,
+	options: TransformPreviewSourceOptions,
+	checker: &dyn RelativeModuleCandidateChecker,
+) -> Result<TransformPreviewSourceResult, String> {
+	let cm: Lrc<SourceMap> = Default::default();
+	let is_tsx = options.file_path.ends_with(".tsx");
+	let file = cm.new_source_file(FileName::Custom(options.file_path.clone()).into(), code);
+
+	let mut recovered_errors = Vec::new();
+	let mut module = parse_file_as_module(
+		&file,
+		Syntax::Typescript(TsSyntax {
+			decorators: true,
+			tsx: is_tsx,
+			..Default::default()
+		}),
+		Default::default(),
+		None,
+		&mut recovered_errors,
+	)
+	.map_err(|err| format!("Failed to parse preview source: {err:?}"))?;
+
+	if !recovered_errors.is_empty() {
+		return Err(format!(
+			"Recovered parse errors in preview source: {recovered_errors:?}"
+		));
+	}
+
+	let mut transformer = PreviewTransform::new(&options, cm.clone(), checker);
+	module.visit_mut_with(&mut transformer);
+
+	let mut output = Vec::new();
+	{
+		let mut emitter = Emitter {
+			cfg: CodegenConfig::default(),
+			cm: cm.clone(),
+			comments: None,
+			wr: JsWriter::new(cm.clone(), "\n", &mut output, None),
+		};
+
+		emitter
+			.emit_module(&module)
+			.map_err(|err| format!("Failed to emit preview source: {err:?}"))?;
+	}
+
+	let emitted = String::from_utf8(output)
+		.map_err(|err| format!("Generated preview output was not valid UTF-8: {err}"))?;
+
+	Ok(TransformPreviewSourceResult {
+		code: format!("// Generated by @loom-dev/preview. Do not edit.\n{emitted}\n"),
+		errors: transformer.errors,
+	})
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[napi(js_name = "transformPreviewSource")]
+pub fn transform_preview_source(
+	code: String,
+	options: TransformPreviewSourceOptions,
+) -> napi::Result<TransformPreviewSourceResult> {
+	let checker = default_relative_module_candidate_checker();
+	transform_preview_source_impl(code, options, &checker).map_err(napi::Error::from_reason)
+}
+
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(js_name = "setRelativeModuleCandidateChecker")]
+pub fn set_relative_module_candidate_checker(checker: Option<JsFunction>) {
+	WASM_RELATIVE_MODULE_CANDIDATE_CHECKER.with(|cell| {
+		*cell.borrow_mut() = checker;
+	});
+}
+
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(js_name = "transformPreviewSource")]
+pub fn transform_preview_source(
+	code: String,
+	options: JsValue,
+) -> Result<JsValue, JsValue> {
+	let options = serde_wasm_bindgen::from_value::<TransformPreviewSourceOptions>(options)
+		.map_err(|err| JsValue::from_str(&format!("Failed to decode preview options: {err}")))?;
+	let checker = default_relative_module_candidate_checker();
+	let result = transform_preview_source_impl(code, options, &checker)
+		.map_err(|err| JsValue::from_str(&err))?;
+	serde_wasm_bindgen::to_value(&result)
+		.map_err(|err| JsValue::from_str(&format!("Failed to encode preview result: {err}")))
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{transform_preview_source, TransformPreviewSourceOptions};
+	use super::{transform_preview_source, TransformPreviewSourceOptions};
 
     #[test]
     fn standard_proxy_global_does_not_report_unresolved_identifier() {

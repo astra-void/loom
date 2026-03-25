@@ -26,7 +26,7 @@ if (!options.prepareOnly) {
 }
 
 async function buildRootMetaPackage() {
-	runNapi(["build", "--platform", "--release"], { cwd: PACKAGE_DIR });
+	runCommand("pnpm", ["run", "build:release"], { cwd: PACKAGE_DIR });
 }
 
 async function prepareStage() {
