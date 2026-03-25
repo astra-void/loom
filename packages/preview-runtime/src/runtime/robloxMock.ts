@@ -91,6 +91,10 @@ function createUniversalRobloxMockInternal(
 				return () => label;
 			}
 
+			if (key === "displayName") {
+				return label;
+			}
+
 			if (key === "default") {
 				return proxy;
 			}
@@ -132,10 +136,19 @@ function createUniversalRobloxMockInternal(
 			deleteProperty() {
 				return true;
 			},
-			get(_target, key) {
+			get(target, key, receiver) {
+				if (Reflect.has(target, key)) {
+					return Reflect.get(target, key, receiver);
+				}
+
 				return resolveMember(key);
 			},
-			getOwnPropertyDescriptor(_target, key) {
+			getOwnPropertyDescriptor(target, key) {
+				const descriptor = Reflect.getOwnPropertyDescriptor(target, key);
+				if (descriptor) {
+					return descriptor;
+				}
+
 				const value: unknown = resolveMember(key);
 				if (value === undefined) {
 					return undefined;
@@ -154,8 +167,8 @@ function createUniversalRobloxMockInternal(
 			has() {
 				return true;
 			},
-			ownKeys() {
-				return [];
+			ownKeys(target) {
+				return Reflect.ownKeys(target);
 			},
 			set() {
 				return true;

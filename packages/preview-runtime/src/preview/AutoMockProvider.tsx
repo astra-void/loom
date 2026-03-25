@@ -82,6 +82,7 @@ function formatMockPath(path: readonly PropertyKey[]) {
 function createDeepMockMember(path: readonly PropertyKey[]): DeepMockMember {
 	const memberCache = new Map<PropertyKey, DeepMockMember>();
 	const label = formatMockPath(path);
+	const callableTarget = (() => createDeepMockObject(path)) as DeepMockMember;
 
 	const resolveMember = (key: PropertyKey) => {
 		if (key === "then") {
@@ -108,6 +109,10 @@ function createDeepMockMember(path: readonly PropertyKey[]): DeepMockMember {
 			return () => ({});
 		}
 
+		if (key === "displayName") {
+			return label;
+		}
+
 		if (key === "toString") {
 			return () => `[${label}]`;
 		}
@@ -126,15 +131,23 @@ function createDeepMockMember(path: readonly PropertyKey[]): DeepMockMember {
 		return nextMember;
 	};
 
-	const callable = (() => createDeepMockObject(path)) as DeepMockMember;
-	return new Proxy(callable, {
+	return new Proxy(callableTarget, {
 		apply() {
 			return createDeepMockObject(path);
 		},
-		get(_target, key) {
+		get(target, key, receiver) {
+			if (Reflect.has(target, key)) {
+				return Reflect.get(target, key, receiver);
+			}
+
 			return resolveMember(key);
 		},
-		getOwnPropertyDescriptor(_target, key) {
+		getOwnPropertyDescriptor(target, key) {
+			const descriptor = Reflect.getOwnPropertyDescriptor(target, key);
+			if (descriptor) {
+				return descriptor;
+			}
+
 			const value = resolveMember(key);
 			if (value === undefined) {
 				return undefined;
@@ -150,8 +163,8 @@ function createDeepMockMember(path: readonly PropertyKey[]): DeepMockMember {
 		has() {
 			return true;
 		},
-		ownKeys() {
-			return [];
+		ownKeys(target) {
+			return Reflect.ownKeys(target);
 		},
 		set() {
 			return true;
