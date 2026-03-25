@@ -21,11 +21,15 @@ export default defineConfig({
 				),
 			},
 			{
-				find: "@loom-dev/compiler",
+				find: /^@loom-dev\/compiler$/,
 				replacement: path.resolve(
 					workspaceRoot,
 					"packages/compiler/wrapper.mjs",
 				),
+			},
+			{
+				find: /^@loom-dev\/compiler\/wasm$/,
+				replacement: path.resolve(workspaceRoot, "packages/compiler/wasm.mjs"),
 			},
 			{
 				find: "@loom-dev/layout-engine/layout_engine_bg.wasm?url",
