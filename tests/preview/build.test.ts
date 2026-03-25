@@ -241,7 +241,7 @@ describe("buildPreviewArtifacts", () => {
 		const target = createWorkspacePackage(workspaceRoot, {
 			packageName: "@fixtures/metadata",
 			packagePath: "packages/metadata",
-			sourceFile: "Card.tsx",
+			sourceFile: "Card.loom.tsx",
 		});
 		writeInlinePreviewConfig(path.join(workspaceRoot, "loom.config.ts"), {
 			packageName: "@fixtures/metadata",
@@ -270,14 +270,14 @@ describe("buildPreviewArtifacts", () => {
 					"metadata-target",
 					".preview-engine",
 					"entry-metadata",
-					"Card.tsx.preview-entry.json",
+					"Card.loom.tsx.preview-entry.json",
 				),
 				path.join(
 					outDir,
 					"metadata-target",
 					".preview-engine",
 					"layout-schema",
-					"Card.tsx.preview-layout.json",
+					"Card.loom.tsx.preview-layout.json",
 				),
 			]),
 		);

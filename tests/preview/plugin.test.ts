@@ -32,6 +32,11 @@ function createFixtureRoot() {
 	const sourceRoot = path.join(fixtureRoot, "src");
 	temporaryRoots.push(fixtureRoot);
 	fs.mkdirSync(sourceRoot, { recursive: true });
+	fs.writeFileSync(
+		path.join(fixtureRoot, "package.json"),
+		JSON.stringify({ name: "@fixtures/plugin" }, null, 2),
+		"utf8",
+	);
 
 	return {
 		fixtureRoot,
@@ -45,10 +50,11 @@ function createPreviewPlugin(
 	runtimeModule?: string,
 ): PreviewPlugin {
 	const plugins = createPreviewVitePlugin({
-		projectName: "Fixture Preview",
-		...(runtimeModule ? { runtimeModule } : {}),
-		targets: [
-			{
+			projectName: "Fixture Preview",
+			...(runtimeModule ? { runtimeModule } : {}),
+			workspaceRoot: fixtureRoot,
+			targets: [
+				{
 				name: "fixture",
 				packageName: "@fixtures/plugin",
 				packageRoot: fixtureRoot,
@@ -63,14 +69,20 @@ function createPreviewPlugin(
 		);
 	}
 
-	const previewPlugin = plugins[1];
+	const previewPlugin = plugins.find(
+		(plugin) =>
+			plugin &&
+			typeof plugin === "object" &&
+			"name" in plugin &&
+			plugin.name === "loom-preview-source-first",
+	);
 	if (
 		!previewPlugin ||
 		typeof previewPlugin !== "object" ||
 		Array.isArray(previewPlugin)
 	) {
 		throw new Error(
-			"Expected the preview Vite plugin to be the second object plugin.",
+			"Expected the preview Vite plugin to be present in the plugin array.",
 		);
 	}
 
@@ -193,7 +205,7 @@ function readEntryPayload(previewPlugin: PreviewPlugin, entryId: string) {
 describe("createPreviewVitePlugin", () => {
 	it("uses the configured runtime module for virtual runtime and entry modules", () => {
 		const { fixtureRoot, sourceRoot } = createFixtureRoot();
-		const sourceFile = path.join(sourceRoot, "CustomRuntimeEntry.tsx");
+		const sourceFile = path.join(sourceRoot, "CustomRuntimeEntry.loom.tsx");
 		const runtimeModulePath = path.join(
 			fixtureRoot,
 			"runtime",
@@ -237,17 +249,69 @@ describe("createPreviewVitePlugin", () => {
 
 		const resolvedEntryId = resolveId?.(
 			"virtual:loom-preview-entry:" +
-				encodeURIComponent("fixture:CustomRuntimeEntry.tsx"),
+				encodeURIComponent("fixture:CustomRuntimeEntry.loom.tsx"),
 		);
 		const entryModuleCode = load?.(
-			resolvedEntryId ?? "fixture:CustomRuntimeEntry.tsx",
+			resolvedEntryId ?? "fixture:CustomRuntimeEntry.loom.tsx",
 		);
 		expect(entryModuleCode).toContain(runtimeModulePath.replace(/\\/g, "/"));
 	});
 
+	it("only discovers and transforms .loom.tsx preview entries", async () => {
+		const { fixtureRoot, sourceRoot } = createFixtureRoot();
+		const entryFile = path.join(sourceRoot, "Button.loom.tsx");
+		const plainFile = path.join(sourceRoot, "Button.tsx");
+		const helperFile = path.join(sourceRoot, "utils.ts");
+
+		fs.writeFileSync(helperFile, 'export const label = "ready";\n', "utf8");
+		fs.writeFileSync(
+			plainFile,
+			"export function Button() { return <frame />; }\n",
+			"utf8",
+		);
+		fs.writeFileSync(
+			entryFile,
+			[
+				'import { label } from "./utils";',
+				"",
+				"export function ButtonPreview() {",
+				"	return <textlabel Text={label} />;",
+				"}",
+				"",
+				"export const preview = {",
+				"	entry: ButtonPreview,",
+				"};",
+			].join("\n"),
+			"utf8",
+		);
+
+		const previewPlugin = createPreviewPlugin(fixtureRoot, sourceRoot);
+		expect(readWorkspaceEntries(previewPlugin)).toEqual([
+			expect.objectContaining({
+				relativePath: "Button.loom.tsx",
+				status: "ready",
+			}),
+		]);
+
+		const transform = getHookHandler<TestTransformHook>(
+			previewPlugin.transform as TestTransformHook | undefined,
+		);
+		const loomTransformed = await transform?.(
+			fs.readFileSync(entryFile, "utf8"),
+			entryFile,
+		);
+		expect(getHookResultCode(loomTransformed)).toContain("__previewGlobal");
+
+		const plainTransformed = await transform?.(
+			fs.readFileSync(plainFile, "utf8"),
+			plainFile,
+		);
+		expect(plainTransformed).toBeUndefined();
+	});
+
 	it("injects the configured runtime module when transformed output references __rbxStyle", async () => {
 		const { fixtureRoot, sourceRoot } = createFixtureRoot();
-		const sourceFile = path.join(sourceRoot, "StyledFrame.tsx");
+		const sourceFile = path.join(sourceRoot, "StyledFrame.loom.tsx");
 		const helperModulePath = path.join(sourceRoot, "styleHelper.ts");
 		const runtimeModulePath = path.join(
 			fixtureRoot,
@@ -344,7 +408,7 @@ describe("createPreviewVitePlugin", () => {
 	it("treats tracked workspace dependencies outside the target source root as hot-update candidates", () => {
 		const { fixtureRoot, sourceRoot } = createFixtureRoot();
 		const sharedRoot = path.join(fixtureRoot, "shared");
-		const sourceFile = path.join(sourceRoot, "AnimatedSlot.tsx");
+		const sourceFile = path.join(sourceRoot, "AnimatedSlot.loom.tsx");
 		const dependencyFile = path.join(sharedRoot, "buildInfo.ts");
 		fs.mkdirSync(sharedRoot, { recursive: true });
 		fs.writeFileSync(dependencyFile, 'export const LABEL = "one";\n', "utf8");
@@ -382,7 +446,7 @@ describe("createPreviewVitePlugin", () => {
 		expect(mockServer.ws.send).toHaveBeenCalledWith(
 			expect.objectContaining({
 				data: expect.objectContaining({
-					changedEntryIds: ["fixture:AnimatedSlot.tsx"],
+					changedEntryIds: ["fixture:AnimatedSlot.loom.tsx"],
 				}),
 				event: "loom-preview:update",
 				type: "custom",
@@ -392,9 +456,9 @@ describe("createPreviewVitePlugin", () => {
 
 	it("refreshes the workspace index and sends custom hmr updates for add, delete, rename, and non-target watcher events", () => {
 		const { fixtureRoot, sourceRoot } = createFixtureRoot();
-		const sourceFile = path.join(sourceRoot, "AnimatedSlot.tsx");
-		const addedFile = path.join(sourceRoot, "FreshSlot.tsx");
-		const renamedFile = path.join(sourceRoot, "RenamedSlot.tsx");
+		const sourceFile = path.join(sourceRoot, "AnimatedSlot.loom.tsx");
+		const addedFile = path.join(sourceRoot, "FreshSlot.loom.tsx");
+		const renamedFile = path.join(sourceRoot, "RenamedSlot.loom.tsx");
 		fs.writeFileSync(
 			sourceFile,
 			"export function AnimatedSlot() { return <frame />; }\n",
@@ -411,7 +475,7 @@ describe("createPreviewVitePlugin", () => {
 
 		expect(
 			readWorkspaceEntries(previewPlugin).map((entry) => entry.relativePath),
-		).toEqual(["AnimatedSlot.tsx"]);
+		).toEqual(["AnimatedSlot.loom.tsx"]);
 
 		fs.writeFileSync(
 			addedFile,
@@ -421,25 +485,25 @@ describe("createPreviewVitePlugin", () => {
 		mockServer.emit("add", addedFile);
 		expect(
 			readWorkspaceEntries(previewPlugin).map((entry) => entry.relativePath),
-		).toEqual(["AnimatedSlot.tsx", "FreshSlot.tsx"]);
+		).toEqual(["AnimatedSlot.loom.tsx", "FreshSlot.loom.tsx"]);
 
 		fs.renameSync(addedFile, renamedFile);
 		mockServer.emit("unlink", addedFile);
 		mockServer.emit("add", renamedFile);
 		expect(
 			readWorkspaceEntries(previewPlugin).map((entry) => entry.relativePath),
-		).toEqual(["AnimatedSlot.tsx", "RenamedSlot.tsx"]);
+		).toEqual(["AnimatedSlot.loom.tsx", "RenamedSlot.loom.tsx"]);
 
 		mockServer.emit("add", path.join(fixtureRoot, "README.md"));
 		expect(
 			readWorkspaceEntries(previewPlugin).map((entry) => entry.relativePath),
-		).toEqual(["AnimatedSlot.tsx", "RenamedSlot.tsx"]);
+		).toEqual(["AnimatedSlot.loom.tsx", "RenamedSlot.loom.tsx"]);
 
 		fs.rmSync(renamedFile);
 		mockServer.emit("unlink", renamedFile);
 		expect(
 			readWorkspaceEntries(previewPlugin).map((entry) => entry.relativePath),
-		).toEqual(["AnimatedSlot.tsx"]);
+		).toEqual(["AnimatedSlot.loom.tsx"]);
 
 		expect(mockServer.moduleGraph.invalidateModule).toHaveBeenCalledTimes(4);
 		expect(mockServer.ws.send).toHaveBeenCalledTimes(4);
@@ -453,7 +517,7 @@ describe("createPreviewVitePlugin", () => {
 
 	it("recomputes entry status and render targets before sending entry-scoped updates", () => {
 		const { fixtureRoot, sourceRoot } = createFixtureRoot();
-		const sourceFile = path.join(sourceRoot, "AnimatedSlot.tsx");
+		const sourceFile = path.join(sourceRoot, "AnimatedSlot.loom.tsx");
 		fs.writeFileSync(
 			sourceFile,
 			`
@@ -482,7 +546,7 @@ describe("createPreviewVitePlugin", () => {
 		expect(readWorkspaceEntries(previewPlugin)).toEqual(
 			expect.arrayContaining([
 				expect.objectContaining({
-					relativePath: "AnimatedSlot.tsx",
+					relativePath: "AnimatedSlot.loom.tsx",
 					status: "ready",
 				}),
 			]),
@@ -505,7 +569,7 @@ describe("createPreviewVitePlugin", () => {
 		expect(readWorkspaceEntries(previewPlugin)).toEqual(
 			expect.arrayContaining([
 				expect.objectContaining({
-					relativePath: "AnimatedSlot.tsx",
+					relativePath: "AnimatedSlot.loom.tsx",
 					status: "ambiguous",
 					renderTarget: expect.objectContaining({
 						kind: "none",
@@ -521,7 +585,7 @@ describe("createPreviewVitePlugin", () => {
 		expect(readWorkspaceEntries(previewPlugin)).toEqual(
 			expect.arrayContaining([
 				expect.objectContaining({
-					relativePath: "AnimatedSlot.tsx",
+					relativePath: "AnimatedSlot.loom.tsx",
 					status: "needs_harness",
 					renderTarget: expect.objectContaining({
 						kind: "none",
@@ -548,7 +612,7 @@ describe("createPreviewVitePlugin", () => {
 		expect(readWorkspaceEntries(previewPlugin)).toEqual(
 			expect.arrayContaining([
 				expect.objectContaining({
-					relativePath: "AnimatedSlot.tsx",
+					relativePath: "AnimatedSlot.loom.tsx",
 					status: "ready",
 				}),
 			]),
@@ -560,7 +624,7 @@ describe("createPreviewVitePlugin", () => {
 
 	it("loads entry payloads with transform diagnostics on demand", () => {
 		const { fixtureRoot, sourceRoot } = createFixtureRoot();
-		const sourceFile = path.join(sourceRoot, "Broken.tsx");
+		const sourceFile = path.join(sourceRoot, "Broken.loom.tsx");
 		fs.writeFileSync(
 			sourceFile,
 			`
@@ -576,7 +640,10 @@ describe("createPreviewVitePlugin", () => {
 		);
 
 		const previewPlugin = createPreviewPlugin(fixtureRoot, sourceRoot);
-		const entryPayload = readEntryPayload(previewPlugin, "fixture:Broken.tsx");
+		const entryPayload = readEntryPayload(
+			previewPlugin,
+			"fixture:Broken.loom.tsx",
+		);
 
 		expect(entryPayload.descriptor.status).toBe("blocked_by_transform");
 		expect(entryPayload.transform).toEqual({
@@ -592,7 +659,7 @@ describe("createPreviewVitePlugin", () => {
 					blocking: true,
 					code: "UNSUPPORTED_HOST_ELEMENT",
 					phase: "transform",
-					relativeFile: "src/Broken.tsx",
+					relativeFile: "src/Broken.loom.tsx",
 					severity: "error",
 				}),
 			]),

@@ -157,7 +157,7 @@ function sanitizePaths<T>(value: T, packageRoot: string): T {
 describe("createPreviewEngine", () => {
 	it("keeps legacy-only entries in needs_harness without auto-render selection", () => {
 		const { packageRoot, sourceRoot } = createTempPreviewPackage({
-			"src/Legacy.tsx": `
+			"src/Legacy.loom.tsx": `
         export function Legacy() {
           return <frame />;
         }
@@ -167,7 +167,7 @@ describe("createPreviewEngine", () => {
 		const engine = createEngineForPackage(packageRoot, sourceRoot);
 
 		expect(engine.getWorkspaceIndex().entries[0]).toMatchObject({
-			relativePath: "Legacy.tsx",
+			relativePath: "Legacy.loom.tsx",
 			renderTarget: {
 				kind: "none",
 				reason: "missing-explicit-contract",
@@ -191,7 +191,7 @@ describe("createPreviewEngine", () => {
           return <frame />;
         }
       `,
-			"src/ReExport.tsx": `
+			"src/ReExport.loom.tsx": `
         import { Showcase } from "./Showcase";
 
         export { Showcase as ExplicitCard };
@@ -211,7 +211,7 @@ describe("createPreviewEngine", () => {
 		expect(
 			engine
 				.getWorkspaceIndex()
-				.entries.find((entry) => entry.relativePath === "ReExport.tsx"),
+				.entries.find((entry) => entry.relativePath === "ReExport.loom.tsx"),
 		).toMatchObject({
 			renderTarget: {
 				exportName: "ExplicitCard",
@@ -255,7 +255,7 @@ describe("createPreviewEngine", () => {
 			},
 			"@fixtures/ui": {
 				"package.json": JSON.stringify({ name: "@fixtures/ui" }, null, 2),
-				"src/Entry.tsx": `
+				"src/Entry.loom.tsx": `
           import { SharedCard } from "@shared/Card";
 
           export { SharedCard as UiCard };
@@ -303,7 +303,7 @@ describe("createPreviewEngine", () => {
 
 		expect(engine.getWorkspaceIndex().entries).toEqual([
 			expect.objectContaining({
-				relativePath: "Entry.tsx",
+				relativePath: "Entry.loom.tsx",
 				renderTarget: expect.objectContaining({
 					exportName: "UiCard",
 					kind: "component",
@@ -320,7 +320,7 @@ describe("createPreviewEngine", () => {
 		]);
 
 		const payload = sanitizePaths(
-			engine.getEntryPayload("ui:Entry.tsx"),
+			engine.getEntryPayload("ui:Entry.loom.tsx"),
 			workspace.workspaceRoot,
 		);
 		expect(
@@ -331,7 +331,7 @@ describe("createPreviewEngine", () => {
 		expect(payload.graphTrace).toMatchObject({
 			boundaryHops: [
 				{
-					fromFile: "<pkg>/packages/ui/src/Entry.tsx",
+					fromFile: "<pkg>/packages/ui/src/Entry.loom.tsx",
 					fromPackageRoot: "<pkg>/packages/ui",
 					toFile: "<pkg>/packages/shared/src/Card.tsx",
 					toPackageRoot: "<pkg>/packages/shared",
@@ -349,7 +349,7 @@ describe("createPreviewEngine", () => {
 			],
 			selection: expect.objectContaining({
 				importChain: [
-					"<pkg>/packages/ui/src/Entry.tsx",
+					"<pkg>/packages/ui/src/Entry.loom.tsx",
 					"<pkg>/packages/shared/src/Card.tsx",
 				],
 				resolvedExportName: "UiCard",
@@ -406,7 +406,7 @@ describe("createPreviewEngine", () => {
 			},
 			"@fixtures/ui": {
 				"package.json": JSON.stringify({ name: "@fixtures/ui" }, null, 2),
-				"src/Entry.tsx": `
+				"src/Entry.loom.tsx": `
           import { SharedCard } from "@fixtures/shared";
 
           export { SharedCard as DeclaredCard };
@@ -449,7 +449,7 @@ describe("createPreviewEngine", () => {
 
 		expect(engine.getWorkspaceIndex().entries).toEqual([
 			expect.objectContaining({
-				relativePath: "Entry.tsx",
+				relativePath: "Entry.loom.tsx",
 				renderTarget: expect.objectContaining({
 					exportName: "DeclaredCard",
 					kind: "component",
@@ -458,7 +458,7 @@ describe("createPreviewEngine", () => {
 		]);
 
 		const payload = sanitizePaths(
-			engine.getEntryPayload("ui:Entry.tsx"),
+			engine.getEntryPayload("ui:Entry.loom.tsx"),
 			workspace.workspaceRoot,
 		);
 		expect(payload.graphTrace.imports).toEqual([
@@ -483,8 +483,8 @@ describe("createPreviewEngine", () => {
 		const update = engine.invalidateSourceFiles([
 			path.join(sharedTarget.sourceRoot, "index.tsx"),
 		]);
-		expect(update.changedEntryIds).toEqual(["ui:Entry.tsx"]);
-		expect(update.registryChangedEntryIds).toEqual(["ui:Entry.tsx"]);
+		expect(update.changedEntryIds).toEqual(["ui:Entry.loom.tsx"]);
+		expect(update.registryChangedEntryIds).toEqual(["ui:Entry.loom.tsx"]);
 		expect(update.executionChangedEntryIds).toEqual([]);
 		expect(update.removedEntryIds).toEqual([]);
 		expect(update.requiresFullReload).toBe(false);
@@ -492,12 +492,12 @@ describe("createPreviewEngine", () => {
 
 	it("emits stable workspace and payload protocol snapshots", () => {
 		const { packageRoot, sourceRoot } = createTempPreviewPackage({
-			"src/Broken.tsx": `
+			"src/Broken.loom.tsx": `
         export function Broken() {
           return <viewportframe />;
         }
       `,
-			"src/Harness.tsx": `
+			"src/Harness.loom.tsx": `
         export const preview = {
           render: () => <frame />,
           title: "Harness Demo",
@@ -509,7 +509,7 @@ describe("createPreviewEngine", () => {
 		const snapshot = sanitizePaths(engine.getSnapshot(), packageRoot);
 
 		expect(snapshot.protocolVersion).toBe(4);
-		expect(snapshot.entries["fixture:Broken.tsx"]).toMatchObject({
+		expect(snapshot.entries["fixture:Broken.loom.tsx"]).toMatchObject({
 			descriptor: {
 				status: "needs_harness",
 				statusDetails: {
@@ -520,7 +520,7 @@ describe("createPreviewEngine", () => {
 		});
 		expect(snapshot.workspaceIndex.protocolVersion).toBe(4);
 		expect(snapshot.workspaceIndex.entries[0]).toMatchObject({
-			relativePath: "Broken.tsx",
+			relativePath: "Broken.loom.tsx",
 			status: "needs_harness",
 			statusDetails: {
 				kind: "needs_harness",
@@ -528,7 +528,7 @@ describe("createPreviewEngine", () => {
 			},
 		});
 		expect(snapshot.workspaceIndex.entries[1]).toMatchObject({
-			relativePath: "Harness.tsx",
+			relativePath: "Harness.loom.tsx",
 			status: "ready",
 			statusDetails: {
 				kind: "ready",
@@ -538,7 +538,7 @@ describe("createPreviewEngine", () => {
 
 	it("keeps compatibility-mode transform diagnostics non-blocking in the workspace index", () => {
 		const { packageRoot, sourceRoot } = createTempPreviewPackage({
-			"src/Broken.tsx": `
+			"src/Broken.loom.tsx": `
         export function Broken() {
           return <part />;
         }
@@ -556,7 +556,7 @@ describe("createPreviewEngine", () => {
 		);
 
 		expect(engine.getWorkspaceIndex().entries[0]).toMatchObject({
-			relativePath: "Broken.tsx",
+			relativePath: "Broken.loom.tsx",
 			status: "ready",
 			statusDetails: {
 				fidelity: "degraded",
@@ -564,7 +564,7 @@ describe("createPreviewEngine", () => {
 				warningCodes: ["UNSUPPORTED_HOST_ELEMENT"],
 			},
 		});
-		expect(engine.getEntryPayload("fixture:Broken.tsx")).toMatchObject({
+		expect(engine.getEntryPayload("fixture:Broken.loom.tsx")).toMatchObject({
 			descriptor: {
 				status: "ready",
 				statusDetails: {
@@ -584,7 +584,7 @@ describe("createPreviewEngine", () => {
 
 	it("surfaces unresolved free identifiers as ready compatibility warnings", () => {
 		const { packageRoot, sourceRoot } = createTempPreviewPackage({
-			"src/Broken.tsx": `
+			"src/Broken.loom.tsx": `
         export const value = gamee.GetService("Players");
 
         export function Broken() {
@@ -604,7 +604,7 @@ describe("createPreviewEngine", () => {
 		);
 
 		expect(engine.getWorkspaceIndex().entries[0]).toMatchObject({
-			relativePath: "Broken.tsx",
+			relativePath: "Broken.loom.tsx",
 			status: "ready",
 			statusDetails: {
 				fidelity: "degraded",
@@ -612,7 +612,7 @@ describe("createPreviewEngine", () => {
 				warningCodes: ["UNRESOLVED_FREE_IDENTIFIER"],
 			},
 		});
-		expect(engine.getEntryPayload("fixture:Broken.tsx")).toMatchObject({
+		expect(engine.getEntryPayload("fixture:Broken.loom.tsx")).toMatchObject({
 			descriptor: {
 				status: "ready",
 				statusDetails: {
@@ -641,7 +641,7 @@ describe("createPreviewEngine", () => {
 
 	it("keeps degraded runtime warnings in ready status details", () => {
 		const { packageRoot, sourceRoot } = createTempPreviewPackage({
-			"src/Runtime.tsx": `
+			"src/Runtime.loom.tsx": `
         export function Runtime() {
           return <viewportframe />;
         }
@@ -661,11 +661,11 @@ describe("createPreviewEngine", () => {
 			{
 				blocking: false,
 				code: "DEGRADED_HOST_RENDER",
-				entryId: "fixture:Runtime.tsx",
-				file: path.join(sourceRoot, "Runtime.tsx"),
+				entryId: "fixture:Runtime.loom.tsx",
+				file: path.join(sourceRoot, "Runtime.loom.tsx"),
 				kind: "RuntimeMockError",
 				phase: "runtime",
-				relativeFile: "src/Runtime.tsx",
+				relativeFile: "src/Runtime.loom.tsx",
 				severity: "warning",
 				summary: "ViewportFrame rendered with degraded preview behavior.",
 				target: "ViewportFrame",
@@ -675,7 +675,7 @@ describe("createPreviewEngine", () => {
 		engine.replaceRuntimeIssues(issues);
 
 		expect(engine.getWorkspaceIndex().entries[0]).toMatchObject({
-			relativePath: "Runtime.tsx",
+			relativePath: "Runtime.loom.tsx",
 			status: "ready",
 			statusDetails: {
 				degradedTargets: ["ViewportFrame"],
@@ -684,7 +684,7 @@ describe("createPreviewEngine", () => {
 				warningCodes: ["DEGRADED_HOST_RENDER"],
 			},
 		});
-		expect(engine.getEntryPayload("fixture:Runtime.tsx")).toMatchObject({
+		expect(engine.getEntryPayload("fixture:Runtime.loom.tsx")).toMatchObject({
 			descriptor: {
 				status: "ready",
 				statusDetails: {
@@ -707,7 +707,7 @@ describe("createPreviewEngine", () => {
 
 	it("promotes transform blocking only in strict-fidelity mode", () => {
 		const { packageRoot, sourceRoot } = createTempPreviewPackage({
-			"src/Broken.tsx": `
+			"src/Broken.loom.tsx": `
         export function Broken() {
           return <part />;
         }
@@ -725,14 +725,14 @@ describe("createPreviewEngine", () => {
 		);
 
 		expect(engine.getWorkspaceIndex().entries[0]).toMatchObject({
-			relativePath: "Broken.tsx",
+			relativePath: "Broken.loom.tsx",
 			status: "blocked_by_transform",
 			statusDetails: {
 				kind: "blocked_by_transform",
 				reason: "transform-diagnostics",
 			},
 		});
-		expect(engine.getEntryPayload("fixture:Broken.tsx")).toMatchObject({
+		expect(engine.getEntryPayload("fixture:Broken.loom.tsx")).toMatchObject({
 			descriptor: {
 				status: "blocked_by_transform",
 				statusDetails: {
@@ -751,7 +751,7 @@ describe("createPreviewEngine", () => {
 
 	it("blocks unresolved free identifiers in strict-fidelity workspace status", () => {
 		const { packageRoot, sourceRoot } = createTempPreviewPackage({
-			"src/Broken.tsx": `
+			"src/Broken.loom.tsx": `
         export const value = gamee.GetService("Players");
 
         export function Broken() {
@@ -771,14 +771,14 @@ describe("createPreviewEngine", () => {
 		);
 
 		expect(engine.getWorkspaceIndex().entries[0]).toMatchObject({
-			relativePath: "Broken.tsx",
+			relativePath: "Broken.loom.tsx",
 			status: "blocked_by_transform",
 			statusDetails: {
 				kind: "blocked_by_transform",
 				reason: "transform-diagnostics",
 			},
 		});
-		expect(engine.getEntryPayload("fixture:Broken.tsx")).toMatchObject({
+		expect(engine.getEntryPayload("fixture:Broken.loom.tsx")).toMatchObject({
 			descriptor: {
 				status: "blocked_by_transform",
 				statusDetails: {
@@ -806,7 +806,7 @@ describe("createPreviewEngine", () => {
 
 	it("ingests runtime issues into entry status and diagnostics", () => {
 		const { packageRoot, sourceRoot } = createTempPreviewPackage({
-			"src/Runtime.tsx": `
+			"src/Runtime.loom.tsx": `
         export function Runtime() {
           return <frame />;
         }
@@ -825,11 +825,11 @@ describe("createPreviewEngine", () => {
 		const issues: PreviewRuntimeIssue[] = [
 			{
 				code: "MODULE_LOAD_ERROR",
-				entryId: "fixture:Runtime.tsx",
-				file: path.join(sourceRoot, "Runtime.tsx"),
+				entryId: "fixture:Runtime.loom.tsx",
+				file: path.join(sourceRoot, "Runtime.loom.tsx"),
 				kind: "ModuleLoadError",
 				phase: "runtime",
-				relativeFile: "src/Runtime.tsx",
+				relativeFile: "src/Runtime.loom.tsx",
 				summary: "Preview module failed to load.",
 				target: "fixture",
 			},
@@ -837,10 +837,10 @@ describe("createPreviewEngine", () => {
 
 		const update = engine.replaceRuntimeIssues(issues);
 
-		expect(update.executionChangedEntryIds).toEqual(["fixture:Runtime.tsx"]);
+		expect(update.executionChangedEntryIds).toEqual(["fixture:Runtime.loom.tsx"]);
 		expect(update.registryChangedEntryIds).toEqual([]);
 		expect(update.workspaceChanged).toBe(false);
-		expect(engine.getEntryPayload("fixture:Runtime.tsx")).toMatchObject({
+		expect(engine.getEntryPayload("fixture:Runtime.loom.tsx")).toMatchObject({
 			descriptor: {
 				status: "blocked_by_runtime",
 				statusDetails: {
@@ -861,7 +861,7 @@ describe("createPreviewEngine", () => {
 
 	it("reports entry-scoped invalidation updates without requiring full reload", () => {
 		const { packageRoot, sourceRoot } = createTempPreviewPackage({
-			"src/AnimatedSlot.tsx": `
+			"src/AnimatedSlot.loom.tsx": `
         export function AnimatedSlot() {
           return <frame />;
         }
@@ -869,7 +869,7 @@ describe("createPreviewEngine", () => {
 		});
 
 		const engine = createEngineForPackage(packageRoot, sourceRoot);
-		const sourceFile = path.join(sourceRoot, "AnimatedSlot.tsx");
+		const sourceFile = path.join(sourceRoot, "AnimatedSlot.loom.tsx");
 
 		fs.writeFileSync(
 			sourceFile,
@@ -888,8 +888,8 @@ describe("createPreviewEngine", () => {
 		const update = engine.invalidateSourceFiles([sourceFile]);
 
 		expect(update).toMatchObject({
-			changedEntryIds: ["fixture:AnimatedSlot.tsx"],
-			registryChangedEntryIds: ["fixture:AnimatedSlot.tsx"],
+			changedEntryIds: ["fixture:AnimatedSlot.loom.tsx"],
+			registryChangedEntryIds: ["fixture:AnimatedSlot.loom.tsx"],
 			executionChangedEntryIds: [],
 			requiresFullReload: false,
 			workspaceChanged: true,

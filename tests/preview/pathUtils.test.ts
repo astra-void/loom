@@ -24,13 +24,13 @@ describe("isFilePathIncludedByTarget", () => {
 		const directChildFile = path.join(
 			sourceRoot,
 			"preview-targets",
-			"PreviewShellCard.tsx",
+			"PreviewShellCard.loom.tsx",
 		);
 		const nestedFile = path.join(
 			sourceRoot,
 			"preview-targets",
 			"nested",
-			"NestedCard.tsx",
+			"NestedCard.loom.tsx",
 		);
 		fs.mkdirSync(path.dirname(directChildFile), { recursive: true });
 		fs.mkdirSync(path.dirname(nestedFile), { recursive: true });
@@ -46,7 +46,7 @@ describe("isFilePathIncludedByTarget", () => {
 		);
 
 		const target = {
-			include: ["preview-targets/**/*.tsx"],
+			include: ["preview-targets/**/*.loom.tsx"],
 			sourceRoot,
 		};
 

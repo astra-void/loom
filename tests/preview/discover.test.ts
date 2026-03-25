@@ -49,7 +49,7 @@ function createPackage(
 		JSON.stringify({ name: packageName }, null, 2),
 	);
 	fs.writeFileSync(
-		path.join(packageRoot, "src", "Button.tsx"),
+		path.join(packageRoot, "src", "Button.loom.tsx"),
 		`
       export function ${componentName}() {
         return <frame />;
@@ -156,7 +156,7 @@ describe("preview bootstrap config", () => {
 			JSON.stringify({ name: "@fixtures/package-root" }, null, 2),
 		);
 		fs.writeFileSync(
-			path.join(packageRoot, "src", "Button.tsx"),
+			path.join(packageRoot, "src", "Button.loom.tsx"),
 			"export default function Button() { return <frame />; }\n",
 		);
 
@@ -575,7 +575,7 @@ describe("preview bootstrap normalization", () => {
 			JSON.stringify({ name: "@fixtures/headless" }, null, 2),
 		);
 		fs.writeFileSync(
-			path.join(packageRoot, "src", "Button.tsx"),
+			path.join(packageRoot, "src", "Button.loom.tsx"),
 			`
         export function ButtonPreview() {
           return <frame />;
@@ -598,7 +598,7 @@ describe("preview bootstrap normalization", () => {
 			);
 			expect(snapshot.workspaceIndex.entries).toEqual([
 				expect.objectContaining({
-					relativePath: "Button.tsx",
+					relativePath: "Button.loom.tsx",
 					selection: expect.objectContaining({ kind: "explicit" }),
 					status: "ready",
 				}),
@@ -606,7 +606,7 @@ describe("preview bootstrap normalization", () => {
 			expect(Object.values(snapshot.entries)).toEqual([
 				expect.objectContaining({
 					descriptor: expect.objectContaining({
-						relativePath: "Button.tsx",
+						relativePath: "Button.loom.tsx",
 						status: "ready",
 					}),
 				}),

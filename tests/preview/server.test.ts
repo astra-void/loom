@@ -112,7 +112,7 @@ function createTempPreviewPackage() {
 		"utf8",
 	);
 	fs.writeFileSync(
-		path.join(packageRoot, "src/Test.tsx"),
+		path.join(packageRoot, "src/Test.loom.tsx"),
 		[
 			'import React from "@rbxts/react";',
 			"",
@@ -130,7 +130,7 @@ function createTempPreviewPackage() {
 
 	return {
 		packageRoot,
-		sourceFilePath: fs.realpathSync(path.join(sourceRoot, "Test.tsx")),
+		sourceFilePath: fs.realpathSync(path.join(sourceRoot, "Test.loom.tsx")),
 		sourceRoot: fs.realpathSync(sourceRoot),
 		workspaceRoot: packageRoot,
 	};
@@ -226,7 +226,7 @@ function createTempPreviewPackageWithPathAlias() {
 		"utf8",
 	);
 	fs.writeFileSync(
-		path.join(sourceRoot, "Test.tsx"),
+		path.join(sourceRoot, "Test.loom.tsx"),
 		[
 			'import React from "@rbxts/react";',
 			"",
@@ -247,7 +247,7 @@ function createTempPreviewPackageWithPathAlias() {
 	return {
 		buildInfoPath: fs.realpathSync(path.join(sharedSourceRoot, "buildInfo.ts")),
 		packageRoot,
-		sourceFilePath: fs.realpathSync(path.join(sourceRoot, "Test.tsx")),
+		sourceFilePath: fs.realpathSync(path.join(sourceRoot, "Test.loom.tsx")),
 		sourceRoot: fs.realpathSync(sourceRoot),
 		workspaceRoot,
 	};
@@ -344,7 +344,7 @@ function createTempPreviewPackageWithMutablePathAlias() {
 		"utf8",
 	);
 	fs.writeFileSync(
-		path.join(sourceRoot, "Test.tsx"),
+		path.join(sourceRoot, "Test.loom.tsx"),
 		[
 			'import React from "@rbxts/react";',
 			"",
@@ -370,9 +370,185 @@ function createTempPreviewPackageWithMutablePathAlias() {
 			path.join(sharedBSourceRoot, "buildInfo.ts"),
 		),
 		packageRoot,
-		sourceFilePath: fs.realpathSync(path.join(sourceRoot, "Test.tsx")),
+		sourceFilePath: fs.realpathSync(path.join(sourceRoot, "Test.loom.tsx")),
 		sourceRoot: fs.realpathSync(sourceRoot),
 		tsconfigPath: fs.realpathSync(path.join(packageRoot, "tsconfig.json")),
+		workspaceRoot,
+	};
+}
+
+function createTempPreviewWorkspaceWithNestedWorkspacePackages() {
+	const tempWorkspaceRoot = fs.mkdtempSync(
+		path.join(os.tmpdir(), "loom-preview-server-nested-workspace-"),
+	);
+	const workspaceRoot = fs.realpathSync(tempWorkspaceRoot);
+	temporaryRoots.push(workspaceRoot);
+
+	const playgroundRoot = path.join(workspaceRoot, "packages/playground");
+	const styleRoot = path.join(workspaceRoot, "packages/style");
+	const coreRoot = path.join(workspaceRoot, "packages/core");
+	const playgroundSourceRoot = path.join(playgroundRoot, "src/client");
+	const styleSourceRoot = path.join(styleRoot, "src");
+	const styleThemeRoot = path.join(styleSourceRoot, "theme");
+	const coreSourceRoot = path.join(coreRoot, "src");
+	fs.mkdirSync(playgroundSourceRoot, { recursive: true });
+	fs.mkdirSync(styleThemeRoot, { recursive: true });
+	fs.mkdirSync(coreSourceRoot, { recursive: true });
+
+	fs.writeFileSync(
+		path.join(workspaceRoot, "package.json"),
+		JSON.stringify(
+			{
+				private: true,
+				workspaces: ["packages/*"],
+			},
+			null,
+			2,
+		),
+		"utf8",
+	);
+	fs.writeFileSync(
+		path.join(playgroundRoot, "package.json"),
+		JSON.stringify({ name: "@fixtures/playground" }, null, 2),
+		"utf8",
+	);
+	fs.writeFileSync(
+		path.join(styleRoot, "package.json"),
+		JSON.stringify(
+			{
+				dependencies: {
+					"@fixtures/core": "workspace:*",
+				},
+				main: "out/init.luau",
+				name: "@fixtures/style",
+				types: "out/index.d.ts",
+			},
+			null,
+			2,
+		),
+		"utf8",
+	);
+	fs.writeFileSync(
+		path.join(coreRoot, "package.json"),
+		JSON.stringify(
+			{
+				main: "out/init.luau",
+				name: "@fixtures/core",
+				types: "out/index.d.ts",
+			},
+			null,
+			2,
+		),
+		"utf8",
+	);
+	fs.writeFileSync(
+		path.join(playgroundRoot, "tsconfig.json"),
+		JSON.stringify(
+			{
+				compilerOptions: {
+					module: "commonjs",
+					moduleResolution: "Node",
+					rootDir: "src",
+					strict: true,
+					target: "ESNext",
+				},
+				include: ["src"],
+			},
+			null,
+			2,
+		),
+		"utf8",
+	);
+	fs.writeFileSync(
+		path.join(styleRoot, "tsconfig.json"),
+		JSON.stringify(
+			{
+				compilerOptions: {
+					module: "commonjs",
+					moduleResolution: "Node",
+					rootDir: "src",
+					strict: true,
+					target: "ESNext",
+				},
+				include: ["src"],
+			},
+			null,
+			2,
+		),
+		"utf8",
+	);
+	fs.writeFileSync(
+		path.join(coreRoot, "tsconfig.json"),
+		JSON.stringify(
+			{
+				compilerOptions: {
+					module: "commonjs",
+					moduleResolution: "Node",
+					rootDir: "src",
+					strict: true,
+					target: "ESNext",
+				},
+				include: ["src"],
+			},
+			null,
+			2,
+		),
+		"utf8",
+	);
+	fs.writeFileSync(
+		path.join(coreSourceRoot, "index.ts"),
+		[
+			"export function createStrictContext(name: string) {",
+			"\treturn [name] as const;",
+			"}",
+		].join("\n"),
+		"utf8",
+	);
+	fs.writeFileSync(
+		path.join(styleThemeRoot, "ThemeProvider.ts"),
+		[
+			'import { createStrictContext } from "@fixtures/core";',
+			"",
+			"export function useTheme() {",
+			'\treturn createStrictContext("ThemeProvider");',
+			"}",
+		].join("\n"),
+		"utf8",
+	);
+	fs.writeFileSync(
+		path.join(styleSourceRoot, "index.ts"),
+		'export { useTheme } from "./theme/ThemeProvider";\n',
+		"utf8",
+	);
+	fs.writeFileSync(
+		path.join(playgroundSourceRoot, "AccordionBasicScene.tsx"),
+		[
+			'import { useTheme } from "@fixtures/style";',
+			"",
+			"export function AccordionBasicScene() {",
+			"\tuseTheme();",
+			"\treturn null;",
+			"}",
+			"",
+			"export const preview = {",
+			"\tentry: AccordionBasicScene,",
+			"};",
+		].join("\n"),
+		"utf8",
+	);
+
+	return {
+		coreIndexPath: fs.realpathSync(path.join(coreSourceRoot, "index.ts")),
+		playgroundEntryPath: fs.realpathSync(
+			path.join(playgroundSourceRoot, "AccordionBasicScene.tsx"),
+		),
+		playgroundSourceRoot: fs.realpathSync(playgroundSourceRoot),
+		packageRoot: playgroundRoot,
+		sourceRoot: fs.realpathSync(playgroundSourceRoot),
+		styleIndexPath: fs.realpathSync(path.join(styleSourceRoot, "index.ts")),
+		styleThemeProviderPath: fs.realpathSync(
+			path.join(styleThemeRoot, "ThemeProvider.ts"),
+		),
 		workspaceRoot,
 	};
 }
@@ -467,7 +643,7 @@ function createTempPreviewPackageWithBaseUrlAlias() {
 		"utf8",
 	);
 	fs.writeFileSync(
-		path.join(sourceRoot, "Test.tsx"),
+		path.join(sourceRoot, "Test.loom.tsx"),
 		[
 			'import React from "@rbxts/react";',
 			"",
@@ -488,7 +664,7 @@ function createTempPreviewPackageWithBaseUrlAlias() {
 	return {
 		buildInfoPath: fs.realpathSync(path.join(sharedSourceRoot, "buildInfo.ts")),
 		packageRoot,
-		sourceFilePath: fs.realpathSync(path.join(sourceRoot, "Test.tsx")),
+		sourceFilePath: fs.realpathSync(path.join(sourceRoot, "Test.loom.tsx")),
 		sourceRoot: fs.realpathSync(sourceRoot),
 		workspaceRoot: packageRoot,
 	};
@@ -709,13 +885,13 @@ describe("createPreviewViteServer", () => {
 				),
 			);
 			expect(workspaceModuleCode).toContain(
-				'"id": "rbxts-react-preview:Test.tsx"',
+				'"id": "rbxts-react-preview:Test.loom.tsx"',
 			);
 			expect(workspaceModuleCode).toContain('"status": "ready"');
 
 			const entryModuleCode = toLoadedCode(
 				await server.pluginContainer.load(
-					"\0virtual:loom-preview-entry:rbxts-react-preview%3ATest.tsx",
+					"\0virtual:loom-preview-entry:rbxts-react-preview%3ATest.loom.tsx",
 				),
 			);
 			expect(entryModuleCode).toContain(
@@ -864,6 +1040,72 @@ describe("createPreviewViteServer", () => {
 			);
 			expect(transformedSource?.code).toContain(
 				fixture.buildInfoPath.replace(/\\/g, "/"),
+			);
+		} finally {
+			await server.close();
+		}
+	});
+
+	it("resolves nested workspace packages to source files before package outputs or mocks", async () => {
+		const fixture = createTempPreviewWorkspaceWithNestedWorkspacePackages();
+		const server = await createPreviewViteServer(
+			{
+				configDir: fixture.workspaceRoot,
+				cwd: fixture.workspaceRoot,
+				mode: "config-file",
+				projectName: "Nested Workspace Preview",
+				server: {
+					fsAllow: [fixture.workspaceRoot],
+					open: false,
+					port: 4174,
+				},
+				targetDiscovery: [],
+				targets: [
+					{
+						name: "playground",
+						packageName: "@fixtures/playground",
+						packageRoot: fixture.packageRoot,
+						sourceRoot: fixture.sourceRoot,
+					},
+				],
+				transformMode: "strict-fidelity",
+				workspaceRoot: fixture.workspaceRoot,
+			},
+			{
+				appType: "custom",
+				middlewareMode: true,
+			},
+		);
+
+		try {
+			const resolvedStyleId = toResolvedId(
+				await server.pluginContainer.resolveId(
+					"@fixtures/style",
+					fixture.playgroundEntryPath,
+				),
+			);
+			expect(normalizePathSlashes(resolvedStyleId)).toBe(
+				normalizePathSlashes(fixture.styleIndexPath),
+			);
+
+			const resolvedCoreId = toResolvedId(
+				await server.pluginContainer.resolveId(
+					"@fixtures/core",
+					fixture.styleThemeProviderPath,
+				),
+			);
+			expect(normalizePathSlashes(resolvedCoreId)).toBe(
+				normalizePathSlashes(fixture.coreIndexPath),
+			);
+
+			const transformedScene = await server.transformRequest(
+				fixture.playgroundEntryPath,
+			);
+			expect(transformedScene?.code).not.toContain(
+				"__loomUnresolvedEnvMock",
+			);
+			expect(transformedScene?.code).not.toContain(
+				"virtual:loom-preview-unresolved-env",
 			);
 		} finally {
 			await server.close();

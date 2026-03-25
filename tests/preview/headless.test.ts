@@ -97,7 +97,7 @@ function findDebugNode(
 describe("createPreviewHeadlessSession", () => {
 	it("starts with skipped executions and only runs selected entries on demand", async () => {
 		const packageRoot = createTempPreviewPackage({
-			"src/ComponentEntry.tsx": `
+			"src/ComponentEntry.loom.tsx": `
 				export function ComponentEntry() {
 					return <frame Id="component-root"><textlabel Id="component-label" Text="Component" /></frame>;
 				}
@@ -106,7 +106,7 @@ describe("createPreviewHeadlessSession", () => {
 					entry: ComponentEntry,
 				};
 			`,
-			"src/HarnessEntry.tsx": `
+			"src/HarnessEntry.loom.tsx": `
 				export function HarnessCard() {
 					return <frame Id="harness-card"><textlabel Id="harness-label" Text="Harness" /></frame>;
 				}
@@ -122,10 +122,10 @@ describe("createPreviewHeadlessSession", () => {
 		try {
 			const initialSnapshot = session.getSnapshot();
 			const componentId = initialSnapshot.workspaceIndex.entries.find((entry) =>
-				entry.relativePath.endsWith("ComponentEntry.tsx"),
+				entry.relativePath.endsWith("ComponentEntry.loom.tsx"),
 			)?.id;
 			const harnessId = initialSnapshot.workspaceIndex.entries.find((entry) =>
-				entry.relativePath.endsWith("HarnessEntry.tsx"),
+				entry.relativePath.endsWith("HarnessEntry.loom.tsx"),
 			)?.id;
 
 			expect(componentId).toBeTruthy();
@@ -182,7 +182,7 @@ describe("createPreviewHeadlessSession", () => {
 
 	it("reruns entries after clearing runtime issues from previous runs", async () => {
 		const packageRoot = createTempPreviewPackage({
-			"src/RenderFailure.tsx": `
+			"src/RenderFailure.loom.tsx": `
 				export function RenderFailure() {
 					throw new Error("render failed");
 				}
@@ -224,7 +224,7 @@ describe("createPreviewHeadlessSession", () => {
 
 	it("uses the current workspace entry state for later runs", async () => {
 		const packageRoot = createTempPreviewPackage({
-			"src/DynamicEntry.tsx": `
+			"src/DynamicEntry.loom.tsx": `
 				export function DynamicEntry() {
 					return <frame Id="dynamic-root" />;
 				}
@@ -234,7 +234,7 @@ describe("createPreviewHeadlessSession", () => {
 				};
 			`,
 		});
-		const sourceFilePath = path.join(packageRoot, "src", "DynamicEntry.tsx");
+		const sourceFilePath = path.join(packageRoot, "src", "DynamicEntry.loom.tsx");
 
 		const session = await createPreviewHeadlessSession({ cwd: packageRoot });
 
@@ -265,7 +265,7 @@ describe("createPreviewHeadlessSession", () => {
 	});
 	it("renders preview.entry and preview.render entries into execution results", async () => {
 		const packageRoot = createTempPreviewPackage({
-			"src/ComponentEntry.tsx": `
+			"src/ComponentEntry.loom.tsx": `
 				export function ComponentEntry() {
 					return <frame Id="component-root"><textlabel Id="component-label" Text="Component" /></frame>;
 				}
@@ -274,7 +274,7 @@ describe("createPreviewHeadlessSession", () => {
 					entry: ComponentEntry,
 				};
 			`,
-			"src/HarnessEntry.tsx": `
+			"src/HarnessEntry.loom.tsx": `
 				export function HarnessCard() {
 					return <frame Id="harness-card"><textlabel Id="harness-label" Text="Harness" /></frame>;
 				}
@@ -291,10 +291,10 @@ describe("createPreviewHeadlessSession", () => {
 			await session.run();
 			const snapshot = session.getSnapshot();
 			const componentId = snapshot.workspaceIndex.entries.find((entry) =>
-				entry.relativePath.endsWith("ComponentEntry.tsx"),
+				entry.relativePath.endsWith("ComponentEntry.loom.tsx"),
 			)?.id;
 			const harnessId = snapshot.workspaceIndex.entries.find((entry) =>
-				entry.relativePath.endsWith("HarnessEntry.tsx"),
+				entry.relativePath.endsWith("HarnessEntry.loom.tsx"),
 			)?.id;
 
 			expect(componentId).toBeTruthy();
@@ -322,7 +322,7 @@ describe("createPreviewHeadlessSession", () => {
 
 	it("records load and render failures as runtime-blocking execution results", async () => {
 		const packageRoot = createTempPreviewPackage({
-			"src/LoadFailure.tsx": `
+			"src/LoadFailure.loom.tsx": `
 				throw new Error("load failed");
 
 				export function LoadFailure() {
@@ -333,7 +333,7 @@ describe("createPreviewHeadlessSession", () => {
 					entry: LoadFailure,
 				};
 			`,
-			"src/RenderFailure.tsx": `
+			"src/RenderFailure.loom.tsx": `
 				export function RenderFailure() {
 					throw new Error("render failed");
 				}
@@ -350,10 +350,10 @@ describe("createPreviewHeadlessSession", () => {
 			await session.run();
 			const snapshot = session.getSnapshot();
 			const loadEntryId = snapshot.workspaceIndex.entries.find((entry) =>
-				entry.relativePath.endsWith("LoadFailure.tsx"),
+				entry.relativePath.endsWith("LoadFailure.loom.tsx"),
 			)?.id;
 			const renderEntryId = snapshot.workspaceIndex.entries.find((entry) =>
-				entry.relativePath.endsWith("RenderFailure.tsx"),
+				entry.relativePath.endsWith("RenderFailure.loom.tsx"),
 			)?.id;
 
 			expect(loadEntryId).toBeTruthy();
@@ -393,7 +393,7 @@ describe("createPreviewHeadlessSession", () => {
 
 	it("captures degraded host warnings, layout debug, and viewport metadata", async () => {
 		const packageRoot = createTempPreviewPackage({
-			"src/ViewportEntry.tsx": `
+			"src/ViewportEntry.loom.tsx": `
 				export function ViewportEntry() {
 					return (
 						<screengui Id="viewport-screen">
@@ -457,7 +457,7 @@ describe("createPreviewHeadlessSession", () => {
 
 	it("waits for delayed effect mounts before finalizing layout debug", async () => {
 		const packageRoot = createTempPreviewPackage({
-			"src/DelayedEntry.tsx": `
+			"src/DelayedEntry.loom.tsx": `
 				import React from "react";
 
 				export function DelayedEntry() {
@@ -521,7 +521,7 @@ describe("createPreviewHeadlessSession", () => {
 
 	it("captures layout modifier semantics in headless layout debug", async () => {
 		const packageRoot = createTempPreviewPackage({
-			"src/LayoutSemanticsEntry.tsx": `
+			"src/LayoutSemanticsEntry.loom.tsx": `
 				export function LayoutSemanticsEntry() {
 					return (
 						<screengui Id="layout-screen">
@@ -627,7 +627,7 @@ describe("createPreviewHeadlessSession", () => {
 
 	it("restores temporary preview globals after headless execution", async () => {
 		const packageRoot = createTempPreviewPackage({
-			"src/RestoreProbe.tsx": `
+			"src/RestoreProbe.loom.tsx": `
 				export function RestoreProbe() {
 					return <frame Id="restore-probe" />;
 				}

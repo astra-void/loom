@@ -5,6 +5,27 @@ import { installPreviewBrowserGlobals } from "../../packages/preview/src/shell/i
 
 type PreviewGlobalRecord = typeof globalThis & {
 	Enum?: unknown;
+	os?: {
+		clock: () => number;
+	};
+	string?: {
+		find: (
+			value: string,
+			pattern: string,
+			init?: number,
+			plain?: boolean,
+		) => readonly [number, number] | undefined;
+		gsub: (
+			value: string,
+			pattern: string,
+			replacement:
+				| string
+				| ((match: string, ...captures: string[]) => unknown),
+		) => readonly [string, number];
+		lower: (value: string) => string;
+		sub: (value: string, start?: number, finish?: number) => string;
+		upper: (value: string) => string;
+	};
 	TweenInfo?: new (...args: unknown[]) => unknown;
 	Vector3?: new (x: number, y: number, z: number) => { Z: number };
 	game?: unknown;
@@ -12,6 +33,8 @@ type PreviewGlobalRecord = typeof globalThis & {
 		clamp: (value: number, min: number, max: number) => number;
 		max: (...values: number[]) => number;
 	};
+	next?: unknown;
+	typeIs?: unknown;
 	warn?: (...args: unknown[]) => void;
 	workspace?: unknown;
 };
@@ -23,8 +46,13 @@ const previewGlobalFallbackMarker = Symbol.for(
 const initialEnum = globalRecord.Enum;
 const initialGame = globalRecord.game;
 const initialMath = globalRecord.math;
+const initialNext = globalRecord.next;
+const initialPairs = (globalRecord as PreviewGlobalRecord & { pairs?: unknown }).pairs;
+const initialOs = globalRecord.os;
 const initialTweenInfo = globalRecord.TweenInfo;
 const initialVector3 = globalRecord.Vector3;
+const initialString = globalRecord.string;
+const initialTypeIs = globalRecord.typeIs;
 const initialWarn = globalRecord.warn;
 const initialWorkspace = globalRecord.workspace;
 const globalPrototypeHost = Object.getPrototypeOf(globalThis);
@@ -58,6 +86,25 @@ afterEach(() => {
 		globalRecord.math = initialMath;
 	}
 
+	if (initialNext === undefined) {
+		delete globalRecord.next;
+	} else {
+		globalRecord.next = initialNext;
+	}
+
+	if (initialPairs === undefined) {
+		delete (globalRecord as PreviewGlobalRecord & { pairs?: unknown }).pairs;
+	} else {
+		(globalRecord as PreviewGlobalRecord & { pairs?: unknown }).pairs =
+			initialPairs;
+	}
+
+	if (initialOs === undefined) {
+		delete globalRecord.os;
+	} else {
+		globalRecord.os = initialOs;
+	}
+
 	if (initialTweenInfo === undefined) {
 		delete globalRecord.TweenInfo;
 	} else {
@@ -68,6 +115,18 @@ afterEach(() => {
 		delete globalRecord.Vector3;
 	} else {
 		globalRecord.Vector3 = initialVector3;
+	}
+
+	if (initialString === undefined) {
+		delete globalRecord.string;
+	} else {
+		globalRecord.string = initialString;
+	}
+
+	if (initialTypeIs === undefined) {
+		delete globalRecord.typeIs;
+	} else {
+		globalRecord.typeIs = initialTypeIs;
 	}
 
 	if (initialWarn === undefined) {
@@ -140,8 +199,15 @@ describe("installPreviewBrowserGlobals", () => {
 		const result = Function(`
       "use strict";
       return {
+        stringLower: string.lower("Spell"),
+        stringFind: string.find("spell", "ell", 1, true)?.[0],
+        stringGsub: string.gsub("a-b_c!", "[^%w_%-]", "-")[0],
+        osClockType: typeof os.clock,
         stringSize: "Spell".size(),
         tostringValue: tostring(42),
+        nextPair: next({ a: 1, b: 2 })?.[0],
+        typeIsTable: typeIs({}, "table"),
+        pairsCount: [...pairs({ a: 1, b: 2 })].length,
         tweenInfoType: typeof TweenInfo,
         taskDelayType: typeof task.delay,
         tostringType: typeof tostring,
@@ -153,8 +219,15 @@ describe("installPreviewBrowserGlobals", () => {
         workspaceMatches: workspace === game.GetService("Workspace"),
       };
     `)() as {
+			stringLower: string;
+			stringFind: number | string | undefined;
+			stringGsub: string;
+			osClockType: string;
 			stringSize: number;
 			tostringValue: string;
+			nextPair: string | number | undefined;
+			typeIsTable: boolean;
+			pairsCount: number;
 			tweenInfoType: string;
 			taskDelayType: string;
 			tostringType: string;
@@ -167,7 +240,14 @@ describe("installPreviewBrowserGlobals", () => {
 		};
 
 		expect(result.stringSize).toBe(5);
+		expect(result.stringLower).toBe("spell");
+		expect(result.stringFind).toBe(3);
+		expect(result.stringGsub).toBe("a-b_c-");
+		expect(result.osClockType).toBe("function");
 		expect(result.tostringValue).toBe("42");
+		expect(result.nextPair).toBe("a");
+		expect(result.typeIsTable).toBe(true);
+		expect(result.pairsCount).toBe(2);
 		expect(result.tweenInfoType).toBe("function");
 		expect(result.taskDelayType).toBe("function");
 		expect(result.tostringType).toBe("function");

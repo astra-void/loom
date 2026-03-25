@@ -293,7 +293,7 @@ describe("buildPreviewArtifacts", () => {
 	it("builds entry metadata and layout schema sidecars in metadata-only mode", async () => {
 		const { packageRoot, sourceRoot, workspaceRoot } =
 			createTempWorkspacePackage({
-				"src/Card.tsx": `
+				"src/Card.loom.tsx": `
         export function Card() {
           return <frame />;
         }
@@ -324,14 +324,14 @@ describe("buildPreviewArtifacts", () => {
 					"fixture",
 					".preview-engine",
 					"entry-metadata",
-					"Card.tsx.preview-entry.json",
+					"Card.loom.tsx.preview-entry.json",
 				),
 				path.join(
 					outDir,
 					"fixture",
 					".preview-engine",
 					"layout-schema",
-					"Card.tsx.preview-layout.json",
+					"Card.loom.tsx.preview-layout.json",
 				),
 			]),
 		);
@@ -343,12 +343,12 @@ describe("buildPreviewArtifacts", () => {
 					"fixture",
 					".preview-engine",
 					"entry-metadata",
-					"Card.tsx.preview-entry.json",
+					"Card.loom.tsx.preview-entry.json",
 				),
 				"utf8",
 			),
 		) as { descriptor: { id: string } };
-		expect(metadataPayload.descriptor.id).toBe("fixture:Card.tsx");
+		expect(metadataPayload.descriptor.id).toBe("fixture:Card.loom.tsx");
 
 		const second = await buildPreviewArtifacts(
 			createBuildOptions(packageRoot, sourceRoot, workspaceRoot, {

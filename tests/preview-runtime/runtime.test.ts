@@ -4,9 +4,14 @@ import {
 	Color3,
 	Enum,
 	game,
+	os as previewOs,
+	next,
+	pairs,
 	RunService,
 	type SetupRobloxEnvironmentTarget,
 	setupRobloxEnvironment,
+	string as previewString,
+	typeIs,
 	TweenInfo,
 	task,
 	UDim2,
@@ -111,6 +116,22 @@ describe.sequential("@loom-dev/preview-runtime", () => {
 		expect(previewEnum.TextXAlignment.FromValue(7).Value).toBe(7);
 		expect(String(previewEnum.KeyCode.Return)).toBe("Enum.KeyCode.Return");
 		expect(previewEnum.KeyCode.Return.Value).toBeTypeOf("number");
+	});
+
+	it("provides string helpers and a monotonic os.clock", () => {
+		const performanceNow = vi.spyOn(performance, "now").mockReturnValue(1234);
+
+		expect(previewString.lower("HeLLo")).toBe("hello");
+		expect(previewString.upper("HeLLo")).toBe("HELLO");
+		expect(previewString.sub("abcdef", 2, 4)).toBe("bcd");
+		expect(previewString.find("spell", "ell", 1, true)).toEqual([3, 5]);
+		expect(previewString.gsub("a-b_c!", "[^%w_%-]", "-")).toEqual([
+			"a-b_c-",
+			1,
+		]);
+		expect(previewOs.clock()).toBeCloseTo(1.234, 3);
+
+		performanceNow.mockRestore();
 	});
 
 	it("shares one RAF loop between task.wait and RunService listeners", async () => {
@@ -231,14 +252,19 @@ describe.sequential("@loom-dev/preview-runtime", () => {
 
 		setupRobloxEnvironment(target);
 
-		expect(target.Color3).toBe(existingColor3);
-		expect(target.Enum).toBe(Enum);
-		expect(target.RunService).toBe(RunService);
-		expect(target.task).toBe(existingTask);
-		expect(target.game).toBe(game);
-		expect(target.TweenInfo).toBe(TweenInfo);
-		expect(target.workspace).toBe(workspace);
-	});
+			expect(target.Color3).toBe(existingColor3);
+			expect(target.Enum).toBe(Enum);
+			expect(target.RunService).toBe(RunService);
+			expect(target.next).toBe(next);
+			expect(target.pairs).toBe(pairs);
+			expect(target.string).toBe(previewString);
+			expect(target.os).toBe(previewOs);
+			expect(target.typeIs).toBe(typeIs);
+			expect(target.task).toBe(existingTask);
+			expect(target.game).toBe(game);
+			expect(target.TweenInfo).toBe(TweenInfo);
+			expect(target.workspace).toBe(workspace);
+		});
 
 	it("setupRobloxEnvironment installs Color3 on the global target", () => {
 		setupRobloxEnvironment();
