@@ -102,13 +102,14 @@ const STANDARD_GLOBAL_IDENTIFIER_NAMES: &[&str] = &[
     "setTimeout",
     "window",
 ];
-const RUNTIME_HELPER_NAMES: [&str; 10] = [
+const RUNTIME_HELPER_NAMES: [&str; 11] = [
     PREVIEW_GLOBAL_HELPER_NAME,
     "Color3",
     "UDim2",
     "UDim",
     "Vector2",
     "Vector3",
+    "next",
     "typeIs",
     "pairs",
     "error",
