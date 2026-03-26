@@ -581,9 +581,10 @@ describe("preview bootstrap normalization", () => {
           return <frame />;
         }
 
-        export const preview = {
+        export const preview = ({
           entry: ButtonPreview,
-        };
+          title: "Button",
+        }) as const;
       `,
 			"utf8",
 		);
@@ -598,6 +599,7 @@ describe("preview bootstrap normalization", () => {
 			);
 			expect(snapshot.workspaceIndex.entries).toEqual([
 				expect.objectContaining({
+					title: "Button",
 					relativePath: "Button.loom.tsx",
 					selection: expect.objectContaining({ kind: "explicit" }),
 					status: "ready",

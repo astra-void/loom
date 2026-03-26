@@ -197,6 +197,43 @@ describe("preview source transform", () => {
 		expect(result.code).toContain("LayerInteractEvent");
 	});
 
+	it("keeps core React wrappers in ESM form without emitting require", () => {
+		const reactWrapperPath = path.resolve(
+			process.cwd(),
+			"../../rojo/lattice-ui/packages/core/src/react.ts",
+		);
+		const reactRobloxWrapperPath = path.resolve(
+			process.cwd(),
+			"../../rojo/lattice-ui/packages/core/src/reactRoblox.ts",
+		);
+
+		const reactResult = transformPreviewSource(
+			fs.readFileSync(reactWrapperPath, "utf8"),
+			{
+				filePath: reactWrapperPath,
+				mode: "compatibility",
+				runtimeModule: "@loom-dev/preview-runtime",
+				target: "core-react-wrapper",
+			},
+		);
+		const reactRobloxResult = transformPreviewSource(
+			fs.readFileSync(reactRobloxWrapperPath, "utf8"),
+			{
+				filePath: reactRobloxWrapperPath,
+				mode: "compatibility",
+				runtimeModule: "@loom-dev/preview-runtime",
+				target: "core-react-roblox-wrapper",
+			},
+		);
+
+		expect(reactResult.diagnostics).toHaveLength(0);
+		expect(reactResult.code).toContain('from "react"');
+		expect(reactResult.code).not.toContain("require(");
+		expect(reactRobloxResult.diagnostics).toHaveLength(0);
+		expect(reactRobloxResult.code).toContain('from "@rbxts/react-roblox"');
+		expect(reactRobloxResult.code).not.toContain("require(");
+	});
+
 	it("passes Roblox globals through to the runtime fallback and still reports unsupported host elements", () => {
 		const source = `
       export const value = game.GetService("Players");

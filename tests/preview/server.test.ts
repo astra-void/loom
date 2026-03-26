@@ -11,6 +11,7 @@ import {
 	suppressExpectedConsoleMessages,
 	suppressExpectedStderrMessages,
 } from "../testLogUtils";
+
 vi.setConfig({ testTimeout: 15000 });
 
 const temporaryRoots: string[] = [];
@@ -901,7 +902,9 @@ describe("createPreviewViteServer", () => {
 			const transformedSource = await server.transformRequest(
 				fixture.sourceFilePath,
 			);
-			expect(transformedSource?.code).toContain("react_jsx-dev-runtime");
+			expect(transformedSource?.code).toContain(
+				"/packages/preview/src/source/react-shims/browser/react-jsx-dev-runtime.js",
+			);
 			expect(transformedSource?.code).toContain(
 				"/packages/preview-runtime/src/index.ts",
 			);
@@ -937,6 +940,115 @@ describe("createPreviewViteServer", () => {
 			expect(transformedOptimizedDependency?.code).not.toContain(
 				"RefreshRuntime",
 			);
+		} finally {
+			await server.close();
+		}
+	});
+
+	it("resolves @rbxts/react-roblox to the browser shim in normal preview mode", async () => {
+		const fixture = createTempPreviewPackage();
+		fs.writeFileSync(
+			fixture.sourceFilePath,
+			[
+				'import React from "@rbxts/react";',
+				'import ReactRoblox from "@rbxts/react-roblox";',
+				"",
+				"function Test() {",
+				"\tvoid ReactRoblox;",
+				"\treturn <frame />;",
+				"}",
+				"",
+				"export const preview = {",
+				"\tentry: Test,",
+				"};",
+			].join("\n"),
+			"utf8",
+		);
+
+		const resolvedConfig = await resolvePreviewServerConfig({
+			cwd: fixture.packageRoot,
+			packageName: "rbxts-react-preview",
+			packageRoot: fixture.packageRoot,
+			sourceRoot: fixture.sourceRoot,
+		});
+		const server = await createPreviewViteServer(resolvedConfig, {
+			appType: "custom",
+		});
+
+		try {
+			const shimPath = normalizePathSlashes(
+				path.resolve(
+					process.cwd(),
+					"packages/preview/src/source/react-shims/browser/react-roblox.js",
+				),
+			);
+			const resolvedImportId = toResolvedId(
+				await server.pluginContainer.resolveId(
+					"@rbxts/react-roblox",
+					fixture.sourceFilePath,
+				),
+			);
+			expect(normalizePathSlashes(resolvedImportId)).toBe(shimPath);
+
+			const transformedSource = await server.transformRequest(
+				fixture.sourceFilePath,
+			);
+			expect(transformedSource?.code).toContain(shimPath);
+			expect(transformedSource?.code).not.toContain("__loomUnresolvedEnvMock");
+		} finally {
+			await server.close();
+		}
+	});
+
+	it("resolves @rbxts/react to the browser shim in normal preview mode", async () => {
+		const fixture = createTempPreviewPackage();
+		fs.writeFileSync(
+			fixture.sourceFilePath,
+			[
+				'import React from "@rbxts/react";',
+				"",
+				"function Test() {",
+				"\tvoid React;",
+				"\treturn <frame />;",
+				"}",
+				"",
+				"export const preview = {",
+				"\tentry: Test,",
+				"};",
+			].join("\n"),
+			"utf8",
+		);
+
+		const resolvedConfig = await resolvePreviewServerConfig({
+			cwd: fixture.packageRoot,
+			packageName: "rbxts-react-preview",
+			packageRoot: fixture.packageRoot,
+			sourceRoot: fixture.sourceRoot,
+		});
+		const server = await createPreviewViteServer(resolvedConfig, {
+			appType: "custom",
+		});
+
+		try {
+			const shimPath = normalizePathSlashes(
+				path.resolve(
+					process.cwd(),
+					"packages/preview/src/source/react-shims/browser/react.js",
+				),
+			);
+			const resolvedImportId = toResolvedId(
+				await server.pluginContainer.resolveId(
+					"@rbxts/react",
+					fixture.sourceFilePath,
+				),
+			);
+			expect(normalizePathSlashes(resolvedImportId)).toBe(shimPath);
+
+			const transformedSource = await server.transformRequest(
+				fixture.sourceFilePath,
+			);
+			expect(transformedSource?.code).toContain(shimPath);
+			expect(transformedSource?.code).not.toContain("__loomUnresolvedEnvMock");
 		} finally {
 			await server.close();
 		}
@@ -1101,9 +1213,7 @@ describe("createPreviewViteServer", () => {
 			const transformedScene = await server.transformRequest(
 				fixture.playgroundEntryPath,
 			);
-			expect(transformedScene?.code).not.toContain(
-				"__loomUnresolvedEnvMock",
-			);
+			expect(transformedScene?.code).not.toContain("__loomUnresolvedEnvMock");
 			expect(transformedScene?.code).not.toContain(
 				"virtual:loom-preview-unresolved-env",
 			);

@@ -196,13 +196,13 @@ describe("createPreviewEngine", () => {
 
         export { Showcase as ExplicitCard };
 
-        export const preview = {
+        export const preview = ({
           entry: Showcase,
           props: {
             checked: true,
           },
           title: "Explicit Card",
-        };
+        }) as const;
       `,
 		});
 
@@ -365,9 +365,109 @@ describe("createPreviewEngine", () => {
 				}),
 			]),
 		});
-		expect(sharedTarget.sourceRoot).toBe(
-			path.join(workspace.workspaceRoot, "packages", "shared", "src"),
+	expect(sharedTarget.sourceRoot).toBe(
+		path.join(workspace.workspaceRoot, "packages", "shared", "src"),
+	);
+	});
+
+	it("maps workspace package declaration outputs under out back to source files", () => {
+		const workspace = createTempPreviewWorkspace({
+			"@fixtures/core": {
+				"package.json": JSON.stringify(
+					{
+						name: "@fixtures/core",
+						types: "out/index.d.ts",
+					},
+					null,
+					2,
+				),
+				"out/index.d.ts": `export { CoreThing } from "../src/index";\n`,
+				"src/index.tsx": `
+          export function CoreThing() {
+            return <frame />;
+          }
+        `,
+				"tsconfig.json": JSON.stringify(
+					{
+						compilerOptions: {
+							composite: true,
+							module: "ESNext",
+							moduleResolution: "Node",
+							outDir: "out",
+							rootDir: "src",
+							target: "ESNext",
+						},
+						include: ["src/**/*.ts", "src/**/*.tsx"],
+					},
+					null,
+					2,
+				),
+			},
+			"@fixtures/ui": {
+				"package.json": JSON.stringify({ name: "@fixtures/ui" }, null, 2),
+				"src/Entry.loom.tsx": `
+          import { CoreThing } from "@fixtures/core";
+
+          export function Entry() {
+            return <CoreThing />;
+          }
+
+          export const preview = {
+            entry: Entry,
+          };
+        `,
+				"tsconfig.json": JSON.stringify(
+					{
+						compilerOptions: {
+							jsx: "preserve",
+							module: "ESNext",
+							moduleResolution: "Node",
+							target: "ESNext",
+						},
+						include: ["src/**/*.ts", "src/**/*.tsx"],
+						references: [{ path: "../core" }],
+					},
+					null,
+					2,
+				),
+			},
+		});
+
+		const uiTarget = workspace.getPackage("@fixtures/ui");
+		const engine = createPreviewEngine({
+			projectName: "Workspace Preview",
+			targets: [
+				{
+					name: "ui",
+					packageName: "@fixtures/ui",
+					packageRoot: uiTarget.packageRoot,
+					sourceRoot: uiTarget.sourceRoot,
+				},
+			],
+			transformMode: "compatibility",
+		});
+
+		const payload = sanitizePaths(
+			engine.getEntryPayload("ui:Entry.loom.tsx"),
+			workspace.workspaceRoot,
 		);
+		expect(
+			payload.diagnostics.some(
+				(diagnostic) => diagnostic.code === "DECLARATION_ONLY_BOUNDARY",
+			),
+		).toBe(false);
+		expect(payload.graphTrace.imports).toContainEqual(
+			expect.objectContaining({
+				importerProjectConfigPath: "<pkg>/packages/ui/tsconfig.json",
+				resolution: "resolved",
+				resolutionKind: "workspace-package",
+				resolvedFile: "<pkg>/packages/core/src/index.tsx",
+				specifier: "@fixtures/core",
+			}),
+		);
+		expect(payload.graphTrace.selection).toMatchObject({
+			resolvedExportName: "Entry",
+		});
 	});
 
 	it("resolves workspace package declaration outputs back to source and invalidates dependents", () => {
@@ -498,10 +598,10 @@ describe("createPreviewEngine", () => {
         }
       `,
 			"src/Harness.loom.tsx": `
-        export const preview = {
+        export const preview = ({
           render: () => <frame />,
           title: "Harness Demo",
-        };
+        }) as const;
       `,
 		});
 

@@ -49,25 +49,7 @@ function createPreviewPlugin(
 	sourceRoot: string,
 	runtimeModule?: string,
 ): PreviewPlugin {
-	const plugins = createPreviewVitePlugin({
-			projectName: "Fixture Preview",
-			...(runtimeModule ? { runtimeModule } : {}),
-			workspaceRoot: fixtureRoot,
-			targets: [
-				{
-				name: "fixture",
-				packageName: "@fixtures/plugin",
-				packageRoot: fixtureRoot,
-				sourceRoot,
-			},
-		],
-	});
-
-	if (!Array.isArray(plugins)) {
-		throw new Error(
-			"Expected the preview Vite plugin factory to return a plugin array.",
-		);
-	}
+	const plugins = createPreviewPlugins(fixtureRoot, sourceRoot, runtimeModule);
 
 	const previewPlugin = plugins.find(
 		(plugin) =>
@@ -87,6 +69,38 @@ function createPreviewPlugin(
 	}
 
 	return previewPlugin as PreviewPlugin;
+}
+
+function createPreviewPlugins(
+	fixtureRoot: string,
+	sourceRoot: string,
+	runtimeModule?: string,
+) {
+	return createPreviewVitePlugin({
+		projectName: "Fixture Preview",
+		...(runtimeModule ? { runtimeModule } : {}),
+		workspaceRoot: fixtureRoot,
+		targets: [
+			{
+				name: "fixture",
+				packageName: "@fixtures/plugin",
+				packageRoot: fixtureRoot,
+				sourceRoot,
+			},
+		],
+	});
+}
+
+function assertPreviewPlugins(
+	plugins: ReturnType<typeof createPreviewPlugins>,
+) {
+	if (!Array.isArray(plugins)) {
+		throw new Error(
+			"Expected the preview Vite plugin factory to return a plugin array.",
+		);
+	}
+
+	return plugins;
 }
 
 function createMockServer() {
@@ -257,7 +271,58 @@ describe("createPreviewVitePlugin", () => {
 		expect(entryModuleCode).toContain(runtimeModulePath.replace(/\\/g, "/"));
 	});
 
-	it("only discovers and transforms .loom.tsx preview entries", async () => {
+	it("resolves browser runtime shims for preview source imports", () => {
+		const { fixtureRoot, sourceRoot } = createFixtureRoot();
+		const plugins = assertPreviewPlugins(
+			createPreviewPlugins(fixtureRoot, sourceRoot),
+		);
+		const runtimeResolvePlugin = plugins.find(
+			(plugin) =>
+				plugin &&
+				typeof plugin === "object" &&
+				"name" in plugin &&
+				plugin.name === "loom-preview-runtime-dependency-resolve",
+		);
+		if (!runtimeResolvePlugin || typeof runtimeResolvePlugin !== "object") {
+			throw new Error(
+				"Expected the runtime dependency resolve plugin to be present.",
+			);
+		}
+
+		const resolveId = getHookHandler<TestResolveIdHook>(
+			runtimeResolvePlugin.resolveId as TestResolveIdHook | undefined,
+		);
+		expect(
+			resolveId?.("@rbxts/react-roblox", path.join(sourceRoot, "Entry.tsx")),
+		).toBe(
+			path
+				.resolve(
+					process.cwd(),
+					"packages/preview/src/source/react-shims/browser/react-roblox.js",
+				)
+				.replace(/\\/g, "/"),
+		);
+		expect(resolveId?.("react", path.join(sourceRoot, "Entry.tsx"))).toBe(
+			path
+				.resolve(
+					process.cwd(),
+					"packages/preview/src/source/react-shims/browser/react.js",
+				)
+				.replace(/\\/g, "/"),
+		);
+		expect(
+			resolveId?.("@rbxts/react", path.join(sourceRoot, "Entry.tsx")),
+		).toBe(
+			path
+				.resolve(
+					process.cwd(),
+					"packages/preview/src/source/react-shims/browser/react.js",
+				)
+				.replace(/\\/g, "/"),
+		);
+	});
+
+	it("discovers .loom.tsx preview entries and transforms source files under the target root", async () => {
 		const { fixtureRoot, sourceRoot } = createFixtureRoot();
 		const entryFile = path.join(sourceRoot, "Button.loom.tsx");
 		const plainFile = path.join(sourceRoot, "Button.tsx");
@@ -306,7 +371,9 @@ describe("createPreviewVitePlugin", () => {
 			fs.readFileSync(plainFile, "utf8"),
 			plainFile,
 		);
-		expect(plainTransformed).toBeUndefined();
+		const plainTransformedCode = getHookResultCode(plainTransformed);
+		expect(plainTransformedCode).toContain("__previewGlobal");
+		expect(plainTransformedCode).not.toContain("<frame");
 	});
 
 	it("injects the configured runtime module when transformed output references __rbxStyle", async () => {
