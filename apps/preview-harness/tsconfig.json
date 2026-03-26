@@ -24,6 +24,7 @@
 		"src/**/*.d.ts",
 		"loom.config.ts",
 		"vite.config.ts",
+		"../../packages/preview/src/jsdom.d.ts",
 		"../../packages/preview/src/source/virtual-modules.d.ts"
 	],
 	"exclude": ["src/generated/**/*"]
