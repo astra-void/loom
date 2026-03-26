@@ -216,6 +216,7 @@ export {
 	VideoFrame,
 	ViewportFrame,
 } from "./hosts";
+export { PreviewTargetShell } from "./hosts/preview-targets/PreviewTargetShell";
 export {
 	areViewportsEqual,
 	createViewportSize,
