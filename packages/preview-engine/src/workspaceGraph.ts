@@ -366,8 +366,12 @@ function dedupeSorted(values: string[]) {
 	);
 }
 
+function stripDeclarationSuffix(filePath: string) {
+	return filePath.replace(/\.d\.tsx?$/, "");
+}
+
 function createCandidateFilePaths(basePath: string) {
-	const normalized = basePath.replace(/\\/g, "/");
+	const normalized = stripDeclarationSuffix(basePath).replace(/\\/g, "/");
 	const extension = path.extname(normalized);
 	const withoutExtension = extension
 		? normalized.slice(0, -extension.length)
@@ -471,22 +475,22 @@ function mapResolvedPathToSourceCandidates(
 ) {
 	const candidates: string[] = [];
 	const normalizedResolvedPath = resolveRealFilePath(resolvedFilePath);
+	const sourceResolvedPath = stripDeclarationSuffix(normalizedResolvedPath);
 
 	if (isTraceableSourceFile(normalizedResolvedPath)) {
 		uniquePush(candidates, normalizedResolvedPath);
 	}
 
-	const extension = path.extname(normalizedResolvedPath);
+	const extension = path.extname(sourceResolvedPath);
 	const withoutExtension = extension
-		? normalizedResolvedPath.slice(0, -extension.length)
-		: normalizedResolvedPath;
+		? sourceResolvedPath.slice(0, -extension.length)
+		: sourceResolvedPath;
 	uniquePush(candidates, `${withoutExtension}.tsx`);
 	uniquePush(candidates, `${withoutExtension}.ts`);
 
 	if (isDeclarationFile(normalizedResolvedPath)) {
-		const withoutDeclaration = normalizedResolvedPath.replace(/\.d\.tsx?$/, "");
-		uniquePush(candidates, `${withoutDeclaration}.tsx`);
-		uniquePush(candidates, `${withoutDeclaration}.ts`);
+		uniquePush(candidates, `${sourceResolvedPath}.tsx`);
+		uniquePush(candidates, `${sourceResolvedPath}.ts`);
 	}
 
 	if (

@@ -240,13 +240,8 @@ function toRuntimeDiagnostic(issue: PreviewRuntimeIssue): PreviewDiagnostic {
 	return {
 		blocking: issue.blocking ?? issue.severity !== "warning",
 		code: issue.code,
-		...(issue.codeFrame || issue.details
-			? {
-					details: [issue.details, issue.codeFrame]
-						.filter(Boolean)
-						.join("\n\n"),
-				}
-			: {}),
+		...(issue.codeFrame ? { codeFrame: issue.codeFrame } : {}),
+		...(issue.details ? { details: issue.details } : {}),
 		entryId: issue.entryId,
 		file: issue.file,
 		...(issue.importChain ? { importChain: issue.importChain } : {}),
@@ -441,7 +436,21 @@ function computeTransformState(
 				entryId,
 				diagnostic,
 			);
-			const key = `${nextDiagnostic.file}:${nextDiagnostic.code}:${nextDiagnostic.summary}:${nextDiagnostic.symbol ?? ""}`;
+			const key = JSON.stringify([
+				"engine",
+				nextDiagnostic.phase,
+				nextDiagnostic.entryId,
+				nextDiagnostic.file,
+				nextDiagnostic.code,
+				nextDiagnostic.summary,
+				nextDiagnostic.severity,
+				nextDiagnostic.target,
+				nextDiagnostic.blocking ?? "",
+				nextDiagnostic.symbol ?? "",
+				nextDiagnostic.details ?? "",
+				nextDiagnostic.codeFrame ?? "",
+				nextDiagnostic.importChain?.join(">") ?? "",
+			]);
 			diagnostics.set(key, nextDiagnostic);
 		}
 	}

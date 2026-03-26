@@ -180,7 +180,13 @@ function getDiagnosticKey(diagnostic: PreviewBuildDiagnostic) {
 			diagnostic.file,
 			diagnostic.code,
 			diagnostic.summary,
+			diagnostic.severity,
 			diagnostic.target,
+			diagnostic.blocking ?? "",
+			diagnostic.symbol ?? "",
+			diagnostic.details ?? "",
+			diagnostic.codeFrame ?? "",
+			diagnostic.importChain?.join(">") ?? "",
 		]);
 	}
 
@@ -191,6 +197,10 @@ function getDiagnosticKey(diagnostic: PreviewBuildDiagnostic) {
 		diagnostic.line,
 		diagnostic.column,
 		diagnostic.summary,
+		diagnostic.severity,
+		diagnostic.blocking,
+		diagnostic.symbol ?? "",
+		diagnostic.details ?? "",
 		diagnostic.target,
 	]);
 }

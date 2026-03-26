@@ -197,10 +197,27 @@ function getPropertyNameText(name: ts.PropertyName) {
 	return undefined;
 }
 
+function unwrapPreviewExpression(node: ts.Expression | undefined) {
+	let current = node;
+
+	while (
+		current &&
+		(ts.isParenthesizedExpression(current) ||
+			ts.isAsExpression(current) ||
+			ts.isTypeAssertionExpression(current))
+	) {
+		current = current.expression;
+	}
+
+	return current;
+}
+
 function parsePreviewObject(
 	node: ts.Expression | undefined,
 ): PreviewExportInfo | undefined {
-	if (!node || !ts.isObjectLiteralExpression(node)) {
+	const unwrappedNode = unwrapPreviewExpression(node);
+
+	if (!unwrappedNode || !ts.isObjectLiteralExpression(unwrappedNode)) {
 		return undefined;
 	}
 
@@ -209,7 +226,7 @@ function parsePreviewObject(
 	let hasProps = false;
 	let hasRender = false;
 
-	for (const property of node.properties) {
+	for (const property of unwrappedNode.properties) {
 		if (
 			!ts.isPropertyAssignment(property) &&
 			!ts.isShorthandPropertyAssignment(property)

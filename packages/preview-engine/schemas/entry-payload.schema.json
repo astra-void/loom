@@ -95,6 +95,9 @@
 				"code": {
 					"type": "string"
 				},
+				"codeFrame": {
+					"type": "string"
+				},
 				"details": {
 					"type": "string"
 				},

@@ -177,6 +177,7 @@ export type PreviewDiagnostic = {
 		| PreviewDiscoveryDiagnosticCode
 		| PreviewTransformDiagnostic["code"]
 		| string;
+	codeFrame?: string;
 	details?: string;
 	entryId: string;
 	file: string;
