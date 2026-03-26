@@ -39,10 +39,18 @@ const RESOLVED_ENTRY_MODULE_ID_PREFIX = `\0${ENTRY_MODULE_ID_PREFIX}`;
 const PREVIEW_UPDATE_EVENT = "loom-preview:update";
 const RUNTIME_ISSUES_EVENT = "loom-preview:runtime-issues";
 const RBX_STYLE_HELPER_NAME = "__rbxStyle";
-const PREVIEW_ENTRY_FILE_SUFFIX = ".loom.tsx";
 
 function createRbxStyleImport(runtimeModulePath: string) {
 	return `import { ${RBX_STYLE_HELPER_NAME} } from ${JSON.stringify(runtimeModulePath)};\n`;
+}
+
+function resolvePreviewPackageEntry(candidates: string[], label: string) {
+	const matchedPath = candidates.find((candidate) => fs.existsSync(candidate));
+	if (!matchedPath) {
+		throw new Error(`Unable to resolve ${label} entry.`);
+	}
+
+	return matchedPath.split(path.sep).join("/");
 }
 
 type TransformPreviewSourceInvocationOptions = Parameters<
@@ -94,6 +102,32 @@ function createWorkspaceSourceResolvePlugin(
 			return resolution.followedFilePath;
 		},
 	};
+}
+
+function resolveBrowserReactShimEntry(fileName: string) {
+	return resolvePreviewPackageEntry(
+		[
+			path.resolve(__dirname, `./react-shims/browser/${fileName}`),
+			path.resolve(
+				__dirname,
+				`../../src/source/react-shims/browser/${fileName}`,
+			),
+		],
+		`react shim ${fileName}`,
+	);
+}
+
+function resolveBrowserReactRobloxShimEntry() {
+	return resolvePreviewPackageEntry(
+		[
+			path.resolve(__dirname, "./react-shims/browser/react-roblox.js"),
+			path.resolve(
+				__dirname,
+				"../../src/source/react-shims/browser/react-roblox.js",
+			),
+		],
+		"react-roblox shim",
+	);
 }
 
 function resolveRuntimeEntryPath() {
@@ -224,7 +258,7 @@ function isWatchedCandidate(
 function isTransformablePreviewSourceFile(filePath: string) {
 	const normalizedFilePath = stripFileIdDecorations(filePath);
 	return (
-		normalizedFilePath.endsWith(PREVIEW_ENTRY_FILE_SUFFIX) &&
+		isTransformableSourceFile(normalizedFilePath) &&
 		!normalizedFilePath.endsWith(".d.loom.tsx")
 	);
 }
@@ -256,6 +290,51 @@ function resolveWatchRoots(targets: PreviewSourceTarget[]) {
 			}),
 		),
 	].sort((left, right) => left.localeCompare(right));
+}
+
+function createRuntimeDependencyResolvePlugin(): PreviewPluginOption {
+	const browserShimsRoot = resolvePreviewPackageEntry(
+		[
+			path.resolve(__dirname, "./react-shims/browser"),
+			path.resolve(__dirname, "../../src/source/react-shims/browser"),
+		],
+		"react shims root",
+	);
+	const shimEntries = new Map<string, string>([
+		["react-dom/client", resolveBrowserReactShimEntry("react-dom-client.js")],
+		["react-dom/server", resolveBrowserReactShimEntry("react-dom-server.js")],
+		["react-dom", resolveBrowserReactShimEntry("react-dom.js")],
+		[
+			"react/jsx-dev-runtime",
+			resolveBrowserReactShimEntry("react-jsx-dev-runtime.js"),
+		],
+		["react/jsx-runtime", resolveBrowserReactShimEntry("react-jsx-runtime.js")],
+		["react", resolveBrowserReactShimEntry("react.js")],
+		["@rbxts/react", resolveBrowserReactShimEntry("react.js")],
+		["@rbxts/react-roblox", resolveBrowserReactRobloxShimEntry()],
+	]);
+
+	return {
+		enforce: "pre",
+		name: "loom-preview-runtime-dependency-resolve",
+		resolveId(id, importer, options) {
+			if (options?.ssr) {
+				return undefined;
+			}
+
+			const replacement = shimEntries.get(id);
+			if (!replacement) {
+				return undefined;
+			}
+
+			const normalizedImporter = stripFileIdDecorations(importer ?? "");
+			if (normalizedImporter?.startsWith(browserShimsRoot)) {
+				return undefined;
+			}
+
+			return replacement;
+		},
+	};
 }
 
 function isIgnorablePreviewRefreshError(error: unknown) {
@@ -455,6 +534,7 @@ export function createPreviewVitePlugin(
 
 	return [
 		createWorkspaceSourceResolvePlugin(workspaceGraphService),
+		createRuntimeDependencyResolvePlugin(),
 		createUnresolvedPackageMockResolvePlugin(mockEntryPath),
 		previewPlugin,
 		createUnresolvedPackageMockTransformPlugin(),

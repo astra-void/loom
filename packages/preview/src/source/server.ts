@@ -103,21 +103,25 @@ export function resolvePreviewRuntimeRootEntry() {
 	).replace(/\\/g, "/");
 }
 
-function resolveReactShimEntry(fileName: string) {
+function resolveReactShimEntry(fileName: string, mode: "browser" | "node") {
+	const shimsRoot = mode === "browser" ? "react-shims/browser" : "react-shims";
+
 	return resolvePreviewPackageEntry(
 		[
-			path.resolve(__dirname, `./react-shims/${fileName}`),
-			path.resolve(__dirname, `../../src/source/react-shims/${fileName}`),
+			path.resolve(__dirname, `./${shimsRoot}/${fileName}`),
+			path.resolve(__dirname, `../../src/source/${shimsRoot}/${fileName}`),
 		],
 		`react shim ${fileName}`,
 	);
 }
 
-function _resolveReactRobloxShimEntry() {
+function resolveReactRobloxShimEntry(mode: "browser" | "node") {
+	const shimsRoot = mode === "browser" ? "react-shims/browser" : "react-shims";
+
 	return resolvePreviewPackageEntry(
 		[
-			path.resolve(__dirname, "./react-shims/react-roblox.js"),
-			path.resolve(__dirname, "../../src/source/react-shims/react-roblox.js"),
+			path.resolve(__dirname, `./${shimsRoot}/react-roblox.js`),
+			path.resolve(__dirname, `../../src/source/${shimsRoot}/react-roblox.js`),
 		],
 		"react-roblox shim",
 	).replace(/\\/g, "/");
@@ -294,71 +298,79 @@ function createTsconfigCacheInvalidationPlugin(
 }
 
 function createRuntimeDependencyResolvePlugin(): PreviewPluginOption {
-	const reactShimsRoot = resolvePreviewPackageEntry(
+	const browserShimEntries = new Map<string, string>([
 		[
-			path.resolve(__dirname, "./react-shims"),
-			path.resolve(__dirname, "../../src/source/react-shims"),
+			"react-dom/client",
+			resolveReactShimEntry("react-dom-client.js", "browser"),
 		],
-		"react shims root",
-	);
-	const shimEntries = new Map<string, string>([
-		["react-dom/client", resolveReactShimEntry("react-dom-client.js")],
-		["react-dom/server", resolveReactShimEntry("react-dom-server.js")],
-		["react-dom", resolveReactShimEntry("react-dom.js")],
+		[
+			"react-dom/server",
+			resolveReactShimEntry("react-dom-server.js", "browser"),
+		],
+		["react-dom", resolveReactShimEntry("react-dom.js", "browser")],
 		[
 			"react/jsx-dev-runtime",
-			resolveReactShimEntry("react-jsx-dev-runtime.js"),
+			resolveReactShimEntry("react-jsx-dev-runtime.js", "browser"),
 		],
-		["react/jsx-runtime", resolveReactShimEntry("react-jsx-runtime.js")],
-		["react", resolveReactShimEntry("react.js")],
+		[
+			"react/jsx-runtime",
+			resolveReactShimEntry("react-jsx-runtime.js", "browser"),
+		],
+		["react", resolveReactShimEntry("react.js", "browser")],
+		["@rbxts/react", resolveReactShimEntry("react.js", "browser")],
+		["@rbxts/react-roblox", resolveReactRobloxShimEntry("browser")],
+	]);
+	const nodeShimEntries = new Map<string, string>([
+		["react-dom/client", resolveReactShimEntry("react-dom-client.js", "node")],
+		["react-dom/server", resolveReactShimEntry("react-dom-server.js", "node")],
+		["react-dom", resolveReactShimEntry("react-dom.js", "node")],
+		[
+			"react/jsx-dev-runtime",
+			resolveReactShimEntry("react-jsx-dev-runtime.js", "node"),
+		],
+		[
+			"react/jsx-runtime",
+			resolveReactShimEntry("react-jsx-runtime.js", "node"),
+		],
+		["react", resolveReactShimEntry("react.js", "node")],
+		["@rbxts/react", resolveReactShimEntry("react.js", "node")],
+		["@rbxts/react-roblox", resolveReactRobloxShimEntry("node")],
 	]);
 
 	return {
 		enforce: "pre",
 		name: "loom-preview-runtime-dependency-resolve",
-		resolveId(id, importer) {
-			const replacement = shimEntries.get(id);
+		resolveId(id, importer, options) {
+			const replacement = (
+				options?.ssr ? nodeShimEntries : browserShimEntries
+			).get(id);
 			if (!replacement) {
 				return undefined;
 			}
 
 			const normalizedImporter = normalizeResolvedImporter(importer);
-			if (normalizedImporter?.startsWith(reactShimsRoot)) {
+			const shimsRoot = options?.ssr
+				? resolvePreviewPackageEntry(
+						[
+							path.resolve(__dirname, "./react-shims"),
+							path.resolve(__dirname, "../../src/source/react-shims"),
+						],
+						"react shims root",
+					)
+				: resolvePreviewPackageEntry(
+						[
+							path.resolve(__dirname, "./react-shims/browser"),
+							path.resolve(__dirname, "../../src/source/react-shims/browser"),
+						],
+						"react shims root",
+					);
+			if (normalizedImporter?.startsWith(shimsRoot)) {
 				return undefined;
 			}
 
 			return replacement;
 		},
 	};
-}
-
-function createRuntimeDependencyAliases() {
-	return [
-		{
-			find: "react-dom/client",
-			replacement: resolveReactShimEntry("react-dom-client.js"),
-		},
-		{
-			find: "react-dom/server",
-			replacement: resolveReactShimEntry("react-dom-server.js"),
-		},
-		{
-			find: "react-dom",
-			replacement: resolveReactShimEntry("react-dom.js"),
-		},
-		{
-			find: "react/jsx-dev-runtime",
-			replacement: resolveReactShimEntry("react-jsx-dev-runtime.js"),
-		},
-		{
-			find: "react/jsx-runtime",
-			replacement: resolveReactShimEntry("react-jsx-runtime.js"),
-		},
-		{
-			find: "react",
-			replacement: resolveReactShimEntry("react.js"),
-		},
-	];
 }
 
 function resolvePreviewViteCacheDir(workspaceRoot: string) {
@@ -607,9 +619,7 @@ export async function createPreviewViteServer(
 				: {}),
 		},
 		plugins: [
-			...(options.middlewareMode
-				? [createRuntimeDependencyResolvePlugin()]
-				: []),
+			createRuntimeDependencyResolvePlugin(),
 			createTsconfigCacheInvalidationPlugin(
 				resolvedConfig.server.fsAllow,
 				tsconfigParseCache,
@@ -631,7 +641,6 @@ export async function createPreviewViteServer(
 		],
 		resolve: {
 			alias: [
-				...(options.middlewareMode ? createRuntimeDependencyAliases() : []),
 				{
 					find: "@loom-dev/preview-runtime",
 					replacement: previewRuntimeRootEntry,

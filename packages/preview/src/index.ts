@@ -26,7 +26,7 @@ export {
 	createPackageTargetDiscovery,
 	createStaticTargetsDiscovery,
 	createWorkspaceTargetsDiscovery,
-	definePreviewConfig,
+	defineConfig,
 	loadPreviewConfig,
 	resolvePreviewConfigObject,
 } from "./config";
@@ -39,6 +39,11 @@ export type {
 	PreviewHeadlessSnapshot,
 } from "./headless";
 export { createPreviewHeadlessSession } from "./headless";
+export {
+	type PreviewSystemDensity,
+	SystemProvider,
+	useSystem,
+} from "./shell/preview-targets/system";
 export type {
 	StartPreviewServerInput,
 	StartPreviewServerOptions,

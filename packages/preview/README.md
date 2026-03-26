@@ -32,9 +32,9 @@ The local preview harness loads static targets from:
 Add `loom.config.ts` to a package or workspace root:
 
 ```ts
-import { createStaticTargetsDiscovery, definePreviewConfig } from "@loom-dev/preview";
+import { createStaticTargetsDiscovery, defineConfig } from "@loom-dev/preview";
 
-export default definePreviewConfig({
+export default defineConfig({
   projectName: "Loom Preview",
   targetDiscovery: createStaticTargetsDiscovery([
     {
@@ -51,7 +51,7 @@ export default definePreviewConfig({
 
 The main exports are:
 
-- `definePreviewConfig`
+- `defineConfig`
 - `loadPreviewConfig`
 - `buildPreviewArtifacts`
 - `buildPreviewModules`

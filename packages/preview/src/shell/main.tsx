@@ -2,7 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import { installPreviewBrowserGlobals } from "./installPreviewBrowserGlobals";
 import { PreviewWorkspaceApp } from "./PreviewWorkspaceApp";
-import { PreviewThemeProvider } from "./theme";
+import { SystemProvider } from "./preview-targets/system";
 import { WasmTestApp } from "./WasmTestApp";
 
 installPreviewBrowserGlobals();
@@ -22,8 +22,8 @@ const ShellApp = shouldRenderWasmTest ? WasmTestApp : PreviewWorkspaceApp;
 
 ReactDOM.createRoot(rootElement).render(
 	<React.StrictMode>
-		<PreviewThemeProvider>
+		<SystemProvider>
 			<ShellApp />
-		</PreviewThemeProvider>
+		</SystemProvider>
 	</React.StrictMode>,
 );

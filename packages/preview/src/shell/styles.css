@@ -862,8 +862,31 @@ code {
 	border: 1px solid var(--line);
 	border-radius: 8px;
 	display: grid;
+	gap: 10px;
+	padding: 12px 13px;
+}
+
+.diagnostic-item-header {
+	align-items: flex-start;
+	display: flex;
+	gap: 10px;
+	justify-content: space-between;
+	min-width: 0;
+}
+
+.diagnostic-item-copy {
+	display: grid;
+	flex: 1 1 auto;
 	gap: 4px;
-	padding: 11px 12px;
+	min-width: 0;
+}
+
+.diagnostic-item-badges {
+	display: flex;
+	flex: 0 0 auto;
+	flex-wrap: wrap;
+	gap: 6px;
+	justify-content: flex-end;
 }
 
 .diagnostic-item-runtime {
@@ -881,6 +904,40 @@ code {
 	border-color: var(--accent-border);
 }
 
+.diagnostic-meta-list {
+	display: grid;
+	gap: 8px;
+	margin: 0;
+	padding: 0;
+}
+
+.diagnostic-meta-row {
+	display: grid;
+	gap: 2px;
+}
+
+.diagnostic-meta-row dt,
+.diagnostic-meta-row dd {
+	margin: 0;
+}
+
+.diagnostic-meta-label {
+	color: var(--muted);
+	font-size: 0.65rem;
+	font-weight: 700;
+	letter-spacing: 0.08em;
+	margin: 0;
+	text-transform: uppercase;
+}
+
+.diagnostic-meta-value {
+	font-size: 0.82rem;
+	line-height: 1.45;
+	margin: 0;
+	overflow-wrap: anywhere;
+	white-space: pre-wrap;
+}
+
 .diagnostic-message {
 	font-size: 0.86rem;
 	font-weight: 500;
@@ -893,6 +950,23 @@ code {
 	font-size: 0.72rem;
 	line-height: 1.4;
 	margin: 0;
+	overflow-wrap: anywhere;
+}
+
+.diagnostic-codeframe {
+	background: var(--code-background);
+	border: 1px solid var(--line);
+	border-radius: 8px;
+	color: var(--ink);
+	font-family: "IBM Plex Mono", "SFMono-Regular", monospace;
+	font-size: 0.72rem;
+	line-height: 1.45;
+	margin: 0;
+	max-width: 100%;
+	overflow: auto;
+	padding: 10px 12px;
+	white-space: pre-wrap;
+	word-break: break-word;
 }
 
 .wasm-meta {
@@ -967,6 +1041,19 @@ code {
 		justify-content: flex-start;
 	}
 
+	.diagnostic-item-header,
+	.diagnostic-item-badges {
+		align-items: flex-start;
+	}
+
+	.diagnostic-item-header {
+		flex-direction: column;
+	}
+
+	.diagnostic-item-badges {
+		justify-content: flex-start;
+	}
+
 	.preview-toolbar {
 		width: 100%;
 	}
@@ -1015,6 +1102,11 @@ code {
 	.issue-disclosure-summary,
 	.issue-disclosure-body {
 		padding-inline: 12px;
+	}
+
+	.diagnostic-codeframe {
+		font-size: 0.7rem;
+		padding: 9px 10px;
 	}
 
 	.preview-stage-viewport {

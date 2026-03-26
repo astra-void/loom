@@ -29,6 +29,7 @@ import {
 	type PreviewModule,
 	type PreviewReadyWarningState,
 } from "../execution/shared";
+import { PreviewRenderShell } from "./PreviewRenderShell";
 import { PreviewThemeControl } from "./theme";
 
 type PreviewAppProps = {
@@ -173,6 +174,8 @@ function getRuntimeIssueFingerprint(issue: PreviewRuntimeIssue) {
 		issue.code,
 		issue.kind,
 		issue.phase,
+		issue.severity ?? "",
+		issue.target,
 		issue.relativeFile,
 		issue.summary,
 		issue.details ?? "",
@@ -222,6 +225,143 @@ function getStatusLabel(status: PreviewEntryStatus) {
 
 function formatCandidateExports(candidates: string[]) {
 	return candidates.join(", ");
+}
+
+type IssueCard = {
+	blocking?: boolean;
+	code: string;
+	codeFrame?: string;
+	details?: string;
+	importChain?: string[];
+	kind?: string;
+	phase: PreviewDiagnostic["phase"] | PreviewRuntimeIssue["phase"];
+	relativeFile: string;
+	severity?: PreviewDiagnostic["severity"] | PreviewRuntimeIssue["severity"];
+	summary: string;
+	symbol?: string;
+	target: string;
+};
+
+function hasVisibleText(value: string | undefined | null) {
+	return typeof value === "string" && value.trim().length > 0;
+}
+
+function normalizeDisplayText(value: string | undefined | null) {
+	return hasVisibleText(value) ? value : null;
+}
+
+function normalizeDisplayBlock(value: string | undefined | null) {
+	if (!hasVisibleText(value)) {
+		return null;
+	}
+
+	return value?.replace(/\s+$/u, "") ?? null;
+}
+
+function formatImportChain(importChain: string[] | undefined) {
+	const parts =
+		importChain
+			?.map((segment) => segment.trim())
+			.filter((segment) => segment.length > 0) ?? [];
+
+	return parts.length > 0 ? parts.join(" → ") : null;
+}
+
+function getIssueSeverityLabel(issue: IssueCard) {
+	if (issue.severity) {
+		return issue.severity;
+	}
+
+	return isBlockingIssue(issue) ? "error" : "warning";
+}
+
+function getIssueCardClassName(
+	issue: IssueCard,
+	variant: "discovery" | "other",
+) {
+	const classNames = ["diagnostic-item"];
+
+	if (variant === "discovery") {
+		classNames.push("diagnostic-item-discovery");
+	} else if (isBlockingIssue(issue)) {
+		classNames.push("diagnostic-item-runtime");
+	} else {
+		classNames.push("diagnostic-item-warning");
+	}
+
+	return classNames.join(" ");
+}
+
+function renderIssueMetaRows(issue: IssueCard) {
+	const rows: Array<{ label: string; value: string | null | undefined }> = [
+		{ label: "phase", value: issue.phase },
+		{ label: "severity", value: getIssueSeverityLabel(issue) },
+		{ label: "target", value: issue.target },
+		{ label: "kind", value: issue.kind ?? null },
+		{ label: "symbol", value: normalizeDisplayText(issue.symbol) },
+		{ label: "details", value: normalizeDisplayText(issue.details) },
+		{ label: "import chain", value: formatImportChain(issue.importChain) },
+	].filter((row) => row.value != null);
+
+	if (rows.length === 0) {
+		return null;
+	}
+
+	return (
+		<dl className="diagnostic-meta-list">
+			{rows.map((row) => (
+				<div className="diagnostic-meta-row" key={row.label}>
+					<dt className="diagnostic-meta-label">{row.label}</dt>
+					<dd className="diagnostic-meta-value">{row.value}</dd>
+				</div>
+			))}
+		</dl>
+	);
+}
+
+function renderIssueCodeFrame(issue: IssueCard) {
+	const codeFrame = normalizeDisplayBlock(issue.codeFrame);
+	if (!codeFrame) {
+		return null;
+	}
+
+	return <pre className="diagnostic-codeframe">{codeFrame}</pre>;
+}
+
+function renderIssueCard(
+	issue: IssueCard,
+	variant: "discovery" | "other",
+	cardKey?: React.Key,
+	locationSuffix?: string,
+) {
+	return (
+		<article className={getIssueCardClassName(issue, variant)} key={cardKey}>
+			<div className="diagnostic-item-header">
+				<div className="diagnostic-item-copy">
+					<p className="diagnostic-code">{issue.code}</p>
+					<p className="diagnostic-message">{issue.summary}</p>
+				</div>
+				<div className="diagnostic-item-badges">
+					<span
+						className={`issue-badge ${
+							isBlockingIssue(issue)
+								? "issue-badge-blocking"
+								: "issue-badge-warning"
+						}`}
+					>
+						{getIssueSeverityLabel(issue)}
+					</span>
+				</div>
+			</div>
+			{renderIssueMetaRows(issue)}
+			<p className="diagnostic-location">
+				{issue.relativeFile}
+				{issue.kind ? `:${issue.kind}` : ""}
+				{locationSuffix ? `:${locationSuffix}` : ""}
+			</p>
+			{renderIssueCodeFrame(issue)}
+		</article>
+	);
 }
 
 function _uniqueSorted(values: Iterable<string>) {
@@ -613,12 +753,17 @@ function PreviewCanvas(props: PreviewCanvasProps) {
 						viewportHeight={viewport.height}
 						viewportWidth={viewport.width}
 					>
-						<PreviewErrorBoundary
-							key={props.entry.id}
-							onError={props.onRenderError}
-						>
-							<PreviewNodeRenderer entry={props.entry} module={props.module} />
-						</PreviewErrorBoundary>
+						<PreviewRenderShell>
+							<PreviewErrorBoundary
+								key={props.entry.id}
+								onError={props.onRenderError}
+							>
+								<PreviewNodeRenderer
+									entry={props.entry}
+									module={props.module}
+								/>
+							</PreviewErrorBoundary>
+						</PreviewRenderShell>
 					</LayoutProvider>
 				</div>
 			</div>
@@ -1198,87 +1343,44 @@ export function PreviewApp(props: PreviewAppProps) {
 									<div className="issue-disclosure-body">
 										{hasDetailedIssueItems ? (
 											<div className="diagnostics-list">
-												{selectedEntryDiagnostics.map((diagnostic) => (
-													<article
-														className={`diagnostic-item ${
-															isBlockingIssue(diagnostic)
-																? ""
-																: "diagnostic-item-warning"
-														}`.trim()}
-														key={`${diagnostic.relativeFile}:${diagnostic.code}:${diagnostic.summary}`}
-													>
-														<p className="diagnostic-code">{diagnostic.code}</p>
-														<p className="diagnostic-message">
-															{diagnostic.summary}
-														</p>
-														<p className="diagnostic-location">
-															{diagnostic.relativeFile}
-														</p>
-													</article>
-												))}
-												{selectedEntryDiscoveryDiagnostics.map((diagnostic) => (
-													<article
-														className="diagnostic-item diagnostic-item-discovery"
-														key={`${diagnostic.relativeFile}:${diagnostic.code}:${diagnostic.summary}`}
-													>
-														<p className="diagnostic-code">{diagnostic.code}</p>
-														<p className="diagnostic-message">
-															{diagnostic.summary}
-														</p>
-														<p className="diagnostic-location">
-															{diagnostic.relativeFile}
-														</p>
-													</article>
-												))}
+												{selectedEntryDiagnostics.map((diagnostic) =>
+													renderIssueCard(
+														diagnostic,
+														"other",
+														`${diagnostic.relativeFile}:${diagnostic.code}:${diagnostic.summary}:${diagnostic.phase}:${diagnostic.severity}:${diagnostic.target}:${diagnostic.symbol ?? ""}:${diagnostic.codeFrame ?? ""}:${diagnostic.importChain?.join(">") ?? ""}`,
+													),
+												)}
+												{selectedEntryDiscoveryDiagnostics.map((diagnostic) =>
+													renderIssueCard(
+														diagnostic,
+														"discovery",
+														`${diagnostic.relativeFile}:${diagnostic.code}:${diagnostic.summary}:${diagnostic.severity}:${diagnostic.target}:${diagnostic.importChain?.join(">") ?? ""}`,
+													),
+												)}
 												{runtimeIssues.map((issue) => {
 													const renderMeta = runtimeIssueRenderMeta.get(issue);
-													return (
-														<article
-															className={`diagnostic-item diagnostic-item-runtime ${
-																isBlockingIssue(issue)
-																	? ""
-																	: "diagnostic-item-warning"
-															}`.trim()}
-															key={
-																renderMeta?.key ??
-																getRuntimeIssueFingerprint(issue)
-															}
-														>
-															<p className="diagnostic-code">{issue.code}</p>
-															<p className="diagnostic-message">
-																{issue.summary}
-															</p>
-															<p className="diagnostic-location">
-																{issue.relativeFile}:{issue.kind}:
-																{renderMeta?.occurrence ?? 1}
-															</p>
-														</article>
+													return renderIssueCard(
+														issue,
+														"other",
+														renderMeta?.key ??
+															getRuntimeIssueFingerprint(issue),
+														String(renderMeta?.occurrence ?? 1),
 													);
 												})}
-												{loadIssue ? (
-													<article className="diagnostic-item diagnostic-item-runtime">
-														<p className="diagnostic-code">{loadIssue.code}</p>
-														<p className="diagnostic-message">
-															{loadIssue.summary}
-														</p>
-														<p className="diagnostic-location">
-															{loadIssue.relativeFile}:{loadIssue.kind}
-														</p>
-													</article>
-												) : undefined}
-												{renderIssue ? (
-													<article className="diagnostic-item diagnostic-item-runtime">
-														<p className="diagnostic-code">
-															{renderIssue.code}
-														</p>
-														<p className="diagnostic-message">
-															{renderIssue.summary}
-														</p>
-														<p className="diagnostic-location">
-															{renderIssue.relativeFile}:{renderIssue.kind}
-														</p>
-													</article>
-												) : undefined}
+												{loadIssue
+													? renderIssueCard(
+															loadIssue,
+															"other",
+															loadIssue.codeFrame ?? loadIssue.code,
+														)
+													: undefined}
+												{renderIssue
+													? renderIssueCard(
+															renderIssue,
+															"other",
+															renderIssue.codeFrame ?? renderIssue.code,
+														)
+													: undefined}
 											</div>
 										) : (
 											<p className="issues-empty">

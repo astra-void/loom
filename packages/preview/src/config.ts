@@ -690,7 +690,7 @@ function normalizePackageRootFallback(cwd: string): ResolvedPreviewConfig {
 function normalizePreviewConfig(value: unknown) {
 	if (!value || typeof value !== "object") {
 		throw new Error(
-			`Preview config must export an object created by definePreviewConfig().`,
+			`Preview config must export an object created by defineConfig().`,
 		);
 	}
 
@@ -701,7 +701,7 @@ function normalizePreviewConfig(value: unknown) {
 	return value as PreviewConfig;
 }
 
-export function definePreviewConfig(config: PreviewConfig) {
+export function defineConfig(config: PreviewConfig) {
 	return config;
 }
 

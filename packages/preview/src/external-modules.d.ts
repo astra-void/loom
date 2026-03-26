@@ -739,6 +739,9 @@ declare module "@loom-dev/preview-runtime" {
 		container?: HTMLElement | null;
 		displayOrderBase?: number;
 	}): ReactTypes.ReactElement | null;
+	export function PreviewTargetShell(props: {
+		children?: ReactTypes.ReactNode;
+	}): ReactTypes.ReactElement | null;
 	export function Portal(props: {
 		children?: ReactTypes.ReactNode;
 		container?: HTMLElement | null;
@@ -1031,6 +1034,7 @@ declare module "@loom-dev/preview-engine" {
 			| PreviewDiscoveryDiagnosticCode
 			| PreviewTransformDiagnostic["code"]
 			| string;
+		codeFrame?: string;
 		details?: string;
 		entryId: string;
 		file: string;
