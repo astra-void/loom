@@ -10,6 +10,8 @@
 		"wrapper.js",
 		"wrapper.d.ts",
 		"wrapper.mjs",
+		"sync.mjs",
+		"sync.d.ts",
 		"wasm.mjs",
 		"index.js",
 		"index.d.ts",
@@ -31,6 +33,11 @@
 			"browser": "./wasm.mjs",
 			"import": "./wasm.mjs",
 			"default": "./wasm.mjs"
+		},
+		"./sync": {
+			"types": "./sync.d.ts",
+			"import": "./sync.mjs",
+			"default": "./sync.mjs"
 		}
 	},
 	"napi": {

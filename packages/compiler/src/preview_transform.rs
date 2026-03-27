@@ -1173,15 +1173,22 @@ fn create_runtime_import_declaration(
 }
 
 fn merge_runtime_imports(body: Vec<ModuleItem>, runtime_module: &str) -> Vec<ModuleItem> {
+    let used_bindings = collect_module_item_bindings(&body);
     let mut specifiers = Vec::new();
     let mut specifier_indices = HashMap::new();
 
     for helper_name in RUNTIME_HELPER_NAMES {
+        if used_bindings.contains(helper_name) {
+            continue;
+        }
         specifier_indices.insert(helper_name.to_owned(), specifiers.len());
         specifiers.push(create_runtime_named_import_specifier(helper_name));
     }
 
     for host_record in preview_host_metadata_records() {
+        if used_bindings.contains(host_record.runtime_name.as_str()) {
+            continue;
+        }
         specifier_indices.insert(host_record.runtime_name.clone(), specifiers.len());
         specifiers.push(create_runtime_named_import_specifier(
             host_record.runtime_name.as_str(),
@@ -1235,6 +1242,10 @@ fn merge_runtime_imports(body: Vec<ModuleItem>, runtime_module: &str) -> Vec<Mod
                 specifiers.push(next_specifier);
             }
         }
+    }
+
+    if specifiers.is_empty() {
+        return remaining_items;
     }
 
     let mut next_body = Vec::with_capacity(remaining_items.len() + 1);
@@ -1833,6 +1844,45 @@ const proxied = new Proxy(target, {
         assert!(
             !result.code.contains(r#"__previewGlobal("Proxy")"#),
             "expected Proxy constructor to avoid preview global rewriting, got: {}",
+            result.code
+        );
+    }
+
+    #[test]
+    fn runtime_import_merging_skips_existing_bindings() {
+        let source = r#"
+import { ScreenGui } from "../components";
+
+export const value = ScreenGui;
+"#;
+
+        let result = transform_preview_source(
+            source.to_owned(),
+            TransformPreviewSourceOptions {
+                file_path: "packages/preview-runtime/src/hosts/preview-targets/PreviewTargetShell.tsx".to_owned(),
+                runtime_module: "@loom-dev/preview-runtime".to_owned(),
+                target: "runtime-hosts".to_owned(),
+            },
+        )
+        .expect("preview transform should succeed");
+
+        let first_line = result
+            .code
+            .lines()
+            .find(|line| line.starts_with("import {"))
+            .expect("expected injected runtime import");
+
+        assert!(
+            first_line.contains("@loom-dev/preview-runtime"),
+            "expected runtime import to target the preview runtime, got: {first_line}"
+        );
+        assert!(
+            !first_line.contains("ScreenGui"),
+            "expected runtime import to skip existing ScreenGui binding, got: {first_line}"
+        );
+        assert!(
+            result.code.contains("import { ScreenGui } from \"../components\";"),
+            "expected original local ScreenGui import to remain, got: {}",
             result.code
         );
     }
