@@ -187,14 +187,16 @@ importers:
         specifier: ^0.27.3
         version: 0.27.3
 
+  packages/preview-analysis: {}
+
   packages/preview-engine:
     dependencies:
       '@loom-dev/compiler':
         specifier: workspace:*
         version: link:../compiler
-      '@loom-dev/preview-graph':
+      '@loom-dev/preview-analysis':
         specifier: workspace:*
-        version: link:../preview-graph
+        version: link:../preview-analysis
       '@loom-dev/preview-runtime':
         specifier: workspace:*
         version: link:../preview-runtime
@@ -205,8 +207,6 @@ importers:
       '@types/react':
         specifier: ^19.2.14
         version: 19.2.14
-
-  packages/preview-graph: {}
 
   packages/preview-runtime:
     dependencies:
