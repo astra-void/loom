@@ -615,6 +615,7 @@ describe("createPreviewEngine", () => {
 		});
 
 		const engine = createEngineForPackage(packageRoot, sourceRoot, "compatibility");
+		engine.getWorkspaceIndex();
 		const runtimePath = path.join(sourceRoot, "support", "runtime.ts");
 		const update = engine.invalidateSourceFiles([runtimePath]);
 
@@ -1004,6 +1005,7 @@ describe("createPreviewEngine", () => {
 		});
 
 		const engine = createEngineForPackage(packageRoot, sourceRoot);
+		engine.getWorkspaceIndex();
 		const sourceFile = path.join(sourceRoot, "AnimatedSlot.loom.tsx");
 
 		fs.writeFileSync(
