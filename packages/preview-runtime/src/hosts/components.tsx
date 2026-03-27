@@ -1,6 +1,7 @@
 import * as React from "react";
 import { clampPreviewTextSize, useTextScaleStyle } from "../style/textStyles";
 import { domPresentationAdapter } from "./domAdapter";
+import { markPreviewHostComponent } from "./hostComponent";
 import type { PreviewDomProps } from "./types";
 import {
 	resolveHostContentRect,
@@ -65,7 +66,7 @@ function createSimpleHost(
 	);
 
 	Component.displayName = displayName;
-	return Component;
+	return markPreviewHostComponent(Component, host);
 }
 
 function withConstrainedTextStyle(
@@ -101,65 +102,85 @@ function withConstrainedTextStyle(
 	return nextStyle;
 }
 
-export const Frame = createSimpleHost("frame", "PreviewFrame");
+type TextHostName = "textbutton" | "textlabel" | "textbox";
 
-export const TextButton = React.forwardRef<HTMLElement, PreviewDomProps>(
-	(props, forwardedRef) => {
-		const { computed, elementRef, hostNode, nodeId, patchDomProps } =
-			useHostLayout("textbutton", props);
-		const innerRef = elementRef as React.RefObject<HTMLButtonElement | null>;
-		const mergedRef = useMergedRefs(
-			forwardedRef as React.Ref<HTMLButtonElement>,
-			innerRef as React.Ref<HTMLButtonElement>,
-		);
-		const textScaleStyle = useTextScaleStyle({
-			elementRef: innerRef,
-			enabled: props.TextScaled === true,
-			fontFamily: hostNode.presentationHints.domProps.style?.fontFamily as
-				| string
-				| undefined,
-			fontStyle: hostNode.presentationHints.domProps.style?.fontStyle as
-				| React.CSSProperties["fontStyle"]
-				| undefined,
-			fontWeight: hostNode.presentationHints.domProps.style?.fontWeight as
-				| React.CSSProperties["fontWeight"]
-				| undefined,
-			lineHeight: hostNode.presentationHints.domProps.style?.lineHeight,
-			maxTextSize: hostNode.layoutModifiers?.textSizeConstraint?.maxTextSize,
-			minTextSize: hostNode.layoutModifiers?.textSizeConstraint?.minTextSize,
-			text: hostNode.presentationHints.text,
-			wrapped: props.TextWrapped === true,
-		});
-		const renderNode = React.useMemo(
-			() =>
-				patchDomProps({
-					...hostNode.presentationHints.domProps,
-					style: withConstrainedTextStyle(
-						{
-							...(hostNode.presentationHints.domProps.style as
-								| React.CSSProperties
-								| undefined),
-							...(textScaleStyle ?? {}),
-						},
-						hostNode.layoutModifiers?.textSizeConstraint,
-					),
-				}),
-			[
-				hostNode.layoutModifiers?.textSizeConstraint,
-				hostNode.presentationHints.domProps,
+function useTextHostRenderNode(
+	hostNode: ReturnType<typeof useHostLayout>["hostNode"],
+	patchDomProps: ReturnType<typeof useHostLayout>["patchDomProps"],
+	textScaleStyle: React.CSSProperties | undefined,
+) {
+	return React.useMemo(
+		() =>
+			patchDomProps({
+				...hostNode.presentationHints.domProps,
+				style: withConstrainedTextStyle(
+					{
+						...(hostNode.presentationHints.domProps.style as
+							| React.CSSProperties
+							| undefined),
+						...(textScaleStyle ?? {}),
+					},
+					hostNode.layoutModifiers?.textSizeConstraint,
+				),
+			}),
+		[
+			hostNode.layoutModifiers?.textSizeConstraint,
+			hostNode.presentationHints.domProps,
+			patchDomProps,
+			textScaleStyle,
+		],
+	);
+}
+
+function createTextHost(host: TextHostName, displayName: string) {
+	const Component = React.forwardRef<HTMLElement, PreviewDomProps>(
+		(props, forwardedRef) => {
+			const { computed, elementRef, hostNode, nodeId, patchDomProps } =
+				useHostLayout(host, props);
+			const innerRef = elementRef as React.RefObject<HTMLElement | null>;
+			const mergedRef = useMergedRefs(
+				forwardedRef as React.Ref<HTMLElement>,
+				innerRef as React.Ref<HTMLElement>,
+			);
+			const textScaleStyle = useTextScaleStyle({
+				elementRef: innerRef,
+				enabled: props.TextScaled === true,
+				fontFamily: hostNode.presentationHints.domProps.style?.fontFamily as
+					| string
+					| undefined,
+				fontStyle: hostNode.presentationHints.domProps.style?.fontStyle as
+					| React.CSSProperties["fontStyle"]
+					| undefined,
+				fontWeight: hostNode.presentationHints.domProps.style?.fontWeight as
+					| React.CSSProperties["fontWeight"]
+					| undefined,
+				lineHeight: hostNode.presentationHints.domProps.style?.lineHeight,
+				maxTextSize: hostNode.layoutModifiers?.textSizeConstraint?.maxTextSize,
+				minTextSize: hostNode.layoutModifiers?.textSizeConstraint?.minTextSize,
+				text: hostNode.presentationHints.text,
+				wrapped: props.TextWrapped === true,
+			});
+			const renderNode = useTextHostRenderNode(
+				hostNode,
 				patchDomProps,
 				textScaleStyle,
-			],
-		);
+			);
 
-		return domPresentationAdapter.render(
-			renderNode,
-			renderChildren(hostNode, nodeId, computed),
-			mergedRef,
-		);
-	},
-);
-TextButton.displayName = "PreviewTextButton";
+			return domPresentationAdapter.render(
+				renderNode,
+				renderChildren(hostNode, nodeId, computed),
+				mergedRef,
+			);
+		},
+	);
+
+	Component.displayName = displayName;
+	return markPreviewHostComponent(Component, host);
+}
+
+export const Frame = createSimpleHost("frame", "PreviewFrame");
+
+export const TextButton = createTextHost("textbutton", "PreviewTextButton");
 
 export const ImageButton = React.forwardRef<HTMLElement, PreviewDomProps>(
 	(props, forwardedRef) => {
@@ -188,121 +209,9 @@ export const BillboardGui = createSimpleHost(
 	"PreviewBillboardGui",
 );
 
-export const TextLabel = React.forwardRef<HTMLElement, PreviewDomProps>(
-	(props, forwardedRef) => {
-		const { computed, elementRef, hostNode, nodeId, patchDomProps } =
-			useHostLayout("textlabel", props);
-		const innerRef = elementRef as React.RefObject<HTMLDivElement | null>;
-		const mergedRef = useMergedRefs(
-			forwardedRef as React.Ref<HTMLDivElement>,
-			innerRef as React.Ref<HTMLDivElement>,
-		);
-		const textScaleStyle = useTextScaleStyle({
-			elementRef: innerRef,
-			enabled: props.TextScaled === true,
-			fontFamily: hostNode.presentationHints.domProps.style?.fontFamily as
-				| string
-				| undefined,
-			fontStyle: hostNode.presentationHints.domProps.style?.fontStyle as
-				| React.CSSProperties["fontStyle"]
-				| undefined,
-			fontWeight: hostNode.presentationHints.domProps.style?.fontWeight as
-				| React.CSSProperties["fontWeight"]
-				| undefined,
-			lineHeight: hostNode.presentationHints.domProps.style?.lineHeight,
-			maxTextSize: hostNode.layoutModifiers?.textSizeConstraint?.maxTextSize,
-			minTextSize: hostNode.layoutModifiers?.textSizeConstraint?.minTextSize,
-			text: hostNode.presentationHints.text,
-			wrapped: props.TextWrapped === true,
-		});
-		const renderNode = React.useMemo(
-			() =>
-				patchDomProps({
-					...hostNode.presentationHints.domProps,
-					style: withConstrainedTextStyle(
-						{
-							...(hostNode.presentationHints.domProps.style as
-								| React.CSSProperties
-								| undefined),
-							...(textScaleStyle ?? {}),
-						},
-						hostNode.layoutModifiers?.textSizeConstraint,
-					),
-				}),
-			[
-				hostNode.layoutModifiers?.textSizeConstraint,
-				hostNode.presentationHints.domProps,
-				patchDomProps,
-				textScaleStyle,
-			],
-		);
+export const TextLabel = createTextHost("textlabel", "PreviewTextLabel");
 
-		return domPresentationAdapter.render(
-			renderNode,
-			renderChildren(hostNode, nodeId, computed),
-			mergedRef,
-		);
-	},
-);
-TextLabel.displayName = "PreviewTextLabel";
-
-export const TextBox = React.forwardRef<HTMLElement, PreviewDomProps>(
-	(props, forwardedRef) => {
-		const { computed, elementRef, hostNode, nodeId, patchDomProps } =
-			useHostLayout("textbox", props);
-		const innerRef = elementRef as React.RefObject<HTMLInputElement | null>;
-		const mergedRef = useMergedRefs(
-			forwardedRef as React.Ref<HTMLInputElement>,
-			innerRef as React.Ref<HTMLInputElement>,
-		);
-		const textScaleStyle = useTextScaleStyle({
-			elementRef: innerRef,
-			enabled: props.TextScaled === true,
-			fontFamily: hostNode.presentationHints.domProps.style?.fontFamily as
-				| string
-				| undefined,
-			fontStyle: hostNode.presentationHints.domProps.style?.fontStyle as
-				| React.CSSProperties["fontStyle"]
-				| undefined,
-			fontWeight: hostNode.presentationHints.domProps.style?.fontWeight as
-				| React.CSSProperties["fontWeight"]
-				| undefined,
-			lineHeight: hostNode.presentationHints.domProps.style?.lineHeight,
-			maxTextSize: hostNode.layoutModifiers?.textSizeConstraint?.maxTextSize,
-			minTextSize: hostNode.layoutModifiers?.textSizeConstraint?.minTextSize,
-			text: hostNode.presentationHints.text,
-			wrapped: props.TextWrapped === true,
-		});
-		const renderNode = React.useMemo(
-			() =>
-				patchDomProps({
-					...hostNode.presentationHints.domProps,
-					style: withConstrainedTextStyle(
-						{
-							...(hostNode.presentationHints.domProps.style as
-								| React.CSSProperties
-								| undefined),
-							...(textScaleStyle ?? {}),
-						},
-						hostNode.layoutModifiers?.textSizeConstraint,
-					),
-				}),
-			[
-				hostNode.layoutModifiers?.textSizeConstraint,
-				hostNode.presentationHints.domProps,
-				patchDomProps,
-				textScaleStyle,
-			],
-		);
-
-		return domPresentationAdapter.render(
-			renderNode,
-			renderChildren(hostNode, nodeId, computed),
-			mergedRef,
-		);
-	},
-);
-TextBox.displayName = "PreviewTextBox";
+export const TextBox = createTextHost("textbox", "PreviewTextBox");
 
 export const ImageLabel = React.forwardRef<HTMLElement, PreviewDomProps>(
 	(props, forwardedRef) => {

@@ -66,6 +66,10 @@ import {
 
 export type SetupRobloxEnvironmentTarget = PreviewRuntimeGlobalTarget;
 
+const PREVIEW_INTRINSIC_HOSTS_SYMBOL = Symbol.for(
+	"loom-dev.preview-runtime.intrinsic-hosts",
+);
+
 /**
  * Vite alias note:
  * - Alias broad packages such as `@rbxts/services` or `@flamework/core` to small local shim files.
@@ -76,11 +80,22 @@ export function setupRobloxEnvironment(
 	target: SetupRobloxEnvironmentTarget = globalThis as SetupRobloxEnvironmentTarget,
 ) {
 	const initializedTarget = installPreviewRuntimeGlobals(target);
+	(
+		initializedTarget as SetupRobloxEnvironmentTarget & {
+			[PREVIEW_INTRINSIC_HOSTS_SYMBOL]?: typeof previewRuntimeIntrinsicHosts;
+		}
+	)[PREVIEW_INTRINSIC_HOSTS_SYMBOL] = previewRuntimeIntrinsicHosts;
 
 	if (typeof window !== "undefined" && window !== target) {
 		installPreviewRuntimeGlobals(
 			window as Window & SetupRobloxEnvironmentTarget,
 		);
+		(
+			window as Window &
+				SetupRobloxEnvironmentTarget & {
+					[PREVIEW_INTRINSIC_HOSTS_SYMBOL]?: typeof previewRuntimeIntrinsicHosts;
+				}
+		)[PREVIEW_INTRINSIC_HOSTS_SYMBOL] = previewRuntimeIntrinsicHosts;
 	}
 
 	return initializedTarget;
@@ -114,6 +129,30 @@ const previewRuntimeHosts = {
 	VideoFrame,
 	ViewportFrame,
 };
+
+const previewRuntimeIntrinsicHosts = {
+	billboardgui: BillboardGui,
+	canvasgroup: CanvasGroup,
+	frame: Frame,
+	imagebutton: ImageButton,
+	imagelabel: ImageLabel,
+	scrollingframe: ScrollingFrame,
+	screengui: ScreenGui,
+	surfacegui: SurfaceGui,
+	textbox: TextBox,
+	textbutton: TextButton,
+	textlabel: TextLabel,
+	videoframe: VideoFrame,
+	viewportframe: ViewportFrame,
+} as const;
+
+if (typeof globalThis !== "undefined") {
+	(
+		globalThis as typeof globalThis & {
+			[PREVIEW_INTRINSIC_HOSTS_SYMBOL]?: typeof previewRuntimeIntrinsicHosts;
+		}
+	)[PREVIEW_INTRINSIC_HOSTS_SYMBOL] = previewRuntimeIntrinsicHosts;
+}
 
 const previewRuntimeHelpers = {
 	__previewGlobal,

@@ -1,4 +1,5 @@
 import type * as React from "react";
+import { PREVIEW_HOST_DATA_ATTRIBUTE } from "../internal/previewAttributes";
 import type { ComputedRect } from "../layout/model";
 import { toCssColor } from "../runtime/helpers";
 import { mapRobloxFont } from "../style/textStyles";
@@ -28,6 +29,77 @@ const DOM_PROP_NAMES = new Set([
 	"tabIndex",
 	"title",
 	"value",
+]);
+
+const PREVIEW_ONLY_PROP_NAMES = new Set([
+	"Active",
+	"AnchorPoint",
+	"AutoButtonColor",
+	"AspectRatio",
+	"AutomaticSize",
+	"BackgroundColor3",
+	"BackgroundTransparency",
+	"BorderSizePixel",
+	"CellPadding",
+	"CellSize",
+	"CanvasSize",
+	"Change",
+	"Color",
+	"CornerRadius",
+	"DominantAxis",
+	"Event",
+	"FillDirection",
+	"FillDirectionMaxCells",
+	"Font",
+	"FlexMode",
+	"GrowRatio",
+	"HorizontalAlignment",
+	"HorizontalFlex",
+	"Id",
+	"Image",
+	"ImageColor3",
+	"ImageTransparency",
+	"ItemLineAlignment",
+	"LayoutOrder",
+	"MaxSize",
+	"MaxTextSize",
+	"MinSize",
+	"MinTextSize",
+	"Modal",
+	"Name",
+	"Padding",
+	"PaddingBottom",
+	"PaddingBetweenItems",
+	"PaddingLeft",
+	"PaddingRight",
+	"PaddingTop",
+	"ParentId",
+	"PlaceholderText",
+	"Position",
+	"Scale",
+	"ScrollBarThickness",
+	"ScrollingDirection",
+	"Selectable",
+	"ShrinkRatio",
+	"Size",
+	"SortOrder",
+	"StartCorner",
+	"Text",
+	"TextColor3",
+	"TextEditable",
+	"TextScaled",
+	"TextSize",
+	"TextTransparency",
+	"TextWrapped",
+	"TextXAlignment",
+	"TextYAlignment",
+	"Thickness",
+	"Transparency",
+	"VerticalAlignment",
+	"VerticalFlex",
+	"Visible",
+	"Wraps",
+	"ZIndex",
 ]);
 
 export type ResolveOptions = {
@@ -88,6 +160,10 @@ function pickForwardedDomProps(props: PreviewDomProps): ForwardedDomProps {
 	const domProps: Record<string, unknown> = {};
 
 	for (const [key, value] of Object.entries(props)) {
+		if (PREVIEW_ONLY_PROP_NAMES.has(key)) {
+			continue;
+		}
+
 		if (
 			key.startsWith("aria-") ||
 			key.startsWith("data-") ||
@@ -344,7 +420,7 @@ export function resolvePreviewDomProps(
 				: TextEditable === false,
 		domProps: {
 			...forwarded,
-			"data-preview-host": options.host,
+			[PREVIEW_HOST_DATA_ATTRIBUTE]: options.host,
 			"data-preview-node-id": options.nodeId,
 			className: ["preview-host", `preview-${options.host}`, className]
 				.filter(Boolean)

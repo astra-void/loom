@@ -38,7 +38,7 @@ export default defineConfig({
     alias: {
       // Redirect Roblox service imports to a local shim that only re-exports what you use.
       "@rbxts/services": path.resolve(__dirname, "./src/preview-shims/rbxts-services.ts"),
-      // Packages like @flamework/core usually need app-specific stubs, so alias them to a local shim too.
+      // Packages like @flamework/core usually need workspace-specific stubs, so alias them to a local shim too.
       "@flamework/core": path.resolve(__dirname, "./src/preview-shims/flamework-core.ts"),
     },
   },

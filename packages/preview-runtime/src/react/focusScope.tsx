@@ -1,4 +1,5 @@
 import * as React from "react";
+import { PREVIEW_FOCUS_SCOPE_DATA_ATTRIBUTE } from "../internal/previewAttributes";
 import { Slot } from "./slot";
 
 type FocusScopeProps = {
@@ -113,8 +114,12 @@ export function FocusScope(props: FocusScopeProps) {
 		return <Slot ref={setRootRef}>{child}</Slot>;
 	}
 
+	const focusScopeAttributes = {
+		[PREVIEW_FOCUS_SCOPE_DATA_ATTRIBUTE]: "",
+	} as const;
+
 	return (
-		<div data-preview-focus-scope="" ref={setRootRef}>
+		<div {...focusScopeAttributes} ref={setRootRef}>
 			{props.children}
 		</div>
 	);

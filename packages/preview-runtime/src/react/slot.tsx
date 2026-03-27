@@ -1,50 +1,120 @@
 import * as React from "react";
+import {
+	BillboardGui,
+	CanvasGroup,
+	Frame,
+	ImageButton,
+	ImageLabel,
+	ScreenGui,
+	ScrollingFrame,
+	SurfaceGui,
+	TextBox,
+	TextButton,
+	TextLabel,
+	VideoFrame,
+	ViewportFrame,
+} from "../hosts/components";
 import { resolvePreviewDomProps } from "../hosts/resolveProps";
 import type { PreviewDomProps, PreviewEventTable } from "../hosts/types";
+import { resolvePreviewSlotHost } from "./slotHost";
 
 type SlotProps = PreviewDomProps & {
-	children: React.ReactElement;
+	children?: React.ReactNode;
 };
+
+const previewIntrinsicHostComponents = {
+	billboardgui: BillboardGui,
+	canvasgroup: CanvasGroup,
+	frame: Frame,
+	imagebutton: ImageButton,
+	imagelabel: ImageLabel,
+	scrollingframe: ScrollingFrame,
+	screengui: ScreenGui,
+	surfacegui: SurfaceGui,
+	textbox: TextBox,
+	textbutton: TextButton,
+	textlabel: TextLabel,
+	videoframe: VideoFrame,
+	viewportframe: ViewportFrame,
+} as const satisfies Partial<
+	Record<string, React.ElementType<PreviewDomProps>>
+>;
+
+function isPreviewIntrinsicHostComponentKey(
+	value: string,
+): value is keyof typeof previewIntrinsicHostComponents {
+	return value in previewIntrinsicHostComponents;
+}
 
 function mergeEventTables(
 	slotEvent?: PreviewEventTable,
 	childEvent?: PreviewEventTable,
 ) {
-	if (!slotEvent) {
-		return childEvent;
-	}
+	const activated = (() => {
+		const childActivated = childEvent?.Activated;
+		const slotActivated = slotEvent?.Activated;
 
-	if (!childEvent) {
-		return slotEvent;
+		if (childActivated && slotActivated) {
+			return (event: Event) => {
+				childActivated(event);
+				slotActivated(event);
+			};
+		}
+
+		return childActivated ?? slotActivated;
+	})();
+
+	const focusLost = (() => {
+		const childFocusLost = childEvent?.FocusLost;
+		const slotFocusLost = slotEvent?.FocusLost;
+
+		if (childFocusLost && slotFocusLost) {
+			return (event: Event) => {
+				childFocusLost(event);
+				slotFocusLost(event);
+			};
+		}
+
+		return childFocusLost ?? slotFocusLost;
+	})();
+
+	if (!activated && !focusLost) {
+		return undefined;
 	}
 
 	return {
-		Activated:
-			childEvent.Activated && slotEvent.Activated
-				? (event: Event) => {
-						childEvent.Activated?.(event);
-						slotEvent.Activated?.(event);
-					}
-				: (childEvent.Activated ?? slotEvent.Activated),
-		FocusLost:
-			childEvent.FocusLost && slotEvent.FocusLost
-				? (event: Event) => {
-						childEvent.FocusLost?.(event);
-						slotEvent.FocusLost?.(event);
-					}
-				: (childEvent.FocusLost ?? slotEvent.FocusLost),
+		...(activated ? { Activated: activated } : {}),
+		...(focusLost ? { FocusLost: focusLost } : {}),
 	} satisfies PreviewEventTable;
+}
+
+function getSlotRenderType(
+	childType: unknown,
+): React.ElementType<Record<string, unknown>> | unknown {
+	if (typeof childType !== "string") {
+		return childType;
+	}
+
+	return isPreviewIntrinsicHostComponentKey(childType)
+		? previewIntrinsicHostComponents[childType]
+		: childType;
 }
 
 export const Slot = React.forwardRef<HTMLElement, SlotProps>(
 	(props, forwardedRef) => {
+		const slotNodeId = React.useId();
+		if (!React.isValidElement(props.children)) {
+			return null;
+		}
+
 		const child = props.children as React.ReactElement<
 			PreviewDomProps & Record<string, unknown>
 		>;
 		const childProps = (child.props ?? {}) as PreviewDomProps;
 		const slotEvent = props.Event as PreviewEventTable | undefined;
 		const childEvent = childProps.Event as PreviewEventTable | undefined;
-		const slotNodeId = React.useId();
+		const slotHost = resolvePreviewSlotHost(child.type);
+		const slotRenderType = getSlotRenderType(child.type);
 
 		const mergedProps: PreviewDomProps = {
 			...props,
@@ -57,25 +127,34 @@ export const Slot = React.forwardRef<HTMLElement, SlotProps>(
 		const normalized = resolvePreviewDomProps(mergedProps, {
 			applyComputedLayout: false,
 			computed: null,
-			host: child.type === "button" ? "textbutton" : "frame",
+			host: slotHost,
 			nodeId: `slot:${slotNodeId}`,
 		});
 
-		return React.cloneElement(
-			child as React.ReactElement<Record<string, unknown>>,
-			{
-				...normalized.domProps,
-				ref: forwardedRef as React.Ref<unknown>,
-				children: (
-					<>
-						{normalized.text ? (
-							<span className="preview-host-text">{normalized.text}</span>
-						) : undefined}
-						{normalized.children}
-					</>
-				),
-			},
-		);
+		const clonedProps: Record<string, unknown> = {
+			...normalized.domProps,
+			ref: forwardedRef as React.Ref<unknown>,
+			children: React.Children.toArray([
+				normalized.text ? (
+					<span key="preview-slot-text" className="preview-host-text">
+						{normalized.text}
+					</span>
+				) : null,
+				normalized.children,
+			]),
+		};
+		if (typeof child.type !== "string") {
+			clonedProps.Event = undefined;
+		}
+
+		if (slotRenderType !== child.type) {
+			return React.createElement(
+				slotRenderType as React.ElementType<Record<string, unknown>>,
+				clonedProps,
+			);
+		}
+
+		return React.cloneElement(child, clonedProps);
 	},
 );
 Slot.displayName = "PreviewSlot";
