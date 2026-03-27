@@ -647,21 +647,35 @@ class PreviewEngineImpl implements PreviewEngine {
 	>();
 	private readonly targetSnapshots = new Map<string, TargetSnapshotState>();
 	private readonly transformCache = new Map<string, CachedTransform>();
-	private snapshot: CombinedSnapshotState;
+	private snapshot: CombinedSnapshotState | undefined;
 
 	public constructor(private readonly options: CreatePreviewEngineOptions) {
 		this.normalizedTargets = options.targets.map(normalizeTarget);
+	}
+
+	private ensureSnapshot() {
+		if (this.snapshot) {
+			return this.snapshot;
+		}
+
+		this.targetSnapshots.clear();
 		for (const target of this.normalizedTargets) {
 			this.targetSnapshots.set(
 				createTargetKey(target),
-				buildTargetSnapshot(options.projectName, target, options.workspaceRoot),
+				buildTargetSnapshot(
+					this.options.projectName,
+					target,
+					this.options.workspaceRoot,
+				),
 			);
 		}
+
 		this.snapshot = combineSnapshots(
-			options.projectName,
+			this.options.projectName,
 			this.normalizedTargets,
 			this.targetSnapshots,
 		);
+		return this.snapshot;
 	}
 
 	public dispose() {
@@ -670,10 +684,12 @@ class PreviewEngineImpl implements PreviewEngine {
 		this.runtimeIssuesByEntryId.clear();
 		this.targetSnapshots.clear();
 		this.transformCache.clear();
+		this.snapshot = undefined;
 	}
 
 	public getEntryPayload(entryId: string) {
-		const entryState = this.snapshot.entryStatesById.get(entryId);
+		const snapshot = this.ensureSnapshot();
+		const entryState = snapshot.entryStatesById.get(entryId);
 		if (!entryState) {
 			throw new Error(`Unknown preview entry: ${entryId}`);
 		}
@@ -751,10 +767,11 @@ class PreviewEngineImpl implements PreviewEngine {
 	}
 
 	public isTrackedSourceFile(filePath: string) {
+		const snapshot = this.ensureSnapshot();
 		const comparablePaths = getComparableFilePaths(filePath);
 		if (
 			comparablePaths.some((candidatePath) =>
-				this.snapshot.targetsByFilePath.has(candidatePath),
+				snapshot.targetsByFilePath.has(candidatePath),
 			)
 		) {
 			return true;
@@ -772,25 +789,44 @@ class PreviewEngineImpl implements PreviewEngine {
 	}
 
 	public getWorkspaceIndex() {
-		const entries = this.snapshot.workspaceIndex.entries.map(
+		const snapshot = this.ensureSnapshot();
+		const entries = snapshot.workspaceIndex.entries.map(
 			(entry) => this.getEntryPayload(entry.id).descriptor,
 		);
 		return {
-			...this.snapshot.workspaceIndex,
+			...snapshot.workspaceIndex,
 			entries,
 		} satisfies PreviewWorkspaceIndex;
 	}
 
 	public invalidateSourceFiles(filePaths: string[]) {
+		const snapshot = this.snapshot;
+		if (!snapshot) {
+			return {
+				changedEntryIds: [],
+				executionChangedEntryIds: [],
+				protocolVersion: PREVIEW_ENGINE_PROTOCOL_VERSION,
+				registryChangedEntryIds: [],
+				removedEntryIds: [],
+				requiresFullReload: false,
+				workspaceChanged: false,
+				workspaceIndex: {
+					entries: [],
+					projectName: this.options.projectName,
+					protocolVersion: PREVIEW_ENGINE_PROTOCOL_VERSION,
+					targets: this.normalizedTargets,
+				},
+			} satisfies PreviewEngineUpdate;
+		}
+
 		const normalizedPaths = [
 			...new Set(
 				filePaths.flatMap((filePath) => getComparableFilePaths(filePath)),
 			),
 		];
-		const previousSnapshot = this.snapshot;
 		const previousWorkspaceIndex = this.getWorkspaceIndex();
 		const previousImpactedIds = collectImpactedEntryIds(
-			previousSnapshot,
+			snapshot,
 			normalizedPaths,
 		);
 		const affectedTargets = this.normalizedTargets.filter((target) =>
@@ -828,9 +864,10 @@ class PreviewEngineImpl implements PreviewEngine {
 			this.normalizedTargets,
 			this.targetSnapshots,
 		);
+		const nextSnapshot = this.snapshot!;
 
-		const removedEntryIds = [...previousSnapshot.entryStatesById.keys()]
-			.filter((entryId) => !this.snapshot.entryStatesById.has(entryId))
+		const removedEntryIds = [...snapshot.entryStatesById.keys()]
+			.filter((entryId) => !nextSnapshot.entryStatesById.has(entryId))
 			.sort((left, right) => left.localeCompare(right));
 		for (const removedEntryId of removedEntryIds) {
 			this.runtimeIssuesByEntryId.delete(removedEntryId);
@@ -838,7 +875,7 @@ class PreviewEngineImpl implements PreviewEngine {
 
 		const nextWorkspaceIndex = this.getWorkspaceIndex();
 		const nextImpactedIds = collectImpactedEntryIds(
-			this.snapshot,
+			nextSnapshot,
 			normalizedPaths,
 		);
 		const registryChangedEntryIds = collectChangedEntryIds(
@@ -875,12 +912,11 @@ class PreviewEngineImpl implements PreviewEngine {
 	}
 
 	public replaceRuntimeIssues(issues: PreviewRuntimeIssue[]) {
+		const snapshot = this.ensureSnapshot();
 		const previousWorkspaceIndex = this.getWorkspaceIndex();
 		const previousEntryIds = new Set(this.runtimeIssuesByEntryId.keys());
 		const nextRuntimeIssuesByEntryId = groupRuntimeIssues(
-			issues.filter((issue) =>
-				this.snapshot.entryStatesById.has(issue.entryId),
-			),
+			issues.filter((issue) => snapshot.entryStatesById.has(issue.entryId)),
 		);
 
 		this.runtimeIssuesByEntryId.clear();
