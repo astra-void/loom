@@ -5,6 +5,10 @@ out
 .loom-preview-cache
 .generated-preview
 .generated-components-preview
+packages/preview-engine/src/**/*.js
+packages/preview-engine/src/**/*.d.ts
+packages/preview-runtime/src/**/*.js
+packages/preview-runtime/src/**/*.d.ts
 
 .DS_Store
 *.log
