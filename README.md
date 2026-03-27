@@ -5,7 +5,7 @@ This repository is a `pnpm` monorepo for the Loom preview and build toolchain pl
 ## Requirements
 
 - Node.js 24+
-- `pnpm` 10.32.0
+- `pnpm` 10
 - Rust and Cargo
 - `wasm-pack`
 - `zig` for non-Windows cross-target release builds of `@loom-dev/compiler`
