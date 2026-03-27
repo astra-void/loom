@@ -7,8 +7,9 @@ import {
 } from "./metadata";
 
 export type PreviewEventTable = {
-	Activated?: (event: Event) => void;
-	FocusLost?: (event: Event) => void;
+	Activated?: (...args: unknown[]) => void;
+	FocusLost?: (...args: unknown[]) => void;
+	InputBegan?: (...args: unknown[]) => void;
 };
 
 export type ForwardedDomProps = React.HTMLAttributes<HTMLElement> &

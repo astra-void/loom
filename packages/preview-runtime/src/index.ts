@@ -316,19 +316,21 @@ export type {
 } from "./preview";
 export type { LayerInteractEvent } from "./react";
 export {
-	createUniversalRobloxMock,
-	createUniversalRobloxModuleMock,
 	LayoutExecutionError,
 	LayoutValidationError,
 	ModuleLoadError,
 	PreviewRuntimeError,
 	RuntimeMockError,
-	robloxMock,
-	robloxModuleMock,
 	TransformExecutionError,
 	TransformValidationError,
 	UnsupportedPatternError,
 } from "./runtime";
+export {
+	createUniversalRobloxMock,
+	createUniversalRobloxModuleMock,
+	robloxMock,
+	robloxModuleMock,
+} from "./runtime/robloxMock";
 export { __rbxStyle, Box, Text } from "./style/index";
 
 export type PreviewRuntime = {

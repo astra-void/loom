@@ -22,6 +22,8 @@ type SlotProps = PreviewDomProps & {
 	children?: React.ReactNode;
 };
 
+const EMPTY_EVENT_TABLE = Object.freeze({}) as PreviewEventTable;
+
 const previewIntrinsicHostComponents = {
 	billboardgui: BillboardGui,
 	canvasgroup: CanvasGroup,
@@ -46,16 +48,48 @@ function isPreviewIntrinsicHostComponentKey(
 	return value in previewIntrinsicHostComponents;
 }
 
+function sanitizePreviewDomProps(
+	props: PreviewDomProps | undefined,
+): PreviewDomProps {
+	const sanitized: Record<string, unknown> = {};
+
+	if (!props) {
+		return sanitized as PreviewDomProps;
+	}
+
+	for (const key of Object.keys(props) as Array<keyof PreviewDomProps>) {
+		try {
+			sanitized[key] = props[key];
+		} catch {
+			// Ignore proxy-backed getters that explode when preview reads Event-like props.
+		}
+	}
+
+	return sanitized as PreviewDomProps;
+}
+
+function getEventHandler(
+	eventTable: PreviewEventTable | undefined,
+	key: keyof PreviewEventTable,
+) {
+	try {
+		const handler = eventTable?.[key];
+		return typeof handler === "function" ? handler : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
 function mergeEventTables(
 	slotEvent?: PreviewEventTable,
 	childEvent?: PreviewEventTable,
 ) {
 	const activated = (() => {
-		const childActivated = childEvent?.Activated;
-		const slotActivated = slotEvent?.Activated;
+		const childActivated = getEventHandler(childEvent, "Activated");
+		const slotActivated = getEventHandler(slotEvent, "Activated");
 
 		if (childActivated && slotActivated) {
-			return (event: Event) => {
+			return (event: unknown) => {
 				childActivated(event);
 				slotActivated(event);
 			};
@@ -65,11 +99,11 @@ function mergeEventTables(
 	})();
 
 	const focusLost = (() => {
-		const childFocusLost = childEvent?.FocusLost;
-		const slotFocusLost = slotEvent?.FocusLost;
+		const childFocusLost = getEventHandler(childEvent, "FocusLost");
+		const slotFocusLost = getEventHandler(slotEvent, "FocusLost");
 
 		if (childFocusLost && slotFocusLost) {
-			return (event: Event) => {
+			return (event: unknown) => {
 				childFocusLost(event);
 				slotFocusLost(event);
 			};
@@ -107,17 +141,22 @@ export const Slot = React.forwardRef<HTMLElement, SlotProps>(
 			return null;
 		}
 
+		const slotProps = sanitizePreviewDomProps(props);
 		const child = props.children as React.ReactElement<
 			PreviewDomProps & Record<string, unknown>
 		>;
-		const childProps = (child.props ?? {}) as PreviewDomProps;
-		const slotEvent = props.Event as PreviewEventTable | undefined;
-		const childEvent = childProps.Event as PreviewEventTable | undefined;
+		const childProps = sanitizePreviewDomProps(
+			(child.props ?? {}) as PreviewDomProps,
+		);
+		const slotEvent =
+			(slotProps.Event as PreviewEventTable | undefined) ?? EMPTY_EVENT_TABLE;
+		const childEvent =
+			(childProps.Event as PreviewEventTable | undefined) ?? EMPTY_EVENT_TABLE;
 		const slotHost = resolvePreviewSlotHost(child.type);
 		const slotRenderType = getSlotRenderType(child.type);
 
 		const mergedProps: PreviewDomProps = {
-			...props,
+			...slotProps,
 			...childProps,
 		};
 

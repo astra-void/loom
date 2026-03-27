@@ -21,6 +21,42 @@ export type PreviewLayoutEngineLoader = () => PreviewLayoutEngineModuleOrPath;
 
 let layoutEngineInitPromise: Promise<void> | undefined;
 
+function cloneLayoutNodeValue<T>(value: T, stack = new WeakSet<object>()): T {
+	if (value === null || typeof value !== "object") {
+		return value;
+	}
+
+	if (Array.isArray(value)) {
+		if (stack.has(value)) {
+			return undefined as T;
+		}
+
+		stack.add(value);
+		const cloned = value.map((item) => cloneLayoutNodeValue(item, stack));
+		stack.delete(value);
+		return cloned as T;
+	}
+
+	if (stack.has(value)) {
+		return undefined as T;
+	}
+
+	stack.add(value);
+	const cloned: Record<string, unknown> = {};
+	for (const [key, child] of Object.entries(value)) {
+		const next = cloneLayoutNodeValue(child, stack);
+		if (next !== undefined) {
+			cloned[key] = next;
+		}
+	}
+	stack.delete(value);
+	return cloned as T;
+}
+
+export function sanitizePreviewLayoutNodes(nodes: PreviewLayoutNode[]) {
+	return nodes.map((node) => cloneLayoutNodeValue(node));
+}
+
 function getPreviewLayoutEngineLoader() {
 	const globalRecord = globalThis as typeof globalThis & {
 		[LAYOUT_ENGINE_LOADER_KEY]?: PreviewLayoutEngineLoader | null;
@@ -175,7 +211,7 @@ class WasmLayoutSessionAdapter implements LayoutSessionLike {
 	};
 
 	public applyNodes(nodes: PreviewLayoutNode[]): void {
-		this.session.applyNodes(nodes);
+		this.session.applyNodes(sanitizePreviewLayoutNodes(nodes));
 	}
 
 	public computeDirty() {

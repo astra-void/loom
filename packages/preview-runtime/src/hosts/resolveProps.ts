@@ -3,7 +3,12 @@ import { PREVIEW_HOST_DATA_ATTRIBUTE } from "../internal/previewAttributes";
 import type { ComputedRect } from "../layout/model";
 import { toCssColor } from "../runtime/helpers";
 import { mapRobloxFont } from "../style/textStyles";
-import type { ForwardedDomProps, HostName, PreviewDomProps } from "./types";
+import type {
+	ForwardedDomProps,
+	HostName,
+	PreviewDomProps,
+	PreviewEventTable,
+} from "./types";
 
 const DOM_PROP_NAMES = new Set([
 	"children",
@@ -100,7 +105,122 @@ const PREVIEW_ONLY_PROP_NAMES = new Set([
 	"Visible",
 	"Wraps",
 	"ZIndex",
+	"__previewReactChangeText",
+	"__previewReactEventActivated",
+	"__previewReactEventFocusLost",
+	"__previewReactEventInputBegan",
 ]);
+
+const PREVIEW_REACT_EVENT_PROP_KEYS = {
+	Activated: "__previewReactEventActivated",
+	FocusLost: "__previewReactEventFocusLost",
+	InputBegan: "__previewReactEventInputBegan",
+} as const;
+
+const PREVIEW_REACT_CHANGE_PROP_KEYS = {
+	Text: "__previewReactChangeText",
+} as const;
+
+function getEventHandler(
+	eventTable: PreviewEventTable | undefined,
+	key: keyof PreviewEventTable,
+) {
+	try {
+		const handler = eventTable?.[key];
+		return typeof handler === "function" ? handler : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+function sanitizePreviewDomProps(props: PreviewDomProps): PreviewDomProps {
+	const sanitized: Record<string, unknown> = {};
+
+	for (const key of Object.keys(props) as Array<keyof PreviewDomProps>) {
+		try {
+			sanitized[key] = props[key];
+		} catch {
+			// Ignore preview prop getters that throw during DOM prop normalization.
+		}
+	}
+
+	return sanitized as PreviewDomProps;
+}
+
+function normalizePreviewKeyCode(key: string): string {
+	switch (key) {
+		case "Return":
+			return "Enter";
+		case "Space":
+		case "Spacebar":
+			return " ";
+		default:
+			return key;
+	}
+}
+
+function toPreviewInputPosition(event: MouseEvent | PointerEvent) {
+	return {
+		X: event.clientX,
+		Y: event.clientY,
+	};
+}
+
+function toPreviewInputObject(
+	event: KeyboardEvent | MouseEvent | PointerEvent,
+): Record<string, unknown> {
+	if (event instanceof KeyboardEvent) {
+		return {
+			KeyCode: normalizePreviewKeyCode(event.key),
+			UserInputType: "Keyboard",
+		};
+	}
+
+	if (event instanceof PointerEvent) {
+		return {
+			Position: toPreviewInputPosition(event),
+			UserInputType: event.pointerType === "touch" ? "Touch" : "MouseButton1",
+		};
+	}
+
+	return {
+		Position: toPreviewInputPosition(event),
+		UserInputType: "MouseButton1",
+	};
+}
+
+function createPreviewGuiObject(element: HTMLElement, host: HostName) {
+	const rect = element.getBoundingClientRect();
+
+	return {
+		AbsolutePosition: {
+			X: rect.left,
+			Y: rect.top,
+		},
+		AbsoluteSize: {
+			X: rect.width,
+			Y: rect.height,
+		},
+		AutoButtonColor: true,
+		IsA(name: string) {
+			switch (name) {
+				case "Instance":
+				case "GuiObject":
+					return true;
+				case "GuiButton":
+					return host === "textbutton" || host === "imagebutton";
+				case "TextBox":
+					return host === "textbox";
+				default:
+					return false;
+			}
+		},
+		Text:
+			element instanceof HTMLInputElement
+				? element.value
+				: (element.textContent ?? ""),
+	};
+}
 
 export type ResolveOptions = {
 	applyComputedLayout?: boolean;
@@ -213,6 +333,7 @@ export function resolvePreviewDomProps(
 	props: PreviewDomProps,
 	options: ResolveOptions,
 ): ResolvedPreviewDomProps {
+	const safeProps = sanitizePreviewDomProps(props);
 	const {
 		Active,
 		AnchorPoint,
@@ -255,9 +376,15 @@ export function resolvePreviewDomProps(
 		onBlur,
 		onChange,
 		onClick,
+		onKeyDown,
+		onPointerDown,
 		style,
+		[PREVIEW_REACT_CHANGE_PROP_KEYS.Text]: previewReactChangeText,
+		[PREVIEW_REACT_EVENT_PROP_KEYS.Activated]: previewReactActivated,
+		[PREVIEW_REACT_EVENT_PROP_KEYS.FocusLost]: previewReactFocusLost,
+		[PREVIEW_REACT_EVENT_PROP_KEYS.InputBegan]: previewReactInputBegan,
 		...rest
-	} = props;
+	} = safeProps;
 
 	void Active;
 	void AnchorPoint;
@@ -385,31 +512,75 @@ export function resolvePreviewDomProps(
 		computedStyle.overflow = "auto";
 	}
 
+	const activatedHandler =
+		typeof previewReactActivated === "function"
+			? previewReactActivated
+			: getEventHandler(Event, "Activated");
+	const focusLostHandler =
+		typeof previewReactFocusLost === "function"
+			? previewReactFocusLost
+			: getEventHandler(Event, "FocusLost");
+	const inputBeganHandler =
+		typeof previewReactInputBegan === "function"
+			? previewReactInputBegan
+			: getEventHandler(Event, "InputBegan");
 	const mergedClick = mergeHandlers<React.MouseEvent<HTMLElement>>(
 		onClick,
-		Event?.Activated
+		activatedHandler
 			? (event) => {
-					Event.Activated?.(event.nativeEvent);
+					activatedHandler(
+						createPreviewGuiObject(event.currentTarget, options.host),
+					);
 				}
 			: undefined,
 	);
 	const mergedBlur = mergeHandlers<React.FocusEvent<HTMLElement>>(
 		onBlur,
-		Event?.FocusLost
+		focusLostHandler
 			? (event) => {
-					Event.FocusLost?.(event.nativeEvent);
+					focusLostHandler(
+						createPreviewGuiObject(event.currentTarget, options.host),
+					);
+				}
+			: undefined,
+	);
+	const mergedKeyDown = mergeHandlers<React.KeyboardEvent<HTMLElement>>(
+		onKeyDown,
+		inputBeganHandler
+			? (event) => {
+					inputBeganHandler(
+						createPreviewGuiObject(event.currentTarget, options.host),
+						toPreviewInputObject(event.nativeEvent),
+					);
+				}
+			: undefined,
+	);
+	const mergedPointerDown = mergeHandlers<React.PointerEvent<HTMLElement>>(
+		onPointerDown,
+		inputBeganHandler
+			? (event) => {
+					inputBeganHandler(
+						createPreviewGuiObject(event.currentTarget, options.host),
+						toPreviewInputObject(event.nativeEvent),
+					);
 				}
 			: undefined,
 	);
 	const mergedChange = mergeHandlers<React.ChangeEvent<HTMLElement>>(
 		onChange as ((event: React.ChangeEvent<HTMLElement>) => void) | undefined,
-		Change?.Text
+		typeof previewReactChangeText === "function"
 			? (event) => {
 					if (event.target instanceof HTMLInputElement) {
-						Change.Text?.(event.target);
+						previewReactChangeText(event.target);
 					}
 				}
-			: undefined,
+			: Change?.Text
+				? (event) => {
+						if (event.target instanceof HTMLInputElement) {
+							Change.Text?.(event.target);
+						}
+					}
+				: undefined,
 	);
 
 	return {
@@ -428,6 +599,8 @@ export function resolvePreviewDomProps(
 			onBlur: mergedBlur,
 			onChange: mergedChange,
 			onClick: mergedClick,
+			onKeyDown: mergedKeyDown,
+			onPointerDown: mergedPointerDown,
 			placeholder: PlaceholderText,
 			style: computedStyle,
 			tabIndex:

@@ -2,7 +2,7 @@ import * as React from "react";
 import { LayoutProvider } from "../../layout";
 import { createWindowViewport } from "../../layout/viewport";
 import { PortalProvider } from "../../react";
-import { ScreenGui } from "../components";
+import { ScreenGui as RuntimeScreenGui } from "../components";
 
 export type PreviewTargetShellProps = {
 	children: React.ReactNode;
@@ -22,13 +22,13 @@ export function PreviewTargetShell(props: PreviewTargetShellProps) {
 			viewportHeight={viewport.height}
 			viewportWidth={viewport.width}
 		>
-			<ScreenGui ref={handleRootRef}>
+			<RuntimeScreenGui ref={handleRootRef}>
 				{portalContainer ? (
 					<PortalProvider container={portalContainer}>
 						{props.children}
 					</PortalProvider>
 				) : null}
-			</ScreenGui>
+			</RuntimeScreenGui>
 		</LayoutProvider>
 	);
 }
