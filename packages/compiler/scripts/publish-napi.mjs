@@ -5,7 +5,12 @@ import { fileURLToPath } from "node:url";
 
 import { readNapiConfig } from "@napi-rs/cli";
 
-import { getPassthroughArgs, runCommand, runNapi } from "./napi-cli.mjs";
+import {
+	getPassthroughArgs,
+	runCommand,
+	runNapi,
+	runPnpm,
+} from "./napi-cli.mjs";
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const PACKAGE_DIR = resolve(SCRIPT_DIR, "..");
@@ -26,7 +31,7 @@ if (!options.prepareOnly) {
 }
 
 async function buildRootMetaPackage() {
-	runCommand("pnpm", ["run", "build:release"], { cwd: PACKAGE_DIR });
+	runPnpm(["run", "build:release"], { cwd: PACKAGE_DIR });
 }
 
 async function prepareStage() {
@@ -53,16 +58,24 @@ async function publishStage() {
 	const publishEnv = await createPublishEnv();
 
 	for (const target of targets) {
-		runCommand(publishClient, publishArgs, {
+		runPackageManager(publishClient, publishArgs, {
 			cwd: join(STAGE_ROOT, "npm", target.platformArchABI),
 			env: publishEnv,
 		});
 	}
 
-	runCommand(publishClient, publishArgs, {
+	runPackageManager(publishClient, publishArgs, {
 		cwd: STAGE_ROOT,
 		env: publishEnv,
 	});
+}
+
+function runPackageManager(client, args, options = {}) {
+	if (client === "pnpm") {
+		return runPnpm(args, options);
+	}
+
+	return runCommand(client, args, options);
 }
 
 function parseArgs(rawArgs) {

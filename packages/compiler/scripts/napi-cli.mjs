@@ -11,7 +11,7 @@ export function getPassthroughArgs(argv = process.argv.slice(2)) {
 	return argv[0] === "--" ? argv.slice(1) : argv;
 }
 
-export function runCommand(command, args, options = {}) {
+function spawnAndCheck(command, args, options = {}) {
 	const result = spawnSync(command, args, {
 		cwd: options.cwd ?? process.cwd(),
 		env: options.env ?? process.env,
@@ -27,6 +27,20 @@ export function runCommand(command, args, options = {}) {
 	}
 
 	return result;
+}
+
+export function runCommand(command, args, options = {}) {
+	return spawnAndCheck(command, args, options);
+}
+
+export function runPnpm(args, options = {}) {
+	const pnpmExecPath = process.env.npm_execpath;
+
+	if (pnpmExecPath) {
+		return spawnAndCheck(process.execPath, [pnpmExecPath, ...args], options);
+	}
+
+	return spawnAndCheck("pnpm", args, options);
 }
 
 export function runNapi(args, options = {}) {

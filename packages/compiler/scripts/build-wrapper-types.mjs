@@ -1,7 +1,7 @@
-﻿import { createRequire } from "node:module";
+import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { runCommand } from "./napi-cli.mjs";
+import { runCommand, runPnpm } from "./napi-cli.mjs";
 
 const require = createRequire(import.meta.url);
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
@@ -17,13 +17,9 @@ export function buildWrapperTypes() {
 		},
 	);
 
-	return runCommand(
-		"pnpm",
-		["exec", "biome", "format", "--write", "wrapper.d.ts"],
-		{
-			cwd: PACKAGE_DIR,
-		},
-	);
+	return runPnpm(["exec", "biome", "format", "--write", "wrapper.d.ts"], {
+		cwd: PACKAGE_DIR,
+	});
 }
 
 if (
