@@ -460,7 +460,10 @@ function createPlayerGui(): PreviewPlayerGui {
 	element.style.position = "absolute";
 	element.style.inset = "0";
 	element.style.overflow = "hidden";
-	element.style.pointerEvents = "auto";
+	// Keep the PlayerGui container itself transparent to hit-testing so it does
+	// not block unrelated UI outside the preview surface. Interactive preview
+	// hosts still receive events through their own DOM nodes.
+	element.style.pointerEvents = "none";
 	element.GetFullName = () => "Players.LocalPlayer.PlayerGui";
 	element.FindFirstChild = (name: string) => {
 		return name === "PlayerGui" ? element : null;
