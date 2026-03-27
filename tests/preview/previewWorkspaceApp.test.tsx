@@ -117,7 +117,7 @@ function createEntryDescriptor(
 		hasDefaultExport: false,
 		hasPreviewExport: false,
 		id,
-		packageName: overrides.packageName ?? "@fixtures/preview-shell",
+		packageName: overrides.packageName ?? "@preview-fixtures/preview-shell",
 		relativePath,
 		renderTarget:
 			overrides.renderTarget ??
@@ -202,7 +202,7 @@ function createWorkspaceSnapshot(
 		importers,
 		workspaceIndex: {
 			entries,
-			projectName: options?.projectName ?? "Loom Preview",
+			projectName: options?.projectName ?? "Workspace Preview",
 			protocolVersion: PREVIEW_ENGINE_PROTOCOL_VERSION,
 			targets: [],
 		},
@@ -334,7 +334,9 @@ describe("PreviewWorkspaceApp", () => {
 		await renderWorkspaceApp();
 
 		expect(await screen.findByRole("button", { name: "Alpha" })).toBeTruthy();
-		expect(screen.getByTestId("project-name").textContent).toBe("Loom Preview");
+		expect(screen.getByTestId("project-name").textContent).toBe(
+			"Workspace Preview",
+		);
 		expect(runtimeMocks.subscribePreviewRuntimeIssues).not.toHaveBeenCalled();
 	});
 

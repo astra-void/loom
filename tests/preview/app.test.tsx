@@ -67,7 +67,7 @@ function createEntryDescriptor(
 		hasDefaultExport: false,
 		hasPreviewExport: false,
 		id,
-		packageName: overrides.packageName ?? "@fixtures/preview-shell",
+		packageName: overrides.packageName ?? "@preview-fixtures/preview-shell",
 		relativePath,
 		renderTarget:
 			overrides.renderTarget ??
@@ -182,7 +182,7 @@ const checkboxEntry = createEntryDescriptor({
 const dialogEntry = createEntryDescriptor({
 	hasPreviewExport: true,
 	id: "DialogRoot.tsx",
-	packageName: "@fixtures/source-preview",
+	packageName: "@preview-fixtures/source-preview",
 	relativePath: "DialogRoot.tsx",
 	renderTarget: {
 		contract: "preview.render",
@@ -198,8 +198,8 @@ const dialogEntry = createEntryDescriptor({
 const workspaceHarnessEntry = createEntryDescriptor({
 	hasDefaultExport: true,
 	hasPreviewExport: true,
-	id: "unnamed-wizzard-game:client/ui/components/Test.tsx",
-	packageName: "unnamed-wizzard-game",
+	id: "workspace-preview:client/ui/components/Test.tsx",
+	packageName: "@preview-fixtures/workspace-preview",
 	relativePath: "client/ui/components/Test.tsx",
 	renderTarget: {
 		contract: "preview.render",
@@ -210,8 +210,8 @@ const workspaceHarnessEntry = createEntryDescriptor({
 		kind: "explicit",
 	},
 	sourceFilePath:
-		"/Users/returnf4lse/Desktop/Workspace/rojo/unnamed-wizzard-game/src/client/ui/components/Test.tsx",
-	targetName: "unnamed-wizzard-game",
+		"/virtual/workspaces/workspace-preview/src/client/ui/components/Test.tsx",
+	targetName: "workspace-preview",
 	title: "Test",
 });
 
@@ -344,7 +344,7 @@ describe("preview shell", () => {
 					entryPayloads={entryPayloads}
 					initialSelectedId={workspaceHarnessEntry.id}
 					loadEntry={loadEntry}
-					projectName="unnamed-wizzard-game"
+					projectName="Workspace Preview"
 				/>
 			);
 		}

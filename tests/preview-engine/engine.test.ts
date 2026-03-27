@@ -590,6 +590,41 @@ describe("createPreviewEngine", () => {
 		expect(update.requiresFullReload).toBe(false);
 	});
 
+	it("tracks top-level CommonJS dependencies for invalidation", () => {
+		const { packageRoot, sourceRoot } = createTempPreviewPackage({
+			"src/support/runtime.ts": `
+        export const label = "initial";
+      `,
+			"src/AccordionBasicScene.loom.tsx": `
+        import Runtime = require("./support/runtime");
+
+        const runtime = require("./support/runtime");
+
+        export function AccordionBasicScene() {
+          return <frame />;
+        }
+
+        export const preview = {
+          entry: AccordionBasicScene,
+          props: {
+            label: Runtime.label,
+            title: runtime.label,
+          },
+        };
+      `,
+		});
+
+		const engine = createEngineForPackage(packageRoot, sourceRoot, "compatibility");
+		const runtimePath = path.join(sourceRoot, "support", "runtime.ts");
+		const update = engine.invalidateSourceFiles([runtimePath]);
+
+		expect(update.changedEntryIds).toEqual(["fixture:AccordionBasicScene.loom.tsx"]);
+		expect(update.registryChangedEntryIds).toEqual([
+			"fixture:AccordionBasicScene.loom.tsx",
+		]);
+		expect(update.workspaceChanged).toBe(true);
+	});
+
 	it("emits stable workspace and payload protocol snapshots", () => {
 		const { packageRoot, sourceRoot } = createTempPreviewPackage({
 			"src/Broken.loom.tsx": `

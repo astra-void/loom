@@ -376,6 +376,54 @@ describe("createPreviewVitePlugin", () => {
 		expect(plainTransformedCode).not.toContain("<frame");
 	});
 
+	it("transforms tracked workspace dependencies outside the target root", async () => {
+		const { fixtureRoot, sourceRoot } = createFixtureRoot();
+		const sharedRoot = path.join(fixtureRoot, "shared");
+		const sharedFile = path.join(sharedRoot, "Text.tsx");
+		const entryFile = path.join(sourceRoot, "Button.loom.tsx");
+		fs.mkdirSync(sharedRoot, { recursive: true });
+		fs.writeFileSync(
+			sharedFile,
+			'export function SharedText() { return <textlabel Text="ready" />; }\n',
+			"utf8",
+		);
+		fs.writeFileSync(
+			entryFile,
+			[
+				'import { SharedText } from "../shared/Text";',
+				"",
+				"export function ButtonPreview() {",
+				"	return <SharedText />;",
+				"}",
+				"",
+				"export const preview = {",
+				"	entry: ButtonPreview,",
+				"};",
+			].join("\n"),
+			"utf8",
+		);
+
+		const previewPlugin = createPreviewPlugin(fixtureRoot, sourceRoot);
+		expect(readWorkspaceEntries(previewPlugin)).toEqual([
+			expect.objectContaining({
+				relativePath: "Button.loom.tsx",
+				status: "ready",
+			}),
+		]);
+		const transform = getHookHandler<TestTransformHook>(
+			previewPlugin.transform as TestTransformHook | undefined,
+		);
+
+		const transformed = await transform?.(
+			fs.readFileSync(sharedFile, "utf8"),
+			sharedFile,
+		);
+		const transformedCode = getHookResultCode(transformed);
+
+		expect(transformedCode).toContain("<TextLabel");
+		expect(transformedCode).not.toContain("<textlabel");
+	});
+
 	it("injects the configured runtime module when transformed output references __rbxStyle", async () => {
 		const { fixtureRoot, sourceRoot } = createFixtureRoot();
 		const sourceFile = path.join(sourceRoot, "StyledFrame.loom.tsx");

@@ -554,6 +554,317 @@ function createTempPreviewWorkspaceWithNestedWorkspacePackages() {
 	};
 }
 
+function createTempPreviewWorkspaceWithJsxDependency() {
+	const tempWorkspaceRoot = fs.mkdtempSync(
+		path.join(os.tmpdir(), "loom-preview-server-jsx-workspace-"),
+	);
+	const workspaceRoot = fs.realpathSync(tempWorkspaceRoot);
+	temporaryRoots.push(workspaceRoot);
+
+	const playgroundRoot = path.join(workspaceRoot, "packages/playground");
+	const textRoot = path.join(workspaceRoot, "packages/text");
+	const playgroundSourceRoot = path.join(playgroundRoot, "src/client");
+	const textSourceRoot = path.join(textRoot, "src");
+	fs.mkdirSync(playgroundSourceRoot, { recursive: true });
+	fs.mkdirSync(textSourceRoot, { recursive: true });
+
+	fs.writeFileSync(
+		path.join(workspaceRoot, "package.json"),
+		JSON.stringify(
+			{
+				private: true,
+				workspaces: ["packages/*"],
+			},
+			null,
+			2,
+		),
+		"utf8",
+	);
+	fs.writeFileSync(
+		path.join(playgroundRoot, "package.json"),
+		JSON.stringify(
+			{
+				dependencies: {
+					"@fixtures/text": "workspace:*",
+				},
+				name: "@fixtures/playground",
+			},
+			null,
+			2,
+		),
+		"utf8",
+	);
+	fs.writeFileSync(
+		path.join(textRoot, "package.json"),
+		JSON.stringify({ name: "@fixtures/text" }, null, 2),
+		"utf8",
+	);
+	fs.writeFileSync(
+		path.join(playgroundRoot, "tsconfig.json"),
+		JSON.stringify(
+			{
+				compilerOptions: {
+					allowSyntheticDefaultImports: true,
+					jsx: "react",
+					jsxFactory: "React.createElement",
+					jsxFragmentFactory: "React.Fragment",
+					module: "commonjs",
+					moduleResolution: "Node",
+					rootDir: "src",
+					strict: true,
+					target: "ESNext",
+				},
+				include: ["src"],
+			},
+			null,
+			2,
+		),
+		"utf8",
+	);
+	fs.writeFileSync(
+		path.join(textRoot, "tsconfig.json"),
+		JSON.stringify(
+			{
+				compilerOptions: {
+					allowSyntheticDefaultImports: true,
+					jsx: "react",
+					jsxFactory: "React.createElement",
+					jsxFragmentFactory: "React.Fragment",
+					module: "commonjs",
+					moduleResolution: "Node",
+					rootDir: "src",
+					strict: true,
+					target: "ESNext",
+				},
+				include: ["src"],
+			},
+			null,
+			2,
+		),
+		"utf8",
+	);
+	fs.writeFileSync(
+		path.join(textSourceRoot, "Text.tsx"),
+		[
+			'import React from "@rbxts/react";',
+			"",
+			"export function Text() {",
+			'\treturn <textlabel Text="ready" />;',
+			"}",
+		].join("\n"),
+		"utf8",
+	);
+	fs.writeFileSync(
+		path.join(textSourceRoot, "index.ts"),
+		'export { Text } from "./Text";\n',
+		"utf8",
+	);
+	fs.writeFileSync(
+		path.join(playgroundSourceRoot, "AccordionBasicScene.tsx"),
+		[
+			'import React from "@rbxts/react";',
+			'import { Text } from "@fixtures/text";',
+			"",
+			"export function AccordionBasicScene() {",
+			"\treturn <Text />;",
+			"}",
+			"",
+			"export const preview = {",
+			"\tentry: AccordionBasicScene,",
+			"};",
+		].join("\n"),
+		"utf8",
+	);
+
+	writeFakeRbxtsReact(workspaceRoot);
+
+	return {
+		packageRoot: playgroundRoot,
+		playgroundEntryPath: fs.realpathSync(
+			path.join(playgroundSourceRoot, "AccordionBasicScene.tsx"),
+		),
+		sourceRoot: fs.realpathSync(playgroundSourceRoot),
+		textSourcePath: fs.realpathSync(path.join(textSourceRoot, "Text.tsx")),
+		workspaceRoot,
+	};
+}
+
+function createTempPreviewPackageWithCommonJsEntry() {
+	const tempPackageRoot = fs.mkdtempSync(
+		path.join(os.tmpdir(), "loom-preview-server-commonjs-"),
+	);
+	const packageRoot = fs.realpathSync(tempPackageRoot);
+	temporaryRoots.push(packageRoot);
+
+	const sourceRoot = path.join(packageRoot, "src");
+	const supportRoot = path.join(sourceRoot, "support");
+	fs.mkdirSync(supportRoot, { recursive: true });
+
+	fs.writeFileSync(
+		path.join(packageRoot, "package.json"),
+		JSON.stringify({ name: "rbxts-react-preview-commonjs" }, null, 2),
+		"utf8",
+	);
+	fs.writeFileSync(
+		path.join(packageRoot, "tsconfig.json"),
+		JSON.stringify(
+			{
+				compilerOptions: {
+					module: "commonjs",
+					moduleResolution: "Node",
+					strict: true,
+					target: "ESNext",
+				},
+				include: ["src"],
+			},
+			null,
+			2,
+		),
+		"utf8",
+	);
+	fs.writeFileSync(
+		path.join(supportRoot, "runtime.ts"),
+		[
+			'export const label = "preview-ready";',
+			'export const title = "Accordion Basic";',
+		].join("\n"),
+		"utf8",
+	);
+	fs.writeFileSync(
+		path.join(sourceRoot, "AccordionBasicScene.loom.tsx"),
+		[
+			'import Support = require("./support/runtime");',
+			"",
+			'const supportRuntime = require("./support/runtime");',
+			"",
+			"export function AccordionBasicScene() {",
+			"\treturn null;",
+			"}",
+			"",
+			"export const preview = {",
+			"\tentry: AccordionBasicScene,",
+			"\tprops: {",
+			"\t\tlabel: Support.label,",
+			"\t\ttitle: supportRuntime.title,",
+			"\t},",
+			"};",
+		].join("\n"),
+		"utf8",
+	);
+
+	return {
+		packageRoot,
+		sourceFilePath: fs.realpathSync(
+			path.join(sourceRoot, "AccordionBasicScene.loom.tsx"),
+		),
+		sourceRoot: fs.realpathSync(sourceRoot),
+		workspaceRoot: packageRoot,
+	};
+}
+
+function createTempPreviewWorkspaceWithCommonJsDependency() {
+	const tempWorkspaceRoot = fs.mkdtempSync(
+		path.join(os.tmpdir(), "loom-preview-server-commonjs-workspace-"),
+	);
+	const workspaceRoot = fs.realpathSync(tempWorkspaceRoot);
+	temporaryRoots.push(workspaceRoot);
+
+	const coreRoot = path.join(workspaceRoot, "packages/core");
+	const uiRoot = path.join(workspaceRoot, "packages/ui");
+	const coreSourceRoot = path.join(coreRoot, "src");
+	const uiSourceRoot = path.join(uiRoot, "src");
+	fs.mkdirSync(coreSourceRoot, { recursive: true });
+	fs.mkdirSync(uiSourceRoot, { recursive: true });
+
+	fs.writeFileSync(
+		path.join(workspaceRoot, "package.json"),
+		JSON.stringify(
+			{
+				private: true,
+				workspaces: ["packages/*"],
+			},
+			null,
+			2,
+		),
+		"utf8",
+	);
+	fs.writeFileSync(
+		path.join(coreRoot, "package.json"),
+		JSON.stringify({ name: "@fixtures/core" }, null, 2),
+		"utf8",
+	);
+	fs.writeFileSync(
+		path.join(uiRoot, "package.json"),
+		JSON.stringify({ name: "@fixtures/ui" }, null, 2),
+		"utf8",
+	);
+	fs.writeFileSync(
+		path.join(coreRoot, "tsconfig.json"),
+		JSON.stringify(
+			{
+				compilerOptions: {
+					module: "commonjs",
+					moduleResolution: "Node",
+					strict: true,
+					target: "ESNext",
+				},
+				include: ["src"],
+			},
+			null,
+			2,
+		),
+		"utf8",
+	);
+	fs.writeFileSync(
+		path.join(uiRoot, "tsconfig.json"),
+		JSON.stringify(
+			{
+				compilerOptions: {
+					module: "commonjs",
+					moduleResolution: "Node",
+					strict: true,
+					target: "ESNext",
+				},
+				include: ["src"],
+			},
+			null,
+			2,
+		),
+		"utf8",
+	);
+	fs.writeFileSync(
+		path.join(coreSourceRoot, "react.ts"),
+		[
+			'import React = require("@rbxts/react");',
+			"",
+			"export default React;",
+		].join("\n"),
+		"utf8",
+	);
+	fs.writeFileSync(
+		path.join(uiSourceRoot, "Preview.loom.tsx"),
+		[
+			'import React from "@rbxts/react";',
+			'import CoreReact from "@fixtures/core/react";',
+			"",
+			"export const preview = {",
+			"\trender: () => <frame />,\n",
+			"};",
+			"",
+			"export { CoreReact };",
+		].join("\n"),
+		"utf8",
+	);
+	writeFakeRbxtsReact(uiRoot);
+
+	return {
+		workspaceRoot,
+		coreReactPath: fs.realpathSync(path.join(coreSourceRoot, "react.ts")),
+		packageRoot: uiRoot,
+		sourceRoot: fs.realpathSync(uiSourceRoot),
+	};
+}
+
 function createTempPreviewPackageWithAutoMockPathAlias() {
 	const fixture = createTempPreviewPackageWithMutablePathAlias();
 	fs.writeFileSync(
@@ -1217,6 +1528,137 @@ describe("createPreviewViteServer", () => {
 			expect(transformedScene?.code).not.toContain(
 				"virtual:loom-preview-unresolved-env",
 			);
+		} finally {
+			await server.close();
+		}
+	});
+
+	it("rewrites top-level CommonJS entry points before browser execution", async () => {
+		const fixture = createTempPreviewPackageWithCommonJsEntry();
+		const server = await createPreviewViteServer(
+			{
+				configDir: fixture.packageRoot,
+				cwd: fixture.packageRoot,
+				mode: "config-file",
+				projectName: "CommonJS Preview",
+				server: {
+					fsAllow: [fixture.packageRoot],
+					open: false,
+					port: 4174,
+				},
+				targetDiscovery: [],
+				targets: [
+					{
+						name: "playground",
+						packageName: "rbxts-react-preview-commonjs",
+						packageRoot: fixture.packageRoot,
+						sourceRoot: fixture.sourceRoot,
+					},
+				],
+				transformMode: "compatibility",
+				workspaceRoot: fixture.workspaceRoot,
+			},
+			{
+				appType: "custom",
+				middlewareMode: true,
+			},
+		);
+
+		try {
+			const transformed = await server.transformRequest(fixture.sourceFilePath);
+			expect(transformed?.code).toBeTruthy();
+			expect(transformed?.code).not.toContain("require(");
+			expect(transformed?.code).toContain("__loomCommonJsRequire");
+			expect(transformed?.code).toContain("support/runtime.ts");
+		} finally {
+			await server.close();
+		}
+	});
+
+	it("transforms tracked workspace dependency modules before browser execution", async () => {
+		const fixture = createTempPreviewWorkspaceWithCommonJsDependency();
+		const server = await createPreviewViteServer(
+			{
+				configDir: fixture.packageRoot,
+				cwd: fixture.packageRoot,
+				mode: "config-file",
+				projectName: "CommonJS Preview",
+				server: {
+					fsAllow: [fixture.workspaceRoot],
+					open: false,
+					port: 4174,
+				},
+				targetDiscovery: [],
+				targets: [
+					{
+						name: "playground",
+						packageName: "@fixtures/ui",
+						packageRoot: fixture.packageRoot,
+						sourceRoot: fixture.sourceRoot,
+					},
+				],
+				transformMode: "compatibility",
+				workspaceRoot: fixture.workspaceRoot,
+			},
+			{
+				appType: "custom",
+				middlewareMode: true,
+			},
+		);
+
+		try {
+			const transformed = await server.transformRequest(fixture.coreReactPath);
+			expect(transformed?.code).toBeTruthy();
+			expect(transformed?.code).not.toContain("require(");
+			expect(transformed?.code).toContain("__loomCommonJsRequire");
+			expect(transformed?.code).toContain("react-shims/browser/react.js");
+		} finally {
+			await server.close();
+		}
+	});
+
+	it("transforms workspace JSX dependencies imported from playground entries", async () => {
+		const fixture = createTempPreviewWorkspaceWithJsxDependency();
+		const server = await createPreviewViteServer(
+			{
+				configDir: fixture.packageRoot,
+				cwd: fixture.packageRoot,
+				mode: "config-file",
+				projectName: "JSX Dependency Preview",
+				server: {
+					fsAllow: [fixture.workspaceRoot],
+					open: false,
+					port: 4174,
+				},
+				targetDiscovery: [],
+				targets: [
+					{
+						name: "playground",
+						packageName: "@fixtures/playground",
+						packageRoot: fixture.packageRoot,
+						sourceRoot: fixture.sourceRoot,
+					},
+				],
+				transformMode: "strict-fidelity",
+				workspaceRoot: fixture.workspaceRoot,
+			},
+			{
+				appType: "custom",
+				middlewareMode: true,
+			},
+		);
+
+		try {
+			const transformedEntry = await server.transformRequest(
+				fixture.playgroundEntryPath,
+			);
+			expect(transformedEntry?.code).toBeTruthy();
+
+			const transformedDependency = await server.transformRequest(
+				fixture.textSourcePath,
+			);
+			expect(transformedDependency?.code).toContain("TextLabel");
+			expect(transformedDependency?.code).not.toContain("textlabel");
 		} finally {
 			await server.close();
 		}

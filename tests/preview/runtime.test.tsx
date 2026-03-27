@@ -21,6 +21,7 @@ import {
 	SurfaceGui,
 	subscribePreviewLayoutProbe,
 	subscribePreviewRuntimeIssues,
+	TextButton,
 	TextLabel,
 	TweenInfo,
 	UDim2,
@@ -393,7 +394,11 @@ describe("preview runtime host mapping", () => {
 		};
 		const tween = tweenService.Create(
 			frame,
-			new TweenInfo(0.1, Enum.EasingStyle.Linear, Enum.EasingDirection.In),
+			new TweenInfo(
+				0.1,
+				(Enum as any).EasingStyle.Linear,
+				(Enum as any).EasingDirection.In,
+			),
 			{
 				BackgroundColor3: Color3.fromRGB(255, 0, 0),
 				Position: UDim2.fromOffset(30, 50),
@@ -497,22 +502,76 @@ describe("preview runtime host mapping", () => {
 		expect(label.style.color).toContain("10, 20, 30");
 	});
 
-	it("merges slot and child activated handlers", async () => {
+	it("invokes the slot activated handler when the intrinsic child has no event table", async () => {
 		const user = userEvent.setup();
-		const childActivated = vi.fn();
 		const slotActivated = vi.fn();
 
 		render(
 			<Slot Event={{ Activated: () => slotActivated() }}>
-				<button onClick={() => childActivated()} type="button">
-					Trigger
-				</button>
+				<button type="button">Trigger</button>
+			</Slot>,
+		);
+
+		await user.click(screen.getByRole("button", { name: "Trigger" }));
+		expect(slotActivated).toHaveBeenCalledTimes(1);
+	});
+
+	it("invokes the slot activated handler when the preview child has no event table", async () => {
+		const user = userEvent.setup();
+		const slotActivated = vi.fn();
+
+		render(
+			<Slot Event={{ Activated: () => slotActivated() }} Text="Trigger">
+				<TextButton />
+			</Slot>,
+		);
+
+		await user.click(screen.getByRole("button", { name: "Trigger" }));
+		expect(slotActivated).toHaveBeenCalledTimes(1);
+	});
+
+	it("upgrades preview intrinsic host strings inside Slot to runtime host components", () => {
+		render(
+			<Slot Text="Ready">
+				<textlabel />
+			</Slot>,
+		);
+
+		expect(screen.getByText("Ready")).toBeTruthy();
+		expect(document.querySelector("textlabel")).toBeNull();
+		expect(
+			document.querySelector('[data-preview-host="textlabel"]'),
+		).toBeTruthy();
+	});
+
+	it("renders nothing when Slot receives no child element", () => {
+		const { container } = render(
+			<Slot Event={{ Activated: () => undefined }}>{null}</Slot>,
+		);
+
+		expect(container.firstChild).toBeNull();
+	});
+
+	it("merges slot and child activated handlers from preview children", async () => {
+		const user = userEvent.setup();
+		const callOrder: string[] = [];
+		const childActivated = vi.fn(() => {
+			callOrder.push("child");
+		});
+		const slotActivated = vi.fn(() => {
+			callOrder.push("slot");
+		});
+
+		render(
+			<Slot Event={{ Activated: () => slotActivated() }} Text="Trigger">
+				<TextButton Event={{ Activated: () => childActivated() }} />
 			</Slot>,
 		);
 
 		await user.click(screen.getByRole("button", { name: "Trigger" }));
 		expect(childActivated).toHaveBeenCalledTimes(1);
 		expect(slotActivated).toHaveBeenCalledTimes(1);
+		expect(callOrder).toEqual(["child", "slot"]);
 	});
 
 	it("hoists decorator hosts into parent CSS without leaking preview-only props to the DOM", () => {
@@ -539,6 +598,31 @@ describe("preview runtime host mapping", () => {
 		expect(document.querySelector('[data-preview-host="uiscale"]')).toBeNull();
 		expect(document.querySelector("[filldirection]")).toBeNull();
 		expect(document.querySelector("[scale]")).toBeNull();
+	});
+
+	it("does not forward preview-only text label props onto the DOM", () => {
+		render(
+			<TextLabel
+				BackgroundTransparency={1}
+				Size={UDim2.fromOffset(128, 32)}
+				Text="Preview text"
+				TextColor3={Color3.fromRGB(15, 30, 45)}
+				TextSize={18}
+				TextXAlignment="center"
+			/>,
+		);
+
+		const label = document.querySelector(
+			'[data-preview-host="textlabel"]',
+		) as HTMLElement;
+
+		expect(label).toBeTruthy();
+		expect(label.textContent).toContain("Preview text");
+		expect(label.hasAttribute("BackgroundTransparency")).toBe(false);
+		expect(label.hasAttribute("Size")).toBe(false);
+		expect(label.hasAttribute("TextColor3")).toBe(false);
+		expect(label.hasAttribute("TextSize")).toBe(false);
+		expect(label.hasAttribute("TextXAlignment")).toBe(false);
 	});
 
 	it("renders image buttons as clickable preview buttons with visible images", async () => {

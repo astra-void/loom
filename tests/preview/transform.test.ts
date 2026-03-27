@@ -2,10 +2,18 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { compile_tsx, transformPreviewSource } from "@loom-dev/compiler";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildPreviewModules } from "../../packages/preview/src/build";
 
 vi.setConfig({ testTimeout: 10000 });
+
+const temporaryRoots: string[] = [];
+
+afterEach(() => {
+	for (const root of temporaryRoots.splice(0)) {
+		fs.rmSync(root, { force: true, recursive: true });
+	}
+});
 
 describe("preview source transform", () => {
 	it("rewrites supported imports, enums, host elements, and DOM-facing types", () => {
@@ -195,6 +203,50 @@ describe("preview source transform", () => {
 		expect(result.code).toContain("Slot");
 		expect(result.code).toContain("FocusScope");
 		expect(result.code).toContain("LayerInteractEvent");
+		expect(result.code).toContain("<TextLabel");
+	});
+
+	it("rewrites top-level CommonJS requires into browser-safe imports", () => {
+		const root = fs.mkdtempSync(
+			path.join(os.tmpdir(), "loom-preview-commonjs-transform-"),
+		);
+		temporaryRoots.push(root);
+
+		const sourceRoot = path.join(root, "src");
+		fs.mkdirSync(path.join(sourceRoot, "support"), { recursive: true });
+		fs.writeFileSync(
+			path.join(sourceRoot, "support", "dep.ts"),
+			'export const value = "ready";\n',
+			"utf8",
+		);
+		const sourceFilePath = path.join(sourceRoot, "Entry.tsx");
+		fs.writeFileSync(
+			sourceFilePath,
+			[
+				'import DepAlias = require("./support/dep");',
+				"",
+				'const depValue = require("./support/dep");',
+				"",
+				`export const combined = \`\${DepAlias.value}:\${depValue.value}\`;`,
+			].join("\n"),
+			"utf8",
+		);
+
+		const result = transformPreviewSource(
+			fs.readFileSync(sourceFilePath, "utf8"),
+			{
+				filePath: sourceFilePath,
+				mode: "compatibility",
+				runtimeModule: "@loom-dev/preview-runtime",
+				target: "commonjs",
+			},
+		);
+
+		expect(result.diagnostics).toHaveLength(0);
+		expect(result.code).not.toContain("require(");
+		expect(result.code).toContain("__loomCommonJsRequire");
+		expect(result.code).toContain('from "./support/dep');
+		expect(result.code).toContain("combined");
 	});
 
 	it("keeps core React wrappers in ESM form without emitting require", () => {

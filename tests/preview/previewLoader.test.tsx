@@ -21,6 +21,20 @@ function createEntryDescriptor(
 	overrides: Partial<PreviewEntryDescriptor> &
 		Pick<PreviewEntryDescriptor, "id" | "relativePath" | "title">,
 ): PreviewEntryDescriptor {
+	const {
+		id,
+		packageName,
+		relativePath,
+		renderTarget,
+		selection,
+		sourceFilePath,
+		status,
+		statusDetails,
+		targetName,
+		title,
+		...rest
+	} = overrides;
+
 	return {
 		candidateExportNames: [],
 		capabilities: {
@@ -41,28 +55,28 @@ function createEntryDescriptor(
 		},
 		hasDefaultExport: true,
 		hasPreviewExport: false,
-		id: overrides.id,
-		packageName: overrides.packageName ?? "@fixtures/workspace-preview",
-		relativePath: overrides.relativePath,
+		id,
+		packageName: packageName ?? "@preview-fixtures/workspace-preview",
+		relativePath,
 		renderTarget:
-			overrides.renderTarget ??
+			renderTarget ??
 			({
 				exportName: "default",
 				kind: "component",
 				usesPreviewProps: false,
 			} as const),
 		selection:
-			overrides.selection ??
+			selection ??
 			({
 				contract: "preview.entry",
 				kind: "explicit",
 			} as const),
-		sourceFilePath: overrides.sourceFilePath ?? `/virtual/${overrides.id}`,
-		status: overrides.status ?? "ready",
-		statusDetails: overrides.statusDetails ?? ({ kind: "ready" } as const),
-		targetName: overrides.targetName ?? "fixture",
-		title: overrides.title,
-		...overrides,
+		sourceFilePath: sourceFilePath ?? `/virtual/${id}`,
+		status: status ?? "ready",
+		statusDetails: statusDetails ?? ({ kind: "ready" } as const),
+		targetName: targetName ?? "fixture",
+		title,
+		...rest,
 	};
 }
 
@@ -100,7 +114,7 @@ function renderPreviewApp(app: React.ReactElement) {
 function createRetryableOptimizerError() {
 	return Object.assign(
 		new Error(
-			'There is a new version of the pre-bundle for "/src/Test.tsx", a page reload is going to ask for it.',
+			'There is a new version of the pre-bundle for "/virtual/workspaces/workspace-preview/src/Test.tsx", a page reload is going to ask for it.',
 		),
 		{
 			code: "ERR_OUTDATED_OPTIMIZED_DEP",
@@ -145,7 +159,7 @@ describe("loadPreviewModule", () => {
 						payload,
 					}))
 				}
-				projectName="@fixtures/workspace-preview"
+				projectName="Workspace Preview"
 			/>,
 		);
 
@@ -181,7 +195,7 @@ describe("loadPreviewModule", () => {
 						payload: createPayload(entry),
 					}))
 				}
-				projectName="@fixtures/workspace-preview"
+				projectName="Workspace Preview"
 			/>,
 		);
 
