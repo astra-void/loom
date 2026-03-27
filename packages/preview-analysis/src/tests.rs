@@ -111,3 +111,31 @@ fn collects_graph_trace_with_cycle_detection() {
     assert_eq!(trace.imports.len(), 2);
     assert_eq!(trace.boundary_hops.len(), 0);
 }
+
+#[test]
+fn preserves_project_config_path_in_graph_trace() {
+    let mut session = PreviewGraphSession::new();
+    session.replace_records_internal(vec![make_record("/workspace/pkg/a.tsx", vec![], vec![])]);
+
+    let trace = session.collect_graph_trace_internal(
+        "/workspace/pkg/a.tsx",
+        json!({
+            "contract": "preview.entry",
+            "importChain": ["/workspace/pkg/a.tsx"],
+            "symbolChain": ["/workspace/pkg/a.tsx#preview.entry"],
+        }),
+    );
+
+    let traversed_projects = trace
+        .traversed_projects
+        .expect("expected traversed projects");
+    assert_eq!(traversed_projects.len(), 1);
+    assert_eq!(
+        traversed_projects[0].config_path,
+        "/workspace/pkg/tsconfig.json"
+    );
+    assert_eq!(
+        traversed_projects[0].package_root,
+        "/workspace/pkg".to_owned()
+    );
+}

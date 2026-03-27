@@ -1,16 +1,16 @@
 {
-	"name": "@loom-dev/preview-graph",
+	"name": "@loom-dev/preview-analysis",
 	"version": "0.1.0",
 	"private": false,
 	"description": "WASM-backed preview graph traversal and trace engine for Loom.",
-	"main": "pkg/preview_graph.js",
-	"types": "pkg/preview_graph.d.ts",
+	"main": "pkg/preview_analysis.js",
+	"types": "pkg/preview_analysis.d.ts",
 	"files": [
-		"pkg/preview_graph.d.ts",
-		"pkg/preview_graph.js",
-		"pkg/preview_graph_bg.js",
-		"pkg/preview_graph_bg.wasm",
-		"pkg/preview_graph_bg.wasm.d.ts",
+		"pkg/preview_analysis.d.ts",
+		"pkg/preview_analysis.js",
+		"pkg/preview_analysis_bg.js",
+		"pkg/preview_analysis_bg.wasm",
+		"pkg/preview_analysis_bg.wasm.d.ts",
 		"README.md"
 	],
 	"scripts": {
@@ -26,11 +26,11 @@
 	},
 	"exports": {
 		".": {
-			"types": "./pkg/preview_graph.d.ts",
-			"import": "./pkg/preview_graph.js",
-			"require": "./pkg/preview_graph.js",
-			"default": "./pkg/preview_graph.js"
+			"types": "./pkg/preview_analysis.d.ts",
+			"import": "./pkg/preview_analysis.js",
+			"require": "./pkg/preview_analysis.js",
+			"default": "./pkg/preview_analysis.js"
 		},
-		"./preview_graph_bg.wasm": "./pkg/preview_graph_bg.wasm"
+		"./preview_analysis_bg.wasm": "./pkg/preview_analysis_bg.wasm"
 	}
 }
