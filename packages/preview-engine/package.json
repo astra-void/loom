@@ -34,6 +34,21 @@
 			"import": "./dist/index.js",
 			"default": "./dist/index.js"
 		},
+		"./engine": {
+			"types": "./dist/engine.d.ts",
+			"import": "./dist/engine.js",
+			"default": "./dist/engine.js"
+		},
+		"./types": {
+			"types": "./dist/types.d.ts",
+			"import": "./dist/types.js",
+			"default": "./dist/types.js"
+		},
+		"./workspaceGraph": {
+			"types": "./dist/workspaceGraph.d.ts",
+			"import": "./dist/workspaceGraph.js",
+			"default": "./dist/workspaceGraph.js"
+		},
 		"./schemas/diagnostic": "./schemas/diagnostic.schema.json",
 		"./schemas/entry-payload": "./schemas/entry-payload.schema.json",
 		"./schemas/workspace-index": "./schemas/workspace-index.schema.json"

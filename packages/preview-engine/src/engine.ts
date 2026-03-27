@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import fs from "node:fs";
-import { transformPreviewSource } from "@loom-dev/compiler";
+import compiler from "@loom-dev/compiler";
 import type { PreviewRuntimeIssue } from "@loom-dev/preview-runtime";
 import {
 	type DiscoveredEntryState,
@@ -12,7 +12,6 @@ import {
 	resolveFilePath,
 	resolveRealFilePath,
 } from "./pathUtils";
-import { normalizeTransformPreviewSourceResult } from "./transformResult";
 import type {
 	CreatePreviewEngineOptions,
 	PreviewDiagnostic,
@@ -55,6 +54,8 @@ type CachedTransform = {
 };
 
 const TRACEABLE_SOURCE_EXTENSIONS = new Set([".ts", ".tsx", ".d.ts", ".d.tsx"]);
+const { normalizeTransformPreviewSourceResult, transformPreviewSource } =
+	compiler;
 
 function hashText(value: string) {
 	return createHash("sha1").update(value).digest("hex");
@@ -395,8 +396,14 @@ function computeTransformState(
 ) {
 	const diagnostics = new Map<string, PreviewDiagnostic>();
 	let outcome = createDefaultTransformOutcome(mode);
+	const transformPaths = [
+		...new Set([
+			entryState.descriptor.sourceFilePath,
+			...entryState.dependencyPaths,
+		]),
+	];
 
-	for (const dependencyPath of entryState.dependencyPaths) {
+	for (const dependencyPath of transformPaths) {
 		if (
 			!fs.existsSync(dependencyPath) ||
 			!isTransformableSourceFile(dependencyPath)

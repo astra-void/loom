@@ -2,11 +2,10 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { transformPreviewSource } from "@loom-dev/compiler";
+import compiler from "@loom-dev/compiler";
 import ts from "typescript";
 import { createPreviewEngine } from "./engine";
 import { resolveRealFilePath } from "./pathUtils";
-import { normalizeTransformPreviewSourceResult } from "./transformResult";
 import type {
 	PreviewBuildArtifactKind,
 	PreviewBuildDiagnostic,
@@ -89,6 +88,9 @@ type CachedLayoutSchemaArtifactRecord = PreviewCachedArtifactMetadata & {
 	relativePath: string;
 	schema: PreviewLayoutSchemaSidecar;
 };
+
+const { normalizeTransformPreviewSourceResult, transformPreviewSource } =
+	compiler;
 
 function hashText(value: string) {
 	return createHash("sha1").update(value).digest("hex");
