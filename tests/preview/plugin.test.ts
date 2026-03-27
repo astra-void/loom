@@ -44,6 +44,69 @@ function createFixtureRoot() {
 	};
 }
 
+function writeFakeRbxtsReactWithPropTypes(packageRoot: string) {
+	const fakeReactRoot = path.join(packageRoot, "node_modules/@rbxts/react/src");
+	const propTypesPath = path.join(fakeReactRoot, "prop-types.d.ts");
+	fs.mkdirSync(fakeReactRoot, { recursive: true });
+	fs.writeFileSync(
+		path.join(packageRoot, "node_modules/@rbxts/react/package.json"),
+		JSON.stringify(
+			{
+				name: "@rbxts/react",
+				types: "src/index.d.ts",
+			},
+			null,
+			2,
+		),
+		"utf8",
+	);
+	fs.writeFileSync(
+		path.join(fakeReactRoot, "index.d.ts"),
+		[
+			'import type { ReactNodeLike } from "./prop-types";',
+			"",
+			"declare namespace React {",
+			"\ttype ReactNode = ReactNodeLike;",
+			"\tfunction createElement(...args: any[]): any;",
+			"\tconst Fragment: any;",
+			"}",
+			"",
+			"declare const React: {",
+			"\tcreateElement: typeof React.createElement;",
+			"\tFragment: typeof React.Fragment;",
+			"};",
+			"",
+			'export * from "./prop-types";',
+			"export = React;",
+		].join("\n"),
+		"utf8",
+	);
+	fs.writeFileSync(
+		propTypesPath,
+		[
+			"export interface Validator<T> {",
+			"\t(value: unknown): T;",
+			"}",
+			"",
+			"export type ReactText = string | number;",
+			"export type ReactNodeLike = ReactText | boolean | null | undefined;",
+			"",
+			"export const any: Validator<unknown>;",
+			"export const array: Validator<unknown[]>;",
+			"export const bool: Validator<boolean>;",
+			"export const func: Validator<(...args: never[]) => unknown>;",
+			"export const number: Validator<number>;",
+			"export const object: Validator<object>;",
+			"export const string: Validator<string>;",
+		].join("\n"),
+		"utf8",
+	);
+
+	return {
+		propTypesPath: fs.realpathSync(propTypesPath),
+	};
+}
+
 function createPreviewPlugin(
 	fixtureRoot: string,
 	sourceRoot: string,
@@ -151,7 +214,7 @@ function readWorkspaceEntries(previewPlugin: PreviewPlugin) {
 	}
 
 	const workspaceMatch = workspaceModuleCode.match(
-		/export const previewWorkspaceIndex = (\{[\s\S]*?\});\nexport const previewEntryPayloads =/,
+		/export const previewWorkspaceIndex = (\{[\s\S]*?\});\nexport const preview(?:EntryPayloads|Importers) =/,
 	);
 	if (!workspaceMatch) {
 		throw new Error(
@@ -319,6 +382,24 @@ describe("createPreviewVitePlugin", () => {
 				)
 				.replace(/\\/g, "/"),
 		);
+		expect(
+			resolveId?.(
+				"react",
+				path.resolve(
+					process.cwd(),
+					"packages/preview/src/source/react-shims/browser/react.js",
+				),
+			),
+		).toBeUndefined();
+		expect(
+			resolveId?.(
+				"react-dom/client",
+				path.resolve(
+					process.cwd(),
+					"packages/preview/src/source/react-shims/browser/react-dom-client.js",
+				),
+			),
+		).toBeUndefined();
 	});
 
 	it("discovers .loom.tsx preview entries and transforms source files under the target root", async () => {
@@ -375,6 +456,41 @@ describe("createPreviewVitePlugin", () => {
 		expect(plainTransformedCode).not.toContain("<frame");
 	});
 
+	it("discovers .tsx preview entries with explicit preview contracts", async () => {
+		const { fixtureRoot, sourceRoot } = createFixtureRoot();
+		const entryFile = path.join(sourceRoot, "Button.tsx");
+		const helperFile = path.join(sourceRoot, "ButtonHelper.tsx");
+
+		fs.writeFileSync(
+			helperFile,
+			"export function ButtonHelper() { return <frame />; }\n",
+			"utf8",
+		);
+		fs.writeFileSync(
+			entryFile,
+			[
+				'import { ButtonHelper } from "./ButtonHelper";',
+				"",
+				"export function ButtonPreview() {",
+				"	return <ButtonHelper />;",
+				"}",
+				"",
+				"export const preview = {",
+				"	entry: ButtonPreview,",
+				"};",
+			].join("\n"),
+			"utf8",
+		);
+
+		const previewPlugin = createPreviewPlugin(fixtureRoot, sourceRoot);
+		expect(readWorkspaceEntries(previewPlugin)).toEqual([
+			expect.objectContaining({
+				relativePath: "Button.tsx",
+				status: "ready",
+			}),
+		]);
+	});
+
 	it("transforms tracked workspace dependencies outside the target root", async () => {
 		const { fixtureRoot, sourceRoot } = createFixtureRoot();
 		const sharedRoot = path.join(fixtureRoot, "shared");
@@ -421,6 +537,50 @@ describe("createPreviewVitePlugin", () => {
 
 		expect(transformedCode).toContain("<TextLabel");
 		expect(transformedCode).not.toContain("<textlabel");
+	});
+
+	it("skips preview transforms for tracked declaration dependencies", async () => {
+		const { fixtureRoot, sourceRoot } = createFixtureRoot();
+		const sourceFile = path.join(sourceRoot, "Button.loom.tsx");
+		const { propTypesPath } = writeFakeRbxtsReactWithPropTypes(fixtureRoot);
+		fs.writeFileSync(
+			sourceFile,
+			[
+				'import React from "@rbxts/react";',
+				"",
+				"export function ButtonPreview() {",
+				"\tvoid React;",
+				'\treturn <textlabel Text="ready" />;',
+				"}",
+				"",
+				"export const preview = {",
+				"\tentry: ButtonPreview,",
+				"};",
+			].join("\n"),
+			"utf8",
+		);
+
+		const previewPlugin = createPreviewPlugin(fixtureRoot, sourceRoot);
+		const transform = getHookHandler<TestTransformHook>(
+			previewPlugin.transform as TestTransformHook | undefined,
+		);
+		if (!transform) {
+			throw new Error("Expected the preview transform hook to be present.");
+		}
+
+		const transformedEntry = await transform(
+			fs.readFileSync(sourceFile, "utf8"),
+			sourceFile,
+		);
+		const transformedEntryCode = getHookResultCode(transformedEntry);
+		expect(transformedEntryCode).toContain('import React from "react";');
+		expect(transformedEntryCode).not.toContain("prop-types.d.ts");
+
+		const transformedDeclaration = await transform(
+			fs.readFileSync(propTypesPath, "utf8"),
+			propTypesPath,
+		);
+		expect(transformedDeclaration).toBe(undefined);
 	});
 
 	it("injects the configured runtime module when transformed output references __rbxStyle", async () => {

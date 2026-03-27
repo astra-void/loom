@@ -15,6 +15,12 @@ const mocks = vi.hoisted(() => {
 				targets: [],
 			},
 		})),
+		getDiscoveryWorkspaceIndex: vi.fn(() => ({
+			entries: [],
+			projectName: "Fixture Preview",
+			protocolVersion: 1,
+			targets: [],
+		})),
 	};
 	const workspaceGraphService = {
 		resolveImport: vi.fn(() => ({

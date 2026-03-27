@@ -5,6 +5,7 @@ import { Writable } from "node:stream";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
 	createPreviewViteServer,
+	normalizeViteLogErrorOptions,
 	resolvePreviewServerConfig,
 } from "../../packages/preview/src/source/server";
 import {
@@ -74,6 +75,57 @@ function writeFakeRbxtsReact(packageRoot: string) {
 		].join("\n"),
 		"utf8",
 	);
+}
+
+function writeFakeRbxtsReactWithPropTypes(packageRoot: string) {
+	const fakeReactRoot = path.join(packageRoot, "node_modules/@rbxts/react/src");
+	const propTypesPath = path.join(fakeReactRoot, "prop-types.d.ts");
+	writeFakeRbxtsReact(packageRoot);
+	fs.writeFileSync(
+		path.join(fakeReactRoot, "index.d.ts"),
+		[
+			'import type { ReactNodeLike } from "./prop-types";',
+			"",
+			"declare namespace React {",
+			"\ttype ReactNode = ReactNodeLike;",
+			"\tfunction createElement(...args: any[]): any;",
+			"\tconst Fragment: any;",
+			"}",
+			"",
+			"declare const React: {",
+			"\tcreateElement: typeof React.createElement;",
+			"\tFragment: typeof React.Fragment;",
+			"};",
+			"",
+			'export * from "./prop-types";',
+			"export = React;",
+		].join("\n"),
+		"utf8",
+	);
+	fs.writeFileSync(
+		propTypesPath,
+		[
+			"export interface Validator<T> {",
+			"\t(value: unknown): T;",
+			"}",
+			"",
+			"export type ReactText = string | number;",
+			"export type ReactNodeLike = ReactText | boolean | null | undefined;",
+			"",
+			"export const any: Validator<unknown>;",
+			"export const array: Validator<unknown[]>;",
+			"export const bool: Validator<boolean>;",
+			"export const func: Validator<(...args: never[]) => unknown>;",
+			"export const number: Validator<number>;",
+			"export const object: Validator<object>;",
+			"export const string: Validator<string>;",
+		].join("\n"),
+		"utf8",
+	);
+
+	return {
+		propTypesPath: fs.realpathSync(propTypesPath),
+	};
 }
 
 function createTempPreviewPackage() {
@@ -1103,6 +1155,83 @@ function requestServerPath(
 }
 
 describe("createPreviewViteServer", () => {
+	it("normalizes primitive Vite logger error payloads", () => {
+		const normalized = normalizeViteLogErrorOptions({
+			clear: true,
+			error: "preview failed" as never,
+		});
+
+		expect(normalized?.clear).toBe(true);
+		expect(normalized?.error).toBeInstanceOf(Error);
+		expect(normalized?.error?.message).toContain("preview failed");
+	});
+
+	it("serves preview shell assets when the workspace includes @rbxts/react", async () => {
+		const fixture = createTempPreviewPackage();
+		const resolvedConfig = await resolvePreviewServerConfig({
+			cwd: fixture.packageRoot,
+			packageName: "rbxts-react-preview",
+			packageRoot: fixture.packageRoot,
+			sourceRoot: fixture.sourceRoot,
+		});
+		const server = await createPreviewViteServer(resolvedConfig, {
+			appType: "custom",
+			middlewareMode: true,
+		});
+
+		try {
+			const mainJsResponse = await requestServerPath(server, "/main.js");
+			expect(mainJsResponse.statusCode).toBe(200);
+
+			const stylesCssResponse = await requestServerPath(server, "/styles.css");
+			expect(stylesCssResponse.statusCode).toBe(200);
+
+			const viteClientResponse = await requestServerPath(server, "/@vite/client");
+			expect(viteClientResponse.statusCode).toBe(200);
+		} finally {
+			await server.close();
+		}
+	});
+
+	it("does not 500 when tracked @rbxts/react declaration dependencies exist", async () => {
+		const fixture = createTempPreviewPackage();
+		const { propTypesPath } = writeFakeRbxtsReactWithPropTypes(
+			fixture.packageRoot,
+		);
+		const resolvedConfig = await resolvePreviewServerConfig({
+			cwd: fixture.packageRoot,
+			packageName: "rbxts-react-preview",
+			packageRoot: fixture.packageRoot,
+			sourceRoot: fixture.sourceRoot,
+		});
+		const server = await createPreviewViteServer(resolvedConfig, {
+			appType: "custom",
+			middlewareMode: true,
+		});
+		const loggerErrorSpy = vi.spyOn(server.config.logger, "error");
+
+		try {
+			const mainJsResponse = await requestServerPath(server, "/main.js");
+			expect(mainJsResponse.statusCode).toBe(200);
+
+			const stylesCssResponse = await requestServerPath(server, "/styles.css");
+			expect(stylesCssResponse.statusCode).toBe(200);
+
+			const viteClientResponse = await requestServerPath(server, "/@vite/client");
+			expect(viteClientResponse.statusCode).toBe(200);
+
+			const transformedSource = await server.transformRequest(
+				fixture.sourceFilePath,
+			);
+			expect(transformedSource?.code).toContain("jsxDEV");
+			expect(transformedSource?.code).not.toContain(propTypesPath);
+			expect(loggerErrorSpy).not.toHaveBeenCalled();
+		} finally {
+			loggerErrorSpy.mockRestore();
+			await server.close();
+		}
+	});
+
 	it("serves runtime dependency roots for external package previews", async () => {
 		const fixture = createTempPreviewPackage();
 		const resolvedConfig = await resolvePreviewServerConfig({

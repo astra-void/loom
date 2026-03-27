@@ -1,3 +1,4 @@
+import React from "react";
 import { afterEach, describe, expect, it } from "vitest";
 
 const PREVIEW_INTRINSIC_HOSTS_SYMBOL = Symbol.for(
@@ -46,6 +47,26 @@ describe("browser react shims", () => {
 			"__previewReactEventInputBegan",
 		);
 		expect(reactShim.default.Change.Text).toBe("__previewReactChangeText");
+	});
+
+	it("re-exports React internal named exports without relying on CJS named export synthesis", async () => {
+		const reactShim = await import(
+			"../../packages/preview/src/source/react-shims/browser/react.js"
+		);
+
+		expect(
+			reactShim.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE,
+		).toBe(
+			(
+				React as typeof React & {
+					__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE?: unknown;
+				}
+			).__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE,
+		);
+		expect(reactShim.__COMPILER_RUNTIME).toBe(
+			(React as typeof React & { __COMPILER_RUNTIME?: unknown })
+				.__COMPILER_RUNTIME,
+		);
 	});
 
 	it("maps preview intrinsic hosts in jsx runtime", async () => {
