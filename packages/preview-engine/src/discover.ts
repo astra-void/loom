@@ -1,128 +1,36 @@
 ﻿import fs from "node:fs";
 import path from "node:path";
 import ts from "typescript";
+import { isFilePathIncludedByTarget } from "./pathUtils";
 import {
-	isFilePathIncludedByTarget,
-	isFilePathUnderRoot,
-	resolveRealFilePath,
-} from "./pathUtils";
-import {
-	collectGraphTraceWithPreviewGraph,
-	collectTransitiveDependencyPathsWithPreviewGraph,
-	type PreviewGraphRecordSnapshot,
+	buildWorkspaceDiscoveryWithPreviewGraph,
+	type WorkspaceDiscoverySnapshot as PreviewGraphWorkspaceDiscoverySnapshot,
+	type PreviewSourceTargetSnapshot,
+	type WorkspaceDiscoveryEntryState,
+	type WorkspaceFileSnapshot,
 } from "./previewGraphWasm";
 import type {
 	CreatePreviewEngineOptions,
-	PreviewDiagnostic,
-	PreviewDiscoveryDiagnosticCode,
 	PreviewEntryDescriptor,
-	PreviewEntryStatus,
-	PreviewEntryStatusDetails,
-	PreviewGraphImportEdge,
-	PreviewGraphTrace,
-	PreviewRenderTarget,
-	PreviewSelection,
-	PreviewSourceTarget,
 	PreviewWorkspaceIndex,
 } from "./types";
 import { PREVIEW_ENGINE_PROTOCOL_VERSION } from "./types";
 import {
 	createWorkspaceGraphService,
 	type WorkspaceGraphService,
-	type WorkspaceProject,
 } from "./workspaceGraph";
-
-const PREVIEW_PACKAGE_ENTRY_EXCLUDES = ["runtime/", "shell/"];
-const PREVIEW_ENTRY_FILE_SUFFIX = ".loom.tsx";
-
-type PreviewExportInfo = {
-	entryLocalName?: string;
-	hasEntry: boolean;
-	hasExport: boolean;
-	hasProps: boolean;
-	hasRender: boolean;
-	title?: string;
-};
-
-type LocalRenderableDeclarationKind =
-	| "function-declaration"
-	| "variable-arrow"
-	| "variable-function"
-	| "variable-other";
-
-type LocalRenderableMetadata = {
-	declarationKind: LocalRenderableDeclarationKind;
-	isRenderable: boolean;
-	matchesFileBasename: boolean;
-	name: string;
-};
-
-type ImportBinding = {
-	importedName: "default" | string;
-	sourceFilePath: string;
-};
-
-type ExportBinding =
-	| {
-			kind: "default-expression";
-	  }
-	| {
-			kind: "local";
-			localName: string;
-	  }
-	| {
-			importedName: "default" | string;
-			kind: "re-export";
-			sourceFilePath: string;
-	  };
-
-type RawDiagnostic = Omit<PreviewDiagnostic, "entryId" | "relativeFile"> & {
-	packageRoot: string;
-};
 
 type TargetContext = {
 	exclude?: string[];
 	include?: string[];
 	packageName: string;
 	packageRoot: string;
+	name: string;
 	sourceRoot: string;
 	targetName: string;
-	workspaceRoot: string;
 };
 
-type RawSourceModuleRecord = {
-	exportAllSources: string[];
-	exportBindings: Map<string, ExportBinding[]>;
-	filePath: string;
-	graphEdges: PreviewGraphImportEdge[];
-	importBindings: Map<string, ImportBinding>;
-	imports: string[];
-	isTsx: boolean;
-	localRenderableMetadata: Map<string, LocalRenderableMetadata>;
-	ownerPackageName?: string;
-	ownerPackageRoot: string;
-	project?: WorkspaceProject;
-	preview: PreviewExportInfo;
-	previewExported: boolean;
-	rawDiagnostics: RawDiagnostic[];
-	relativePath: string;
-	target: TargetContext;
-};
-
-type ResolvedRenderableRef = {
-	importChain: string[];
-	originFilePath: string;
-	symbolChain: string[];
-	symbolName: string;
-};
-
-export type DiscoveredEntryState = {
-	dependencyPaths: string[];
-	descriptor: PreviewEntryDescriptor;
-	discoveryDiagnostics: PreviewDiagnostic[];
-	graphTrace: PreviewGraphTrace;
-	packageRoot: string;
-	previewHasProps: boolean;
+export type DiscoveredEntryState = WorkspaceDiscoveryEntryState & {
 	target: TargetContext;
 };
 
@@ -132,6 +40,20 @@ export type WorkspaceDiscoverySnapshot = {
 	workspaceIndex: PreviewWorkspaceIndex;
 };
 
+type WorkspaceSnapshotQueueItem = {
+	filePath: string;
+	isEntryCandidate: boolean;
+	target: TargetContext;
+};
+
+type SourceFileAnalysis = {
+	fingerprint: string;
+	hasPreviewContract: boolean;
+	specifiers: string[];
+};
+
+const sourceFileAnalysisCache = new Map<string, SourceFileAnalysis>();
+
 function toRelativePath(rootPath: string, filePath: string) {
 	return path
 		.relative(resolveRealFilePath(rootPath), resolveRealFilePath(filePath))
@@ -139,161 +61,201 @@ function toRelativePath(rootPath: string, filePath: string) {
 		.join("/");
 }
 
-function humanizeTitle(relativePath: string) {
-	const baseName = path.basename(relativePath, path.extname(relativePath));
-	return baseName
-		.replace(/([a-z0-9])([A-Z])/g, "$1 $2")
-		.replace(/[-_]+/g, " ")
-		.trim()
-		.replace(/\s+/g, " ")
-		.replace(/^./, (char) => char.toUpperCase());
+function resolveRealFilePath(filePath: string) {
+	try {
+		return fs.realpathSync.native(filePath);
+	} catch {
+		return path.resolve(filePath);
+	}
 }
 
-function isExported(node: ts.Node) {
+function isTraceableSourceFile(fileName: string) {
 	return (
-		(ts.getCombinedModifierFlags(node as ts.Declaration) &
-			ts.ModifierFlags.Export) !==
-		0
+		fileName.endsWith(".ts") ||
+		fileName.endsWith(".tsx") ||
+		fileName.endsWith(".d.ts") ||
+		fileName.endsWith(".d.tsx")
 	);
 }
 
-function isDefaultExport(node: ts.Node) {
-	return (
-		(ts.getCombinedModifierFlags(node as ts.Declaration) &
-			ts.ModifierFlags.Default) !==
-		0
+function isPreviewEntryFile(fileName: string) {
+	return fileName.endsWith(".loom.ts") || fileName.endsWith(".loom.tsx");
+}
+
+function analyzeSourceFile(filePath: string): SourceFileAnalysis {
+	const normalizedFilePath = resolveRealFilePath(filePath);
+	if (!fs.existsSync(normalizedFilePath)) {
+		const emptyAnalysis = {
+			fingerprint: "missing",
+			hasPreviewContract: false,
+			specifiers: [],
+		};
+		sourceFileAnalysisCache.set(normalizedFilePath, emptyAnalysis);
+		return emptyAnalysis;
+	}
+
+	const fileStats = fs.statSync(normalizedFilePath);
+	const fingerprint = `${fileStats.mtimeMs}:${fileStats.size}`;
+	const cachedAnalysis = sourceFileAnalysisCache.get(normalizedFilePath);
+	if (cachedAnalysis?.fingerprint === fingerprint) {
+		return cachedAnalysis;
+	}
+
+	const sourceText = fs.readFileSync(normalizedFilePath, "utf8");
+	const scriptKind =
+		normalizedFilePath.endsWith(".tsx") || normalizedFilePath.endsWith(".d.tsx")
+			? ts.ScriptKind.TSX
+			: ts.ScriptKind.TS;
+	const sourceFile = ts.createSourceFile(
+		normalizedFilePath,
+		sourceText,
+		ts.ScriptTarget.Latest,
+		true,
+		scriptKind,
 	);
-}
+	const specifiers = new Set<string>();
+	let hasPreviewContract = false;
+	const hasExportModifier = (node: ts.Node) =>
+		(node as { modifiers?: readonly ts.ModifierLike[] }).modifiers?.some(
+			(modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword,
+		) ?? false;
 
-function isComponentName(name: string) {
-	return /^[A-Z]/.test(name);
-}
-
-function isRenderableInitializer(initializer: ts.Expression | undefined) {
-	return Boolean(
-		initializer &&
-			(ts.isArrowFunction(initializer) || ts.isFunctionExpression(initializer)),
-	);
-}
-
-function getVariableDeclarationKind(
-	initializer: ts.Expression | undefined,
-): LocalRenderableDeclarationKind {
-	if (initializer && ts.isArrowFunction(initializer)) {
-		return "variable-arrow";
-	}
-
-	if (initializer && ts.isFunctionExpression(initializer)) {
-		return "variable-function";
-	}
-
-	return "variable-other";
-}
-
-function getPropertyNameText(name: ts.PropertyName) {
-	if (
-		ts.isIdentifier(name) ||
-		ts.isStringLiteral(name) ||
-		ts.isNumericLiteral(name)
-	) {
-		return name.text;
-	}
-
-	return undefined;
-}
-
-function unwrapPreviewExpression(node: ts.Expression | undefined) {
-	let current = node;
-
-	while (
-		current &&
-		(ts.isParenthesizedExpression(current) ||
-			ts.isAsExpression(current) ||
-			ts.isTypeAssertionExpression(current))
-	) {
-		current = current.expression;
-	}
-
-	return current;
-}
-
-function parsePreviewObject(
-	node: ts.Expression | undefined,
-): PreviewExportInfo | undefined {
-	const unwrappedNode = unwrapPreviewExpression(node);
-
-	if (!unwrappedNode || !ts.isObjectLiteralExpression(unwrappedNode)) {
-		return undefined;
-	}
-
-	let entryLocalName: string | undefined;
-	let title: string | undefined;
-	let hasProps = false;
-	let hasRender = false;
-
-	for (const property of unwrappedNode.properties) {
+	const visit = (node: ts.Node): void => {
 		if (
-			!ts.isPropertyAssignment(property) &&
-			!ts.isShorthandPropertyAssignment(property)
+			(ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) &&
+			node.moduleSpecifier &&
+			ts.isStringLiteralLike(node.moduleSpecifier)
 		) {
-			continue;
+			specifiers.add(node.moduleSpecifier.text);
 		}
 
-		const propertyName = getPropertyNameText(property.name);
-		if (!propertyName) {
-			continue;
-		}
-
-		if (propertyName === "title" && ts.isPropertyAssignment(property)) {
-			const initializer = property.initializer;
-			if (
-				ts.isStringLiteral(initializer) ||
-				ts.isNoSubstitutionTemplateLiteral(initializer)
-			) {
-				title = initializer.text;
+		if (
+			ts.isImportEqualsDeclaration(node) &&
+			ts.isExternalModuleReference(node.moduleReference)
+		) {
+			const expression = node.moduleReference.expression;
+			if (expression && ts.isStringLiteralLike(expression)) {
+				specifiers.add(expression.text);
 			}
-			continue;
-		}
-
-		if (propertyName === "props") {
-			hasProps = true;
-			continue;
 		}
 
 		if (
-			propertyName === "entry" &&
-			ts.isPropertyAssignment(property) &&
-			ts.isIdentifier(property.initializer)
+			ts.isCallExpression(node) &&
+			node.arguments.length === 1 &&
+			ts.isIdentifier(node.expression) &&
+			node.expression.text === "require"
 		) {
-			entryLocalName = property.initializer.text;
-			continue;
+			const [argument] = node.arguments;
+			if (argument && ts.isStringLiteralLike(argument)) {
+				specifiers.add(argument.text);
+			}
 		}
 
-		if (propertyName === "render") {
-			hasRender = true;
-		}
-	}
+		if (hasExportModifier(node)) {
+			if (ts.isVariableStatement(node)) {
+				for (const declaration of node.declarationList.declarations) {
+					if (
+						ts.isIdentifier(declaration.name) &&
+						declaration.name.text === "preview"
+					) {
+						hasPreviewContract = true;
+					}
+				}
+			}
 
-	return {
-		entryLocalName,
-		hasEntry: entryLocalName !== undefined,
-		hasExport: true,
-		hasProps,
-		hasRender,
-		title,
+			if (ts.isFunctionDeclaration(node) && node.name?.text === "preview") {
+				hasPreviewContract = true;
+			}
+
+			if (ts.isClassDeclaration(node) && node.name?.text === "preview") {
+				hasPreviewContract = true;
+			}
+		}
+
+		if (
+			ts.isExportDeclaration(node) &&
+			!node.moduleSpecifier &&
+			node.exportClause &&
+			ts.isNamedExports(node.exportClause)
+		) {
+			for (const element of node.exportClause.elements) {
+				if (element.name.text === "preview") {
+					hasPreviewContract = true;
+				}
+			}
+		}
+
+		ts.forEachChild(node, visit);
 	};
+
+	visit(sourceFile);
+
+	const analysis = {
+		fingerprint,
+		hasPreviewContract,
+		specifiers: [...specifiers].sort((left, right) =>
+			left.localeCompare(right),
+		),
+	};
+	sourceFileAnalysisCache.set(normalizedFilePath, analysis);
+	return analysis;
 }
 
-function findWorkspaceRoot(startPath: string | string[]) {
-	const startPaths = Array.isArray(startPath) ? startPath : [startPath];
-	const resolvedStartPaths = startPaths.map((candidate) =>
-		resolveRealFilePath(candidate),
+function getModuleSpecifiers(filePath: string) {
+	return analyzeSourceFile(filePath).specifiers;
+}
+
+function isPreviewEntryCandidate(filePath: string) {
+	return (
+		isPreviewEntryFile(filePath) ||
+		analyzeSourceFile(filePath).hasPreviewContract
 	);
-	const markerRoots = resolvedStartPaths.map(findMarkerRoot);
+}
+
+function findOwningTarget(filePath: string, targets: TargetContext[]) {
+	const matchingTargets = targets
+		.filter((target) => isFilePathIncludedByTarget(target, filePath))
+		.sort((left, right) => {
+			if (left.sourceRoot.length !== right.sourceRoot.length) {
+				return right.sourceRoot.length - left.sourceRoot.length;
+			}
+
+			return left.name.localeCompare(right.name);
+		});
+
+	return matchingTargets[0];
+}
+
+function findWorkspaceRoot(startPaths: string[]) {
+	const candidates = startPaths.map((startPath) =>
+		resolveRealFilePath(startPath),
+	);
+	const markerRoots: string[] = [];
+
+	for (const startPath of candidates) {
+		let current = startPath;
+		while (true) {
+			if (
+				fs.existsSync(path.join(current, "pnpm-workspace.yaml")) ||
+				fs.existsSync(path.join(current, ".git"))
+			) {
+				markerRoots.push(current);
+				break;
+			}
+
+			const parent = path.dirname(current);
+			if (parent === current) {
+				markerRoots.push(startPath);
+				break;
+			}
+
+			current = parent;
+		}
+	}
 
 	let commonPath = markerRoots[0] ?? process.cwd();
 	for (const candidate of markerRoots.slice(1)) {
-		while (!isFilePathUnderRoot(commonPath, candidate)) {
+		while (!isPathEqualOrContained(commonPath, candidate)) {
 			const parent = path.dirname(commonPath);
 			if (parent === commonPath) {
 				return commonPath;
@@ -306,1158 +268,134 @@ function findWorkspaceRoot(startPath: string | string[]) {
 	return commonPath;
 }
 
-function findMarkerRoot(candidate: string): string {
-	let current = candidate;
-
-	while (true) {
-		if (
-			fs.existsSync(path.join(current, "pnpm-workspace.yaml")) ||
-			fs.existsSync(path.join(current, ".git"))
-		) {
-			return current;
-		}
-
-		const parent = path.dirname(current);
-		if (parent === current) {
-			return candidate;
-		}
-
-		current = parent;
-	}
-}
-
-function _findNearestPackageRoot(filePath: string) {
-	let current =
-		fs.existsSync(filePath) && fs.statSync(filePath).isDirectory()
-			? filePath
-			: path.dirname(filePath);
-
-	while (true) {
-		if (fs.existsSync(path.join(current, "package.json"))) {
-			return resolveRealFilePath(current);
-		}
-
-		const parent = path.dirname(current);
-		if (parent === current) {
-			return resolveRealFilePath(path.dirname(filePath));
-		}
-
-		current = parent;
-	}
-}
-
-function collectLocalRenderableNames(sourceFile: ts.SourceFile) {
-	const fileBasename = path.basename(
-		sourceFile.fileName,
-		path.extname(sourceFile.fileName),
-	);
-	const localRenderableMetadata = new Map<string, LocalRenderableMetadata>();
-	let localPreviewInfo: PreviewExportInfo | undefined;
-
-	for (const statement of sourceFile.statements) {
-		if (
-			ts.isFunctionDeclaration(statement) &&
-			statement.name &&
-			isComponentName(statement.name.text)
-		) {
-			localRenderableMetadata.set(statement.name.text, {
-				declarationKind: "function-declaration",
-				isRenderable: true,
-				matchesFileBasename: statement.name.text === fileBasename,
-				name: statement.name.text,
-			});
-			continue;
-		}
-
-		if (!ts.isVariableStatement(statement)) {
-			continue;
-		}
-
-		for (const declaration of statement.declarationList.declarations) {
-			if (!ts.isIdentifier(declaration.name)) {
-				continue;
-			}
-
-			if (declaration.name.text === "preview") {
-				localPreviewInfo =
-					parsePreviewObject(declaration.initializer) ?? localPreviewInfo;
-			}
-
-			if (isComponentName(declaration.name.text)) {
-				localRenderableMetadata.set(declaration.name.text, {
-					declarationKind: getVariableDeclarationKind(declaration.initializer),
-					isRenderable: isRenderableInitializer(declaration.initializer),
-					matchesFileBasename: declaration.name.text === fileBasename,
-					name: declaration.name.text,
-				});
-			}
-		}
-	}
-
-	return {
-		localPreviewInfo,
-		localRenderableMetadata,
-	};
-}
-
-function parseModuleRecord(
-	filePath: string,
-	target: TargetContext,
-	graphService: WorkspaceGraphService,
-): RawSourceModuleRecord {
-	const sourceText = fs.readFileSync(filePath, "utf8");
-	const scriptKind = filePath.endsWith(".tsx")
-		? ts.ScriptKind.TSX
-		: ts.ScriptKind.TS;
-	const sourceFile = ts.createSourceFile(
-		filePath,
-		sourceText,
-		ts.ScriptTarget.Latest,
-		true,
-		scriptKind,
-	);
-	const { localPreviewInfo, localRenderableMetadata } =
-		collectLocalRenderableNames(sourceFile);
-	const fileContext = graphService.getFileContext(filePath);
-	const importBindings = new Map<string, ImportBinding>();
-	const exportBindings = new Map<string, ExportBinding[]>();
-	const exportAllSources: string[] = [];
-	const graphEdges: PreviewGraphImportEdge[] = [];
-	const imports = new Set<string>();
-	const rawDiagnostics = new Map<string, RawDiagnostic>();
-	let previewExported = false;
-	let preview = localPreviewInfo;
-
-	const addDiagnostic = (diagnostic: RawDiagnostic) => {
-		const key = `${diagnostic.code}:${diagnostic.file}:${diagnostic.summary}`;
-		rawDiagnostics.set(key, diagnostic);
-	};
-
-	const addExportBinding = (exportName: string, binding: ExportBinding) => {
-		const bindings = exportBindings.get(exportName) ?? [];
-		bindings.push(binding);
-		exportBindings.set(exportName, bindings);
-	};
-
-	for (const statement of sourceFile.statements) {
-		if (
-			ts.isImportDeclaration(statement) &&
-			statement.moduleSpecifier &&
-			ts.isStringLiteral(statement.moduleSpecifier)
-		) {
-			const resolvedImport = graphService.resolveImport({
-				importerFilePath: filePath,
-				specifier: statement.moduleSpecifier.text,
-			});
-
-			if (resolvedImport?.edge) {
-				graphEdges.push(resolvedImport.edge);
-			}
-
-			if (resolvedImport?.diagnostic) {
-				addDiagnostic({
-					...resolvedImport.diagnostic,
-				});
-			}
-
-			if (resolvedImport?.followedFilePath) {
-				imports.add(resolvedImport.followedFilePath);
-				const clause = statement.importClause;
-				if (clause?.name) {
-					importBindings.set(clause.name.text, {
-						importedName: "default",
-						sourceFilePath: resolvedImport.followedFilePath,
-					});
-				}
-
-				if (clause?.namedBindings && ts.isNamedImports(clause.namedBindings)) {
-					for (const element of clause.namedBindings.elements) {
-						importBindings.set(element.name.text, {
-							importedName: element.propertyName?.text ?? element.name.text,
-							sourceFilePath: resolvedImport.followedFilePath,
-						});
-					}
-				}
-			}
-
-			continue;
-		}
-
-		if (
-			ts.isImportEqualsDeclaration(statement) &&
-			ts.isExternalModuleReference(statement.moduleReference)
-		) {
-			const expression = statement.moduleReference.expression;
-			if (!expression || !ts.isStringLiteralLike(expression)) {
-				continue;
-			}
-
-			const resolvedImport = graphService.resolveImport({
-				importerFilePath: filePath,
-				specifier: expression.text,
-			});
-
-			if (resolvedImport?.edge) {
-				graphEdges.push(resolvedImport.edge);
-			}
-
-			if (resolvedImport?.diagnostic) {
-				addDiagnostic({
-					...resolvedImport.diagnostic,
-				});
-			}
-
-			if (resolvedImport?.followedFilePath) {
-				imports.add(resolvedImport.followedFilePath);
-			}
-
-			continue;
-		}
-
-		if (ts.isFunctionDeclaration(statement) && isExported(statement)) {
-			if (statement.name?.text === "preview") {
-				previewExported = true;
-			} else if (statement.name) {
-				addExportBinding(
-					isDefaultExport(statement) ? "default" : statement.name.text,
-					{
-						kind: "local",
-						localName: statement.name.text,
-					},
-				);
-			} else if (isDefaultExport(statement)) {
-				addExportBinding("default", { kind: "default-expression" });
-			}
-			continue;
-		}
-
-		if (ts.isVariableStatement(statement)) {
-			for (const declaration of statement.declarationList.declarations) {
-				if (!ts.isIdentifier(declaration.name)) {
-					continue;
-				}
-
-				if (declaration.name.text === "preview" && isExported(statement)) {
-					previewExported = true;
-					preview = parsePreviewObject(declaration.initializer) ??
-						preview ?? {
-							hasEntry: false,
-							hasExport: true,
-							hasProps: false,
-							hasRender: false,
-						};
-					continue;
-				}
-
-				if (!isExported(statement)) {
-					continue;
-				}
-
-				addExportBinding(
-					isDefaultExport(statement) ? "default" : declaration.name.text,
-					{
-						kind: "local",
-						localName: declaration.name.text,
-					},
-				);
-			}
-			continue;
-		}
-
-		if (ts.isExportAssignment(statement)) {
-			if (ts.isIdentifier(statement.expression)) {
-				addExportBinding("default", {
-					kind: "local",
-					localName: statement.expression.text,
-				});
-			} else if (
-				ts.isArrowFunction(statement.expression) ||
-				ts.isFunctionExpression(statement.expression)
-			) {
-				addExportBinding("default", { kind: "default-expression" });
-			}
-			continue;
-		}
-
-		if (
-			!ts.isExportDeclaration(statement) ||
-			statement.isTypeOnly ||
-			!statement.moduleSpecifier
-		) {
-			if (
-				ts.isExportDeclaration(statement) &&
-				!statement.isTypeOnly &&
-				statement.exportClause &&
-				ts.isNamedExports(statement.exportClause)
-			) {
-				for (const element of statement.exportClause.elements) {
-					const localName = element.propertyName?.text ?? element.name.text;
-					const exportName = element.name.text;
-					if (localName === "preview") {
-						previewExported = true;
-						continue;
-					}
-
-					addExportBinding(exportName, {
-						kind: "local",
-						localName,
-					});
-				}
-			}
-			continue;
-		}
-
-		if (!ts.isStringLiteral(statement.moduleSpecifier)) {
-			continue;
-		}
-
-		const resolvedImport = graphService.resolveImport({
-			importerFilePath: filePath,
-			specifier: statement.moduleSpecifier.text,
-		});
-
-		if (resolvedImport?.edge) {
-			graphEdges.push(resolvedImport.edge);
-		}
-
-		if (resolvedImport?.diagnostic) {
-			addDiagnostic({
-				...resolvedImport.diagnostic,
-			});
-		}
-
-		if (!resolvedImport?.followedFilePath) {
-			continue;
-		}
-
-		imports.add(resolvedImport.followedFilePath);
-
-		if (!statement.exportClause) {
-			exportAllSources.push(resolvedImport.followedFilePath);
-			continue;
-		}
-
-		if (!ts.isNamedExports(statement.exportClause)) {
-			continue;
-		}
-
-		for (const element of statement.exportClause.elements) {
-			const importedName = element.propertyName?.text ?? element.name.text;
-			const exportName = element.name.text;
-			if (importedName === "preview") {
-				previewExported = true;
-				continue;
-			}
-
-			addExportBinding(exportName, {
-				importedName,
-				kind: "re-export",
-				sourceFilePath: resolvedImport.followedFilePath,
-			});
-		}
-	}
-
-	const collectCommonJsRequireCalls = (node: ts.Node) => {
-		if (
-			ts.isCallExpression(node) &&
-			node.arguments.length === 1 &&
-			ts.isIdentifier(node.expression) &&
-			node.expression.text === "require"
-		) {
-			const [argument] = node.arguments;
-			if (argument && ts.isStringLiteralLike(argument)) {
-				const resolvedImport = graphService.resolveImport({
-					importerFilePath: filePath,
-					specifier: argument.text,
-				});
-
-				if (resolvedImport?.edge) {
-					graphEdges.push(resolvedImport.edge);
-				}
-
-				if (resolvedImport?.diagnostic) {
-					addDiagnostic({
-						...resolvedImport.diagnostic,
-					});
-				}
-
-				if (resolvedImport?.followedFilePath) {
-					imports.add(resolvedImport.followedFilePath);
-				}
-			}
-		}
-
-		ts.forEachChild(node, collectCommonJsRequireCalls);
-	};
-
-	collectCommonJsRequireCalls(sourceFile);
-
-	return {
-		exportAllSources,
-		exportBindings,
-		filePath,
-		graphEdges,
-		importBindings,
-		imports: [...imports].sort((left, right) => left.localeCompare(right)),
-		isTsx: filePath.endsWith(PREVIEW_ENTRY_FILE_SUFFIX),
-		localRenderableMetadata,
-		ownerPackageName: fileContext.packageName,
-		ownerPackageRoot: fileContext.packageRoot,
-		project: fileContext.project,
-		preview: previewExported
-			? (preview ?? {
-					hasEntry: false,
-					hasExport: true,
-					hasProps: false,
-					hasRender: false,
-				})
-			: {
-					hasEntry: false,
-					hasExport: false,
-					hasProps: false,
-					hasRender: false,
-				},
-		previewExported,
-		rawDiagnostics: [...rawDiagnostics.values()],
-		relativePath: toRelativePath(target.sourceRoot, filePath),
-		target,
-	};
-}
-
-function resolveLocalReference(
-	record: RawSourceModuleRecord,
-	localName: string,
-	recordsByPath: Map<string, RawSourceModuleRecord>,
-	stack = new Set<string>(),
-): ResolvedRenderableRef | undefined {
-	const localMetadata = record.localRenderableMetadata.get(localName);
-	if (localMetadata?.isRenderable) {
-		return {
-			importChain: [record.filePath],
-			originFilePath: record.filePath,
-			symbolChain: [`${record.filePath}#${localName}`],
-			symbolName: localName,
-		};
-	}
-
-	const importBinding = record.importBindings.get(localName);
-	if (!importBinding) {
-		return undefined;
-	}
-
-	const sourceRecord = recordsByPath.get(importBinding.sourceFilePath);
-	if (!sourceRecord) {
-		return undefined;
-	}
-
-	const resolved = resolveExportReference(
-		sourceRecord,
-		importBinding.importedName,
-		recordsByPath,
-		stack,
-	);
-	if (!resolved) {
-		return undefined;
-	}
-
-	return {
-		importChain: [record.filePath, ...resolved.importChain],
-		originFilePath: resolved.originFilePath,
-		symbolChain: [`${record.filePath}#${localName}`, ...resolved.symbolChain],
-		symbolName: resolved.symbolName,
-	};
-}
-
-function resolveExportReference(
-	record: RawSourceModuleRecord,
-	exportName: string,
-	recordsByPath: Map<string, RawSourceModuleRecord>,
-	stack = new Set<string>(),
-): ResolvedRenderableRef | undefined {
-	const stackKey = `${record.filePath}:${exportName}`;
-	if (stack.has(stackKey)) {
-		return undefined;
-	}
-
-	stack.add(stackKey);
-
-	const bindings = record.exportBindings.get(exportName) ?? [];
-	for (const binding of bindings) {
-		if (binding.kind === "default-expression") {
-			stack.delete(stackKey);
-			return {
-				importChain: [record.filePath],
-				originFilePath: record.filePath,
-				symbolChain: [`${record.filePath}#default`],
-				symbolName: "default",
-			};
-		}
-
-		if (binding.kind === "local") {
-			const resolved = resolveLocalReference(
-				record,
-				binding.localName,
-				recordsByPath,
-				stack,
-			);
-			if (resolved) {
-				stack.delete(stackKey);
-				return {
-					...resolved,
-					symbolChain: [
-						`${record.filePath}#${exportName}`,
-						...resolved.symbolChain,
-					],
-				};
-			}
-			continue;
-		}
-
-		const sourceRecord = recordsByPath.get(binding.sourceFilePath);
-		if (!sourceRecord) {
-			continue;
-		}
-
-		const resolved = resolveExportReference(
-			sourceRecord,
-			binding.importedName,
-			recordsByPath,
-			stack,
-		);
-		if (resolved) {
-			stack.delete(stackKey);
-			return {
-				importChain: [record.filePath, ...resolved.importChain],
-				originFilePath: resolved.originFilePath,
-				symbolChain: [
-					`${record.filePath}#${exportName}`,
-					...resolved.symbolChain,
-				],
-				symbolName: resolved.symbolName,
-			};
-		}
-	}
-
-	if (exportName !== "default") {
-		for (const sourceFilePath of record.exportAllSources) {
-			const sourceRecord = recordsByPath.get(sourceFilePath);
-			if (!sourceRecord) {
-				continue;
-			}
-
-			const resolved = resolveExportReference(
-				sourceRecord,
-				exportName,
-				recordsByPath,
-				stack,
-			);
-			if (resolved) {
-				stack.delete(stackKey);
-				return {
-					importChain: [record.filePath, ...resolved.importChain],
-					originFilePath: resolved.originFilePath,
-					symbolChain: [
-						`${record.filePath}#${exportName}`,
-						...resolved.symbolChain,
-					],
-					symbolName: resolved.symbolName,
-				};
-			}
-		}
-	}
-
-	stack.delete(stackKey);
-	return undefined;
-}
-
-function getRenderableNamedExports(
-	record: RawSourceModuleRecord,
-	recordsByPath: Map<string, RawSourceModuleRecord>,
-) {
-	const renderableExports = new Set<string>();
-	for (const exportName of record.exportBindings.keys()) {
-		if (exportName === "default" || exportName === "preview") {
-			continue;
-		}
-
-		if (resolveExportReference(record, exportName, recordsByPath)) {
-			renderableExports.add(exportName);
-		}
-	}
-
-	for (const sourceFilePath of record.exportAllSources) {
-		const sourceRecord = recordsByPath.get(sourceFilePath);
-		if (!sourceRecord) {
-			continue;
-		}
-
-		for (const exportName of getRenderableNamedExports(
-			sourceRecord,
-			recordsByPath,
-		)) {
-			renderableExports.add(exportName);
-		}
-	}
-
-	return [...renderableExports].sort((left, right) =>
-		left.localeCompare(right),
+function isPathEqualOrContained(rootPath: string, candidatePath: string) {
+	const normalizedRoot = resolveRealFilePath(rootPath);
+	const normalizedCandidate = resolveRealFilePath(candidatePath);
+	return (
+		normalizedRoot === normalizedCandidate ||
+		normalizedCandidate.startsWith(`${normalizedRoot}${path.sep}`) ||
+		normalizedRoot.startsWith(`${normalizedCandidate}${path.sep}`)
 	);
 }
 
-function hasRenderableDefaultExport(
-	record: RawSourceModuleRecord,
-	recordsByPath: Map<string, RawSourceModuleRecord>,
-) {
-	return resolveExportReference(record, "default", recordsByPath) !== undefined;
-}
-
-function resolvePreviewEntryExport(
-	record: RawSourceModuleRecord,
-	recordsByPath: Map<string, RawSourceModuleRecord>,
-) {
-	const entryLocalName = record.preview.entryLocalName;
-	if (!entryLocalName) {
-		return undefined;
-	}
-
-	const resolvedEntry = resolveLocalReference(
-		record,
-		entryLocalName,
-		recordsByPath,
-	);
-	if (!resolvedEntry) {
-		return undefined;
-	}
-
-	const exportNames: string[] = [];
-	const candidates = record.exportBindings.has("default")
-		? ["default", ...getRenderableNamedExports(record, recordsByPath)]
-		: getRenderableNamedExports(record, recordsByPath);
-
-	for (const exportName of candidates) {
-		const resolvedExport = resolveExportReference(
-			record,
-			exportName,
-			recordsByPath,
-		);
-		if (
-			resolvedExport &&
-			resolvedExport.originFilePath === resolvedEntry.originFilePath &&
-			resolvedExport.symbolName === resolvedEntry.symbolName
-		) {
-			exportNames.push(exportName);
-		}
-	}
-
-	if (exportNames.length === 0) {
-		return undefined;
-	}
-
-	const [firstExportName] = exportNames;
-	if (!firstExportName) {
-		return undefined;
-	}
-
-	if (exportNames.includes(entryLocalName)) {
-		return {
-			exportName: entryLocalName,
-			trace: resolvedEntry,
-		};
-	}
-
-	if (exportNames.length === 1) {
-		return {
-			exportName: firstExportName,
-			trace: resolvedEntry,
-		};
-	}
-
-	if (exportNames.includes("default")) {
-		return {
-			exportName: "default",
-			trace: resolvedEntry,
-		};
-	}
-
-	return {
-		exportName: firstExportName,
-		trace: resolvedEntry,
-	};
-}
-
-function toPreviewGraphRecords(
-	recordsByPath: Map<string, RawSourceModuleRecord>,
-) {
-	return [...recordsByPath.values()]
-		.map(
-			(record) =>
-				({
-					filePath: record.filePath,
-					graphEdges: record.graphEdges,
-					imports: record.imports,
-					ownerPackageName: record.ownerPackageName,
-					ownerPackageRoot: record.ownerPackageRoot,
-					...(record.project?.configPath
-						? { projectConfigPath: record.project.configPath }
-						: {}),
-				}) satisfies PreviewGraphRecordSnapshot,
-		)
-		.sort((left, right) => left.filePath.localeCompare(right.filePath));
-}
-
-function collectTransitivePaths(
-	filePath: string,
-	recordsByPath: Map<string, RawSourceModuleRecord>,
-) {
-	return collectTransitiveDependencyPathsWithPreviewGraph(
-		toPreviewGraphRecords(recordsByPath),
-		filePath,
-	);
-}
-function collectTransitiveDiagnostics(
-	entryId: string,
-	filePath: string,
-	recordsByPath: Map<string, RawSourceModuleRecord>,
-	visited = new Set<string>(),
-	diagnostics = new Map<string, PreviewDiagnostic>(),
-) {
-	if (visited.has(filePath)) {
-		return diagnostics;
-	}
-
-	visited.add(filePath);
-	const record = recordsByPath.get(filePath);
-	if (!record) {
-		return diagnostics;
-	}
-
-	for (const diagnostic of record.rawDiagnostics) {
-		const nextDiagnostic: PreviewDiagnostic = {
-			...diagnostic,
-			entryId,
-			relativeFile: toRelativePath(diagnostic.packageRoot, diagnostic.file),
-		};
-		const key = `${nextDiagnostic.code}:${nextDiagnostic.file}:${nextDiagnostic.summary}`;
-		diagnostics.set(key, nextDiagnostic);
-	}
-
-	const dependencyPaths = new Set<string>(record.imports);
-	for (const edge of record.graphEdges) {
-		if (edge.resolvedFile) {
-			dependencyPaths.add(edge.resolvedFile);
-		}
-	}
-
-	for (const importPath of dependencyPaths) {
-		collectTransitiveDiagnostics(
-			entryId,
-			importPath,
-			recordsByPath,
-			visited,
-			diagnostics,
-		);
-	}
-
-	return diagnostics;
-}
-
-function collectTransitiveGraphTrace(
-	entryFilePath: string,
-	recordsByPath: Map<string, RawSourceModuleRecord>,
-	selectionTrace: PreviewGraphTrace["selection"],
-) {
-	return collectGraphTraceWithPreviewGraph(
-		toPreviewGraphRecords(recordsByPath),
-		entryFilePath,
-		selectionTrace,
-	);
-}
-function createEntryDiagnostic(
-	code: PreviewDiscoveryDiagnosticCode,
-	entryId: string,
-	filePath: string,
-	packageRoot: string,
-	summary: string,
-	severity: PreviewDiagnostic["severity"] = "warning",
+function normalizeTarget(
+	target: CreatePreviewEngineOptions["targets"][number],
 ) {
 	return {
-		code,
-		entryId,
-		file: filePath,
-		phase: "discovery",
-		relativeFile: toRelativePath(packageRoot, filePath),
-		severity,
-		summary,
-		target: "preview-engine",
-	} satisfies PreviewDiagnostic;
-}
-
-function createDiagnosticsSummary(diagnostics: PreviewDiagnostic[]) {
-	const byPhase = {
-		discovery: 0,
-		layout: 0,
-		runtime: 0,
-		transform: 0,
-	} satisfies Record<PreviewDiagnostic["phase"], number>;
-
-	for (const diagnostic of diagnostics) {
-		byPhase[diagnostic.phase] += 1;
-	}
-
-	return {
-		byPhase,
-		hasBlocking: diagnostics.some(
-			(diagnostic) => diagnostic.severity === "error",
-		),
-		total: diagnostics.length,
-	};
-}
-
-function createCapabilities(renderTarget: PreviewRenderTarget) {
-	return {
-		supportsHotUpdate: true,
-		supportsLayoutDebug: true,
-		supportsPropsEditing: renderTarget.kind === "component",
-		supportsRuntimeMock: true,
-	};
-}
-
-function createBaseStatusDetails(
-	status: PreviewEntryStatus,
-	renderTarget: PreviewRenderTarget,
-): PreviewEntryStatusDetails {
-	switch (status) {
-		case "ambiguous":
-			return {
-				candidates:
-					renderTarget.kind === "none" ? (renderTarget.candidates ?? []) : [],
-				kind: "ambiguous",
-				reason: "ambiguous-exports",
-			};
-		case "needs_harness":
-			return {
-				...(renderTarget.kind === "none" && renderTarget.candidates
-					? { candidates: renderTarget.candidates }
-					: {}),
-				kind: "needs_harness",
-				reason:
-					renderTarget.kind === "none" &&
-					renderTarget.reason === "no-component-export"
-						? "no-component-export"
-						: "missing-explicit-contract",
-			};
-		case "blocked_by_layout":
-			return {
-				issueCodes: [],
-				kind: "blocked_by_layout",
-				reason: "layout-issues",
-			};
-		case "blocked_by_runtime":
-			return {
-				issueCodes: [],
-				kind: "blocked_by_runtime",
-				reason: "runtime-issues",
-			};
-		case "blocked_by_transform":
-			return {
-				blockingCodes: [],
-				kind: "blocked_by_transform",
-				reason: "transform-diagnostics",
-			};
-		default:
-			return {
-				kind: "ready",
-			};
-	}
-}
-
-function createExplicitSelection(
-	record: RawSourceModuleRecord,
-	recordsByPath: Map<string, RawSourceModuleRecord>,
-) {
-	if (record.preview.hasRender) {
-		return {
-			renderTarget: {
-				contract: "preview.render",
-				kind: "harness",
-			} satisfies PreviewRenderTarget,
-			selection: {
-				contract: "preview.render",
-				kind: "explicit",
-			} satisfies PreviewSelection,
-			trace: {
-				contract: "preview.render" as const,
-				importChain: [record.filePath],
-				symbolChain: [`${record.filePath}#preview.render`],
-			},
-		};
-	}
-
-	const resolvedEntry = resolvePreviewEntryExport(record, recordsByPath);
-	if (resolvedEntry) {
-		return {
-			renderTarget: {
-				exportName: resolvedEntry.exportName,
-				kind: "component",
-				usesPreviewProps: record.preview.hasProps,
-			} satisfies PreviewRenderTarget,
-			selection: {
-				contract: "preview.entry",
-				kind: "explicit",
-			} satisfies PreviewSelection,
-			trace: {
-				contract: "preview.entry" as const,
-				importChain: resolvedEntry.trace.importChain,
-				requestedSymbol: record.preview.entryLocalName,
-				resolvedExportName: resolvedEntry.exportName,
-				symbolChain: resolvedEntry.trace.symbolChain,
-			},
-		};
-	}
-
-	return undefined;
-}
-
-function isPreviewPackageInternalEntry(
-	packageRoot: string,
-	relativePath: string,
-) {
-	const previewPackageRoot = resolveRealFilePath(
-		path.resolve(__dirname, "../../preview"),
-	);
-	if (resolveRealFilePath(packageRoot) !== previewPackageRoot) {
-		return false;
-	}
-
-	return PREVIEW_PACKAGE_ENTRY_EXCLUDES.some((prefix) =>
-		relativePath.startsWith(prefix),
-	);
-}
-
-function buildDescriptor(
-	record: RawSourceModuleRecord,
-	recordsByPath: Map<string, RawSourceModuleRecord>,
-): {
-	dependencyPaths: string[];
-	descriptor: PreviewEntryDescriptor;
-	discoveryDiagnostics: PreviewDiagnostic[];
-	graphTrace: PreviewGraphTrace;
-} {
-	const explicitSelection = createExplicitSelection(record, recordsByPath);
-	const candidateExportNames = getRenderableNamedExports(record, recordsByPath);
-	const hasDefaultExport = hasRenderableDefaultExport(record, recordsByPath);
-	const entryId = `${record.target.targetName}:${record.relativePath}`;
-	const renderableCandidates = hasDefaultExport
-		? ["default", ...candidateExportNames]
-		: [...candidateExportNames];
-	const baseDiagnostics = [
-		...collectTransitiveDiagnostics(
-			entryId,
-			record.filePath,
-			recordsByPath,
-		).values(),
-	];
-
-	let selection: PreviewSelection;
-	let renderTarget: PreviewRenderTarget;
-	let status: PreviewEntryStatus;
-	let selectionTrace: PreviewGraphTrace["selection"];
-	const entryDiagnostics = [...baseDiagnostics];
-
-	if (explicitSelection) {
-		selection = explicitSelection.selection;
-		renderTarget = explicitSelection.renderTarget;
-		selectionTrace = explicitSelection.trace;
-		status = "ready";
-	} else if (renderableCandidates.length > 1) {
-		selection = {
-			kind: "unresolved",
-			reason: "ambiguous-exports",
-		};
-		renderTarget = {
-			candidates: renderableCandidates,
-			kind: "none",
-			reason: "ambiguous-exports",
-		};
-		selectionTrace = {
-			importChain: [record.filePath],
-			symbolChain: [],
-		};
-		status = "ambiguous";
-		entryDiagnostics.push(
-			createEntryDiagnostic(
-				"AMBIGUOUS_COMPONENT_EXPORTS",
-				entryId,
-				record.filePath,
-				record.target.packageRoot,
-				`Multiple component exports need explicit disambiguation: ${candidateExportNames.join(", ")}.`,
-			),
-		);
-	} else if (renderableCandidates.length === 1) {
-		selection = {
-			kind: "unresolved",
-			reason: "missing-explicit-contract",
-		};
-		renderTarget = {
-			candidates: renderableCandidates,
-			kind: "none",
-			reason: "missing-explicit-contract",
-		};
-		selectionTrace = {
-			importChain: [record.filePath],
-			requestedSymbol: record.preview.entryLocalName,
-			symbolChain: [],
-		};
-		status = "needs_harness";
-		entryDiagnostics.push(
-			createEntryDiagnostic(
-				"MISSING_EXPLICIT_PREVIEW_CONTRACT",
-				entryId,
-				record.filePath,
-				record.target.packageRoot,
-				`This file does not declare \`preview.entry\` or \`preview.render\`. ` +
-					`Add an explicit preview contract to select ${renderableCandidates[0]}.`,
-			),
-		);
-	} else {
-		selection = {
-			kind: "unresolved",
-			reason: "no-component-export",
-		};
-		renderTarget = {
-			kind: "none",
-			reason:
-				candidateExportNames.length > 0 || hasDefaultExport
-					? "missing-explicit-contract"
-					: "no-component-export",
-		};
-		selectionTrace = {
-			importChain: [record.filePath],
-			symbolChain: [],
-		};
-		status = "needs_harness";
-		if (candidateExportNames.length === 0 && !hasDefaultExport) {
-			entryDiagnostics.push(
-				createEntryDiagnostic(
-					"NO_COMPONENT_EXPORTS",
-					entryId,
-					record.filePath,
-					record.target.packageRoot,
-					"No exported component candidates were found for preview entry selection.",
-				),
-			);
-		}
-	}
-
-	if (
-		record.preview.hasExport &&
-		!record.preview.hasRender &&
-		!createExplicitSelection(record, recordsByPath)
-	) {
-		entryDiagnostics.push(
-			createEntryDiagnostic(
-				"PREVIEW_RENDER_MISSING",
-				entryId,
-				record.filePath,
-				record.target.packageRoot,
-				"The file exports `preview`, but it does not define a usable `preview.entry` or callable `preview.render`.",
-			),
-		);
-	}
-
-	const graphTrace = collectTransitiveGraphTrace(
-		record.filePath,
-		recordsByPath,
-		selectionTrace,
-	);
-	if (graphTrace.stopReason === "graph-cycle") {
-		entryDiagnostics.push(
-			createEntryDiagnostic(
-				"GRAPH_CYCLE_DETECTED",
-				entryId,
-				record.filePath,
-				record.target.packageRoot,
-				`Preview graph detected a cycle while traversing ${record.relativePath}.`,
-			),
-		);
-	}
-	const dependencyPaths = collectTransitivePaths(
-		record.filePath,
-		recordsByPath,
-	).sort((left, right) => left.localeCompare(right));
-	const diagnosticsSummary = createDiagnosticsSummary(entryDiagnostics);
-	const title = record.preview.title?.trim()
-		? record.preview.title.trim()
-		: humanizeTitle(record.relativePath);
-	const descriptor: PreviewEntryDescriptor = {
-		capabilities: createCapabilities(renderTarget),
-		candidateExportNames,
-		diagnosticsSummary,
-		hasDefaultExport,
-		hasPreviewExport: record.preview.hasExport,
-		id: entryId,
-		packageName: record.target.packageName,
-		relativePath: record.relativePath,
-		renderTarget,
-		selection,
-		sourceFilePath: record.filePath,
-		status,
-		statusDetails: createBaseStatusDetails(status, renderTarget),
-		targetName: record.target.targetName,
-		title,
-	};
-
-	return {
-		dependencyPaths,
-		descriptor,
-		discoveryDiagnostics: entryDiagnostics.sort((left, right) => {
-			if (left.relativeFile !== right.relativeFile) {
-				return left.relativeFile.localeCompare(right.relativeFile);
-			}
-
-			return left.code.localeCompare(right.code);
-		}),
-		graphTrace,
-	};
-}
-
-function createTargetContext(target: PreviewSourceTarget): TargetContext {
-	const workspaceRoot = findWorkspaceRoot(target.packageRoot);
-	return {
-		exclude: target.exclude,
-		include: target.include,
+		...target,
 		packageName: target.packageName ?? target.name,
 		packageRoot: resolveRealFilePath(target.packageRoot),
 		sourceRoot: resolveRealFilePath(target.sourceRoot),
-		targetName: target.name,
-		workspaceRoot,
 	};
 }
 
-function discoverTargetRecords(
+function createTargetSnapshot(
 	target: TargetContext,
+): PreviewSourceTargetSnapshot {
+	return {
+		exclude: target.exclude,
+		include: target.include,
+		name: target.targetName,
+		packageName: target.packageName,
+		packageRoot: target.packageRoot,
+		sourceRoot: target.sourceRoot,
+	};
+}
+
+function collectWorkspaceFileSnapshots(
+	targets: TargetContext[],
 	graphService: WorkspaceGraphService,
 ) {
-	const recordsByPath = new Map<string, RawSourceModuleRecord>();
-	const pending = [...graphService.listTargetSourceFiles(target)];
+	const snapshotsByPath = new Map<string, WorkspaceFileSnapshot>();
+	const visited = new Set<string>();
+	const queue: WorkspaceSnapshotQueueItem[] = [];
 
-	while (pending.length > 0) {
-		const nextFilePath = pending.pop();
-		if (!nextFilePath || recordsByPath.has(nextFilePath)) {
+	for (const target of targets) {
+		for (const filePath of graphService.listTargetSourceFiles(target)) {
+			if (!isPreviewEntryCandidate(filePath)) {
+				continue;
+			}
+
+			queue.push({
+				filePath: resolveRealFilePath(filePath),
+				target,
+				isEntryCandidate: true,
+			});
+		}
+	}
+
+	while (queue.length > 0) {
+		const next = queue.shift();
+		if (!next) {
+			continue;
+		}
+		const filePath = resolveRealFilePath(next.filePath);
+		if (visited.has(filePath) || !fs.existsSync(filePath)) {
 			continue;
 		}
 
-		const record = parseModuleRecord(nextFilePath, target, graphService);
-		recordsByPath.set(nextFilePath, record);
+		visited.add(filePath);
 
-		for (const importPath of record.imports) {
-			if (!recordsByPath.has(importPath)) {
-				pending.push(importPath);
+		if (!isTraceableSourceFile(filePath)) {
+			continue;
+		}
+
+		const owningTarget = findOwningTarget(filePath, targets) ?? next.target;
+		const targetSnapshot = createTargetSnapshot(owningTarget);
+		if (!snapshotsByPath.has(filePath)) {
+			const fileContext = graphService.getFileContext(filePath);
+			snapshotsByPath.set(filePath, {
+				filePath,
+				ownerPackageName: fileContext.packageName,
+				ownerPackageRoot: fileContext.packageRoot,
+				isEntryCandidate: next.isEntryCandidate,
+				projectConfigPath: fileContext.project?.configPath,
+				relativePath: toRelativePath(owningTarget.sourceRoot, filePath),
+				sourceText: fs.readFileSync(filePath, "utf8"),
+				target: targetSnapshot,
+			});
+		}
+
+		for (const specifier of getModuleSpecifiers(filePath)) {
+			const resolution = graphService.resolveImport({
+				importerFilePath: filePath,
+				specifier,
+			});
+			if (resolution?.followedFilePath) {
+				queue.push({
+					filePath: resolution.followedFilePath,
+					target: owningTarget,
+					isEntryCandidate: false,
+				});
 			}
 		}
 	}
 
-	return recordsByPath;
+	return [...snapshotsByPath.values()].sort((left, right) =>
+		left.filePath.localeCompare(right.filePath),
+	);
+}
+
+function logPreviewTiming(label: string, startedAt: number) {
+	if (process.env.LOOM_PREVIEW_TIMINGS !== "1") {
+		return;
+	}
+
+	console.info(`[preview] ${label}: ${Date.now() - startedAt}ms`);
+}
+
+function createTargetContext(
+	target: ReturnType<typeof normalizeTarget>,
+): TargetContext {
+	return {
+		exclude: target.exclude,
+		include: target.include,
+		packageName: target.packageName,
+		packageRoot: target.packageRoot,
+		name: target.name,
+		sourceRoot: target.sourceRoot,
+		targetName: target.name,
+	};
 }
 
 export function discoverWorkspaceState(
@@ -1466,54 +404,52 @@ export function discoverWorkspaceState(
 		"projectName" | "targets" | "workspaceRoot"
 	>,
 ) {
-	const targetContexts = options.targets.map(createTargetContext);
+	const startedAt = process.env.LOOM_PREVIEW_TIMINGS === "1" ? Date.now() : 0;
+	const normalizedTargets = options.targets.map(normalizeTarget);
 	const graphService = createWorkspaceGraphService({
-		targets: targetContexts.map((target) => ({
-			exclude: target.exclude,
-			include: target.include,
-			name: target.targetName,
-			packageName: target.packageName,
-			packageRoot: target.packageRoot,
-			sourceRoot: target.sourceRoot,
-		})),
+		targets: normalizedTargets,
 		workspaceRoot:
 			options.workspaceRoot ??
-			findWorkspaceRoot(targetContexts.map((target) => target.packageRoot)),
+			findWorkspaceRoot(normalizedTargets.map((target) => target.packageRoot)),
 	});
+	const targetContexts = normalizedTargets.map(createTargetContext);
+	const workspaceFileSnapshots = collectWorkspaceFileSnapshots(
+		targetContexts,
+		graphService,
+	);
+
+	logPreviewTiming("workspace file snapshots collected", startedAt);
+
+	const discovery = buildWorkspaceDiscoveryWithPreviewGraph(
+		workspaceFileSnapshots,
+		options.projectName,
+		PREVIEW_ENGINE_PROTOCOL_VERSION,
+		(importerFilePath, specifier) =>
+			graphService.resolveImport({ importerFilePath, specifier }),
+	) as PreviewGraphWorkspaceDiscoverySnapshot;
+
+	const targetsByName = new Map(
+		targetContexts.map((target) => [target.name, target] as const),
+	);
 	const entryStatesById = new Map<string, DiscoveredEntryState>();
 	const entryDependencyPathsById = new Map<string, string[]>();
 	const entries: PreviewEntryDescriptor[] = [];
 
-	for (const target of targetContexts) {
-		const recordsByPath = discoverTargetRecords(target, graphService);
-		const entryRecords = [...recordsByPath.values()]
-			.filter((record) => record.isTsx)
-			.filter((record) => isFilePathIncludedByTarget(target, record.filePath))
-			.filter(
-				(record) =>
-					!isPreviewPackageInternalEntry(
-						target.packageRoot,
-						record.relativePath,
-					),
-			);
-
-		for (const record of entryRecords) {
-			const builtEntry = buildDescriptor(record, recordsByPath);
-			const dependencyPaths = graphService.collectTransitiveDependencyPaths(
-				record.filePath,
-			);
-			entries.push(builtEntry.descriptor);
-			entryStatesById.set(builtEntry.descriptor.id, {
-				dependencyPaths,
-				descriptor: builtEntry.descriptor,
-				discoveryDiagnostics: builtEntry.discoveryDiagnostics,
-				graphTrace: builtEntry.graphTrace,
-				packageRoot: target.packageRoot,
-				previewHasProps: record.preview.hasProps,
-				target,
-			});
-			entryDependencyPathsById.set(builtEntry.descriptor.id, dependencyPaths);
+	for (const entryState of discovery.entries) {
+		const target = targetsByName.get(entryState.descriptor.targetName);
+		if (!target) {
+			continue;
 		}
+
+		entryStatesById.set(entryState.descriptor.id, {
+			...entryState,
+			target,
+		});
+		entryDependencyPathsById.set(
+			entryState.descriptor.id,
+			entryState.dependencyPaths,
+		);
+		entries.push(entryState.descriptor);
 	}
 
 	entries.sort((left, right) => {
@@ -1524,17 +460,14 @@ export function discoverWorkspaceState(
 		return left.relativePath.localeCompare(right.relativePath);
 	});
 
+	logPreviewTiming("discoverWorkspaceState()", startedAt);
+
 	return {
 		entryDependencyPathsById,
 		entryStatesById,
 		workspaceIndex: {
+			...discovery.workspaceIndex,
 			entries,
-			projectName: options.projectName,
-			protocolVersion: PREVIEW_ENGINE_PROTOCOL_VERSION,
-			targets: options.targets.map((target) => ({
-				...target,
-				packageName: target.packageName ?? target.name,
-			})),
 		},
 	} satisfies WorkspaceDiscoverySnapshot;
 }

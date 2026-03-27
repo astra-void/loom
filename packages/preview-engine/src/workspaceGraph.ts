@@ -603,6 +603,8 @@ function createWorkspaceGraphServiceContext(
 	targets: PreviewSourceTarget[],
 	workspaceRoot?: string,
 ) {
+	const timingEnabled = process.env.LOOM_PREVIEW_TIMINGS === "1";
+	const startedAt = timingEnabled ? Date.now() : 0;
 	const resolvedWorkspaceRoot = resolveRealFilePath(
 		workspaceRoot ??
 			findWorkspaceRoot(targets.map((target) => target.packageRoot)),
@@ -716,6 +718,12 @@ function createWorkspaceGraphServiceContext(
 		if (workspacePackage.packageName) {
 			packagesByName.set(workspacePackage.packageName, workspacePackage);
 		}
+	}
+
+	if (timingEnabled) {
+		console.info(
+			`[preview] createWorkspaceGraphServiceContext(): ${Date.now() - startedAt}ms`,
+		);
 	}
 
 	return {

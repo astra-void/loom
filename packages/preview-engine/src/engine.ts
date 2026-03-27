@@ -753,8 +753,10 @@ class PreviewEngineImpl implements PreviewEngine {
 	}
 
 	public getSnapshot(): PreviewEngineSnapshot {
+		const timingEnabled = process.env.LOOM_PREVIEW_TIMINGS === "1";
+		const startedAt = timingEnabled ? Date.now() : 0;
 		const workspaceIndex = this.getWorkspaceIndex();
-		return {
+		const snapshot = {
 			entries: Object.fromEntries(
 				workspaceIndex.entries.map((entry) => [
 					entry.id,
@@ -764,6 +766,15 @@ class PreviewEngineImpl implements PreviewEngine {
 			protocolVersion: PREVIEW_ENGINE_PROTOCOL_VERSION,
 			workspaceIndex,
 		};
+		if (timingEnabled) {
+			console.info(`[preview] getSnapshot(): ${Date.now() - startedAt}ms`);
+		}
+
+		return snapshot;
+	}
+
+	public getDiscoveryWorkspaceIndex() {
+		return this.ensureSnapshot().workspaceIndex;
 	}
 
 	public isTrackedSourceFile(filePath: string) {
