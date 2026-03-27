@@ -9,6 +9,7 @@ import {
 	type PreviewEngine,
 	type PreviewExecutionMode,
 	type PreviewSourceTarget,
+	type PreviewWorkspaceIndex,
 	type WorkspaceGraphService,
 } from "@loom-dev/preview-engine";
 import type { PreviewRuntimeIssue } from "@loom-dev/preview-runtime";
@@ -39,6 +40,15 @@ const RESOLVED_ENTRY_MODULE_ID_PREFIX = `\0${ENTRY_MODULE_ID_PREFIX}`;
 const PREVIEW_UPDATE_EVENT = "loom-preview:update";
 const RUNTIME_ISSUES_EVENT = "loom-preview:runtime-issues";
 const RBX_STYLE_HELPER_NAME = "__rbxStyle";
+const PREVIEW_TIMING_ENABLED = process.env.LOOM_PREVIEW_TIMINGS === "1";
+
+function logPreviewTiming(label: string, startedAt: number) {
+	if (!PREVIEW_TIMING_ENABLED) {
+		return;
+	}
+
+	console.info(`[preview] ${label}: ${Date.now() - startedAt}ms`);
+}
 
 function createRbxStyleImport(runtimeModulePath: string) {
 	return `import { ${RBX_STYLE_HELPER_NAME} } from ${JSON.stringify(runtimeModulePath)};\n`;
@@ -206,9 +216,14 @@ async function transformPreviewSourceOrThrow(
 function getWorkspaceModuleCode(
 	previewEngine: ReturnType<typeof createPreviewEngine>,
 ) {
-	const snapshot = previewEngine.getSnapshot();
-	const workspaceIndex = snapshot.workspaceIndex;
-	const entryPayloads = snapshot.entries;
+	const startedAt = Date.now();
+	const discoveryWorkspaceIndex = (
+		previewEngine as PreviewEngine & {
+			getDiscoveryWorkspaceIndex(): PreviewWorkspaceIndex;
+		}
+	).getDiscoveryWorkspaceIndex();
+	logPreviewTiming("workspace index loaded", startedAt);
+	const workspaceIndex = discoveryWorkspaceIndex;
 	const importers = workspaceIndex.entries
 		.map(
 			(entry) =>
@@ -220,7 +235,6 @@ function getWorkspaceModuleCode(
 
 	return `export const previewProtocolVersion = ${JSON.stringify(PREVIEW_ENGINE_PROTOCOL_VERSION)};
 export const previewWorkspaceIndex = ${JSON.stringify(workspaceIndex, null, 2)};
-export const previewEntryPayloads = ${JSON.stringify(entryPayloads, null, 2)};
 export const previewImporters = {
 ${importers}
 };
@@ -232,14 +246,21 @@ function renderEntryModule(
 	entryId: string,
 	runtimeModulePath: string,
 ) {
-	const entry = previewEngine
-		.getSnapshot()
-		.workspaceIndex.entries.find((candidate) => candidate.id === entryId);
+	const startedAt = Date.now();
+	const entry = (
+		previewEngine as PreviewEngine & {
+			getDiscoveryWorkspaceIndex(): PreviewWorkspaceIndex;
+		}
+	)
+		.getDiscoveryWorkspaceIndex()
+		.entries.find((candidate) => candidate.id === entryId);
 	if (!entry) {
 		throw new Error(`No preview entry registered for \`${entryId}\`.`);
 	}
+	logPreviewTiming(`entry index resolved (${entryId})`, startedAt);
 
 	const payload = previewEngine.getEntryPayload(entryId);
+	logPreviewTiming(`entry payload loaded (${entryId})`, startedAt);
 	if (payload.descriptor.status !== "ready") {
 		return `import * as __previewRuntimeModule from ${JSON.stringify(runtimeModulePath)};
 export const __previewEntryPayload = ${JSON.stringify(payload, null, 2)};
@@ -296,6 +317,10 @@ function getTransformTargetName(
 	filePath: string,
 ) {
 	const normalizedFilePath = resolveFilePath(filePath);
+	if (!isTransformablePreviewSourceFile(normalizedFilePath)) {
+		return undefined;
+	}
+
 	const directTarget = getTransformTarget(targets, filePath);
 	if (directTarget) {
 		return directTarget.name;
@@ -413,18 +438,22 @@ export function createPreviewVitePlugin(
 	let workspaceGraphService: WorkspaceGraphService | undefined;
 	const getWorkspaceGraphService = () => {
 		if (!workspaceGraphService) {
+			const startedAt = Date.now();
 			workspaceGraphService = createWorkspaceGraphService({
 				targets: options.targets,
 				workspaceRoot: options.workspaceRoot,
 			});
+			logPreviewTiming("workspace graph service initialized", startedAt);
 		}
 
 		return workspaceGraphService;
 	};
 	const getPreviewEngine = () => {
 		if (!previewEngine) {
+			const startedAt = Date.now();
 			previewEngine =
 				options.previewEngine ?? createPreviewEngine(previewEngineOptions);
+			logPreviewTiming("preview engine initialized", startedAt);
 		}
 
 		return previewEngine;

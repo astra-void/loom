@@ -60,7 +60,7 @@ export function PreviewWorkspaceApp() {
 	);
 	const [entryPayloads, setEntryPayloads] = React.useState<
 		Record<string, PreviewEntryPayload>
-	>(() => initialWorkspaceSnapshot.entryPayloads);
+	>(() => ({}));
 	const importersRef = React.useRef(initialWorkspaceSnapshot.importers);
 	const hotUpdateSequenceRef = React.useRef(0);
 
@@ -68,7 +68,17 @@ export function PreviewWorkspaceApp() {
 		(snapshot: ReturnType<typeof getInitialPreviewWorkspaceSnapshot>) => {
 			importersRef.current = snapshot.importers;
 			setWorkspaceIndex(snapshot.workspaceIndex);
-			setEntryPayloads(snapshot.entryPayloads);
+			setEntryPayloads((previousPayloads) => {
+				const nextPayloads: Record<string, PreviewEntryPayload> = {};
+
+				for (const entryId of Object.keys(previousPayloads)) {
+					if (snapshot.importers[entryId]) {
+						nextPayloads[entryId] = previousPayloads[entryId];
+					}
+				}
+
+				return nextPayloads;
+			});
 		},
 		[],
 	);

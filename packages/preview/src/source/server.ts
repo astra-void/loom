@@ -6,6 +6,7 @@ import type {
 	PreviewExecutionMode,
 } from "@loom-dev/preview-engine";
 import ts from "typescript";
+import type { LogErrorOptions, Logger } from "vite";
 import { searchForWorkspaceRoot } from "vite";
 import type {
 	LoadPreviewConfigOptions,
@@ -13,6 +14,7 @@ import type {
 	ResolvedPreviewConfig,
 } from "../config";
 import { loadPreviewConfig, resolvePreviewConfigObject } from "../config";
+import { createErrorWithCause } from "../errorWithCause";
 import { createAutoMockPropsPlugin } from "./autoMockPlugin";
 import { isFilePathUnderRoot, resolveRealFilePath } from "./pathUtils";
 import { createPreviewVitePlugin } from "./plugin";
@@ -73,6 +75,42 @@ type PackageManifest = {
 	optionalDependencies?: Record<string, string>;
 	peerDependencies?: Record<string, string>;
 };
+
+function isViteLoggableError(
+	error: unknown,
+): error is NonNullable<LogErrorOptions["error"]> {
+	return Boolean(
+		error && (typeof error === "object" || typeof error === "function"),
+	);
+}
+
+export function normalizeViteLogErrorOptions<TOptions extends LogErrorOptions>(
+	options?: TOptions,
+): TOptions | undefined {
+	const error = options?.error;
+	if (!options || error == null || isViteLoggableError(error)) {
+		return options;
+	}
+
+	return {
+		...options,
+		error: createErrorWithCause(String(error), error),
+	} as TOptions;
+}
+
+function createPreviewViteLogger(vite: ViteModule): Logger {
+	const baseLogger = vite.createLogger();
+	const previewLogger = Object.create(baseLogger) as Logger;
+
+	previewLogger.warn = (msg, options) =>
+		baseLogger.warn(msg, normalizeViteLogErrorOptions(options));
+	previewLogger.warnOnce = (msg, options) =>
+		baseLogger.warnOnce(msg, normalizeViteLogErrorOptions(options));
+	previewLogger.error = (msg, options) =>
+		baseLogger.error(msg, normalizeViteLogErrorOptions(options));
+
+	return previewLogger;
+}
 
 function resolvePreviewPackageEntry(candidates: string[], label: string) {
 	const matchedPath = candidates.find((candidate) => fs.existsSync(candidate));
@@ -320,6 +358,20 @@ function createRuntimeDependencyResolvePlugin(): PreviewPluginOption {
 		["@rbxts/react", resolveReactShimEntry("react.js", "browser")],
 		["@rbxts/react-roblox", resolveReactRobloxShimEntry("browser")],
 	]);
+	const browserShimsRoot = resolvePreviewPackageEntry(
+		[
+			path.resolve(__dirname, "./react-shims/browser"),
+			path.resolve(__dirname, "../../src/source/react-shims/browser"),
+		],
+		"react shims root",
+	);
+	const nodeShimsRoot = resolvePreviewPackageEntry(
+		[
+			path.resolve(__dirname, "./react-shims"),
+			path.resolve(__dirname, "../../src/source/react-shims"),
+		],
+		"react shims root",
+	);
 	const nodeShimEntries = new Map<string, string>([
 		["react-dom/client", resolveReactShimEntry("react-dom-client.js", "node")],
 		["react-dom/server", resolveReactShimEntry("react-dom-server.js", "node")],
@@ -341,29 +393,16 @@ function createRuntimeDependencyResolvePlugin(): PreviewPluginOption {
 		enforce: "pre",
 		name: "loom-preview-runtime-dependency-resolve",
 		resolveId(id, importer, options) {
-			const replacement = (
-				options?.ssr ? nodeShimEntries : browserShimEntries
-			).get(id);
+			const isSsr = Boolean(options?.ssr);
+			const replacement = (isSsr ? nodeShimEntries : browserShimEntries).get(
+				id,
+			);
 			if (!replacement) {
 				return undefined;
 			}
 
 			const normalizedImporter = normalizeResolvedImporter(importer);
-			const shimsRoot = options?.ssr
-				? resolvePreviewPackageEntry(
-						[
-							path.resolve(__dirname, "./react-shims"),
-							path.resolve(__dirname, "../../src/source/react-shims"),
-						],
-						"react shims root",
-					)
-				: resolvePreviewPackageEntry(
-						[
-							path.resolve(__dirname, "./react-shims/browser"),
-							path.resolve(__dirname, "../../src/source/react-shims/browser"),
-						],
-						"react shims root",
-					);
+			const shimsRoot = isSsr ? nodeShimsRoot : browserShimsRoot;
 			if (normalizedImporter?.startsWith(shimsRoot)) {
 				return undefined;
 			}
@@ -602,12 +641,14 @@ export async function createPreviewViteServer(
 		transformMode: resolvedConfig.transformMode,
 		workspaceRoot: resolvedConfig.workspaceRoot,
 	});
+	const previewLogger = createPreviewViteLogger(vite);
 
 	const server = await vite.createServer({
 		appType: options.appType ?? "spa",
 		assetsInclude: ["**/*.wasm"],
 		cacheDir: previewViteCacheDir,
 		configFile: false,
+		customLogger: previewLogger,
 		optimizeDeps: {
 			exclude: ["@loom-dev/layout-engine", "layout-engine"],
 			include: PREVIEW_OPTIMIZE_DEPS_INCLUDE,

@@ -5,7 +5,6 @@ declare module "virtual:loom-preview-workspace-index" {
 	} from "@loom-dev/preview-engine";
 
 	export const previewProtocolVersion: number;
-	export const previewEntryPayloads: Record<string, PreviewEntryPayload>;
 	export const previewWorkspaceIndex: PreviewWorkspaceIndex;
 	export const previewImporters: Record<
 		string,
