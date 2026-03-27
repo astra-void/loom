@@ -461,6 +461,7 @@ declare module "@loom-dev/preview-runtime" {
 	}
 	export interface PreviewGuiService {
 		readonly ClassName: "GuiService";
+		SelectedObject: HTMLElement | null;
 		readonly Name: "GuiService";
 		GetFullName(): string;
 		GetGuiInset(): readonly [{ X: 0; Y: 0 }, { X: 0; Y: 0 }];
