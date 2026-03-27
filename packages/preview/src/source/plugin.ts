@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { compile_tsx, transformPreviewSource } from "@loom-dev/compiler";
+import type { TransformPreviewSourceOptions } from "@loom-dev/compiler";
 import {
 	createPreviewEngine,
 	createWorkspaceGraphService,
@@ -12,9 +12,7 @@ import {
 	type WorkspaceGraphService,
 } from "@loom-dev/preview-engine";
 import type { PreviewRuntimeIssue } from "@loom-dev/preview-runtime";
-import ts from "typescript";
 import { createErrorWithCause } from "../errorWithCause";
-import { normalizeTransformPreviewSourceResult } from "../transformResult";
 import {
 	isFilePathIncludedByTarget,
 	isFilePathUnderRoot,
@@ -55,9 +53,7 @@ function resolvePreviewPackageEntry(candidates: string[], label: string) {
 	return matchedPath.split(path.sep).join("/");
 }
 
-type TransformPreviewSourceInvocationOptions = Parameters<
-	typeof transformPreviewSource
->[1] & {
+type TransformPreviewSourceInvocationOptions = TransformPreviewSourceOptions & {
 	mode?: PreviewExecutionMode;
 };
 
@@ -72,12 +68,13 @@ export type CreatePreviewVitePluginOptions = {
 
 function createWorkspaceSourceResolvePlugin(
 	workspaceGraphService: WorkspaceGraphService,
+	isBareModuleSpecifierFn: (specifier: string) => boolean,
 ): PreviewPluginOption {
 	return {
 		enforce: "pre",
 		name: "loom-preview-workspace-source-resolve",
 		resolveId(id, importer) {
-			if (!isBareModuleSpecifier(id)) {
+			if (!isBareModuleSpecifierFn(id)) {
 				return undefined;
 			}
 
@@ -171,7 +168,8 @@ function resolveMockEntryPath() {
 	return candidate.split(path.sep).join("/");
 }
 
-function stripTypeSyntax(code: string, filePath: string) {
+async function stripTypeSyntax(code: string, filePath: string) {
+	const ts = await import("typescript");
 	return ts.transpileModule(code, {
 		compilerOptions: {
 			jsx: ts.JsxEmit.Preserve,
@@ -183,13 +181,15 @@ function stripTypeSyntax(code: string, filePath: string) {
 	}).outputText;
 }
 
-function transformPreviewSourceOrThrow(
+async function transformPreviewSourceOrThrow(
 	sourceText: string,
 	options: TransformPreviewSourceInvocationOptions,
 ) {
 	const { mode = "strict-fidelity", ...compilerOptions } = options;
 
 	try {
+		const { normalizeTransformPreviewSourceResult, transformPreviewSource } =
+			await import("@loom-dev/compiler");
 		return normalizeTransformPreviewSourceResult(
 			transformPreviewSource(sourceText, compilerOptions),
 			mode,
@@ -393,7 +393,7 @@ function isIgnorablePreviewRefreshError(error: unknown) {
 
 export function createPreviewVitePlugin(
 	options: CreatePreviewVitePluginOptions,
-): PreviewPluginOption {
+): PreviewPluginOption[] {
 	const runtimeEntryPath = (
 		options.runtimeModule ?? resolveRuntimeEntryPath()
 	).replace(/\\/g, "/");
@@ -542,7 +542,7 @@ export function createPreviewVitePlugin(
 
 			return undefined;
 		},
-		transform(code: string, id: string) {
+		async transform(code: string, id: string) {
 			const filePath = stripFileIdDecorations(id);
 			const targetName = getTransformTargetName(
 				workspaceGraphService,
@@ -555,7 +555,7 @@ export function createPreviewVitePlugin(
 				return undefined;
 			}
 
-			const transformed = transformPreviewSourceOrThrow(code, {
+			const transformed = await transformPreviewSourceOrThrow(code, {
 				filePath,
 				mode: options.transformMode ?? "strict-fidelity",
 				runtimeModule: runtimeEntryPath,
@@ -571,8 +571,9 @@ export function createPreviewVitePlugin(
 				);
 			}
 
+			const { compile_tsx } = await import("@loom-dev/compiler");
 			let transformedCode = compile_tsx(transformed.code);
-			transformedCode = stripTypeSyntax(transformedCode, filePath);
+			transformedCode = await stripTypeSyntax(transformedCode, filePath);
 			if (
 				transformedCode.includes(RBX_STYLE_HELPER_NAME) &&
 				!transformedCode.includes(rbxStyleImport.trim())
@@ -588,7 +589,10 @@ export function createPreviewVitePlugin(
 	};
 
 	return [
-		createWorkspaceSourceResolvePlugin(workspaceGraphService),
+		createWorkspaceSourceResolvePlugin(
+			workspaceGraphService,
+			isBareModuleSpecifier,
+		),
 		createRuntimeDependencyResolvePlugin(),
 		createUnresolvedPackageMockResolvePlugin(mockEntryPath),
 		previewPlugin,

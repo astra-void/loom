@@ -3,6 +3,14 @@ import * as React from "react";
 const PREVIEW_INTRINSIC_HOSTS_SYMBOL = Symbol.for(
 	"loom-dev.preview-runtime.intrinsic-hosts",
 );
+const PREVIEW_REACT_EVENT_PROP_KEYS = Object.freeze({
+	Activated: "__previewReactEventActivated",
+	FocusLost: "__previewReactEventFocusLost",
+	InputBegan: "__previewReactEventInputBegan",
+});
+const PREVIEW_REACT_CHANGE_PROP_KEYS = Object.freeze({
+	Text: "__previewReactChangeText",
+});
 
 function resolvePreviewIntrinsicHost(type) {
 	if (typeof type !== "string") {
@@ -19,10 +27,14 @@ function createElement(type, ...rest) {
 
 const previewReact = {
 	...React,
+	Change: PREVIEW_REACT_CHANGE_PROP_KEYS,
 	createElement,
+	Event: PREVIEW_REACT_EVENT_PROP_KEYS,
 };
 
 export default previewReact;
+export const Change = PREVIEW_REACT_CHANGE_PROP_KEYS;
+export const Event = PREVIEW_REACT_EVENT_PROP_KEYS;
 export {
 	__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE,
 	__COMPILER_RUNTIME,

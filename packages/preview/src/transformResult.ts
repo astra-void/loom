@@ -1,1 +1,4 @@
-export { normalizeTransformPreviewSourceResult } from "@loom-dev/compiler";
+import compiler from "@loom-dev/compiler";
+
+export const normalizeTransformPreviewSourceResult =
+	compiler.normalizeTransformPreviewSourceResult;
