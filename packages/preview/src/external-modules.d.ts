@@ -402,10 +402,30 @@ declare module "@loom-dev/preview-runtime" {
 		readonly ClassName: "Player";
 		readonly DisplayName: "LocalPlayer";
 		readonly Name: "LocalPlayer";
+		readonly PlayerGui: PreviewPlayerGui;
 		readonly UserId: 0;
+		FindFirstChild(name: string): PreviewPlayerGui | null;
 		GetFullName(): string;
 		IsA(name: string): boolean;
+		WaitForChild(name: string): PreviewPlayerGui;
 	}
+	export type PreviewGuiHitObject = {
+		readonly ClassName: string;
+		readonly Name: string;
+		GetFullName(): string;
+		IsA(name: string): boolean;
+		IsDescendantOf(ancestor: unknown): boolean;
+	};
+	export type PreviewPlayerGui = {
+		ClassName: "PlayerGui";
+		FindFirstChild(name: string): PreviewPlayerGui | null;
+		GetFullName(): string;
+		GetGuiObjectsAtPosition(x: number, y: number): PreviewGuiHitObject[];
+		IsA(name: string): boolean;
+		IsDescendantOf(ancestor: unknown): boolean;
+		Name: "PlayerGui";
+		WaitForChild(name: string): PreviewPlayerGui;
+	};
 	export interface PreviewPlayersService {
 		readonly ClassName: "Players";
 		readonly LocalPlayer: PreviewPlayer;
