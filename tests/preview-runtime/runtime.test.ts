@@ -318,6 +318,41 @@ describe.sequential("@loom-dev/preview-runtime", () => {
 		expect(workspace).toBe(game.GetService("Workspace"));
 	});
 
+	it("exposes an idempotent GuiService.SelectedObject bridge", () => {
+		setupRobloxEnvironment();
+
+		const guiService = game.GetService("GuiService") as {
+			SelectedObject: HTMLElement | null;
+		};
+		const selectedObject = document.createElement("button");
+
+		expect(guiService.SelectedObject).toBe(null);
+
+		guiService.SelectedObject = selectedObject;
+
+		expect(guiService.SelectedObject).toBe(selectedObject);
+
+		const descriptor = Object.getOwnPropertyDescriptor(
+			guiService,
+			"SelectedObject",
+		);
+		expect(descriptor).toMatchObject({
+			configurable: true,
+			enumerable: false,
+		});
+
+		expect(() => {
+			if (!descriptor) {
+				throw new Error("Expected SelectedObject descriptor to exist.");
+			}
+
+			Object.defineProperty(guiService, "SelectedObject", descriptor);
+			Object.defineProperty(guiService, "SelectedObject", descriptor);
+		}).not.toThrow();
+
+		expect(guiService.SelectedObject).toBe(selectedObject);
+	});
+
 	it("emits deterministic focus and input signals for UserInputService", () => {
 		setupRobloxEnvironment();
 
