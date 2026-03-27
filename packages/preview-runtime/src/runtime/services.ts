@@ -1,3 +1,4 @@
+import { PREVIEW_HOST_DATA_ATTRIBUTE } from "../internal/previewAttributes";
 import { Enum } from "./Enum";
 import {
 	type RBXScriptConnection,
@@ -12,6 +13,7 @@ import {
 import { createPreviewTweenController } from "./tween";
 
 const SERVICES_KEY = Symbol.for("loom-dev.preview-runtime.services");
+const PLAYER_GUI_KEY = Symbol.for("loom-dev.preview-runtime.playerGui");
 const TWEEN_INFO_KEY = Symbol.for("loom-dev.preview-runtime.TweenInfo");
 const USER_INPUT_TRACKER_KEY = Symbol.for(
 	"loom-dev.preview-runtime.userInputTracker",
@@ -37,6 +39,7 @@ type PreviewServiceName =
 type PreviewServiceRegistry = {
 	game: PreviewGame;
 	services: Map<string, unknown>;
+	playerGui: PreviewPlayerGui;
 	tweenInfo: typeof TweenInfo;
 	workspace: PreviewWorkspace;
 };
@@ -68,10 +71,32 @@ export interface PreviewPlayer {
 	readonly ClassName: "Player";
 	readonly DisplayName: "LocalPlayer";
 	readonly Name: "LocalPlayer";
+	readonly PlayerGui: PreviewPlayerGui;
 	readonly UserId: 0;
+	FindFirstChild(name: string): PreviewPlayerGui | null;
 	GetFullName(): string;
 	IsA(name: string): boolean;
+	WaitForChild(name: string): PreviewPlayerGui;
 }
+
+export type PreviewGuiHitObject = {
+	readonly ClassName: string;
+	readonly Name: string;
+	GetFullName(): string;
+	IsA(name: string): boolean;
+	IsDescendantOf(ancestor: unknown): boolean;
+};
+
+export type PreviewPlayerGui = {
+	ClassName: "PlayerGui";
+	FindFirstChild(name: string): PreviewPlayerGui | null;
+	GetFullName(): string;
+	GetGuiObjectsAtPosition(x: number, y: number): PreviewGuiHitObject[];
+	IsA(name: string): boolean;
+	IsDescendantOf(ancestor: unknown): boolean;
+	Name: "PlayerGui";
+	WaitForChild(name: string): PreviewPlayerGui;
+};
 
 export interface PreviewPlayersService {
 	readonly ClassName: "Players";
@@ -265,18 +290,256 @@ function createServiceBase(name: PreviewServiceName | "game") {
 	};
 }
 
+const previewGuiObjectHosts = new Set([
+	"canvasgroup",
+	"frame",
+	"imagebutton",
+	"imagelabel",
+	"scrollingframe",
+	"textbox",
+	"textbutton",
+	"textlabel",
+	"videoframe",
+	"viewportframe",
+]);
+
+const previewGuiObjectClassNames = new Map<string, string>([
+	["canvasgroup", "CanvasGroup"],
+	["frame", "Frame"],
+	["imagebutton", "ImageButton"],
+	["imagelabel", "ImageLabel"],
+	["scrollingframe", "ScrollingFrame"],
+	["textbox", "TextBox"],
+	["textbutton", "TextButton"],
+	["textlabel", "TextLabel"],
+	["videoframe", "VideoFrame"],
+	["viewportframe", "ViewportFrame"],
+]);
+
+function getDomElement(value: unknown): HTMLElement | null {
+	if (typeof HTMLElement !== "undefined" && value instanceof HTMLElement) {
+		return value;
+	}
+
+	if (typeof value === "object" && value !== null) {
+		const record = value as { element?: unknown };
+		if (
+			typeof HTMLElement !== "undefined" &&
+			record.element instanceof HTMLElement
+		) {
+			return record.element;
+		}
+	}
+
+	return null;
+}
+
+function isPreviewGuiObjectHost(host: string) {
+	return previewGuiObjectHosts.has(host);
+}
+
+function getPreviewGuiObjectClassName(host: string) {
+	return previewGuiObjectClassNames.get(host) ?? host;
+}
+
+function createPreviewGuiObjectHandle(
+	element: HTMLElement,
+	host: string,
+): PreviewGuiHitObject {
+	const className = getPreviewGuiObjectClassName(host);
+	const name =
+		element.getAttribute("data-preview-node-id") ??
+		element.getAttribute("aria-label") ??
+		className;
+	const handle = {
+		ClassName: className,
+		Name: name,
+		GetFullName() {
+			return `Players.LocalPlayer.PlayerGui.${name}`;
+		},
+		IsA(typeName: string) {
+			if (typeName === className || typeName === "Instance") {
+				return true;
+			}
+
+			if (typeName === "GuiObject") {
+				return isPreviewGuiObjectHost(host);
+			}
+
+			if (host === "textbutton" || host === "imagebutton") {
+				return typeName === "GuiButton";
+			}
+
+			if (host === "textlabel" || host === "imagelabel") {
+				return typeName === "GuiLabel";
+			}
+
+			return false;
+		},
+		IsDescendantOf(ancestor: unknown) {
+			const domAncestor = getDomElement(ancestor);
+			return domAncestor ? domAncestor.contains(element) : false;
+		},
+	};
+
+	Object.defineProperty(handle, "element", {
+		configurable: false,
+		enumerable: false,
+		value: element,
+		writable: false,
+	});
+
+	return handle;
+}
+
+function createPlayerGui(): PreviewPlayerGui {
+	const globalRecord = globalThis as typeof globalThis & {
+		[PLAYER_GUI_KEY]?: PreviewPlayerGui;
+	};
+
+	if (globalRecord[PLAYER_GUI_KEY]) {
+		const existing = globalRecord[PLAYER_GUI_KEY];
+		if (
+			typeof document !== "undefined" &&
+			typeof document.body !== "undefined" &&
+			existing instanceof HTMLElement &&
+			!existing.isConnected
+		) {
+			document.body.appendChild(existing);
+		}
+
+		return existing;
+	}
+
+	if (
+		typeof document === "undefined" ||
+		typeof HTMLElement === "undefined" ||
+		typeof document.createElement !== "function"
+	) {
+		const fallback = withRobloxFallback({
+			ClassName: "PlayerGui" as const,
+			Name: "PlayerGui" as const,
+			FindFirstChild(name: string) {
+				return name === "PlayerGui" ? (fallback as PreviewPlayerGui) : null;
+			},
+			GetFullName() {
+				return "Players.LocalPlayer.PlayerGui";
+			},
+			GetGuiObjectsAtPosition() {
+				return [];
+			},
+			IsA(typeName: string) {
+				return (
+					typeName === "PlayerGui" ||
+					typeName === "BasePlayerGui" ||
+					typeName === "LayerCollector" ||
+					typeName === "Instance"
+				);
+			},
+			IsDescendantOf() {
+				return false;
+			},
+			WaitForChild(name: string) {
+				return name === "PlayerGui"
+					? (fallback as PreviewPlayerGui)
+					: (robloxMockRecord[name] as PreviewPlayerGui);
+			},
+		}) as PreviewPlayerGui;
+
+		globalRecord[PLAYER_GUI_KEY] = fallback;
+		return fallback;
+	}
+
+	const element = document.createElement("div") as unknown as HTMLElement &
+		PreviewPlayerGui & {
+			[key: string]: unknown;
+		};
+	element.ClassName = "PlayerGui";
+	element.Name = "PlayerGui";
+	element.dataset.previewPlayerGui = "true";
+	element.style.position = "absolute";
+	element.style.inset = "0";
+	element.style.overflow = "hidden";
+	element.style.pointerEvents = "auto";
+	element.GetFullName = () => "Players.LocalPlayer.PlayerGui";
+	element.FindFirstChild = (name: string) => {
+		return name === "PlayerGui" ? element : null;
+	};
+	element.GetGuiObjectsAtPosition = (x: number, y: number) => {
+		if (typeof document.elementsFromPoint !== "function") {
+			return [];
+		}
+
+		const hitElements = document.elementsFromPoint(x, y);
+		const guiObjects: PreviewGuiHitObject[] = [];
+		for (const hitElement of hitElements) {
+			if (!(hitElement instanceof HTMLElement)) {
+				continue;
+			}
+
+			if (!element.contains(hitElement)) {
+				continue;
+			}
+
+			const host = hitElement.getAttribute(PREVIEW_HOST_DATA_ATTRIBUTE);
+			if (!host || !isPreviewGuiObjectHost(host)) {
+				continue;
+			}
+
+			guiObjects.push(createPreviewGuiObjectHandle(hitElement, host));
+		}
+
+		return guiObjects;
+	};
+	element.IsA = (typeName: string) => {
+		return (
+			typeName === "PlayerGui" ||
+			typeName === "BasePlayerGui" ||
+			typeName === "LayerCollector" ||
+			typeName === "Instance"
+		);
+	};
+	element.IsDescendantOf = (ancestor: unknown) => {
+		const domAncestor = getDomElement(ancestor);
+		return domAncestor ? domAncestor.contains(element) : false;
+	};
+	element.WaitForChild = (name: string) => {
+		return name === "PlayerGui"
+			? element
+			: (robloxMockRecord[name] as PreviewPlayerGui);
+	};
+
+	globalRecord[PLAYER_GUI_KEY] = element;
+	const domElement = element as unknown as HTMLElement;
+	if (document.body && !domElement.isConnected) {
+		document.body.appendChild(domElement);
+	}
+
+	return element;
+}
+
 function createLocalPlayer(): PreviewPlayer {
+	const playerGui = createPlayerGui();
 	return withRobloxFallback({
 		ClassName: "Player" as const,
 		DisplayName: "LocalPlayer" as const,
 		Name: "LocalPlayer" as const,
+		PlayerGui: playerGui,
 		UserId: 0 as const,
 		...createServiceBase("Players"),
+		FindFirstChild(name: string) {
+			return name === "PlayerGui" ? playerGui : null;
+		},
 		GetFullName() {
 			return "Players.LocalPlayer";
 		},
 		IsA(typeName: string) {
 			return typeName === "Player" || typeName === "Instance";
+		},
+		WaitForChild(name: string) {
+			return name === "PlayerGui"
+				? playerGui
+				: (robloxMockRecord[name] as PreviewPlayerGui);
 		},
 	});
 }
@@ -569,6 +832,7 @@ function createUnknownService(name: string) {
 
 function createGameServiceRegistry(): PreviewServiceRegistry {
 	const services = new Map<string, unknown>();
+	const playerGui = createPlayerGui();
 	const localPlayer = createLocalPlayer();
 	const workspace = createWorkspaceService();
 
@@ -613,6 +877,7 @@ function createGameServiceRegistry(): PreviewServiceRegistry {
 	return {
 		game,
 		services,
+		playerGui,
 		tweenInfo: TweenInfo,
 		workspace,
 	};

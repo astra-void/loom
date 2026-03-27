@@ -548,6 +548,15 @@ export function isPreviewElement(
 		return false;
 	}
 
+	if (value.dataset.previewPlayerGui === "true") {
+		return (
+			typeName === "PlayerGui" ||
+			typeName === "BasePlayerGui" ||
+			typeName === "LayerCollector" ||
+			typeName === "Instance"
+		);
+	}
+
 	const previewHost = value.dataset.previewHost;
 	return previewHost
 		? previewHostMatchesType(previewHost, typeName, "isa")
