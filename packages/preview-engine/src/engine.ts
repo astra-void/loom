@@ -859,12 +859,12 @@ class PreviewEngineImpl implements PreviewEngine {
 			);
 		}
 
-		this.snapshot = combineSnapshots(
+		const nextSnapshot = combineSnapshots(
 			this.options.projectName,
 			this.normalizedTargets,
 			this.targetSnapshots,
 		);
-		const nextSnapshot = this.snapshot!;
+		this.snapshot = nextSnapshot;
 
 		const removedEntryIds = [...snapshot.entryStatesById.keys()]
 			.filter((entryId) => !nextSnapshot.entryStatesById.has(entryId))
