@@ -672,6 +672,7 @@ function createWorkspaceGraphServiceContext(
 
 		if (workspacePackage) {
 			workspacePackage.sourceRoots.push(project.rootDir);
+			workspacePackage.sourceRoots.push(path.join(project.rootDir, "src"));
 			workspacePackage.tsconfigPaths.push(project.configPath);
 		}
 
@@ -841,6 +842,18 @@ export function createWorkspaceGraphService(options: {
 				const expression = node.moduleReference.expression;
 				if (expression && ts.isStringLiteralLike(expression)) {
 					specifiers.add(expression.text);
+				}
+			}
+
+			if (
+				ts.isCallExpression(node) &&
+				node.arguments.length === 1 &&
+				ts.isIdentifier(node.expression) &&
+				node.expression.text === "require"
+			) {
+				const [argument] = node.arguments;
+				if (argument && ts.isStringLiteralLike(argument)) {
+					specifiers.add(argument.text);
 				}
 			}
 

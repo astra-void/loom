@@ -366,6 +366,7 @@ export type CreatePreviewEngineOptions = {
 	runtimeModule?: string;
 	targets: PreviewSourceTarget[];
 	transformMode?: PreviewExecutionMode;
+	workspaceRoot?: string;
 };
 
 export type PreviewEngineUpdateListener = (update: PreviewEngineUpdate) => void;

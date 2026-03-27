@@ -89,10 +89,12 @@ function isTraceableSourceFile(filePath: string) {
 function buildTargetSnapshot(
 	projectName: string,
 	target: PreviewSourceTarget,
+	workspaceRoot?: string,
 ): TargetSnapshotState {
 	const snapshot = discoverWorkspaceState({
 		projectName,
 		targets: [target],
+		workspaceRoot,
 	});
 	const trackedFilePaths = new Set<string>();
 
@@ -645,7 +647,7 @@ class PreviewEngineImpl implements PreviewEngine {
 		for (const target of this.normalizedTargets) {
 			this.targetSnapshots.set(
 				createTargetKey(target),
-				buildTargetSnapshot(options.projectName, target),
+				buildTargetSnapshot(options.projectName, target, options.workspaceRoot),
 			);
 		}
 		this.snapshot = combineSnapshots(

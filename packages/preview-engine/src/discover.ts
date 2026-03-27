@@ -478,6 +478,37 @@ function parseModuleRecord(
 			continue;
 		}
 
+		if (
+			ts.isImportEqualsDeclaration(statement) &&
+			ts.isExternalModuleReference(statement.moduleReference)
+		) {
+			const expression = statement.moduleReference.expression;
+			if (!expression || !ts.isStringLiteralLike(expression)) {
+				continue;
+			}
+
+			const resolvedImport = graphService.resolveImport({
+				importerFilePath: filePath,
+				specifier: expression.text,
+			});
+
+			if (resolvedImport?.edge) {
+				graphEdges.push(resolvedImport.edge);
+			}
+
+			if (resolvedImport?.diagnostic) {
+				addDiagnostic({
+					...resolvedImport.diagnostic,
+				});
+			}
+
+			if (resolvedImport?.followedFilePath) {
+				imports.add(resolvedImport.followedFilePath);
+			}
+
+			continue;
+		}
+
 		if (ts.isFunctionDeclaration(statement) && isExported(statement)) {
 			if (statement.name?.text === "preview") {
 				previewExported = true;
@@ -620,6 +651,41 @@ function parseModuleRecord(
 			});
 		}
 	}
+
+	const collectCommonJsRequireCalls = (node: ts.Node) => {
+		if (
+			ts.isCallExpression(node) &&
+			node.arguments.length === 1 &&
+			ts.isIdentifier(node.expression) &&
+			node.expression.text === "require"
+		) {
+			const [argument] = node.arguments;
+			if (argument && ts.isStringLiteralLike(argument)) {
+				const resolvedImport = graphService.resolveImport({
+					importerFilePath: filePath,
+					specifier: argument.text,
+				});
+
+				if (resolvedImport?.edge) {
+					graphEdges.push(resolvedImport.edge);
+				}
+
+				if (resolvedImport?.diagnostic) {
+					addDiagnostic({
+						...resolvedImport.diagnostic,
+					});
+				}
+
+				if (resolvedImport?.followedFilePath) {
+					imports.add(resolvedImport.followedFilePath);
+				}
+			}
+		}
+
+		ts.forEachChild(node, collectCommonJsRequireCalls);
+	};
+
+	collectCommonJsRequireCalls(sourceFile);
 
 	return {
 		exportAllSources,
@@ -932,7 +998,14 @@ function collectTransitivePaths(
 		return collected;
 	}
 
-	for (const importPath of record.imports) {
+	const dependencyPaths = new Set<string>(record.imports);
+	for (const edge of record.graphEdges) {
+		if (edge.resolvedFile) {
+			dependencyPaths.add(edge.resolvedFile);
+		}
+	}
+
+	for (const importPath of dependencyPaths) {
 		collectTransitivePaths(importPath, recordsByPath, visited, collected);
 	}
 
@@ -966,7 +1039,14 @@ function collectTransitiveDiagnostics(
 		diagnostics.set(key, nextDiagnostic);
 	}
 
-	for (const importPath of record.imports) {
+	const dependencyPaths = new Set<string>(record.imports);
+	for (const edge of record.graphEdges) {
+		if (edge.resolvedFile) {
+			dependencyPaths.add(edge.resolvedFile);
+		}
+	}
+
+	for (const importPath of dependencyPaths) {
 		collectTransitiveDiagnostics(
 			entryId,
 			importPath,
@@ -1033,7 +1113,14 @@ function collectTransitiveGraphTrace(
 			}
 		}
 
-		for (const importPath of record.imports) {
+		const dependencyPaths = new Set<string>(record.imports);
+		for (const edge of record.graphEdges) {
+			if (edge.resolvedFile) {
+				dependencyPaths.add(edge.resolvedFile);
+			}
+		}
+
+		for (const importPath of dependencyPaths) {
 			visit(importPath);
 		}
 	};
@@ -1441,7 +1528,10 @@ function discoverTargetRecords(
 }
 
 export function discoverWorkspaceState(
-	options: Pick<CreatePreviewEngineOptions, "projectName" | "targets">,
+	options: Pick<
+		CreatePreviewEngineOptions,
+		"projectName" | "targets" | "workspaceRoot"
+	>,
 ) {
 	const targetContexts = options.targets.map(createTargetContext);
 	const graphService = createWorkspaceGraphService({
@@ -1453,9 +1543,9 @@ export function discoverWorkspaceState(
 			packageRoot: target.packageRoot,
 			sourceRoot: target.sourceRoot,
 		})),
-		workspaceRoot: findWorkspaceRoot(
-			targetContexts.map((target) => target.packageRoot),
-		),
+		workspaceRoot:
+			options.workspaceRoot ??
+			findWorkspaceRoot(targetContexts.map((target) => target.packageRoot)),
 	});
 	const entryStatesById = new Map<string, DiscoveredEntryState>();
 	const entryDependencyPathsById = new Map<string, string[]>();
@@ -1476,9 +1566,12 @@ export function discoverWorkspaceState(
 
 		for (const record of entryRecords) {
 			const builtEntry = buildDescriptor(record, recordsByPath);
+			const dependencyPaths = graphService.collectTransitiveDependencyPaths(
+				record.filePath,
+			);
 			entries.push(builtEntry.descriptor);
 			entryStatesById.set(builtEntry.descriptor.id, {
-				dependencyPaths: builtEntry.dependencyPaths,
+				dependencyPaths,
 				descriptor: builtEntry.descriptor,
 				discoveryDiagnostics: builtEntry.discoveryDiagnostics,
 				graphTrace: builtEntry.graphTrace,
@@ -1486,10 +1579,7 @@ export function discoverWorkspaceState(
 				previewHasProps: record.preview.hasProps,
 				target,
 			});
-			entryDependencyPathsById.set(
-				builtEntry.descriptor.id,
-				builtEntry.dependencyPaths,
-			);
+			entryDependencyPathsById.set(builtEntry.descriptor.id, dependencyPaths);
 		}
 	}
 
