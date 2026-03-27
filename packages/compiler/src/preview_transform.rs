@@ -1,36 +1,37 @@
 use std::{
-	collections::{HashMap, HashSet},
-	path::{Component, Path, PathBuf},
+    collections::{HashMap, HashSet},
+    path::{Component, Path, PathBuf},
 };
 
-#[cfg(not(target_arch = "wasm32"))]
-use std::fs;
 #[cfg(target_arch = "wasm32")]
 use std::cell::RefCell;
+#[cfg(not(target_arch = "wasm32"))]
+use std::fs;
 
 use crate::preview_metadata::{
-	is_supported_preview_host_type, preview_host_metadata_by_jsx_name,
-	preview_host_metadata_records, PreviewTypeSupportKind,
+    is_supported_preview_host_type, preview_host_metadata_by_jsx_name,
+    preview_host_metadata_records, PreviewTypeSupportKind,
 };
 use swc_core::{
-	common::{sync::Lrc, FileName, SourceMap, Span, SyntaxContext, DUMMY_SP},
-	ecma::{
+    common::{sync::Lrc, FileName, SourceMap, Span, SyntaxContext, DUMMY_SP},
+    ecma::{
         ast::{
             ArrowExpr, AssignPat, BindingIdent, BlockStmt, CallExpr, Callee, CatchClause,
             ClassExpr, Constructor, Decl, Expr, ExprOrSpread, FnExpr, ForHead, ForInStmt,
             ForOfStmt, ForStmt, Function, Ident, IdentName, ImportDecl, ImportNamedSpecifier,
-            ImportPhase, ImportSpecifier, JSXClosingElement, JSXElementName, JSXOpeningElement,
-            KeyValueProp, Lit, MemberExpr, MemberProp, Module, ModuleDecl, ModuleItem, NamedExport,
-            NewExpr, Null, ObjectPatProp, ParamOrTsParamProp, ParenExpr, Pat, Prop, PropName, Stmt,
-            Str, SwitchCase, TsEntityName, TsGetterSignature, TsImportEqualsDecl, TsKeywordType,
-            TsKeywordTypeKind, TsMethodSignature, TsModuleBlock, TsParamPropParam,
-            TsPropertySignature, TsSetterSignature, TsType, TsTypeRef, TsUnionOrIntersectionType,
-            TsUnionType, UpdateExpr, VarDeclOrExpr,
+            ImportPhase, ImportSpecifier, ImportStarAsSpecifier, JSXClosingElement, JSXElementName,
+            JSXOpeningElement, KeyValueProp, Lit, MemberExpr, MemberProp, Module, ModuleDecl,
+            ModuleItem, NamedExport, NewExpr, Null, ObjectPatProp, ParamOrTsParamProp, ParenExpr,
+            Pat, Prop, PropName, Stmt, Str, SwitchCase, TsEntityName, TsExternalModuleRef,
+            TsGetterSignature, TsImportEqualsDecl, TsKeywordType, TsKeywordTypeKind,
+            TsMethodSignature, TsModuleBlock, TsModuleRef, TsParamPropParam, TsPropertySignature,
+            TsSetterSignature, TsType, TsTypeRef, TsUnionOrIntersectionType, TsUnionType,
+            UpdateExpr, VarDecl, VarDeclKind, VarDeclOrExpr, VarDeclarator,
         },
         codegen::{text_writer::JsWriter, Config as CodegenConfig, Emitter},
         parser::{parse_file_as_module, Syntax, TsSyntax},
-		visit::{VisitMut, VisitMutWith},
-	},
+        visit::{VisitMut, VisitMutWith},
+    },
 };
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -44,6 +45,7 @@ use wasm_bindgen::prelude::*;
 use js_sys::Function as JsFunction;
 
 const PREVIEW_GLOBAL_HELPER_NAME: &str = "__previewGlobal";
+const COMMONJS_REQUIRE_IMPORT_PREFIX: &str = "__loomCommonJsRequire";
 const NEVER_REWRITE_IDENTIFIER_NAMES: &[&str] = &[
     PREVIEW_GLOBAL_HELPER_NAME,
     "arguments",
@@ -122,13 +124,13 @@ const RUNTIME_HELPER_NAMES: [&str; 11] = [
 #[cfg_attr(not(target_arch = "wasm32"), napi(object))]
 #[cfg_attr(target_arch = "wasm32", derive(Serialize, Deserialize))]
 pub struct UnsupportedPatternError {
-	pub code: String,
-	pub message: String,
-	pub file: String,
-	pub line: u32,
-	pub column: u32,
-	pub symbol: Option<String>,
-	pub target: String,
+    pub code: String,
+    pub message: String,
+    pub file: String,
+    pub line: u32,
+    pub column: u32,
+    pub symbol: Option<String>,
+    pub target: String,
 }
 
 #[allow(non_snake_case)]
@@ -136,21 +138,301 @@ pub struct UnsupportedPatternError {
 #[cfg_attr(target_arch = "wasm32", derive(Serialize, Deserialize))]
 #[cfg_attr(target_arch = "wasm32", serde(rename_all = "camelCase"))]
 pub struct TransformPreviewSourceOptions {
-	pub file_path: String,
-	pub runtime_module: String,
-	pub target: String,
+    pub file_path: String,
+    pub runtime_module: String,
+    pub target: String,
 }
 
 #[allow(non_snake_case)]
 #[cfg_attr(not(target_arch = "wasm32"), napi(object))]
 #[cfg_attr(target_arch = "wasm32", derive(Serialize, Deserialize))]
 pub struct TransformPreviewSourceResult {
-	pub code: String,
-	pub errors: Vec<UnsupportedPatternError>,
+    pub code: String,
+    pub errors: Vec<UnsupportedPatternError>,
+}
+
+fn create_namespace_import_declaration(local_name: &str, module_name: &str) -> ModuleItem {
+    ModuleItem::ModuleDecl(ModuleDecl::Import(ImportDecl {
+        span: DUMMY_SP,
+        specifiers: vec![ImportSpecifier::Namespace(ImportStarAsSpecifier {
+            span: DUMMY_SP,
+            local: Ident::new_no_ctxt(local_name.into(), DUMMY_SP),
+        })],
+        src: Box::new(string_literal(module_name)),
+        type_only: false,
+        with: None,
+        phase: ImportPhase::Evaluation,
+    }))
+}
+
+fn create_ident_expr(name: &str) -> Expr {
+    Expr::Ident(Ident::new_no_ctxt(name.into(), DUMMY_SP))
+}
+
+fn create_variable_decl_item(kind: VarDeclKind, name: Pat, init: Expr) -> ModuleItem {
+    ModuleItem::Stmt(Stmt::Decl(Decl::Var(Box::new(VarDecl {
+        span: DUMMY_SP,
+        ctxt: Default::default(),
+        kind,
+        declare: false,
+        decls: vec![VarDeclarator {
+            span: DUMMY_SP,
+            name,
+            init: Some(Box::new(init)),
+            definite: false,
+        }],
+    }))))
+}
+
+fn create_export_variable_decl_item(kind: VarDeclKind, name: Pat, init: Expr) -> ModuleItem {
+    ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(swc_core::ecma::ast::ExportDecl {
+        span: DUMMY_SP,
+        decl: Decl::Var(Box::new(VarDecl {
+            span: DUMMY_SP,
+            ctxt: Default::default(),
+            kind,
+            declare: false,
+            decls: vec![VarDeclarator {
+                span: DUMMY_SP,
+                name,
+                init: Some(Box::new(init)),
+                definite: false,
+            }],
+        })),
+    }))
+}
+
+fn unwrap_parenthesized_expr(expr: &Expr) -> &Expr {
+    let mut current = expr;
+    while let Expr::Paren(paren) = current {
+        current = &paren.expr;
+    }
+    current
+}
+
+fn extract_static_require_specifier(expr: &Expr) -> Option<String> {
+    let expr = unwrap_parenthesized_expr(expr);
+    let Expr::Call(call_expr) = expr else {
+        return None;
+    };
+    if call_expr.type_args.is_some() || call_expr.args.len() != 1 {
+        return None;
+    }
+    let Callee::Expr(callee_expr) = &call_expr.callee else {
+        return None;
+    };
+    let Expr::Ident(ident) = &**callee_expr else {
+        return None;
+    };
+    if ident.sym.as_ref() != "require" {
+        return None;
+    }
+
+    let [argument] = call_expr.args.as_slice() else {
+        return None;
+    };
+    let Expr::Lit(Lit::Str(module_name)) = &*argument.expr else {
+        return None;
+    };
+
+    Some(module_name.value.to_string_lossy().into_owned())
+}
+
+fn create_unique_commonjs_import_name(used_bindings: &mut HashSet<String>) -> String {
+    let mut suffix = 0usize;
+    loop {
+        let candidate = if suffix == 0 {
+            COMMONJS_REQUIRE_IMPORT_PREFIX.to_owned()
+        } else {
+            format!("{COMMONJS_REQUIRE_IMPORT_PREFIX}{suffix}")
+        };
+        if used_bindings.insert(candidate.clone()) {
+            return candidate;
+        }
+        suffix += 1;
+    }
+}
+
+fn ts_entity_name_to_expr(entity_name: &TsEntityName) -> Expr {
+    match entity_name {
+        TsEntityName::Ident(ident) => Expr::Ident(ident.clone()),
+        TsEntityName::TsQualifiedName(qualified_name) => Expr::Member(MemberExpr {
+            span: qualified_name.span,
+            obj: Box::new(ts_entity_name_to_expr(&qualified_name.left)),
+            prop: MemberProp::Ident(qualified_name.right.clone().into()),
+        }),
+    }
+}
+
+fn static_require_module_name(call_expr: &CallExpr) -> Option<String> {
+    if call_expr.type_args.is_some() || call_expr.args.len() != 1 {
+        return None;
+    }
+
+    let Callee::Expr(callee_expr) = &call_expr.callee else {
+        return None;
+    };
+    let Expr::Ident(ident) = &**callee_expr else {
+        return None;
+    };
+    if ident.sym.as_ref() != "require" {
+        return None;
+    }
+
+    let [argument] = call_expr.args.as_slice() else {
+        return None;
+    };
+    let Expr::Lit(Lit::Str(module_name)) = &*argument.expr else {
+        return None;
+    };
+
+    Some(module_name.value.to_string_lossy().into_owned())
+}
+
+fn rewrite_top_level_commonjs_var_declarator(
+    decl: &mut VarDeclarator,
+    used_bindings: &mut HashSet<String>,
+    imports: &mut Vec<ModuleItem>,
+) -> bool {
+    let Some(init) = decl.init.as_deref() else {
+        return false;
+    };
+    let Some(module_name) = extract_static_require_specifier(init) else {
+        return false;
+    };
+
+    let import_local_name = create_unique_commonjs_import_name(used_bindings);
+    imports.push(create_namespace_import_declaration(
+        &import_local_name,
+        &module_name,
+    ));
+    decl.init = Some(Box::new(create_ident_expr(&import_local_name)));
+    true
+}
+
+fn rewrite_top_level_commonjs_var_decl(
+    var_decl: &mut VarDecl,
+    used_bindings: &mut HashSet<String>,
+    imports: &mut Vec<ModuleItem>,
+) -> bool {
+    let mut changed = false;
+    for decl in &mut var_decl.decls {
+        if rewrite_top_level_commonjs_var_declarator(decl, used_bindings, imports) {
+            changed = true;
+        }
+    }
+    changed
+}
+
+fn rewrite_top_level_commonjs_module_items(
+    body: Vec<ModuleItem>,
+    used_bindings: &mut HashSet<String>,
+) -> Vec<ModuleItem> {
+    let mut leading_items = Vec::new();
+    let mut imports = Vec::new();
+    let mut rewritten_body = Vec::with_capacity(body.len());
+    let mut seen_non_directive = false;
+
+    for item in body {
+        let is_prefix_item = match &item {
+            ModuleItem::Stmt(Stmt::Expr(expr_stmt))
+                if matches!(&*expr_stmt.expr, Expr::Lit(Lit::Str(_))) =>
+            {
+                true
+            }
+            ModuleItem::ModuleDecl(ModuleDecl::Import(_)) => true,
+            ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(named_export)) => {
+                named_export.src.is_some()
+            }
+            ModuleItem::ModuleDecl(ModuleDecl::ExportAll(_)) => true,
+            _ => false,
+        };
+        if !seen_non_directive && is_prefix_item {
+            leading_items.push(item);
+            continue;
+        }
+
+        seen_non_directive = true;
+
+        match item {
+            ModuleItem::Stmt(Stmt::Decl(Decl::Var(mut var_decl))) => {
+                rewrite_top_level_commonjs_var_decl(&mut var_decl, used_bindings, &mut imports);
+                rewritten_body.push(ModuleItem::Stmt(Stmt::Decl(Decl::Var(var_decl))));
+            }
+            ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(mut export_decl)) => {
+                if let Decl::Var(mut var_decl) = export_decl.decl {
+                    rewrite_top_level_commonjs_var_decl(&mut var_decl, used_bindings, &mut imports);
+                    export_decl.decl = Decl::Var(var_decl);
+                    rewritten_body
+                        .push(ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export_decl)));
+                } else {
+                    rewritten_body
+                        .push(ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export_decl)));
+                }
+            }
+            ModuleItem::ModuleDecl(ModuleDecl::TsImportEquals(import_equals)) => {
+                if import_equals.is_type_only {
+                    continue;
+                }
+
+                let TsImportEqualsDecl {
+                    id,
+                    is_export,
+                    module_ref,
+                    ..
+                } = *import_equals;
+                let local_ident = Pat::Ident(BindingIdent { id, type_ann: None });
+
+                match module_ref {
+                    TsModuleRef::TsExternalModuleRef(TsExternalModuleRef { expr, .. }) => {
+                        let import_local_name = create_unique_commonjs_import_name(used_bindings);
+                        let module_name = expr.value.to_string_lossy().into_owned();
+                        imports.push(create_namespace_import_declaration(
+                            &import_local_name,
+                            &module_name,
+                        ));
+
+                        let init = create_ident_expr(&import_local_name);
+                        let rewritten_item = if is_export {
+                            create_export_variable_decl_item(VarDeclKind::Const, local_ident, init)
+                        } else {
+                            create_variable_decl_item(VarDeclKind::Const, local_ident, init)
+                        };
+                        rewritten_body.push(rewritten_item);
+                    }
+                    TsModuleRef::TsEntityName(entity_name) => {
+                        let init = ts_entity_name_to_expr(&entity_name);
+                        let rewritten_item = if is_export {
+                            create_export_variable_decl_item(VarDeclKind::Const, local_ident, init)
+                        } else {
+                            create_variable_decl_item(VarDeclKind::Const, local_ident, init)
+                        };
+                        rewritten_body.push(rewritten_item);
+                    }
+                }
+            }
+            other => rewritten_body.push(other),
+        }
+    }
+
+    if imports.is_empty() {
+        if leading_items.is_empty() {
+            rewritten_body
+        } else {
+            let mut next_body = leading_items;
+            next_body.extend(rewritten_body);
+            next_body
+        }
+    } else {
+        let mut next_body = leading_items;
+        next_body.extend(imports);
+        next_body.extend(rewritten_body);
+        next_body
+    }
 }
 
 trait RelativeModuleCandidateChecker {
-	fn candidate_exists(&self, candidate: &Path) -> bool;
+    fn candidate_exists(&self, candidate: &Path) -> bool;
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -158,16 +440,16 @@ struct NativeRelativeModuleCandidateChecker;
 
 #[cfg(not(target_arch = "wasm32"))]
 impl RelativeModuleCandidateChecker for NativeRelativeModuleCandidateChecker {
-	fn candidate_exists(&self, candidate: &Path) -> bool {
-		fs::metadata(candidate)
-			.map(|metadata| metadata.is_file())
-			.unwrap_or(false)
-	}
+    fn candidate_exists(&self, candidate: &Path) -> bool {
+        fs::metadata(candidate)
+            .map(|metadata| metadata.is_file())
+            .unwrap_or(false)
+    }
 }
 
 #[cfg(target_arch = "wasm32")]
 thread_local! {
-	static WASM_RELATIVE_MODULE_CANDIDATE_CHECKER: RefCell<Option<JsFunction>> = const { RefCell::new(None) };
+    static WASM_RELATIVE_MODULE_CANDIDATE_CHECKER: RefCell<Option<JsFunction>> = const { RefCell::new(None) };
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -175,51 +457,51 @@ struct WasmRelativeModuleCandidateChecker;
 
 #[cfg(target_arch = "wasm32")]
 impl RelativeModuleCandidateChecker for WasmRelativeModuleCandidateChecker {
-	fn candidate_exists(&self, candidate: &Path) -> bool {
-		let candidate = candidate.to_string_lossy().into_owned();
+    fn candidate_exists(&self, candidate: &Path) -> bool {
+        let candidate = candidate.to_string_lossy().into_owned();
 
-		WASM_RELATIVE_MODULE_CANDIDATE_CHECKER.with(|cell| {
-			let binding = cell.borrow();
-			let Some(function) = binding.as_ref() else {
-				return false;
-			};
+        WASM_RELATIVE_MODULE_CANDIDATE_CHECKER.with(|cell| {
+            let binding = cell.borrow();
+            let Some(function) = binding.as_ref() else {
+                return false;
+            };
 
-			function
-				.call1(&JsValue::UNDEFINED, &JsValue::from_str(&candidate))
-				.ok()
-				.and_then(|value| value.as_bool())
-				.unwrap_or(false)
-		})
-	}
+            function
+                .call1(&JsValue::UNDEFINED, &JsValue::from_str(&candidate))
+                .ok()
+                .and_then(|value| value.as_bool())
+                .unwrap_or(false)
+        })
+    }
 }
 
 enum PreviewGlobalRewriteKind {
-	Silent,
-	Warn,
+    Silent,
+    Warn,
 }
 
 struct PreviewTransform<'a> {
-	options: &'a TransformPreviewSourceOptions,
-	checker: &'a dyn RelativeModuleCandidateChecker,
-	cm: Lrc<SourceMap>,
-	scope_stack: Vec<HashSet<String>>,
-	errors: Vec<UnsupportedPatternError>,
+    options: &'a TransformPreviewSourceOptions,
+    checker: &'a dyn RelativeModuleCandidateChecker,
+    cm: Lrc<SourceMap>,
+    scope_stack: Vec<HashSet<String>>,
+    errors: Vec<UnsupportedPatternError>,
     reported_unresolved_identifier_names: HashSet<String>,
     suppress_identifier_rewrite_depth: usize,
 }
 
 impl<'a> PreviewTransform<'a> {
-	fn new(
-		options: &'a TransformPreviewSourceOptions,
-		cm: Lrc<SourceMap>,
-		checker: &'a dyn RelativeModuleCandidateChecker,
-	) -> Self {
-		Self {
-			options,
-			checker,
-			cm,
-			scope_stack: vec![runtime_binding_names()],
-			errors: Vec::new(),
+    fn new(
+        options: &'a TransformPreviewSourceOptions,
+        cm: Lrc<SourceMap>,
+        checker: &'a dyn RelativeModuleCandidateChecker,
+    ) -> Self {
+        Self {
+            options,
+            checker,
+            cm,
+            scope_stack: vec![runtime_binding_names()],
+            errors: Vec::new(),
             reported_unresolved_identifier_names: HashSet::new(),
             suppress_identifier_rewrite_depth: 0,
         }
@@ -334,6 +616,11 @@ impl<'a> PreviewTransform<'a> {
 }
 impl VisitMut for PreviewTransform<'_> {
     fn visit_mut_module(&mut self, module: &mut Module) {
+        let mut used_bindings = collect_module_item_bindings(&module.body);
+        module.body = rewrite_top_level_commonjs_module_items(
+            std::mem::take(&mut module.body),
+            &mut used_bindings,
+        );
         let bindings = collect_module_item_bindings(&module.body);
         self.with_scope(bindings, |transformer| {
             module.body.visit_mut_with(transformer);
@@ -363,6 +650,15 @@ impl VisitMut for PreviewTransform<'_> {
         self.with_scope(bindings, |transformer| {
             block.visit_mut_children_with(transformer);
         });
+    }
+
+    fn visit_mut_ts_import_equals_decl(&mut self, import_equals: &mut TsImportEqualsDecl) {
+        self.push_unsupported_error(
+            import_equals.span,
+            "UNSUPPORTED_COMMONJS_IMPORT_EQUALS",
+            "TypeScript `import = require(...)` syntax is only supported when it can be rewritten at the module boundary before preview generation.".to_owned(),
+            Some(import_equals.id.sym.to_string()),
+        );
     }
 
     fn visit_mut_catch_clause(&mut self, catch_clause: &mut CatchClause) {
@@ -436,20 +732,20 @@ impl VisitMut for PreviewTransform<'_> {
         });
     }
 
-	fn visit_mut_import_decl(&mut self, import_decl: &mut ImportDecl) {
-		let module_name = import_decl.src.value.to_string_lossy().into_owned();
-		let next_module = if is_preview_runtime_alias_source(&module_name) {
-			Some(self.options.runtime_module.clone())
-		} else if module_name == "@rbxts/react" {
-			Some("react".to_owned())
-		} else if module_name.starts_with('.') {
-			Some(resolve_relative_module_specifier(
-				&self.options.file_path,
-				&module_name,
-				self.checker,
-			))
-		} else {
-			None
+    fn visit_mut_import_decl(&mut self, import_decl: &mut ImportDecl) {
+        let module_name = import_decl.src.value.to_string_lossy().into_owned();
+        let next_module = if is_preview_runtime_alias_source(&module_name) {
+            Some(self.options.runtime_module.clone())
+        } else if module_name == "@rbxts/react" {
+            Some("react".to_owned())
+        } else if module_name.starts_with('.') {
+            Some(resolve_relative_module_specifier(
+                &self.options.file_path,
+                &module_name,
+                self.checker,
+            ))
+        } else {
+            None
         };
 
         if let Some(next_module) = next_module {
@@ -459,19 +755,19 @@ impl VisitMut for PreviewTransform<'_> {
         import_decl.visit_mut_children_with(self);
     }
 
-	fn visit_mut_named_export(&mut self, named_export: &mut NamedExport) {
-		if let Some(src) = &named_export.src {
-			let module_name = src.value.to_string_lossy().into_owned();
-			if module_name.starts_with('.') {
-				named_export.src = Some(Box::new(string_literal(
-					&resolve_relative_module_specifier(
-						&self.options.file_path,
-						&module_name,
-						self.checker,
-					),
-				)));
-			}
-		}
+    fn visit_mut_named_export(&mut self, named_export: &mut NamedExport) {
+        if let Some(src) = &named_export.src {
+            let module_name = src.value.to_string_lossy().into_owned();
+            if module_name.starts_with('.') {
+                named_export.src = Some(Box::new(string_literal(
+                    &resolve_relative_module_specifier(
+                        &self.options.file_path,
+                        &module_name,
+                        self.checker,
+                    ),
+                )));
+            }
+        }
 
         named_export.visit_mut_children_with(self);
     }
@@ -533,6 +829,20 @@ impl VisitMut for PreviewTransform<'_> {
                     spread: None,
                     expr: Box::new(Expr::Lit(Lit::Null(Null { span: DUMMY_SP }))),
                 });
+                return;
+            }
+
+            if let Some(module_name) = static_require_module_name(call_expr) {
+                if !self.has_binding("require") {
+                    self.push_unsupported_error(
+                        call_expr.span,
+                        "UNSUPPORTED_COMMONJS_REQUIRE",
+                        format!(
+                            "Static `require(\"{module_name}\")` calls must be rewritten at the module boundary before preview generation."
+                        ),
+                        Some("require".to_owned()),
+                    );
+                }
             }
             return;
         }
@@ -1280,13 +1590,13 @@ fn collect_member_chain_segments(expr: &MemberExpr, segments: &mut Vec<String>) 
 }
 
 fn resolve_relative_module_specifier(
-	file_path: &str,
-	module_specifier: &str,
-	checker: &dyn RelativeModuleCandidateChecker,
+    file_path: &str,
+    module_specifier: &str,
+    checker: &dyn RelativeModuleCandidateChecker,
 ) -> String {
-	if !module_specifier.starts_with('.') || Path::new(module_specifier).extension().is_some() {
-		return module_specifier.to_owned();
-	}
+    if !module_specifier.starts_with('.') || Path::new(module_specifier).extension().is_some() {
+        return module_specifier.to_owned();
+    }
 
     let current_file = path_from_string(file_path);
     let current_dir = current_file
@@ -1388,105 +1698,102 @@ fn relative_path(from_dir: &Path, to_path: &Path) -> Option<String> {
 
 #[cfg(not(target_arch = "wasm32"))]
 fn default_relative_module_candidate_checker() -> NativeRelativeModuleCandidateChecker {
-	NativeRelativeModuleCandidateChecker
+    NativeRelativeModuleCandidateChecker
 }
 
 #[cfg(target_arch = "wasm32")]
 fn default_relative_module_candidate_checker() -> WasmRelativeModuleCandidateChecker {
-	WasmRelativeModuleCandidateChecker
+    WasmRelativeModuleCandidateChecker
 }
 
 fn transform_preview_source_impl(
-	code: String,
-	options: TransformPreviewSourceOptions,
-	checker: &dyn RelativeModuleCandidateChecker,
+    code: String,
+    options: TransformPreviewSourceOptions,
+    checker: &dyn RelativeModuleCandidateChecker,
 ) -> Result<TransformPreviewSourceResult, String> {
-	let cm: Lrc<SourceMap> = Default::default();
-	let is_tsx = options.file_path.ends_with(".tsx");
-	let file = cm.new_source_file(FileName::Custom(options.file_path.clone()).into(), code);
+    let cm: Lrc<SourceMap> = Default::default();
+    let is_tsx = options.file_path.ends_with(".tsx");
+    let file = cm.new_source_file(FileName::Custom(options.file_path.clone()).into(), code);
 
-	let mut recovered_errors = Vec::new();
-	let mut module = parse_file_as_module(
-		&file,
-		Syntax::Typescript(TsSyntax {
-			decorators: true,
-			tsx: is_tsx,
-			..Default::default()
-		}),
-		Default::default(),
-		None,
-		&mut recovered_errors,
-	)
-	.map_err(|err| format!("Failed to parse preview source: {err:?}"))?;
+    let mut recovered_errors = Vec::new();
+    let mut module = parse_file_as_module(
+        &file,
+        Syntax::Typescript(TsSyntax {
+            decorators: true,
+            tsx: is_tsx,
+            ..Default::default()
+        }),
+        Default::default(),
+        None,
+        &mut recovered_errors,
+    )
+    .map_err(|err| format!("Failed to parse preview source: {err:?}"))?;
 
-	if !recovered_errors.is_empty() {
-		return Err(format!(
-			"Recovered parse errors in preview source: {recovered_errors:?}"
-		));
-	}
+    if !recovered_errors.is_empty() {
+        return Err(format!(
+            "Recovered parse errors in preview source: {recovered_errors:?}"
+        ));
+    }
 
-	let mut transformer = PreviewTransform::new(&options, cm.clone(), checker);
-	module.visit_mut_with(&mut transformer);
+    let mut transformer = PreviewTransform::new(&options, cm.clone(), checker);
+    module.visit_mut_with(&mut transformer);
 
-	let mut output = Vec::new();
-	{
-		let mut emitter = Emitter {
-			cfg: CodegenConfig::default(),
-			cm: cm.clone(),
-			comments: None,
-			wr: JsWriter::new(cm.clone(), "\n", &mut output, None),
-		};
+    let mut output = Vec::new();
+    {
+        let mut emitter = Emitter {
+            cfg: CodegenConfig::default(),
+            cm: cm.clone(),
+            comments: None,
+            wr: JsWriter::new(cm.clone(), "\n", &mut output, None),
+        };
 
-		emitter
-			.emit_module(&module)
-			.map_err(|err| format!("Failed to emit preview source: {err:?}"))?;
-	}
+        emitter
+            .emit_module(&module)
+            .map_err(|err| format!("Failed to emit preview source: {err:?}"))?;
+    }
 
-	let emitted = String::from_utf8(output)
-		.map_err(|err| format!("Generated preview output was not valid UTF-8: {err}"))?;
+    let emitted = String::from_utf8(output)
+        .map_err(|err| format!("Generated preview output was not valid UTF-8: {err}"))?;
 
-	Ok(TransformPreviewSourceResult {
-		code: format!("// Generated by @loom-dev/preview. Do not edit.\n{emitted}\n"),
-		errors: transformer.errors,
-	})
+    Ok(TransformPreviewSourceResult {
+        code: format!("// Generated by @loom-dev/preview. Do not edit.\n{emitted}\n"),
+        errors: transformer.errors,
+    })
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 #[napi(js_name = "transformPreviewSource")]
 pub fn transform_preview_source(
-	code: String,
-	options: TransformPreviewSourceOptions,
+    code: String,
+    options: TransformPreviewSourceOptions,
 ) -> napi::Result<TransformPreviewSourceResult> {
-	let checker = default_relative_module_candidate_checker();
-	transform_preview_source_impl(code, options, &checker).map_err(napi::Error::from_reason)
+    let checker = default_relative_module_candidate_checker();
+    transform_preview_source_impl(code, options, &checker).map_err(napi::Error::from_reason)
 }
 
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen(js_name = "setRelativeModuleCandidateChecker")]
 pub fn set_relative_module_candidate_checker(checker: Option<JsFunction>) {
-	WASM_RELATIVE_MODULE_CANDIDATE_CHECKER.with(|cell| {
-		*cell.borrow_mut() = checker;
-	});
+    WASM_RELATIVE_MODULE_CANDIDATE_CHECKER.with(|cell| {
+        *cell.borrow_mut() = checker;
+    });
 }
 
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen(js_name = "transformPreviewSource")]
-pub fn transform_preview_source(
-	code: String,
-	options: JsValue,
-) -> Result<JsValue, JsValue> {
-	let options = serde_wasm_bindgen::from_value::<TransformPreviewSourceOptions>(options)
-		.map_err(|err| JsValue::from_str(&format!("Failed to decode preview options: {err}")))?;
-	let checker = default_relative_module_candidate_checker();
-	let result = transform_preview_source_impl(code, options, &checker)
-		.map_err(|err| JsValue::from_str(&err))?;
-	serde_wasm_bindgen::to_value(&result)
-		.map_err(|err| JsValue::from_str(&format!("Failed to encode preview result: {err}")))
+pub fn transform_preview_source(code: String, options: JsValue) -> Result<JsValue, JsValue> {
+    let options = serde_wasm_bindgen::from_value::<TransformPreviewSourceOptions>(options)
+        .map_err(|err| JsValue::from_str(&format!("Failed to decode preview options: {err}")))?;
+    let checker = default_relative_module_candidate_checker();
+    let result = transform_preview_source_impl(code, options, &checker)
+        .map_err(|err| JsValue::from_str(&err))?;
+    serde_wasm_bindgen::to_value(&result)
+        .map_err(|err| JsValue::from_str(&format!("Failed to encode preview result: {err}")))
 }
 
 #[cfg(test)]
 mod tests {
-	use super::{transform_preview_source, TransformPreviewSourceOptions};
+    use super::{transform_preview_source, TransformPreviewSourceOptions};
 
     #[test]
     fn standard_proxy_global_does_not_report_unresolved_identifier() {

@@ -23,6 +23,7 @@ async function main() {
 		[
 			"build",
 			"--platform",
+			"--release",
 			"--output-dir",
 			TEMP_OUTPUT_DIR,
 			...getPassthroughArgs(),
@@ -40,8 +41,10 @@ async function main() {
 	const binaryFileName = await getSingleBinaryFileName(TEMP_OUTPUT_DIR);
 	const sourceBinaryPath = join(TEMP_OUTPUT_DIR, binaryFileName);
 	const localBinaryPath = join(LOCAL_BINARIES_DIR, binaryFileName);
+	const rootBinaryPath = join(PACKAGE_DIR, binaryFileName);
 
 	await copyFile(sourceBinaryPath, localBinaryPath);
+	await copyFile(sourceBinaryPath, rootBinaryPath);
 	await copyGeneratedBindings();
 	buildWrapperTypes();
 	await writeManifest(localBinaryPath);

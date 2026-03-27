@@ -88,7 +88,10 @@ function createDefaultTransformOutcome(mode) {
 }
 
 function toTransformDiagnostic(mode, error) {
-	const blocking = mode === "strict-fidelity";
+	const blocking =
+		mode === "strict-fidelity" ||
+		(typeof error.code === "string" &&
+			error.code.startsWith("UNSUPPORTED_COMMONJS_"));
 
 	return {
 		blocking,
@@ -107,6 +110,13 @@ function toTransformDiagnostic(mode, error) {
 function inferTransformOutcome(mode, diagnostics) {
 	if (mode === "design-time") {
 		return createDefaultTransformOutcome(mode);
+	}
+
+	if (diagnostics.some((diagnostic) => diagnostic.blocking)) {
+		return {
+			fidelity: "degraded",
+			kind: "blocked",
+		};
 	}
 
 	if (diagnostics.length === 0) {

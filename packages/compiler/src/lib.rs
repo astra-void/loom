@@ -2,18 +2,18 @@ mod preview_metadata;
 mod preview_transform;
 
 use swc_core::{
-	common::{sync::Lrc, FileName, SourceMap, DUMMY_SP},
-	ecma::{
-		ast::{
-			Bool, CallExpr, Callee, Expr, ExprOrSpread, Ident, IdentName, JSXAttr, JSXAttrName,
-			JSXAttrOrSpread, JSXAttrValue, JSXClosingElement, JSXElementName, JSXExpr,
-			JSXExprContainer, JSXOpeningElement, KeyValueProp, Lit, Null, ObjectLit, Prop,
-			PropName, PropOrSpread, Str,
-		},
-		codegen::{text_writer::JsWriter, Config as CodegenConfig, Emitter},
-		parser::{parse_file_as_module, Syntax, TsSyntax},
-		visit::{VisitMut, VisitMutWith},
-	},
+    common::{sync::Lrc, FileName, SourceMap, DUMMY_SP},
+    ecma::{
+        ast::{
+            Bool, CallExpr, Callee, Expr, ExprOrSpread, Ident, IdentName, JSXAttr, JSXAttrName,
+            JSXAttrOrSpread, JSXAttrValue, JSXClosingElement, JSXElementName, JSXExpr,
+            JSXExprContainer, JSXOpeningElement, KeyValueProp, Lit, Null, ObjectLit, Prop,
+            PropName, PropOrSpread, Str,
+        },
+        codegen::{text_writer::JsWriter, Config as CodegenConfig, Emitter},
+        parser::{parse_file_as_module, Syntax, TsSyntax},
+        visit::{VisitMut, VisitMutWith},
+    },
 };
 
 use crate::preview_metadata::preview_host_metadata_by_jsx_name;
@@ -94,47 +94,47 @@ fn jsx_attr_value_to_expr(value: Option<JSXAttrValue>) -> Expr {
 }
 
 fn compile_tsx_impl(code: String) -> Result<String, String> {
-	let cm: Lrc<SourceMap> = Default::default();
-	let fm = cm.new_source_file(FileName::Custom("input.tsx".into()).into(), code);
+    let cm: Lrc<SourceMap> = Default::default();
+    let fm = cm.new_source_file(FileName::Custom("input.tsx".into()).into(), code);
 
-	let mut recovered_errors = Vec::new();
-	let mut module = parse_file_as_module(
-		&fm,
-		Syntax::Typescript(TsSyntax {
-			decorators: true,
-			tsx: true,
-			..Default::default()
-		}),
-		Default::default(),
-		None,
-		&mut recovered_errors,
-	)
-	.map_err(|err| format!("Failed to parse TSX: {err:?}"))?;
+    let mut recovered_errors = Vec::new();
+    let mut module = parse_file_as_module(
+        &fm,
+        Syntax::Typescript(TsSyntax {
+            decorators: true,
+            tsx: true,
+            ..Default::default()
+        }),
+        Default::default(),
+        None,
+        &mut recovered_errors,
+    )
+    .map_err(|err| format!("Failed to parse TSX: {err:?}"))?;
 
-	if !recovered_errors.is_empty() {
-		return Err(format!(
-			"Recovered parse errors in TSX input: {recovered_errors:?}"
-		));
-	}
+    if !recovered_errors.is_empty() {
+        return Err(format!(
+            "Recovered parse errors in TSX input: {recovered_errors:?}"
+        ));
+    }
 
-	let mut transformer = LoomPreviewTransformer;
-	module.visit_mut_with(&mut transformer);
+    let mut transformer = LoomPreviewTransformer;
+    module.visit_mut_with(&mut transformer);
 
-	let mut out = Vec::new();
-	{
-		let mut emitter = Emitter {
-			cfg: CodegenConfig::default(),
-			cm: cm.clone(),
-			comments: None,
-			wr: JsWriter::new(cm.clone(), "\n", &mut out, None),
-		};
+    let mut out = Vec::new();
+    {
+        let mut emitter = Emitter {
+            cfg: CodegenConfig::default(),
+            cm: cm.clone(),
+            comments: None,
+            wr: JsWriter::new(cm.clone(), "\n", &mut out, None),
+        };
 
-		emitter
-			.emit_module(&module)
-			.map_err(|err| format!("Failed to emit JS/TSX: {err:?}"))?;
-	}
+        emitter
+            .emit_module(&module)
+            .map_err(|err| format!("Failed to emit JS/TSX: {err:?}"))?;
+    }
 
-	String::from_utf8(out).map_err(|err| format!("Generated output was not valid UTF-8: {err}"))
+    String::from_utf8(out).map_err(|err| format!("Generated output was not valid UTF-8: {err}"))
 }
 
 impl VisitMut for LoomPreviewTransformer {
@@ -240,11 +240,11 @@ impl VisitMut for LoomPreviewTransformer {
 #[cfg(not(target_arch = "wasm32"))]
 #[napi(js_name = "compile_tsx")]
 pub fn compile_tsx(code: String) -> napi::Result<String> {
-	compile_tsx_impl(code).map_err(napi::Error::from_reason)
+    compile_tsx_impl(code).map_err(napi::Error::from_reason)
 }
 
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen(js_name = "compile_tsx")]
 pub fn compile_tsx(code: String) -> Result<String, JsValue> {
-	compile_tsx_impl(code).map_err(|err| JsValue::from_str(&err))
+    compile_tsx_impl(code).map_err(|err| JsValue::from_str(&err))
 }

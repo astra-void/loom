@@ -1,6 +1,3 @@
-const { existsSync, readFileSync } = require("node:fs");
-const { resolve } = require("node:path");
-
 /**
  * @typedef {"strict-fidelity" | "compatibility" | "mocked" | "design-time"} PreviewTransformMode
  * @typedef {"error" | "info" | "warning"} PreviewTransformSeverity
@@ -69,110 +66,7 @@ function loadLocalNativeBinding() {
 		return null;
 	}
 
-	const manifestPath = resolve(__dirname, ".native", "manifest.json");
-	if (!existsSync(manifestPath)) {
-		return loadHostNativeBinding();
-	}
-
-	try {
-		const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
-		if (typeof manifest.entry !== "string" || manifest.entry.length === 0) {
-			return null;
-		}
-
-		// Local development builds write a stable manifest entry that points at the
-		// current host-native binary inside `.native/local`.
-		const manifestBinaryPath = resolve(__dirname, manifest.entry);
-		if (isHostNativeBinaryPath(manifestBinaryPath)) {
-			return require(manifestBinaryPath);
-		}
-	} catch {
-		return loadHostNativeBinding();
-	}
-
-	return loadHostNativeBinding();
-}
-
-/**
- * @returns {NativeCompilerModule | null}
- */
-function loadHostNativeBinding() {
-	const localBinaryPath = findLocalNativeBinaryPath();
-	return localBinaryPath ? require(localBinaryPath) : null;
-}
-
-/**
- * @returns {string | null}
- */
-function findLocalNativeBinaryPath() {
-	const localDir = resolve(__dirname, ".native", "local");
-	if (!existsSync(localDir)) {
-		return null;
-	}
-
-	const localBinaryPath = resolve(localDir, getExpectedLocalBinaryFileName());
-	if (!existsSync(localBinaryPath)) {
-		return null;
-	}
-
-	return localBinaryPath;
-}
-
-/**
- * @param {string} binaryPath
- * @returns {boolean}
- */
-function isHostNativeBinaryPath(binaryPath) {
-	return binaryPath === findLocalNativeBinaryPath();
-}
-
-/**
- * @returns {string}
- */
-function getExpectedLocalBinaryFileName() {
-	if (process.platform === "darwin") {
-		if (process.arch === "x64") {
-			return "loom_compiler.darwin-x64.node";
-		}
-
-		if (process.arch === "arm64") {
-			return "loom_compiler.darwin-arm64.node";
-		}
-	}
-
-	if (process.platform === "linux") {
-		const suffix = isMusl() ? "musl" : "gnu";
-		if (process.arch === "x64") {
-			return `loom_compiler.linux-x64-${suffix}.node`;
-		}
-
-		if (process.arch === "arm64") {
-			return `loom_compiler.linux-arm64-${suffix}.node`;
-		}
-	}
-
-	if (process.platform === "win32") {
-		if (process.arch === "x64") {
-			return "loom_compiler.win32-x64-msvc.node";
-		}
-
-		if (process.arch === "arm64") {
-			return "loom_compiler.win32-arm64-msvc.node";
-		}
-	}
-
-	return "loom_compiler.node";
-}
-
-function isMusl() {
-	if (process.platform !== "linux") {
-		return false;
-	}
-
-	const report = /** @type {{ header?: { glibcVersionRuntime?: string } }} */ (
-		process.report?.getReport()
-	);
-	return !report.header?.glibcVersionRuntime;
+	return null;
 }
 
 /** @type {NativeCompilerModule} */
@@ -180,6 +74,7 @@ const native = loadLocalNativeBinding() ?? require("./index.js");
 
 const PREVIEW_GLOBAL_CALL_PATTERN = /__previewGlobal\("([^"]+)"\)/g;
 const UNRESOLVED_FREE_IDENTIFIER_CODE = "UNRESOLVED_FREE_IDENTIFIER";
+const ALWAYS_BLOCKING_TRANSFORM_ERROR_PREFIX = "UNSUPPORTED_COMMONJS_";
 
 /**
  * @param {string} value
@@ -213,7 +108,10 @@ function createDefaultTransformOutcome(mode) {
  * @returns {PreviewTransformDiagnostic}
  */
 function toTransformDiagnostic(mode, error) {
-	const blocking = mode === "strict-fidelity";
+	const blocking =
+		mode === "strict-fidelity" ||
+		(typeof error.code === "string" &&
+			error.code.startsWith(ALWAYS_BLOCKING_TRANSFORM_ERROR_PREFIX));
 
 	return {
 		blocking,
@@ -237,6 +135,13 @@ function toTransformDiagnostic(mode, error) {
 function inferTransformOutcome(mode, diagnostics) {
 	if (mode === "design-time") {
 		return createDefaultTransformOutcome(mode);
+	}
+
+	if (diagnostics.some((diagnostic) => diagnostic.blocking)) {
+		return {
+			fidelity: "degraded",
+			kind: "blocked",
+		};
 	}
 
 	if (diagnostics.length === 0) {
