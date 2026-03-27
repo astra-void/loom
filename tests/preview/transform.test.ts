@@ -250,13 +250,28 @@ describe("preview source transform", () => {
 	});
 
 	it("keeps core React wrappers in ESM form without emitting require", () => {
-		const reactWrapperPath = path.resolve(
-			process.cwd(),
-			"../../rojo/lattice-ui/packages/core/src/react.ts",
+		const root = fs.mkdtempSync(
+			path.join(os.tmpdir(), "loom-preview-react-wrapper-"),
 		);
-		const reactRobloxWrapperPath = path.resolve(
-			process.cwd(),
-			"../../rojo/lattice-ui/packages/core/src/reactRoblox.ts",
+		temporaryRoots.push(root);
+
+		const reactWrapperPath = path.join(root, "react.ts");
+		const reactRobloxWrapperPath = path.join(root, "reactRoblox.ts");
+		fs.writeFileSync(
+			reactWrapperPath,
+			['import React = require("@rbxts/react");', "", "export default React;"].join(
+				"\n",
+			),
+			"utf8",
+		);
+		fs.writeFileSync(
+			reactRobloxWrapperPath,
+			[
+				'import ReactRoblox = require("@rbxts/react-roblox");',
+				"",
+				"export default ReactRoblox;",
+			].join("\n"),
+			"utf8",
 		);
 
 		const reactResult = transformPreviewSource(
