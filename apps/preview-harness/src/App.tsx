@@ -1,7 +1,7 @@
 import type React from "react";
 import { PreviewWorkspaceApp } from "../../../packages/preview/src/shell/PreviewWorkspaceApp";
+import { PreviewTargetShell } from "../../../packages/preview/src/shell/preview-targets/PreviewTargetShell";
 import { WasmTestApp } from "../../../packages/preview/src/shell/WasmTestApp";
-import { PreviewSceneShell } from "./PreviewSceneShell";
 
 export function App() {
 	const searchParams =
@@ -16,5 +16,5 @@ export function App() {
 		<PreviewWorkspaceApp />
 	);
 
-	return <PreviewSceneShell>{ShellContent}</PreviewSceneShell>;
+	return <PreviewTargetShell>{ShellContent}</PreviewTargetShell>;
 }
