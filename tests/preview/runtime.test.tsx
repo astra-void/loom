@@ -357,6 +357,7 @@ describe("preview runtime Roblox globals", () => {
 		expect(playerGui).toBe(players.LocalPlayer.PlayerGui);
 		expect(playerGui).toBeInstanceOf(HTMLElement);
 		expect(isPreviewElement(playerGui, "BasePlayerGui")).toBe(true);
+		expect(playerGui.style.pointerEvents).toBe("none");
 		expect(players.LocalPlayer.PlayerGui.IsA("BasePlayerGui")).toBe(true);
 		expect(players.LocalPlayer.PlayerGui.GetFullName()).toBe(
 			"Players.LocalPlayer.PlayerGui",
@@ -422,12 +423,20 @@ describe("preview runtime host mapping", () => {
 				Play(): void;
 			};
 		};
+		const previewEnum = Enum as {
+			EasingDirection: {
+				In: unknown;
+			};
+			EasingStyle: {
+				Linear: unknown;
+			};
+		};
 		const tween = tweenService.Create(
 			frame,
 			new TweenInfo(
 				0.1,
-				(Enum as any).EasingStyle.Linear,
-				(Enum as any).EasingDirection.In,
+				previewEnum.EasingStyle.Linear,
+				previewEnum.EasingDirection.In,
 			),
 			{
 				BackgroundColor3: Color3.fromRGB(255, 0, 0),
