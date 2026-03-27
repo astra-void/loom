@@ -50,7 +50,6 @@ function createPreviewPlugin(
 	runtimeModule?: string,
 ): PreviewPlugin {
 	const plugins = createPreviewPlugins(fixtureRoot, sourceRoot, runtimeModule);
-
 	const previewPlugin = plugins.find(
 		(plugin) =>
 			plugin &&

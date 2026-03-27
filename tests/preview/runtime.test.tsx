@@ -574,6 +574,43 @@ describe("preview runtime host mapping", () => {
 		expect(callOrder).toEqual(["child", "slot"]);
 	});
 
+	it("supports rbxts-react event interop props on preview hosts", async () => {
+		const user = userEvent.setup();
+		const activated = vi.fn();
+		const inputBegan = vi.fn();
+
+		render(
+			<TextButton
+				__previewReactEventActivated={activated}
+				__previewReactEventInputBegan={inputBegan}
+				Text="Interop trigger"
+			/>,
+		);
+
+		const button = screen.getByRole("button", { name: "Interop trigger" });
+
+		await user.click(button);
+		expect(activated).toHaveBeenCalledTimes(1);
+
+		activated.mockClear();
+		inputBegan.mockClear();
+		await user.keyboard("{Enter}");
+
+		expect(activated).toHaveBeenCalledTimes(1);
+		expect(inputBegan).toHaveBeenCalledTimes(1);
+		expect(inputBegan).toHaveBeenLastCalledWith(
+			expect.objectContaining({
+				AbsolutePosition: expect.any(Object),
+				AbsoluteSize: expect.any(Object),
+				IsA: expect.any(Function),
+			}),
+			expect.objectContaining({
+				KeyCode: "Enter",
+				UserInputType: "Keyboard",
+			}),
+		);
+	});
+
 	it("hoists decorator hosts into parent CSS without leaking preview-only props to the DOM", () => {
 		render(
 			<Frame Size={UDim2.fromOffset(120, 40)}>

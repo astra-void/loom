@@ -31,6 +31,23 @@ describe("browser react shims", () => {
 		expect(element.type).toBe(hostComponent);
 	});
 
+	it("exposes rbxts-react compatible Event and Change maps", async () => {
+		const reactShim = await import(
+			"../../packages/preview/src/source/react-shims/browser/react.js"
+		);
+
+		expect(reactShim.default.Event.Activated).toBe(
+			"__previewReactEventActivated",
+		);
+		expect(reactShim.default.Event.FocusLost).toBe(
+			"__previewReactEventFocusLost",
+		);
+		expect(reactShim.default.Event.InputBegan).toBe(
+			"__previewReactEventInputBegan",
+		);
+		expect(reactShim.default.Change.Text).toBe("__previewReactChangeText");
+	});
+
 	it("maps preview intrinsic hosts in jsx runtime", async () => {
 		const hostComponent = () => null;
 		(
