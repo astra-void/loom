@@ -67,7 +67,7 @@ export type CreatePreviewVitePluginOptions = {
 };
 
 function createWorkspaceSourceResolvePlugin(
-	workspaceGraphService: WorkspaceGraphService,
+	getWorkspaceGraphService: () => WorkspaceGraphService,
 	isBareModuleSpecifierFn: (specifier: string) => boolean,
 ): PreviewPluginOption {
 	return {
@@ -87,7 +87,7 @@ function createWorkspaceSourceResolvePlugin(
 				return undefined;
 			}
 
-			const resolution = workspaceGraphService.resolveImport({
+			const resolution = getWorkspaceGraphService().resolveImport({
 				importerFilePath: normalizedImporter,
 				specifier: id,
 			});
@@ -400,10 +400,6 @@ export function createPreviewVitePlugin(
 	const previewShellRoot = resolvePreviewShellRoot();
 	const rbxStyleImport = createRbxStyleImport(runtimeEntryPath);
 	const mockEntryPath = resolveMockEntryPath();
-	const workspaceGraphService = createWorkspaceGraphService({
-		targets: options.targets,
-		workspaceRoot: options.workspaceRoot,
-	});
 	const previewEngineOptions = {
 		projectName: options.projectName,
 		runtimeModule: runtimeEntryPath,
@@ -413,8 +409,26 @@ export function createPreviewVitePlugin(
 	} as Parameters<typeof createPreviewEngine>[0] & {
 		workspaceRoot?: string;
 	};
-	const previewEngine =
-		options.previewEngine ?? createPreviewEngine(previewEngineOptions);
+	let previewEngine: PreviewEngine | undefined;
+	let workspaceGraphService: WorkspaceGraphService | undefined;
+	const getWorkspaceGraphService = () => {
+		if (!workspaceGraphService) {
+			workspaceGraphService = createWorkspaceGraphService({
+				targets: options.targets,
+				workspaceRoot: options.workspaceRoot,
+			});
+		}
+
+		return workspaceGraphService;
+	};
+	const getPreviewEngine = () => {
+		if (!previewEngine) {
+			previewEngine =
+				options.previewEngine ?? createPreviewEngine(previewEngineOptions);
+		}
+
+		return previewEngine;
+	};
 	const watchRoots = resolveWatchRoots(options.targets);
 	let server: PreviewDevServer | undefined;
 
@@ -442,7 +456,7 @@ export function createPreviewVitePlugin(
 
 	const refreshPreviewEngine = (filePath: string) => {
 		try {
-			const update = previewEngine.invalidateSourceFiles([filePath]);
+			const update = getPreviewEngine().invalidateSourceFiles([filePath]);
 			invalidateVirtualModules(update.changedEntryIds);
 
 			if (server) {
@@ -480,7 +494,7 @@ export function createPreviewVitePlugin(
 					) => void;
 				}
 			).on?.(RUNTIME_ISSUES_EVENT, (issues: PreviewRuntimeIssue[]) => {
-				const update = previewEngine.replaceRuntimeIssues(
+				const update = getPreviewEngine().replaceRuntimeIssues(
 					Array.isArray(issues) ? issues : [],
 				);
 				invalidateVirtualModules(update.changedEntryIds);
@@ -491,18 +505,21 @@ export function createPreviewVitePlugin(
 				});
 			});
 			configuredServer.watcher.on("add", (filePath: string) => {
-				if (isWatchedCandidate(previewEngine, filePath)) {
+				const previewEngineInstance = getPreviewEngine();
+				if (isWatchedCandidate(previewEngineInstance, filePath)) {
 					refreshPreviewEngine(filePath);
 				}
 			});
 			configuredServer.watcher.on("unlink", (filePath: string) => {
-				if (isWatchedCandidate(previewEngine, filePath)) {
+				const previewEngineInstance = getPreviewEngine();
+				if (isWatchedCandidate(previewEngineInstance, filePath)) {
 					refreshPreviewEngine(filePath);
 				}
 			});
 		},
 		handleHotUpdate(context: { file: string }) {
-			if (!isWatchedCandidate(previewEngine, context.file)) {
+			const previewEngineInstance = getPreviewEngine();
+			if (!isWatchedCandidate(previewEngineInstance, context.file)) {
 				return undefined;
 			}
 
@@ -510,8 +527,10 @@ export function createPreviewVitePlugin(
 			return [];
 		},
 		load(id: string) {
+			const previewEngineInstance = getPreviewEngine();
+
 			if (id === RESOLVED_WORKSPACE_INDEX_MODULE_ID) {
-				return getWorkspaceModuleCode(previewEngine);
+				return getWorkspaceModuleCode(previewEngineInstance);
 			}
 
 			if (id === RESOLVED_RUNTIME_MODULE_ID) {
@@ -522,7 +541,11 @@ export function createPreviewVitePlugin(
 				const entryId = decodeURIComponent(
 					id.slice(RESOLVED_ENTRY_MODULE_ID_PREFIX.length),
 				);
-				return renderEntryModule(previewEngine, entryId, runtimeEntryPath);
+				return renderEntryModule(
+					previewEngineInstance,
+					entryId,
+					runtimeEntryPath,
+				);
 			}
 
 			return undefined;
@@ -543,10 +566,12 @@ export function createPreviewVitePlugin(
 			return undefined;
 		},
 		async transform(code: string, id: string) {
+			const previewEngineInstance = getPreviewEngine();
+			const workspaceGraphServiceInstance = getWorkspaceGraphService();
 			const filePath = stripFileIdDecorations(id);
 			const targetName = getTransformTargetName(
-				workspaceGraphService,
-				previewEngine,
+				workspaceGraphServiceInstance,
+				previewEngineInstance,
 				options.targets,
 				previewShellRoot,
 				filePath,
@@ -590,7 +615,7 @@ export function createPreviewVitePlugin(
 
 	return [
 		createWorkspaceSourceResolvePlugin(
-			workspaceGraphService,
+			getWorkspaceGraphService,
 			isBareModuleSpecifier,
 		),
 		createRuntimeDependencyResolvePlugin(),
