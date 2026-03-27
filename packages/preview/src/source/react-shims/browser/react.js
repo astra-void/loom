@@ -1,6 +1,28 @@
 import * as React from "react";
 
-export default React;
+const PREVIEW_INTRINSIC_HOSTS_SYMBOL = Symbol.for(
+	"loom-dev.preview-runtime.intrinsic-hosts",
+);
+
+function resolvePreviewIntrinsicHost(type) {
+	if (typeof type !== "string") {
+		return type;
+	}
+
+	const registry = globalThis[PREVIEW_INTRINSIC_HOSTS_SYMBOL];
+	return registry?.[type] ?? type;
+}
+
+function createElement(type, ...rest) {
+	return React.createElement(resolvePreviewIntrinsicHost(type), ...rest);
+}
+
+const previewReact = {
+	...React,
+	createElement,
+};
+
+export default previewReact;
 export {
 	__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE,
 	__COMPILER_RUNTIME,
@@ -13,7 +35,6 @@ export {
 	captureOwnerStack,
 	cloneElement,
 	createContext,
-	createElement,
 	createRef,
 	Fragment,
 	forwardRef,
@@ -47,3 +68,4 @@ export {
 	useTransition,
 	version,
 } from "react";
+export { createElement };

@@ -17,6 +17,8 @@ import { createErrorWithCause } from "../errorWithCause";
 import { normalizeTransformPreviewSourceResult } from "../transformResult";
 import {
 	isFilePathIncludedByTarget,
+	isFilePathUnderRoot,
+	resolveFilePath,
 	stripFileIdDecorations,
 } from "./pathUtils";
 import {
@@ -141,6 +143,18 @@ function resolveRuntimeEntryPath() {
 	}
 
 	return candidate.split(path.sep).join("/");
+}
+
+function resolvePreviewShellRoot() {
+	return resolvePreviewPackageEntry(
+		[
+			path.resolve(__dirname, "../shell"),
+			path.resolve(__dirname, "../../src/shell"),
+		],
+		"preview shell root",
+	)
+		.split(path.sep)
+		.join("/");
 }
 
 function resolveMockEntryPath() {
@@ -274,6 +288,37 @@ function getTransformTarget(targets: PreviewSourceTarget[], filePath: string) {
 	);
 }
 
+function getTransformTargetName(
+	workspaceGraphService: WorkspaceGraphService,
+	previewEngine: ReturnType<typeof createPreviewEngine>,
+	targets: PreviewSourceTarget[],
+	previewShellRoot: string,
+	filePath: string,
+) {
+	const normalizedFilePath = resolveFilePath(filePath);
+	const directTarget = getTransformTarget(targets, filePath);
+	if (directTarget) {
+		return directTarget.name;
+	}
+
+	const fileContext = workspaceGraphService.getFileContext(normalizedFilePath);
+	if (!previewEngine.isTrackedSourceFile(normalizedFilePath)) {
+		if (
+			!isTransformablePreviewSourceFile(normalizedFilePath) ||
+			!isFilePathUnderRoot(
+				workspaceGraphService.workspaceRoot,
+				normalizedFilePath,
+			) ||
+			isFilePathUnderRoot(previewShellRoot, normalizedFilePath) ||
+			fileContext.packageName?.startsWith("@loom-dev/preview")
+		) {
+			return undefined;
+		}
+	}
+
+	return fileContext.packageName ?? targets[0]?.name;
+}
+
 function resolveWatchRoots(targets: PreviewSourceTarget[]) {
 	return [
 		...new Set(
@@ -352,20 +397,24 @@ export function createPreviewVitePlugin(
 	const runtimeEntryPath = (
 		options.runtimeModule ?? resolveRuntimeEntryPath()
 	).replace(/\\/g, "/");
+	const previewShellRoot = resolvePreviewShellRoot();
 	const rbxStyleImport = createRbxStyleImport(runtimeEntryPath);
 	const mockEntryPath = resolveMockEntryPath();
 	const workspaceGraphService = createWorkspaceGraphService({
 		targets: options.targets,
 		workspaceRoot: options.workspaceRoot,
 	});
+	const previewEngineOptions = {
+		projectName: options.projectName,
+		runtimeModule: runtimeEntryPath,
+		targets: options.targets,
+		transformMode: options.transformMode ?? "strict-fidelity",
+		workspaceRoot: options.workspaceRoot,
+	} as Parameters<typeof createPreviewEngine>[0] & {
+		workspaceRoot?: string;
+	};
 	const previewEngine =
-		options.previewEngine ??
-		createPreviewEngine({
-			projectName: options.projectName,
-			runtimeModule: runtimeEntryPath,
-			targets: options.targets,
-			transformMode: options.transformMode ?? "strict-fidelity",
-		});
+		options.previewEngine ?? createPreviewEngine(previewEngineOptions);
 	const watchRoots = resolveWatchRoots(options.targets);
 	let server: PreviewDevServer | undefined;
 
@@ -495,8 +544,14 @@ export function createPreviewVitePlugin(
 		},
 		transform(code: string, id: string) {
 			const filePath = stripFileIdDecorations(id);
-			const target = getTransformTarget(options.targets, filePath);
-			if (!target) {
+			const targetName = getTransformTargetName(
+				workspaceGraphService,
+				previewEngine,
+				options.targets,
+				previewShellRoot,
+				filePath,
+			);
+			if (!targetName) {
 				return undefined;
 			}
 
@@ -504,7 +559,7 @@ export function createPreviewVitePlugin(
 				filePath,
 				mode: options.transformMode ?? "strict-fidelity",
 				runtimeModule: runtimeEntryPath,
-				target: target.name,
+				target: targetName,
 			});
 			if (transformed.code == null) {
 				const diagnosticMessage =
