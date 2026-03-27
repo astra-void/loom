@@ -5,5 +5,6 @@ allowBuilds:
   '@swc/core': true
   esbuild: true
 overrides:
+  picomatch@>=4.0.0 <4.0.4: '>=4.0.4'
   undici@>=7.0.0 <7.24.0: '>=7.24.0'
   undici@>=7.17.0 <7.24.0: '>=7.24.0'
