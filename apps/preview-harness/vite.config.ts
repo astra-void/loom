@@ -1,25 +1,21 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { loadPreviewConfig } from "@loom-dev/preview/config";
+import { createPreviewVitePlugin } from "@loom-dev/preview/vite";
 import type { PreviewExecutionMode } from "@loom-dev/preview-engine";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 import topLevelAwait from "vite-plugin-top-level-await";
 import wasm from "vite-plugin-wasm";
-import { loadPreviewConfig } from "../../packages/preview/src/config";
-import { createAutoMockPropsPlugin } from "../../packages/preview/src/source/autoMockPlugin";
-import { createPreviewVitePlugin } from "../../packages/preview/src/source/plugin";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const workspaceRoot = path.resolve(__dirname, "../..");
-const previewEngineEntry = path.resolve(
-	workspaceRoot,
-	"packages/preview-engine/src/index.ts",
-);
-const previewRuntimeEntry = path.resolve(
-	workspaceRoot,
-	"packages/preview-runtime/src/index.ts",
-);
+const _workspaceRoot = path.resolve(__dirname, "../..");
+const previewEngineEntry = "@loom-dev/preview-engine";
+const previewRuntimeEntry = path
+	.resolve(__dirname, "./src/mocks/roblox-env.ts")
+	.split(path.sep)
+	.join("/");
 const previewConfig = await loadPreviewConfig({ cwd: __dirname });
 const previewConfigRecord = previewConfig as Record<string, unknown>;
 
@@ -50,10 +46,7 @@ export default defineConfig({
 		],
 	},
 	plugins: [
-		createAutoMockPropsPlugin({
-			targets: previewConfig.targets,
-		}),
-		createPreviewVitePlugin({
+		await createPreviewVitePlugin({
 			projectName: previewConfig.projectName,
 			runtimeModule: previewConfig.runtimeModule ?? previewRuntimeEntry,
 			targets: previewConfig.targets,
