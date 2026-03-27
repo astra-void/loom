@@ -133,6 +133,7 @@ export interface PreviewUserInputService {
 
 export interface PreviewGuiService {
 	readonly ClassName: "GuiService";
+	SelectedObject: HTMLElement | null;
 	readonly Name: "GuiService";
 	GetFullName(): string;
 	GetGuiInset(): readonly [{ X: 0; Y: 0 }, { X: 0; Y: 0 }];
@@ -267,6 +268,20 @@ function withRobloxFallback<T extends object>(target: T): T {
 			);
 		},
 	});
+}
+
+function defineOwnPropertyIfMissing<T extends object>(
+	target: T,
+	property: PropertyKey,
+	descriptor: PropertyDescriptor,
+) {
+	const existingDescriptor = Object.getOwnPropertyDescriptor(target, property);
+	if (existingDescriptor) {
+		return existingDescriptor;
+	}
+
+	Object.defineProperty(target, property, descriptor);
+	return descriptor;
 }
 
 function createServiceBase(name: PreviewServiceName | "game") {
@@ -726,8 +741,9 @@ function createUserInputService(): PreviewUserInputService {
 
 function createGuiService(): PreviewGuiService {
 	const zeroVector = Object.freeze({ X: 0 as const, Y: 0 as const });
+	let selectedObject: HTMLElement | null = null;
 
-	return withRobloxFallback({
+	const guiServiceBase: Partial<PreviewGuiService> = {
 		ClassName: "GuiService" as const,
 		Name: "GuiService" as const,
 		...createServiceBase("GuiService"),
@@ -737,7 +753,20 @@ function createGuiService(): PreviewGuiService {
 		IsTenFootInterface() {
 			return false as const;
 		},
+	};
+
+	defineOwnPropertyIfMissing(guiServiceBase, "SelectedObject", {
+		configurable: true,
+		enumerable: false,
+		get() {
+			return selectedObject;
+		},
+		set(value: unknown) {
+			selectedObject = getDomElement(value);
+		},
 	});
+
+	return withRobloxFallback(guiServiceBase as PreviewGuiService);
 }
 
 function createWorkspaceService(): PreviewWorkspace {
