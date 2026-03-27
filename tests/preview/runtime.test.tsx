@@ -43,6 +43,7 @@ import userEvent from "@testing-library/user-event";
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { suppressExpectedConsoleMessages } from "../testLogUtils";
+import { getLocalPlayerGui } from "../../apps/preview-harness/src/test-utils";
 
 type LayoutRect = { height: number; width: number; x: number; y: number };
 type SerializedAxis = { offset: number; scale: number };
@@ -335,6 +336,35 @@ afterEach(() => {
 	rafController = undefined;
 	cleanup();
 	vi.restoreAllMocks();
+});
+
+describe("preview runtime Roblox globals", () => {
+	it("exposes a LocalPlayer.PlayerGui container for preview portals", () => {
+		const players = game.GetService("Players") as {
+			LocalPlayer: {
+				FindFirstChild(name: string): unknown;
+				PlayerGui: {
+					appendChild(node: Node): Node;
+					GetFullName(): string;
+					GetGuiObjectsAtPosition(x: number, y: number): unknown[];
+					IsA(name: string): boolean;
+				};
+				WaitForChild(name: string): unknown;
+			};
+		};
+		const playerGui = getLocalPlayerGui();
+
+		expect(playerGui).toBe(players.LocalPlayer.PlayerGui);
+		expect(playerGui).toBeInstanceOf(HTMLElement);
+		expect(isPreviewElement(playerGui, "BasePlayerGui")).toBe(true);
+		expect(players.LocalPlayer.PlayerGui.IsA("BasePlayerGui")).toBe(true);
+		expect(players.LocalPlayer.PlayerGui.GetFullName()).toBe(
+			"Players.LocalPlayer.PlayerGui",
+		);
+		expect(
+			players.LocalPlayer.PlayerGui.GetGuiObjectsAtPosition(0, 0),
+		).toEqual([]);
+	});
 });
 
 describe("preview runtime host mapping", () => {
