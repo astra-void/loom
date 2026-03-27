@@ -1,0 +1,36 @@
+{
+	"name": "@loom-dev/preview-graph",
+	"version": "0.1.0",
+	"private": false,
+	"description": "WASM-backed preview graph traversal and trace engine for Loom.",
+	"main": "pkg/preview_graph.js",
+	"types": "pkg/preview_graph.d.ts",
+	"files": [
+		"pkg/preview_graph.d.ts",
+		"pkg/preview_graph.js",
+		"pkg/preview_graph_bg.js",
+		"pkg/preview_graph_bg.wasm",
+		"pkg/preview_graph_bg.wasm.d.ts",
+		"README.md"
+	],
+	"scripts": {
+		"build:native": "PATH=\"$HOME/.cargo/bin:$PATH\" wasm-pack build --target nodejs --out-dir pkg",
+		"build": "PATH=\"$HOME/.cargo/bin:$PATH\" wasm-pack build --target nodejs --out-dir pkg",
+		"build:release": "PATH=\"$HOME/.cargo/bin:$PATH\" wasm-pack build --release --target nodejs --out-dir pkg",
+		"build:rust": "PATH=\"$HOME/.cargo/bin:$PATH\" cargo build",
+		"format": "cargo fmt --all",
+		"lint": "cargo fmt --all --check && cargo check",
+		"lint:fix": "cargo fmt --all",
+		"prepack": "pnpm run build:release",
+		"test": "cargo test"
+	},
+	"exports": {
+		".": {
+			"types": "./pkg/preview_graph.d.ts",
+			"import": "./pkg/preview_graph.js",
+			"require": "./pkg/preview_graph.js",
+			"default": "./pkg/preview_graph.js"
+		},
+		"./preview_graph_bg.wasm": "./pkg/preview_graph_bg.wasm"
+	}
+}
