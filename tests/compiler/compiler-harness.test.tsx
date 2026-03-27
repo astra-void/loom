@@ -1,7 +1,7 @@
-// @vitest-environment jsdom
+﻿// @vitest-environment jsdom
 
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
+import userEvent from "../testUserEvent";
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -83,3 +83,4 @@ describe("compiler harness", () => {
 		expect(screen.getByText(/Unexpected end of input/)).toBeTruthy();
 	});
 });
+

@@ -1,4 +1,4 @@
-import fs from "node:fs";
+﻿import fs from "node:fs";
 import path from "node:path";
 import ts from "typescript";
 import {
@@ -6,6 +6,11 @@ import {
 	isFilePathUnderRoot,
 	resolveRealFilePath,
 } from "./pathUtils";
+import {
+	collectGraphTraceWithPreviewGraph,
+	collectTransitiveDependencyPathsWithPreviewGraph,
+	type PreviewGraphRecordSnapshot,
+} from "./previewGraphWasm";
 import type {
 	CreatePreviewEngineOptions,
 	PreviewDiagnostic,
@@ -321,7 +326,7 @@ function findMarkerRoot(candidate: string): string {
 	}
 }
 
-function findNearestPackageRoot(filePath: string) {
+function _findNearestPackageRoot(filePath: string) {
 	let current =
 		fs.existsSync(filePath) && fs.statSync(filePath).isDirectory()
 			? filePath
@@ -980,38 +985,35 @@ function resolvePreviewEntryExport(
 	};
 }
 
+function toPreviewGraphRecords(
+	recordsByPath: Map<string, RawSourceModuleRecord>,
+) {
+	return [...recordsByPath.values()]
+		.map(
+			(record) =>
+				({
+					filePath: record.filePath,
+					graphEdges: record.graphEdges,
+					imports: record.imports,
+					ownerPackageName: record.ownerPackageName,
+					ownerPackageRoot: record.ownerPackageRoot,
+					...(record.project?.configPath
+						? { projectConfigPath: record.project.configPath }
+						: {}),
+				}) satisfies PreviewGraphRecordSnapshot,
+		)
+		.sort((left, right) => left.filePath.localeCompare(right.filePath));
+}
+
 function collectTransitivePaths(
 	filePath: string,
 	recordsByPath: Map<string, RawSourceModuleRecord>,
-	visited = new Set<string>(),
-	collected: string[] = [],
 ) {
-	if (visited.has(filePath)) {
-		return collected;
-	}
-
-	visited.add(filePath);
-	collected.push(filePath);
-
-	const record = recordsByPath.get(filePath);
-	if (!record) {
-		return collected;
-	}
-
-	const dependencyPaths = new Set<string>(record.imports);
-	for (const edge of record.graphEdges) {
-		if (edge.resolvedFile) {
-			dependencyPaths.add(edge.resolvedFile);
-		}
-	}
-
-	for (const importPath of dependencyPaths) {
-		collectTransitivePaths(importPath, recordsByPath, visited, collected);
-	}
-
-	return collected;
+	return collectTransitiveDependencyPathsWithPreviewGraph(
+		toPreviewGraphRecords(recordsByPath),
+		filePath,
+	);
 }
-
 function collectTransitiveDiagnostics(
 	entryId: string,
 	filePath: string,
@@ -1064,92 +1066,12 @@ function collectTransitiveGraphTrace(
 	recordsByPath: Map<string, RawSourceModuleRecord>,
 	selectionTrace: PreviewGraphTrace["selection"],
 ) {
-	const visited = new Set<string>();
-	const imports = new Map<string, PreviewGraphImportEdge>();
-	const boundaryHops = new Map<
-		string,
-		PreviewGraphTrace["boundaryHops"][number]
-	>();
-	const traversedProjects = new Map<
-		string,
-		NonNullable<PreviewGraphTrace["traversedProjects"]>[number]
-	>();
-	let stopReason: PreviewGraphTrace["stopReason"] | undefined;
-
-	const visit = (filePath: string) => {
-		if (visited.has(filePath)) {
-			return;
-		}
-
-		visited.add(filePath);
-		const record = recordsByPath.get(filePath);
-		if (!record) {
-			return;
-		}
-
-		if (record.project) {
-			traversedProjects.set(record.project.configPath, {
-				configPath: record.project.configPath,
-				packageName: record.ownerPackageName,
-				packageRoot: record.ownerPackageRoot,
-			});
-		}
-
-		for (const edge of record.graphEdges) {
-			const key = `${edge.importerFile}:${edge.specifier}:${edge.resolvedFile ?? edge.stopReason ?? "none"}`;
-			imports.set(key, edge);
-			if (!stopReason && edge.stopReason) {
-				stopReason = edge.stopReason;
-			}
-
-			if (edge.crossesPackageBoundary && edge.resolvedFile) {
-				const hop = {
-					fromFile: edge.importerFile,
-					fromPackageRoot: findNearestPackageRoot(edge.importerFile),
-					toFile: edge.resolvedFile,
-					toPackageRoot: findNearestPackageRoot(edge.resolvedFile),
-				};
-				boundaryHops.set(`${hop.fromFile}:${hop.toFile}`, hop);
-			}
-		}
-
-		const dependencyPaths = new Set<string>(record.imports);
-		for (const edge of record.graphEdges) {
-			if (edge.resolvedFile) {
-				dependencyPaths.add(edge.resolvedFile);
-			}
-		}
-
-		for (const importPath of dependencyPaths) {
-			visit(importPath);
-		}
-	};
-
-	visit(entryFilePath);
-
-	return {
-		boundaryHops: [...boundaryHops.values()].sort((left, right) =>
-			left.toFile.localeCompare(right.toFile),
-		),
-		imports: [...imports.values()].sort((left, right) => {
-			if (left.importerFile !== right.importerFile) {
-				return left.importerFile.localeCompare(right.importerFile);
-			}
-
-			return left.specifier.localeCompare(right.specifier);
-		}),
-		selection: selectionTrace,
-		...(traversedProjects.size > 0
-			? {
-					traversedProjects: [...traversedProjects.values()].sort(
-						(left, right) => left.configPath.localeCompare(right.configPath),
-					),
-				}
-			: {}),
-		...(stopReason ? { stopReason } : {}),
-	} satisfies PreviewGraphTrace;
+	return collectGraphTraceWithPreviewGraph(
+		toPreviewGraphRecords(recordsByPath),
+		entryFilePath,
+		selectionTrace,
+	);
 }
-
 function createEntryDiagnostic(
 	code: PreviewDiscoveryDiagnosticCode,
 	entryId: string,
@@ -1448,6 +1370,17 @@ function buildDescriptor(
 		recordsByPath,
 		selectionTrace,
 	);
+	if (graphTrace.stopReason === "graph-cycle") {
+		entryDiagnostics.push(
+			createEntryDiagnostic(
+				"GRAPH_CYCLE_DETECTED",
+				entryId,
+				record.filePath,
+				record.target.packageRoot,
+				`Preview graph detected a cycle while traversing ${record.relativePath}.`,
+			),
+		);
+	}
 	const dependencyPaths = collectTransitivePaths(
 		record.filePath,
 		recordsByPath,

@@ -1,4 +1,4 @@
-// @vitest-environment jsdom
+﻿// @vitest-environment jsdom
 
 import type {
 	PreviewDiagnostic,
@@ -6,7 +6,7 @@ import type {
 	PreviewEntryPayload,
 } from "@loom-dev/preview-engine";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
+import userEvent from "../testUserEvent";
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PreviewApp } from "../../packages/preview/src/shell/PreviewApp";
@@ -819,3 +819,4 @@ describe("preview shell", () => {
 		).toBeNull();
 	});
 });
+

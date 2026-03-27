@@ -1,4 +1,4 @@
-// @vitest-environment jsdom
+﻿// @vitest-environment jsdom
 
 import type {
 	PreviewDiagnostic,
@@ -9,7 +9,7 @@ import type {
 } from "@loom-dev/preview-engine";
 import type { PreviewRuntimeIssue } from "@loom-dev/preview-runtime";
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
+import userEvent from "../testUserEvent";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PREVIEW_ENGINE_PROTOCOL_VERSION } from "../../packages/preview-engine/src/types";
 
@@ -462,3 +462,4 @@ describe("PreviewWorkspaceApp", () => {
 		);
 	});
 });
+

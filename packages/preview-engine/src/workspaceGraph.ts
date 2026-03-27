@@ -1,4 +1,4 @@
-import fs from "node:fs";
+﻿import fs from "node:fs";
 import path from "node:path";
 import ts from "typescript";
 import {
@@ -6,6 +6,10 @@ import {
 	isFilePathUnderRoot,
 	resolveRealFilePath,
 } from "./pathUtils";
+import {
+	collectTransitiveDependencyPathsWithPreviewGraph,
+	type PreviewGraphRecordSnapshot,
+} from "./previewGraphWasm";
 import type { PreviewGraphImportEdge, PreviewSourceTarget } from "./types";
 
 const TRANSFORMABLE_SOURCE_EXTENSIONS = new Set([".ts", ".tsx"]);
@@ -1133,23 +1137,17 @@ export function createWorkspaceGraphService(options: {
 		};
 	};
 
-	const collectTransitiveDependencyPaths = (filePath: string) => {
-		const normalizedFilePath = resolveRealFilePath(filePath);
-		const cachedDependencies = dependencyMemo.get(normalizedFilePath);
-		if (cachedDependencies) {
-			return cachedDependencies;
-		}
-
+	const collectPreviewGraphSnapshot = (entryFilePath: string) => {
+		const normalizedEntryFilePath = resolveRealFilePath(entryFilePath);
 		if (
-			!fs.existsSync(normalizedFilePath) ||
-			!isTraceableSourceFile(normalizedFilePath)
+			!fs.existsSync(normalizedEntryFilePath) ||
+			!isTraceableSourceFile(normalizedEntryFilePath)
 		) {
-			dependencyMemo.set(normalizedFilePath, []);
-			return [];
+			return [] as PreviewGraphRecordSnapshot[];
 		}
 
 		const visited = new Set<string>();
-		const dependencies = new Set<string>();
+		const recordsByPath = new Map<string, PreviewGraphRecordSnapshot>();
 
 		const visit = (nextFilePath: string) => {
 			const normalizedNextFilePath = resolveRealFilePath(nextFilePath);
@@ -1163,26 +1161,62 @@ export function createWorkspaceGraphService(options: {
 
 			visited.add(normalizedNextFilePath);
 
+			const imports = new Set<string>();
+			const graphEdges: PreviewGraphImportEdge[] = [];
+
 			for (const specifier of getModuleSpecifiers(normalizedNextFilePath)) {
 				const resolution = resolveImport({
 					importerFilePath: normalizedNextFilePath,
 					specifier,
 				});
-				if (!resolution?.followedFilePath) {
-					continue;
+				if (resolution?.edge) {
+					graphEdges.push(resolution.edge);
 				}
 
-				dependencies.add(resolution.followedFilePath);
-				visit(resolution.followedFilePath);
+				if (resolution?.followedFilePath) {
+					imports.add(resolution.followedFilePath);
+					visit(resolution.followedFilePath);
+				}
 			}
+
+			const fileContext = getFileContext(normalizedNextFilePath);
+			recordsByPath.set(normalizedNextFilePath, {
+				filePath: normalizedNextFilePath,
+				graphEdges,
+				imports: [...imports].sort((left, right) => left.localeCompare(right)),
+				ownerPackageName: fileContext.packageName,
+				ownerPackageRoot: fileContext.packageRoot,
+				...(fileContext.project?.configPath
+					? { projectConfigPath: fileContext.project.configPath }
+					: {}),
+			});
 		};
 
-		visit(normalizedFilePath);
-		const sortedDependencies = [...dependencies].sort((left, right) =>
-			left.localeCompare(right),
+		visit(normalizedEntryFilePath);
+		return [...recordsByPath.values()].sort((left, right) =>
+			left.filePath.localeCompare(right.filePath),
 		);
-		dependencyMemo.set(normalizedFilePath, sortedDependencies);
-		return sortedDependencies;
+	};
+
+	const collectTransitiveDependencyPaths = (filePath: string) => {
+		const normalizedFilePath = resolveRealFilePath(filePath);
+		const cachedDependencies = dependencyMemo.get(normalizedFilePath);
+		if (cachedDependencies) {
+			return cachedDependencies;
+		}
+
+		const graphSnapshot = collectPreviewGraphSnapshot(normalizedFilePath);
+		if (graphSnapshot.length === 0) {
+			dependencyMemo.set(normalizedFilePath, []);
+			return [];
+		}
+
+		const dependencies = collectTransitiveDependencyPathsWithPreviewGraph(
+			graphSnapshot,
+			normalizedFilePath,
+		).sort((left, right) => left.localeCompare(right));
+		dependencyMemo.set(normalizedFilePath, dependencies);
+		return dependencies;
 	};
 
 	return {

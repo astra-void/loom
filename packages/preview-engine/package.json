@@ -22,6 +22,7 @@
 	},
 	"dependencies": {
 		"@loom-dev/compiler": "workspace:*",
+		"@loom-dev/preview-graph": "workspace:*",
 		"@loom-dev/preview-runtime": "workspace:*",
 		"typescript": "5.9.3"
 	},

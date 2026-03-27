@@ -1,4 +1,4 @@
-// @vitest-environment jsdom
+﻿// @vitest-environment jsdom
 
 import {
 	BillboardGui,
@@ -39,7 +39,7 @@ import {
 	ViewportFrame,
 } from "@loom-dev/preview-runtime";
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
+import userEvent from "../testUserEvent";
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { suppressExpectedConsoleMessages } from "../testLogUtils";
@@ -1906,3 +1906,4 @@ describe("preview runtime host mapping", () => {
 		expect(snapshots[snapshots.length - 1]).toEqual(getPreviewRuntimeIssues());
 	});
 });
+

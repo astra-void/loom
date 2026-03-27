@@ -131,7 +131,7 @@ function createDeepMockMember(path: readonly PropertyKey[]): DeepMockMember {
 		return nextMember;
 	};
 
-	return new Proxy(callableTarget, {
+	return new globalThis.Proxy(callableTarget, {
 		apply() {
 			return createDeepMockObject(path);
 		},
@@ -219,33 +219,36 @@ function createDeepMockObject(path: readonly PropertyKey[] = []) {
 		return nextMember;
 	};
 
-	return new Proxy(Object.create(null) as Record<PropertyKey, unknown>, {
-		get(_target, key) {
-			return resolveMember(key);
-		},
-		getOwnPropertyDescriptor(_target, key) {
-			const value = resolveMember(key);
-			if (value === undefined) {
-				return undefined;
-			}
+	return new globalThis.Proxy(
+		Object.create(null) as Record<PropertyKey, unknown>,
+		{
+			get(_target, key) {
+				return resolveMember(key);
+			},
+			getOwnPropertyDescriptor(_target, key) {
+				const value = resolveMember(key);
+				if (value === undefined) {
+					return undefined;
+				}
 
-			return {
-				configurable: true,
-				enumerable: false,
-				value,
-				writable: true,
-			};
+				return {
+					configurable: true,
+					enumerable: false,
+					value,
+					writable: true,
+				};
+			},
+			has() {
+				return true;
+			},
+			ownKeys() {
+				return [];
+			},
+			set() {
+				return true;
+			},
 		},
-		has() {
-			return true;
-		},
-		ownKeys() {
-			return [];
-		},
-		set() {
-			return true;
-		},
-	});
+	);
 }
 
 function shouldAutoMockOptionalProp(
