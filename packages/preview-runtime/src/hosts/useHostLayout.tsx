@@ -30,6 +30,21 @@ const LayoutChildOrderContext = React.createContext<{
 	passId: number;
 } | null>(null);
 
+function createZeroVector2() {
+	return { X: 0, Y: 0 };
+}
+
+function getHostPropertyFallback(property: string) {
+	switch (property) {
+		case "AbsolutePosition":
+		case "AbsoluteSize":
+		case "CanvasPosition":
+			return createZeroVector2();
+		default:
+			return undefined;
+	}
+}
+
 function PreviewLayoutChildOrderProvider(props: { children: React.ReactNode }) {
 	const counterRef = React.useRef(0);
 	counterRef.current = 0;
@@ -284,7 +299,8 @@ export function useHostLayout(host: LayoutHostName, props: PreviewDomProps) {
 		}
 
 		installPreviewHostPropertyBridge(element, nodeId, (property) => {
-			return (basePropsRef.current as Record<string, unknown>)[property];
+			const value = (basePropsRef.current as Record<string, unknown>)[property];
+			return value ?? getHostPropertyFallback(property);
 		});
 
 		return () => {

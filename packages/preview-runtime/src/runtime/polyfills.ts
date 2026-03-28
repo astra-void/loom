@@ -25,11 +25,16 @@ declare global {
 	interface Array<T> {
 		size(this: T[]): number;
 		isEmpty(this: T[]): boolean;
+		remove(this: T[], indexOrValue: number | T): T | undefined;
 	}
 
 	interface ReadonlyArray<T> {
 		size(this: readonly T[]): number;
 		isEmpty(this: readonly T[]): boolean;
+	}
+
+	interface Set<T> {
+		remove(this: Set<T>, value: T): boolean;
 	}
 }
 
@@ -178,6 +183,37 @@ function installArrayPolyfills() {
 		T,
 	>(this: Array<T>) {
 		return this.length === 0;
+	});
+	definePrototypeMethod(Array.prototype, "remove", function remove<
+		T,
+	>(this: T[], indexOrValue: number | T) {
+		if (typeof indexOrValue === "number" && Number.isFinite(indexOrValue)) {
+			const normalizedIndex =
+				indexOrValue === 0
+					? 1
+					: indexOrValue < 0
+						? this.length + Math.trunc(indexOrValue) + 1
+						: Math.trunc(indexOrValue);
+
+			const zeroBasedIndex = normalizedIndex - 1;
+			if (zeroBasedIndex >= 0 && zeroBasedIndex < this.length) {
+				return this.splice(zeroBasedIndex, 1)[0];
+			}
+		}
+
+		const valueIndex = this.indexOf(indexOrValue as T);
+		if (valueIndex >= 0) {
+			return this.splice(valueIndex, 1)[0];
+		}
+
+		return undefined;
+	});
+
+	definePrototypeMethod(Set.prototype, "remove", function remove<
+		T,
+	>(this: Set<T>, value: T) {
+		this.delete(value);
+		return true;
 	});
 }
 

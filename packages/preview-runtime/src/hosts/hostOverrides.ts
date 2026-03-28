@@ -11,9 +11,12 @@ const HOST_OVERRIDE_STORE_KEY = Symbol.for(
 const emptySnapshot = Object.freeze({}) as Readonly<Record<string, unknown>>;
 
 export const bridgedPreviewHostProperties = [
+	"AbsolutePosition",
+	"AbsoluteSize",
 	"AnchorPoint",
 	"BackgroundColor3",
 	"BackgroundTransparency",
+	"CanvasPosition",
 	"Position",
 	"Size",
 	"TextColor3",
@@ -51,8 +54,18 @@ type GlobalHostOverrideStore = typeof globalThis & {
 	[HOST_OVERRIDE_STORE_KEY]?: HostOverrideStore;
 };
 
+type PreviewSignalConnection = {
+	Disconnect(): void;
+};
+
+type PreviewPropertyChangedSignal = {
+	Connect(): PreviewSignalConnection;
+};
+
 type PreviewHostElement = HTMLElement & {
 	[HOST_BRIDGE_STATE_KEY]?: HostBridgeState;
+	GetChildren?: () => unknown[];
+	GetPropertyChangedSignal?: (property: string) => PreviewPropertyChangedSignal;
 };
 
 function hasOwn(value: object, property: PropertyKey) {
@@ -212,6 +225,34 @@ export function installPreviewHostPropertyBridge(
 
 	state.getBaseValue = getBaseValue;
 	state.nodeId = nodeId;
+
+	if (!hasOwn(previewElement, "GetChildren")) {
+		Object.defineProperty(previewElement, "GetChildren", {
+			configurable: true,
+			enumerable: false,
+			value() {
+				return [];
+			},
+			writable: true,
+		});
+	}
+
+	if (!hasOwn(previewElement, "GetPropertyChangedSignal")) {
+		Object.defineProperty(previewElement, "GetPropertyChangedSignal", {
+			configurable: true,
+			enumerable: false,
+			value() {
+				return {
+					Connect() {
+						return {
+							Disconnect() {},
+						};
+					},
+				};
+			},
+			writable: true,
+		});
+	}
 
 	for (const property of bridgedPreviewHostProperties) {
 		definePreviewHostBridgeProperty(previewElement, property, state);

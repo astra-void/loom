@@ -330,7 +330,11 @@ function createRenderedDomProps(node: PreviewHostNode) {
 		...(domProps.style as React.CSSProperties | undefined),
 	};
 
-	applyComputedLayoutStyle(style, node.computed ?? null, node.layoutDebug?.inheritedParentRect ?? null);
+	applyComputedLayoutStyle(
+		style,
+		node.computed ?? null,
+		node.layoutDebug?.inheritedParentRect ?? null,
+	);
 	applyPaddingStyle(
 		style,
 		node.layoutModifiers?.padding,
