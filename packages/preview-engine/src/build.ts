@@ -2,10 +2,11 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import compiler from "@loom-dev/compiler";
+import { pathToFileURL } from "node:url";
 import ts from "typescript";
 import { createPreviewEngine } from "./engine";
 import { resolveRealFilePath } from "./pathUtils";
+import { normalizeTransformPreviewSourceResult } from "./transformResult";
 import type {
 	PreviewBuildArtifactKind,
 	PreviewBuildDiagnostic,
@@ -28,6 +29,9 @@ import { createWorkspaceGraphService } from "./workspaceGraph";
 const BUILD_MANIFEST_FILE = ".loom-preview-manifest.json";
 const BUILD_MANIFEST_VERSION = 2;
 const DEFAULT_RUNTIME_MODULE = "@loom-dev/preview-runtime";
+const DEFAULT_RUNTIME_ALIASES: string[] = [];
+const DEFAULT_REACT_ALIASES = ["@rbxts/react"];
+const DEFAULT_REACT_ROBLOX_ALIASES = ["@rbxts/react-roblox"];
 const CACHE_NAMESPACES = [
 	"transform",
 	"entry-metadata",
@@ -36,6 +40,38 @@ const CACHE_NAMESPACES = [
 ] as const;
 
 type CacheNamespace = (typeof CACHE_NAMESPACES)[number];
+
+type PreviewCompiler =
+	| typeof import("@loom-dev/compiler/sync")
+	| typeof import("@loom-dev/compiler/wasm");
+
+function resolveAliasList(defaults: string[], extras?: string[]) {
+	return [...new Set([...defaults, ...(extras ?? [])])];
+}
+
+let compilerPromise: Promise<PreviewCompiler> | undefined;
+const nativeImport = new Function("specifier", "return import(specifier);") as (
+	specifier: string,
+) => Promise<typeof import("@loom-dev/compiler/wasm")>;
+
+function loadCompilerModule() {
+	if (process.env.VITEST) {
+		return import(
+			/* @vite-ignore */
+			pathToFileURL(path.resolve(__dirname, "../../compiler/sync.mjs")).href
+		);
+	}
+
+	return nativeImport("@loom-dev/compiler/wasm");
+}
+
+async function getCompiler() {
+	if (!compilerPromise) {
+		compilerPromise = loadCompilerModule();
+	}
+
+	return compilerPromise;
+}
 
 type BuildTargetContext = {
 	configHash: string;
@@ -88,9 +124,6 @@ type CachedLayoutSchemaArtifactRecord = PreviewCachedArtifactMetadata & {
 	relativePath: string;
 	schema: PreviewLayoutSchemaSidecar;
 };
-
-const { normalizeTransformPreviewSourceResult, transformPreviewSource } =
-	compiler;
 
 function hashText(value: string) {
 	return createHash("sha1").update(value).digest("hex");
@@ -511,7 +544,10 @@ function ensureCacheDirectories(cacheDir: string) {
 function createModuleCacheKey(
 	record: SourceModuleRecord,
 	options: {
+		reactAliases: string[];
+		reactRobloxAliases: string[];
 		runtimeModule: string;
+		runtimeAliases: string[];
 		transformMode: PreviewExecutionMode;
 		versions: ReturnType<typeof getBuildVersionFingerprint>;
 	},
@@ -521,9 +557,12 @@ function createModuleCacheKey(
 			artifactKind: "module",
 			configHash: record.configHash,
 			dependencyGraphHash: record.dependencyGraphHash,
+			reactAliases: options.reactAliases,
+			reactRobloxAliases: options.reactRobloxAliases,
 			protocolVersion: options.versions.protocolVersion,
 			relativePath: record.relativePath,
 			runtimeModule: options.runtimeModule,
+			runtimeAliases: options.runtimeAliases,
 			sourceHash: record.sourceHash,
 			targetName: record.target.name,
 			transformMode: options.transformMode,
@@ -535,7 +574,10 @@ function createModuleCacheKey(
 function createEntryPayloadCacheKey(
 	payload: PreviewEntryPayload,
 	options: {
+		reactAliases: string[];
+		reactRobloxAliases: string[];
 		runtimeModule: string;
+		runtimeAliases: string[];
 		transformMode: PreviewExecutionMode;
 		versions: ReturnType<typeof getBuildVersionFingerprint>;
 	},
@@ -543,9 +585,12 @@ function createEntryPayloadCacheKey(
 	return hashText(
 		JSON.stringify({
 			artifactKind: "entry-metadata",
+			reactAliases: options.reactAliases,
+			reactRobloxAliases: options.reactRobloxAliases,
 			payload,
 			protocolVersion: options.versions.protocolVersion,
 			runtimeModule: options.runtimeModule,
+			runtimeAliases: options.runtimeAliases,
 			targetName: payload.descriptor.targetName,
 			transformMode: options.transformMode,
 			versions: options.versions,
@@ -556,7 +601,10 @@ function createEntryPayloadCacheKey(
 function createLayoutSchemaCacheKey(
 	schema: PreviewLayoutSchemaSidecar,
 	options: {
+		reactAliases: string[];
+		reactRobloxAliases: string[];
 		runtimeModule: string;
+		runtimeAliases: string[];
 		transformMode: PreviewExecutionMode;
 		versions: ReturnType<typeof getBuildVersionFingerprint>;
 	},
@@ -564,8 +612,11 @@ function createLayoutSchemaCacheKey(
 	return hashText(
 		JSON.stringify({
 			artifactKind: "layout-schema",
+			reactAliases: options.reactAliases,
+			reactRobloxAliases: options.reactRobloxAliases,
 			protocolVersion: options.versions.protocolVersion,
 			runtimeModule: options.runtimeModule,
+			runtimeAliases: options.runtimeAliases,
 			schema,
 			targetName: schema.descriptor.targetName,
 			transformMode: options.transformMode,
@@ -600,14 +651,20 @@ function isPreviewDiagnostic(
 
 function createBuildManifestKey(options: {
 	artifactKinds: PreviewBuildArtifactKind[];
+	reactAliases: string[];
+	reactRobloxAliases: string[];
 	projectName: string;
+	runtimeAliases: string[];
 	targets: PreviewSourceTarget[];
 	transformMode: PreviewExecutionMode;
 }) {
 	return hashText(
 		JSON.stringify({
 			artifactKinds: options.artifactKinds,
+			reactAliases: options.reactAliases,
+			reactRobloxAliases: options.reactRobloxAliases,
 			projectName: options.projectName,
+			runtimeAliases: options.runtimeAliases,
 			targets: options.targets.map((target) => ({
 				exclude: target.exclude,
 				include: target.include,
@@ -744,6 +801,7 @@ function collectBlockingTransformDiagnostics(
 export async function buildPreviewArtifacts(
 	options: PreviewBuildOptions,
 ): Promise<PreviewBuildResult> {
+	const compiler = await getCompiler();
 	const targets = options.targets.map((target) => ({
 		...target,
 		packageName: target.packageName ?? target.name,
@@ -752,6 +810,18 @@ export async function buildPreviewArtifacts(
 	}));
 	const transformMode = options.transformMode ?? "strict-fidelity";
 	const runtimeModule = options.runtimeModule ?? DEFAULT_RUNTIME_MODULE;
+	const runtimeAliases = resolveAliasList(
+		DEFAULT_RUNTIME_ALIASES,
+		options.runtimeAliases,
+	);
+	const reactAliases = resolveAliasList(
+		DEFAULT_REACT_ALIASES,
+		options.reactAliases,
+	);
+	const reactRobloxAliases = resolveAliasList(
+		DEFAULT_REACT_ROBLOX_ALIASES,
+		options.reactRobloxAliases,
+	);
 	const workspaceRoot = resolveRealFilePath(
 		options.workspaceRoot ??
 			findWorkspaceRoot(targets.map((target) => target.packageRoot)),
@@ -798,7 +868,10 @@ export async function buildPreviewArtifacts(
 
 	await runWithConcurrency(concurrency, moduleRecords, async (record) => {
 		const cacheKey = createModuleCacheKey(record, {
+			reactAliases,
+			reactRobloxAliases,
 			runtimeModule,
+			runtimeAliases,
 			transformMode,
 			versions,
 		});
@@ -811,10 +884,13 @@ export async function buildPreviewArtifacts(
 			let transformed: ReturnType<typeof normalizeTransformPreviewSourceResult>;
 			try {
 				transformed = normalizeTransformPreviewSourceResult(
-					transformPreviewSource(sourceText, {
+					compiler.transformPreviewSource(sourceText, {
 						filePath: record.sourceFilePath,
 						mode: transformMode,
+						reactAliases,
+						reactRobloxAliases,
 						runtimeModule,
+						runtimeAliases,
 						target: record.target.name,
 					}),
 					transformMode,
@@ -892,8 +968,12 @@ export async function buildPreviewArtifacts(
 		artifactKinds.includes("layout-schema")
 	) {
 		const activePreviewEngine = createPreviewEngine({
+			compiler,
+			reactAliases,
+			reactRobloxAliases,
 			projectName: options.projectName,
 			runtimeModule,
+			runtimeAliases,
 			targets,
 			transformMode,
 		});
@@ -907,7 +987,10 @@ export async function buildPreviewArtifacts(
 		await runWithConcurrency(concurrency, payloads, async (payload) => {
 			if (artifactKinds.includes("entry-metadata")) {
 				const cacheKey = createEntryPayloadCacheKey(payload, {
+					reactAliases,
+					reactRobloxAliases,
 					runtimeModule,
+					runtimeAliases,
 					transformMode,
 					versions,
 				});
@@ -973,7 +1056,10 @@ export async function buildPreviewArtifacts(
 			if (artifactKinds.includes("layout-schema")) {
 				const schema = createPreviewLayoutSchema(payload);
 				const cacheKey = createLayoutSchemaCacheKey(schema, {
+					reactAliases,
+					reactRobloxAliases,
 					runtimeModule,
+					runtimeAliases,
 					transformMode,
 					versions,
 				});
@@ -1039,7 +1125,10 @@ export async function buildPreviewArtifacts(
 
 		const manifestKey = createBuildManifestKey({
 			artifactKinds,
+			reactAliases,
+			reactRobloxAliases,
 			projectName: options.projectName,
+			runtimeAliases,
 			targets,
 			transformMode,
 		});

@@ -4,6 +4,8 @@ import type {
 	PreviewTransformDiagnostic,
 	PreviewTransformMode,
 	PreviewTransformOutcome,
+	TransformPreviewSourceOptions,
+	TransformPreviewSourceResult,
 } from "./transformTypes";
 
 export type {
@@ -309,9 +311,12 @@ export type PreviewBuildOptions = {
 	artifactKinds: PreviewBuildArtifactKind[];
 	cacheDir?: string;
 	concurrency?: number;
+	reactAliases?: string[];
+	reactRobloxAliases?: string[];
 	outDir?: string;
 	projectName: string;
 	runtimeModule?: string;
+	runtimeAliases?: string[];
 	targets: PreviewSourceTarget[];
 	transformMode?: PreviewExecutionMode;
 	workspaceRoot?: string;
@@ -362,8 +367,12 @@ export type PreviewEngineUpdate = {
 };
 
 export type CreatePreviewEngineOptions = {
+	compiler: PreviewCompiler;
+	reactAliases?: string[];
+	reactRobloxAliases?: string[];
 	projectName: string;
 	runtimeModule?: string;
+	runtimeAliases?: string[];
 	targets: PreviewSourceTarget[];
 	transformMode?: PreviewExecutionMode;
 	workspaceRoot?: string;
@@ -381,3 +390,11 @@ export interface PreviewEngine {
 	onUpdate(listener: PreviewEngineUpdateListener): () => void;
 	replaceRuntimeIssues(issues: PreviewRuntimeIssue[]): PreviewEngineUpdate;
 }
+
+export type PreviewCompiler = {
+	compile_tsx(code: string): string;
+	transformPreviewSource(
+		code: string,
+		options: TransformPreviewSourceOptions,
+	): TransformPreviewSourceResult;
+};

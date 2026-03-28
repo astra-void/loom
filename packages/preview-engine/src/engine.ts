@@ -1,6 +1,5 @@
 import { createHash } from "node:crypto";
 import fs from "node:fs";
-import compiler from "@loom-dev/compiler";
 import type { PreviewRuntimeIssue } from "@loom-dev/preview-runtime";
 import {
 	type DiscoveredEntryState,
@@ -12,8 +11,10 @@ import {
 	resolveFilePath,
 	resolveRealFilePath,
 } from "./pathUtils";
+import { normalizeTransformPreviewSourceResult } from "./transformResult";
 import type {
 	CreatePreviewEngineOptions,
+	PreviewCompiler,
 	PreviewDiagnostic,
 	PreviewEngine,
 	PreviewEngineSnapshot,
@@ -54,8 +55,13 @@ type CachedTransform = {
 };
 
 const TRACEABLE_SOURCE_EXTENSIONS = new Set([".ts", ".tsx", ".d.ts", ".d.tsx"]);
-const { normalizeTransformPreviewSourceResult, transformPreviewSource } =
-	compiler;
+const DEFAULT_RUNTIME_ALIASES: string[] = [];
+const DEFAULT_REACT_ALIASES = ["@rbxts/react"];
+const DEFAULT_REACT_ROBLOX_ALIASES = ["@rbxts/react-roblox"];
+
+function resolveAliasList(defaults: string[], extras?: string[]) {
+	return [...new Set([...defaults, ...(extras ?? [])])];
+}
 
 function hashText(value: string) {
 	return createHash("sha1").update(value).digest("hex");
@@ -392,6 +398,12 @@ function computeTransformState(
 	entryId: string,
 	runtimeModule: string,
 	mode: PreviewExecutionMode,
+	compiler: PreviewCompiler,
+	aliases: {
+		reactAliases: string[];
+		reactRobloxAliases: string[];
+		runtimeAliases: string[];
+	},
 	transformCache: Map<string, CachedTransform>,
 ) {
 	const diagnostics = new Map<string, PreviewDiagnostic>();
@@ -413,17 +425,20 @@ function computeTransformState(
 
 		const sourceText = fs.readFileSync(dependencyPath, "utf8");
 		const sourceHash = hashText(sourceText);
-		const cacheKey = `${mode}:${runtimeModule}:${entryState.target.targetName}:${dependencyPath}`;
+		const cacheKey = `${mode}:${runtimeModule}:${aliases.runtimeAliases.join(",")}:${aliases.reactAliases.join(",")}:${aliases.reactRobloxAliases.join(",")}:${entryState.target.targetName}:${dependencyPath}`;
 		const cachedTransform = transformCache.get(cacheKey);
 		const transformed =
 			cachedTransform?.hash === sourceHash
 				? cachedTransform
 				: (() => {
 						const result = normalizeTransformPreviewSourceResult(
-							transformPreviewSource(sourceText, {
+							compiler.transformPreviewSource(sourceText, {
 								filePath: dependencyPath,
 								mode,
+								reactAliases: aliases.reactAliases,
+								reactRobloxAliases: aliases.reactRobloxAliases,
 								runtimeModule,
+								runtimeAliases: aliases.runtimeAliases,
 								target: entryState.target.targetName,
 							}),
 							mode,
@@ -640,6 +655,12 @@ function collectChangedEntryIds(
 class PreviewEngineImpl implements PreviewEngine {
 	private readonly listeners = new Set<PreviewEngineUpdateListener>();
 	private readonly normalizedTargets: PreviewSourceTarget[];
+	private readonly aliases: {
+		reactAliases: string[];
+		reactRobloxAliases: string[];
+		runtimeAliases: string[];
+	};
+	private readonly compiler: PreviewCompiler;
 	private readonly payloadCache = new Map<string, CachedPayload>();
 	private readonly runtimeIssuesByEntryId = new Map<
 		string,
@@ -651,6 +672,21 @@ class PreviewEngineImpl implements PreviewEngine {
 
 	public constructor(private readonly options: CreatePreviewEngineOptions) {
 		this.normalizedTargets = options.targets.map(normalizeTarget);
+		this.compiler = options.compiler;
+		this.aliases = {
+			reactAliases: resolveAliasList(
+				DEFAULT_REACT_ALIASES,
+				options.reactAliases,
+			),
+			reactRobloxAliases: resolveAliasList(
+				DEFAULT_REACT_ROBLOX_ALIASES,
+				options.reactRobloxAliases,
+			),
+			runtimeAliases: resolveAliasList(
+				DEFAULT_RUNTIME_ALIASES,
+				options.runtimeAliases,
+			),
+		};
 	}
 
 	private ensureSnapshot() {
@@ -706,6 +742,8 @@ class PreviewEngineImpl implements PreviewEngine {
 			entryId,
 			this.options.runtimeModule ?? "virtual:loom-preview-runtime",
 			this.options.transformMode ?? "strict-fidelity",
+			this.compiler,
+			this.aliases,
 			this.transformCache,
 		);
 		const runtimeDiagnostics = runtimeIssues.map(toRuntimeDiagnostic);
