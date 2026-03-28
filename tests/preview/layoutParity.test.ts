@@ -38,6 +38,7 @@ function rootNode(id: string): PreviewLayoutNode {
 			anchorPoint: { x: 0, y: 0 },
 			position: size(0, 0, 0, 0),
 			positionMode: "absolute",
+			sizeConstraintMode: "RelativeXY",
 			size: size(1, 0, 1, 0),
 		},
 		name: id,
@@ -49,8 +50,9 @@ function rootNode(id: string): PreviewLayoutNode {
 function hostNode(
 	id: string,
 	parentId: string,
-	overrides: Partial<PreviewLayoutNode> = {},
+	overrides: Omit<Partial<PreviewLayoutNode>, "layout"> & { layout?: Partial<PreviewLayoutNode["layout"]> } = {},
 ): PreviewLayoutNode {
+	const { layout: layoutOverrides, ...rest } = overrides;
 	return {
 		id,
 		kind: "host",
@@ -58,12 +60,14 @@ function hostNode(
 			anchorPoint: { x: 0, y: 0 },
 			position: size(0, 0, 0, 0),
 			positionMode: "absolute",
+			sizeConstraintMode: "RelativeXY",
 			size: size(0, 100, 0, 40),
+			...layoutOverrides,
 		},
 		name: id,
 		nodeType: "Frame",
 		parentId,
-		...overrides,
+		...rest,
 	};
 }
 
@@ -357,4 +361,109 @@ describe("preview runtime Wasm layout parity", () => {
 			{ height: 240, width: 320 },
 		);
 	});
+
+	it("matches fallback for size-constraint modes", () => {
+		assertParity(
+			[
+				rootNode("screen"),
+				hostNode("xy", "screen", {
+					layout: {
+						anchorPoint: { x: 0, y: 0 },
+						position: size(0, 0, 0, 0),
+						positionMode: "absolute",
+						sizeConstraintMode: "RelativeXY",
+						size: size(0.5, 10, 0.5, 20),
+					},
+				}),
+				hostNode("xx", "screen", {
+					layout: {
+						anchorPoint: { x: 0, y: 0 },
+						position: size(0, 0, 0, 0),
+						positionMode: "absolute",
+						sizeConstraintMode: "RelativeXX",
+						size: size(0.5, 10, 0.5, 20),
+					},
+				}),
+				hostNode("yy", "screen", {
+					layout: {
+						anchorPoint: { x: 0, y: 0 },
+						position: size(0, 0, 0, 0),
+						positionMode: "absolute",
+						sizeConstraintMode: "RelativeYY",
+						size: size(0.5, 10, 0.5, 20),
+					},
+				}),
+			],
+			{ height: 300, width: 400 },
+		);
+	});
+
+	it("matches fallback for non-zero anchor points inside list and grid layouts", () => {
+		assertParity(
+			[
+				rootNode("screen"),
+				hostNode("list-parent", "screen", {
+					layout: {
+						anchorPoint: { x: 0, y: 0 },
+						position: size(0, 0, 0, 0),
+						positionMode: "absolute",
+						sizeConstraintMode: "RelativeXY",
+						size: size(0, 200, 0, 100),
+					},
+					layoutModifiers: {
+						list: {
+							fillDirection: "vertical",
+							horizontalAlignment: "left",
+							padding: { Offset: 0, Scale: 0 },
+							sortOrder: "source",
+							verticalAlignment: "top",
+							wraps: false,
+						},
+					},
+				}),
+				hostNode("list-child", "list-parent", {
+					layout: {
+						anchorPoint: { x: 0.5, y: 0.5 },
+						position: size(0, 30, 0, 40),
+						positionMode: "absolute",
+						sizeConstraintMode: "RelativeXY",
+						size: size(0, 100, 0, 20),
+					},
+				}),
+				hostNode("grid-parent", "screen", {
+					layout: {
+						anchorPoint: { x: 0, y: 0 },
+						position: size(0, 0, 0, 0),
+						positionMode: "absolute",
+						sizeConstraintMode: "RelativeXY",
+						size: size(0, 200, 0, 100),
+					},
+					layoutModifiers: {
+						grid: {
+							cellPadding: { X: axis(0, 0), Y: axis(0, 0) },
+							cellSize: { X: axis(0, 100), Y: axis(0, 50) },
+							fillDirection: "horizontal",
+							fillDirectionMaxCells: 1,
+							horizontalAlignment: "left",
+							sortOrder: "source",
+							startCorner: "top-left",
+							verticalAlignment: "top",
+						},
+					},
+				}),
+				hostNode("grid-child", "grid-parent", {
+					layout: {
+						anchorPoint: { x: 0.5, y: 0.5 },
+						position: size(0, 20, 0, 15),
+						positionMode: "absolute",
+						sizeConstraintMode: "RelativeXY",
+						size: size(0, 50, 0, 20),
+					},
+				}),
+			],
+			{ height: 300, width: 400 },
+		);
+	});
 });
+
+

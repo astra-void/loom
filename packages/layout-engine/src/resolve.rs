@@ -13,6 +13,13 @@ enum DominantAxisHint {
     Width,
 }
 
+#[derive(Debug, Clone, Copy)]
+enum SizeConstraintMode {
+    RelativeXX,
+    RelativeXY,
+    RelativeYY,
+}
+
 #[derive(Debug, Clone, Copy, Default)]
 struct NodeDimensionOverrides {
     dominant_axis: Option<DominantAxisHint>,
@@ -25,6 +32,30 @@ struct ResolvedNodeSize {
     layout_source: &'static str,
     resolved_size: LayoutSize,
     size_resolution_reason: &'static str,
+}
+
+fn parse_size_constraint_mode(value: &str) -> SizeConstraintMode {
+    match value {
+        "RelativeXX" => SizeConstraintMode::RelativeXX,
+        "RelativeYY" => SizeConstraintMode::RelativeYY,
+        _ => SizeConstraintMode::RelativeXY,
+    }
+}
+
+fn resolve_axis_for_size_constraint_mode(
+    axis: LayoutAxis,
+    parent_rect: &ComputedRect,
+    mode: SizeConstraintMode,
+    is_x: bool,
+) -> f32 {
+    let reference_size = match mode {
+        SizeConstraintMode::RelativeXX => parent_rect.width,
+        SizeConstraintMode::RelativeYY => parent_rect.height,
+        SizeConstraintMode::RelativeXY if is_x => parent_rect.width,
+        SizeConstraintMode::RelativeXY => parent_rect.height,
+    };
+
+    resolve_axis(axis, reference_size)
 }
 
 pub(crate) fn create_viewport_rect(viewport: Viewport) -> ComputedRect {
@@ -272,9 +303,10 @@ pub(crate) fn compare_nodes_for_parent(
 
 fn resolve_base_node_size(node: &PreviewLayoutNode, parent_rect: &ComputedRect) -> (f32, f32) {
     let resolved = resolve_node_size(node);
+    let mode = parse_size_constraint_mode(node.layout.size_constraint_mode.as_str());
     (
-        resolve_axis(resolved.resolved_size.x, parent_rect.width),
-        resolve_axis(resolved.resolved_size.y, parent_rect.height),
+        resolve_axis_for_size_constraint_mode(resolved.resolved_size.x, parent_rect, mode, true),
+        resolve_axis_for_size_constraint_mode(resolved.resolved_size.y, parent_rect, mode, false),
     )
 }
 
@@ -440,6 +472,7 @@ pub(crate) fn legacy_to_preview_nodes(
             constraints: None,
             position: node.position,
             position_mode: default_position_mode(),
+            size_constraint_mode: node.size_constraint_mode.clone(),
             size: Some(node.size),
         },
         name: None,
@@ -459,3 +492,8 @@ pub(crate) fn sort_ids(ids: &mut Vec<String>) {
     ids.sort();
     ids.dedup();
 }
+
+
+
+
+

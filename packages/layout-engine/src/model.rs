@@ -54,6 +54,12 @@ pub struct PreviewNodeLayout {
     pub position: LayoutSize,
     #[serde(default = "default_position_mode")]
     pub position_mode: String,
+    #[serde(
+        default = "default_size_constraint_mode",
+        alias = "sizeConstraintMode",
+        alias = "SizeConstraint"
+    )]
+    pub size_constraint_mode: String,
     #[serde(default)]
     pub size: Option<LayoutSize>,
 }
@@ -317,12 +323,22 @@ pub struct RobloxNode {
     pub position: LayoutSize,
     #[serde(alias = "anchorPoint", alias = "AnchorPoint")]
     pub anchor_point: LayoutVector,
+    #[serde(
+        default = "default_size_constraint_mode",
+        alias = "sizeConstraintMode",
+        alias = "SizeConstraint"
+    )]
+    pub size_constraint_mode: String,
     #[serde(default, alias = "Children")]
     pub children: Vec<RobloxNode>,
 }
 
 pub(crate) fn default_position_mode() -> String {
     "absolute".to_owned()
+}
+
+pub(crate) fn default_size_constraint_mode() -> String {
+    "RelativeXY".to_owned()
 }
 
 pub(crate) fn default_placeholder_behavior() -> String {
@@ -384,3 +400,4 @@ pub(crate) fn zero_size() -> LayoutSize {
 pub(crate) fn zero_vector() -> LayoutVector {
     LayoutVector { x: 0.0, y: 0.0 }
 }
+

@@ -26,6 +26,10 @@ fn align_start(alignment: &str, available_space: f32) -> f32 {
     }
 }
 
+fn advance_main_cursor(cursor: &mut f32, item_main: f32, gap: f32) {
+    *cursor += item_main + gap;
+}
+
 fn positive_floor_to_usize(value: f32) -> usize {
     if !value.is_finite() {
         return 1;
@@ -40,6 +44,22 @@ fn positive_ceil_to_usize(value: f32) -> usize {
     }
 
     value.ceil().max(1.0) as usize
+}
+
+fn apply_anchor_point(
+    x: f32,
+    y: f32,
+    width: f32,
+    height: f32,
+    anchor_x: f32,
+    anchor_y: f32,
+) -> ComputedRect {
+    ComputedRect {
+        x: x - anchor_x * width,
+        y: y - anchor_y * height,
+        width,
+        height,
+    }
 }
 
 pub(crate) fn compute_grid_layout(
@@ -143,12 +163,14 @@ pub(crate) fn compute_grid_layout(
 
             ChildPlacement {
                 node_id: child_node.id.clone(),
-                rect: ComputedRect {
-                    x: cell_x + ((cell_width - width).max(0.0) / 2.0),
-                    y: cell_y + ((cell_height - height).max(0.0) / 2.0),
+                rect: apply_anchor_point(
+                    cell_x + ((cell_width - width).max(0.0) / 2.0),
+                    cell_y + ((cell_height - height).max(0.0) / 2.0),
                     width,
                     height,
-                },
+                    child_node.layout.anchor_point.x,
+                    child_node.layout.anchor_point.y,
+                ),
             }
         })
         .collect()
@@ -437,15 +459,17 @@ pub(crate) fn compute_list_layout(
 
             placements.push(ChildPlacement {
                 node_id: item.child_node.id.clone(),
-                rect: ComputedRect {
+                rect: apply_anchor_point(
                     x,
                     y,
                     width,
                     height,
-                },
+                    item.child_node.layout.anchor_point.x,
+                    item.child_node.layout.anchor_point.y,
+                ),
             });
 
-            main_cursor += item.main + gap;
+            advance_main_cursor(&mut main_cursor, item.main, gap);
         }
 
         cross_cursor += line_cross + gap;

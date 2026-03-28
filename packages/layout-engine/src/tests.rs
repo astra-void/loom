@@ -1,5 +1,5 @@
 use super::*;
-use crate::model::{default_position_mode, full_size, zero_size, zero_vector};
+use crate::model::{default_position_mode, default_size_constraint_mode, full_size, zero_size, zero_vector};
 use crate::resolve::legacy_to_preview_nodes;
 use serde_json::json;
 
@@ -33,6 +33,7 @@ fn node(id: &str, parent_id: Option<&str>, kind: &str, node_type: &str) -> Previ
             constraints: None,
             position: zero_size(),
             position_mode: default_position_mode(),
+            size_constraint_mode: default_size_constraint_mode(),
             size: Some(size(0.0, 100.0, 0.0, 40.0)),
         },
         name: Some(id.to_owned()),
@@ -54,6 +55,7 @@ fn computes_rooted_tree_layout_for_hosts() {
                 constraints: None,
                 position: size(0.5, 0.0, 0.5, 0.0),
                 position_mode: default_position_mode(),
+                size_constraint_mode: default_size_constraint_mode(),
                 size: Some(size(0.0, 420.0, 0.0, 40.0)),
             },
             ..node("label", Some("screen"), "host", "TextLabel")
@@ -96,6 +98,7 @@ fn uses_intrinsic_size_when_explicit_size_is_missing() {
                 constraints: None,
                 position: zero_size(),
                 position_mode: default_position_mode(),
+                size_constraint_mode: default_size_constraint_mode(),
                 size: None,
             },
             ..node("label", Some("screen"), "host", "TextLabel")
@@ -149,6 +152,7 @@ fn uses_full_size_default_when_explicit_size_is_missing() {
                 constraints: None,
                 position: zero_size(),
                 position_mode: default_position_mode(),
+                size_constraint_mode: default_size_constraint_mode(),
                 size: None,
             },
             ..node("viewport", Some("screen"), "host", "ViewportFrame")
@@ -218,6 +222,7 @@ fn marks_only_dirty_subtrees_after_incremental_update() {
             constraints: None,
             position: size(0.5, 0.0, 0.0, 0.0),
             position_mode: default_position_mode(),
+                size_constraint_mode: default_size_constraint_mode(),
             size: Some(size(0.0, 120.0, 0.0, 40.0)),
         },
         ..node("right", Some("screen"), "host", "Frame")
@@ -309,6 +314,7 @@ fn applies_padding_and_list_layout_semantics() {
                 constraints: None,
                 position: zero_size(),
                 position_mode: default_position_mode(),
+                size_constraint_mode: default_size_constraint_mode(),
                 size: Some(full_size()),
             },
             source_order: Some(0),
@@ -320,6 +326,7 @@ fn applies_padding_and_list_layout_semantics() {
                 constraints: None,
                 position: zero_size(),
                 position_mode: default_position_mode(),
+                size_constraint_mode: default_size_constraint_mode(),
                 size: Some(size(0.0, 200.0, 0.0, 120.0)),
             },
             layout_modifiers: Some(PreviewLayoutModifiers {
@@ -357,6 +364,7 @@ fn applies_padding_and_list_layout_semantics() {
                 constraints: None,
                 position: zero_size(),
                 position_mode: default_position_mode(),
+                size_constraint_mode: default_size_constraint_mode(),
                 size: Some(size(0.0, 40.0, 0.0, 20.0)),
             },
             ..node("second", Some("frame"), "host", "TextLabel")
@@ -369,6 +377,7 @@ fn applies_padding_and_list_layout_semantics() {
                 constraints: None,
                 position: zero_size(),
                 position_mode: default_position_mode(),
+                size_constraint_mode: default_size_constraint_mode(),
                 size: Some(size(0.0, 60.0, 0.0, 30.0)),
             },
             ..node("first", Some("frame"), "host", "TextLabel")
@@ -409,6 +418,127 @@ fn applies_padding_and_list_layout_semantics() {
 }
 
 #[test]
+fn applies_vertical_list_cursor_accumulates_child_height_and_padding() {
+    let mut session = LayoutSession::new();
+    session.apply_preview_nodes(vec![
+        PreviewLayoutNode {
+            layout: PreviewNodeLayout {
+                anchor_point: zero_vector(),
+                constraints: None,
+                position: zero_size(),
+                position_mode: default_position_mode(),
+                size_constraint_mode: default_size_constraint_mode(),
+                size: Some(full_size()),
+            },
+            source_order: Some(0),
+            ..node("screen", None, "root", "ScreenGui")
+        },
+        PreviewLayoutNode {
+            layout: PreviewNodeLayout {
+                anchor_point: zero_vector(),
+                constraints: None,
+                position: zero_size(),
+                position_mode: default_position_mode(),
+                size_constraint_mode: default_size_constraint_mode(),
+                size: Some(size(0.0, 220.0, 0.0, 140.0)),
+            },
+            layout_modifiers: Some(PreviewLayoutModifiers {
+                aspect_ratio_constraint: None,
+                flex_item: None,
+                grid: None,
+                list: Some(PreviewLayoutListLayout {
+                    fill_direction: "vertical".to_owned(),
+                    horizontal_alignment: "left".to_owned(),
+                    horizontal_flex: None,
+                    item_line_alignment: None,
+                    padding: axis(0.0, 5.0),
+                    sort_order: "source".to_owned(),
+                    vertical_alignment: "top".to_owned(),
+                    vertical_flex: None,
+                    wraps: false,
+                }),
+                padding: Some(PreviewLayoutPaddingInsets {
+                    bottom: axis(0.0, 6.0),
+                    left: axis(0.0, 12.0),
+                    right: axis(0.0, 8.0),
+                    top: axis(0.0, 10.0),
+                }),
+                size_constraint: None,
+                text_size_constraint: None,
+            }),
+            source_order: Some(0),
+            ..node("stack", Some("screen"), "host", "Frame")
+        },
+        PreviewLayoutNode {
+            source_order: Some(0),
+            layout: PreviewNodeLayout {
+                anchor_point: zero_vector(),
+                constraints: None,
+                position: zero_size(),
+                position_mode: default_position_mode(),
+                size_constraint_mode: default_size_constraint_mode(),
+                size: Some(size(0.0, 80.0, 0.0, 20.0)),
+            },
+            ..node("first", Some("stack"), "host", "Frame")
+        },
+        PreviewLayoutNode {
+            source_order: Some(1),
+            layout: PreviewNodeLayout {
+                anchor_point: zero_vector(),
+                constraints: None,
+                position: zero_size(),
+                position_mode: default_position_mode(),
+                size_constraint_mode: default_size_constraint_mode(),
+                size: Some(size(0.0, 70.0, 0.0, 30.0)),
+            },
+            ..node("second", Some("stack"), "host", "Frame")
+        },
+        PreviewLayoutNode {
+            source_order: Some(2),
+            layout: PreviewNodeLayout {
+                anchor_point: zero_vector(),
+                constraints: None,
+                position: zero_size(),
+                position_mode: default_position_mode(),
+                size_constraint_mode: default_size_constraint_mode(),
+                size: Some(size(0.0, 60.0, 0.0, 40.0)),
+            },
+            ..node("third", Some("stack"), "host", "Frame")
+        },
+    ]);
+    session.set_viewport_internal(Viewport {
+        height: 200.0,
+        width: 300.0,
+    });
+
+    let result = session
+        .compute_dirty_internal()
+        .expect("layout should compute");
+    let first = result.rects.get("first").expect("first should exist");
+    let second = result.rects.get("second").expect("second should exist");
+    let third = result.rects.get("third").expect("third should exist");
+
+    assert_close(first.x, 12.0);
+    assert_close(first.y, 10.0);
+    assert_close(second.x, 12.0);
+    assert_close(second.y, 35.0);
+    assert_close(third.x, 12.0);
+    assert_close(third.y, 70.0);
+    assert_eq!(
+        result
+            .debug
+            .roots
+            .first()
+            .and_then(|root| root.children.first())
+            .map(|node| node
+                .children
+                .iter()
+                .map(|child| child.id.as_str())
+                .collect::<Vec<_>>()),
+        Some(vec!["first", "second", "third"])
+    );
+}
+#[test]
 fn applies_grid_layout_semantics() {
     let mut session = LayoutSession::new();
     session.apply_preview_nodes(vec![
@@ -418,6 +548,7 @@ fn applies_grid_layout_semantics() {
                 constraints: None,
                 position: zero_size(),
                 position_mode: default_position_mode(),
+                size_constraint_mode: default_size_constraint_mode(),
                 size: Some(full_size()),
             },
             ..node("screen", None, "root", "ScreenGui")
@@ -428,6 +559,7 @@ fn applies_grid_layout_semantics() {
                 constraints: None,
                 position: zero_size(),
                 position_mode: default_position_mode(),
+                size_constraint_mode: default_size_constraint_mode(),
                 size: Some(size(0.0, 220.0, 0.0, 140.0)),
             },
             layout_modifiers: Some(PreviewLayoutModifiers {
@@ -457,6 +589,7 @@ fn applies_grid_layout_semantics() {
                 constraints: None,
                 position: zero_size(),
                 position_mode: default_position_mode(),
+                size_constraint_mode: default_size_constraint_mode(),
                 size: Some(size(0.0, 50.0, 0.0, 20.0)),
             },
             ..node("grid-1", Some("frame"), "host", "Frame")
@@ -501,6 +634,7 @@ fn applies_size_and_aspect_constraints() {
                 constraints: None,
                 position: zero_size(),
                 position_mode: default_position_mode(),
+                size_constraint_mode: default_size_constraint_mode(),
                 size: Some(full_size()),
             },
             ..node("screen", None, "root", "ScreenGui")
@@ -511,6 +645,7 @@ fn applies_size_and_aspect_constraints() {
                 constraints: None,
                 position: zero_size(),
                 position_mode: default_position_mode(),
+                size_constraint_mode: default_size_constraint_mode(),
                 size: Some(size(0.0, 200.0, 0.0, 120.0)),
             },
             ..node("frame", Some("screen"), "host", "Frame")
@@ -521,6 +656,7 @@ fn applies_size_and_aspect_constraints() {
                 constraints: None,
                 position: zero_size(),
                 position_mode: default_position_mode(),
+                size_constraint_mode: default_size_constraint_mode(),
                 size: Some(size(0.0, 50.0, 0.0, 80.0)),
             },
             layout_modifiers: Some(PreviewLayoutModifiers {
@@ -565,6 +701,7 @@ fn distributes_flex_grow_ratios() {
                 constraints: None,
                 position: zero_size(),
                 position_mode: default_position_mode(),
+                size_constraint_mode: default_size_constraint_mode(),
                 size: Some(full_size()),
             },
             ..node("screen", None, "root", "ScreenGui")
@@ -575,6 +712,7 @@ fn distributes_flex_grow_ratios() {
                 constraints: None,
                 position: zero_size(),
                 position_mode: default_position_mode(),
+                size_constraint_mode: default_size_constraint_mode(),
                 size: Some(size(0.0, 120.0, 0.0, 100.0)),
             },
             layout_modifiers: Some(PreviewLayoutModifiers {
@@ -604,6 +742,7 @@ fn distributes_flex_grow_ratios() {
                 constraints: None,
                 position: zero_size(),
                 position_mode: default_position_mode(),
+                size_constraint_mode: default_size_constraint_mode(),
                 size: Some(size(0.0, 120.0, 0.0, 20.0)),
             },
             layout_modifiers: Some(PreviewLayoutModifiers {
@@ -628,6 +767,7 @@ fn distributes_flex_grow_ratios() {
                 constraints: None,
                 position: zero_size(),
                 position_mode: default_position_mode(),
+                size_constraint_mode: default_size_constraint_mode(),
                 size: Some(size(0.0, 120.0, 0.0, 20.0)),
             },
             layout_modifiers: Some(PreviewLayoutModifiers {
@@ -759,6 +899,7 @@ fn normalizes_top_level_screen_gui_roots() {
             constraints: None,
             position: size(0.25, 15.0, 0.5, 20.0),
             position_mode: default_position_mode(),
+                size_constraint_mode: default_size_constraint_mode(),
             size: Some(size(0.0, 150.0, 0.0, 80.0)),
         },
         ..node("screen", None, "host", "ScreenGui")
@@ -801,6 +942,7 @@ fn list_and_grid_sort_orders_follow_requested_strategy() {
                 constraints: None,
                 position: zero_size(),
                 position_mode: default_position_mode(),
+                size_constraint_mode: default_size_constraint_mode(),
                 size: Some(full_size()),
             },
             ..node("screen", None, "root", "ScreenGui")
@@ -811,6 +953,7 @@ fn list_and_grid_sort_orders_follow_requested_strategy() {
                 constraints: None,
                 position: size(0.0, 0.0, 0.0, 0.0),
                 position_mode: default_position_mode(),
+                size_constraint_mode: default_size_constraint_mode(),
                 size: Some(size(0.0, 100.0, 0.0, 40.0)),
             },
             layout_modifiers: Some(PreviewLayoutModifiers {
@@ -843,6 +986,7 @@ fn list_and_grid_sort_orders_follow_requested_strategy() {
                 constraints: None,
                 position: zero_size(),
                 position_mode: default_position_mode(),
+                size_constraint_mode: default_size_constraint_mode(),
                 size: Some(size(0.0, 10.0, 0.0, 10.0)),
             },
             ..node("source-first", Some("source-list"), "host", "Frame")
@@ -856,6 +1000,7 @@ fn list_and_grid_sort_orders_follow_requested_strategy() {
                 constraints: None,
                 position: zero_size(),
                 position_mode: default_position_mode(),
+                size_constraint_mode: default_size_constraint_mode(),
                 size: Some(size(0.0, 10.0, 0.0, 10.0)),
             },
             ..node("source-second", Some("source-list"), "host", "Frame")
@@ -866,6 +1011,7 @@ fn list_and_grid_sort_orders_follow_requested_strategy() {
                 constraints: None,
                 position: size(0.0, 120.0, 0.0, 0.0),
                 position_mode: default_position_mode(),
+                size_constraint_mode: default_size_constraint_mode(),
                 size: Some(size(0.0, 100.0, 0.0, 40.0)),
             },
             layout_modifiers: Some(PreviewLayoutModifiers {
@@ -897,6 +1043,7 @@ fn list_and_grid_sort_orders_follow_requested_strategy() {
                 constraints: None,
                 position: zero_size(),
                 position_mode: default_position_mode(),
+                size_constraint_mode: default_size_constraint_mode(),
                 size: Some(size(0.0, 10.0, 0.0, 10.0)),
             },
             ..node("name-first", Some("name-list"), "host", "Frame")
@@ -909,6 +1056,7 @@ fn list_and_grid_sort_orders_follow_requested_strategy() {
                 constraints: None,
                 position: zero_size(),
                 position_mode: default_position_mode(),
+                size_constraint_mode: default_size_constraint_mode(),
                 size: Some(size(0.0, 10.0, 0.0, 10.0)),
             },
             ..node("name-second", Some("name-list"), "host", "Frame")
@@ -919,6 +1067,7 @@ fn list_and_grid_sort_orders_follow_requested_strategy() {
                 constraints: None,
                 position: size(0.0, 0.0, 0.0, 60.0),
                 position_mode: default_position_mode(),
+                size_constraint_mode: default_size_constraint_mode(),
                 size: Some(size(0.0, 100.0, 0.0, 40.0)),
             },
             layout_modifiers: Some(PreviewLayoutModifiers {
@@ -949,6 +1098,7 @@ fn list_and_grid_sort_orders_follow_requested_strategy() {
                 constraints: None,
                 position: zero_size(),
                 position_mode: default_position_mode(),
+                size_constraint_mode: default_size_constraint_mode(),
                 size: Some(size(0.0, 20.0, 0.0, 20.0)),
             },
             ..node("grid-first", Some("grid-layout"), "host", "Frame")
@@ -961,6 +1111,7 @@ fn list_and_grid_sort_orders_follow_requested_strategy() {
                 constraints: None,
                 position: zero_size(),
                 position_mode: default_position_mode(),
+                size_constraint_mode: default_size_constraint_mode(),
                 size: Some(size(0.0, 20.0, 0.0, 20.0)),
             },
             ..node("grid-second", Some("grid-layout"), "host", "Frame")
@@ -1006,4 +1157,261 @@ fn list_and_grid_sort_orders_follow_requested_strategy() {
     assert_close(name_second.y, 10.0);
     assert_close(grid_first.x, 0.0);
     assert_close(grid_second.x, 20.0);
+}
+
+#[test]
+fn resolves_size_constraint_modes_against_the_expected_parent_axis() {
+    let mut session = LayoutSession::new();
+    session.apply_preview_nodes(vec![
+        node("screen", None, "root", "ScreenGui"),
+        PreviewLayoutNode {
+            layout: PreviewNodeLayout {
+                anchor_point: zero_vector(),
+                constraints: None,
+                position: zero_size(),
+                position_mode: default_position_mode(),
+                size_constraint_mode: "RelativeXY".to_owned(),
+                size: Some(size(0.5, 10.0, 0.5, 20.0)),
+            },
+            ..node("xy", Some("screen"), "host", "Frame")
+        },
+        PreviewLayoutNode {
+            layout: PreviewNodeLayout {
+                anchor_point: zero_vector(),
+                constraints: None,
+                position: zero_size(),
+                position_mode: default_position_mode(),
+                size_constraint_mode: "RelativeXX".to_owned(),
+                size: Some(size(0.5, 10.0, 0.5, 20.0)),
+            },
+            ..node("xx", Some("screen"), "host", "Frame")
+        },
+        PreviewLayoutNode {
+            layout: PreviewNodeLayout {
+                anchor_point: zero_vector(),
+                constraints: None,
+                position: zero_size(),
+                position_mode: default_position_mode(),
+                size_constraint_mode: "RelativeYY".to_owned(),
+                size: Some(size(0.5, 10.0, 0.5, 20.0)),
+            },
+            ..node("yy", Some("screen"), "host", "Frame")
+        },
+    ]);
+    session.set_viewport_internal(Viewport {
+        height: 300.0,
+        width: 400.0,
+    });
+
+    let result = session
+        .compute_dirty_internal()
+        .expect("layout should compute");
+
+    let xy = result.rects.get("xy").expect("xy should exist");
+    let xx = result.rects.get("xx").expect("xx should exist");
+    let yy = result.rects.get("yy").expect("yy should exist");
+
+    assert_close(xy.width, 210.0);
+    assert_close(xy.height, 170.0);
+    assert_close(xx.width, 210.0);
+    assert_close(xx.height, 220.0);
+    assert_close(yy.width, 160.0);
+    assert_close(yy.height, 170.0);
+}
+
+#[test]
+fn applies_anchor_point_for_list_layout_children() {
+    let mut session = LayoutSession::new();
+    session.apply_preview_nodes(vec![
+        PreviewLayoutNode {
+            layout: PreviewNodeLayout {
+                anchor_point: zero_vector(),
+                constraints: None,
+                position: zero_size(),
+                position_mode: default_position_mode(),
+                size_constraint_mode: default_size_constraint_mode(),
+                size: Some(full_size()),
+            },
+            ..node("screen", None, "root", "ScreenGui")
+        },
+        PreviewLayoutNode {
+            layout: PreviewNodeLayout {
+                anchor_point: zero_vector(),
+                constraints: None,
+                position: zero_size(),
+                position_mode: default_position_mode(),
+                size_constraint_mode: default_size_constraint_mode(),
+                size: Some(size(0.0, 200.0, 0.0, 100.0)),
+            },
+            layout_modifiers: Some(PreviewLayoutModifiers {
+                aspect_ratio_constraint: None,
+                flex_item: None,
+                grid: None,
+                list: Some(PreviewLayoutListLayout {
+                    fill_direction: "vertical".to_owned(),
+                    horizontal_alignment: "left".to_owned(),
+                    horizontal_flex: None,
+                    item_line_alignment: None,
+                    padding: axis(0.0, 0.0),
+                    sort_order: "source".to_owned(),
+                    vertical_alignment: "top".to_owned(),
+                    vertical_flex: None,
+                    wraps: false,
+                }),
+                padding: None,
+                size_constraint: None,
+                text_size_constraint: None,
+            }),
+            ..node("list-parent", Some("screen"), "host", "Frame")
+        },
+        PreviewLayoutNode {
+            layout: PreviewNodeLayout {
+                anchor_point: LayoutVector { x: 0.5, y: 0.5 },
+                constraints: None,
+                position: size(0.0, 30.0, 0.0, 40.0),
+                position_mode: default_position_mode(),
+                size_constraint_mode: default_size_constraint_mode(),
+                size: Some(size(0.0, 100.0, 0.0, 20.0)),
+            },
+            ..node("list-child", Some("list-parent"), "host", "Frame")
+        },
+    ]);
+    session.set_viewport_internal(Viewport {
+        height: 300.0,
+        width: 400.0,
+    });
+
+    let result = session
+        .compute_dirty_internal()
+        .expect("layout should compute");
+
+    let child = result.rects.get("list-child").expect("child should exist");
+    assert_close(child.x, -50.0);
+    assert_close(child.y, -10.0);
+    assert_close(child.width, 100.0);
+    assert_close(child.height, 20.0);
+}
+
+#[test]
+fn applies_anchor_point_for_grid_layout_children() {
+    let mut session = LayoutSession::new();
+    session.apply_preview_nodes(vec![
+        PreviewLayoutNode {
+            layout: PreviewNodeLayout {
+                anchor_point: zero_vector(),
+                constraints: None,
+                position: zero_size(),
+                position_mode: default_position_mode(),
+                size_constraint_mode: default_size_constraint_mode(),
+                size: Some(full_size()),
+            },
+            ..node("screen", None, "root", "ScreenGui")
+        },
+        PreviewLayoutNode {
+            layout: PreviewNodeLayout {
+                anchor_point: zero_vector(),
+                constraints: None,
+                position: zero_size(),
+                position_mode: default_position_mode(),
+                size_constraint_mode: default_size_constraint_mode(),
+                size: Some(size(0.0, 200.0, 0.0, 100.0)),
+            },
+            layout_modifiers: Some(PreviewLayoutModifiers {
+                aspect_ratio_constraint: None,
+                flex_item: None,
+                grid: Some(PreviewLayoutGridLayout {
+                    cell_padding: zero_size(),
+                    cell_size: size(0.0, 100.0, 0.0, 50.0),
+                    fill_direction: "horizontal".to_owned(),
+                    fill_direction_max_cells: 1,
+                    horizontal_alignment: "left".to_owned(),
+                    sort_order: "source".to_owned(),
+                    start_corner: "top-left".to_owned(),
+                    vertical_alignment: "top".to_owned(),
+                }),
+                list: None,
+                padding: None,
+                size_constraint: None,
+                text_size_constraint: None,
+            }),
+            ..node("grid-parent", Some("screen"), "host", "Frame")
+        },
+        PreviewLayoutNode {
+            layout: PreviewNodeLayout {
+                anchor_point: LayoutVector { x: 0.5, y: 0.5 },
+                constraints: None,
+                position: size(0.0, 20.0, 0.0, 15.0),
+                position_mode: default_position_mode(),
+                size_constraint_mode: default_size_constraint_mode(),
+                size: Some(size(0.0, 50.0, 0.0, 20.0)),
+            },
+            ..node("grid-child", Some("grid-parent"), "host", "Frame")
+        },
+    ]);
+    session.set_viewport_internal(Viewport {
+        height: 300.0,
+        width: 400.0,
+    });
+
+    let result = session
+        .compute_dirty_internal()
+        .expect("layout should compute");
+
+    let child = result.rects.get("grid-child").expect("child should exist");
+    assert_close(child.x, -50.0);
+    assert_close(child.y, -25.0);
+    assert_close(child.width, 100.0);
+    assert_close(child.height, 50.0);
+}
+
+#[test]
+fn legacy_compute_layout_preserves_size_constraint_mode_from_raw_tree() {
+    let raw_tree: RobloxNode = serde_json::from_value(json!({
+        "id": "screen",
+        "node_type": "ScreenGui",
+        "SizeConstraint": "RelativeXY",
+        "size": {
+            "X": { "Scale": 1.0, "Offset": 0.0 },
+            "Y": { "Scale": 1.0, "Offset": 0.0 }
+        },
+        "position": {
+            "X": { "Scale": 0.0, "Offset": 0.0 },
+            "Y": { "Scale": 0.0, "Offset": 0.0 }
+        },
+        "anchor_point": { "X": 0.0, "Y": 0.0 },
+        "children": [{
+            "id": "frame",
+            "node_type": "Frame",
+            "SizeConstraint": "RelativeYY",
+            "size": {
+                "X": { "Scale": 0.25, "Offset": 10.0 },
+                "Y": { "Scale": 0.25, "Offset": 20.0 }
+            },
+            "position": {
+                "X": { "Scale": 0.0, "Offset": 0.0 },
+                "Y": { "Scale": 0.0, "Offset": 0.0 }
+            },
+            "anchor_point": { "X": 0.0, "Y": 0.0 },
+            "children": []
+        }]
+    }))
+    .expect("raw tree should deserialize");
+
+    let mut preview_nodes = Vec::new();
+    legacy_to_preview_nodes(&raw_tree, None, &mut preview_nodes);
+
+    let mut session = LayoutSession::new();
+    session.apply_preview_nodes(preview_nodes);
+    session.set_viewport_internal(Viewport {
+        height: 300.0,
+        width: 400.0,
+    });
+
+    let result = session
+        .compute_dirty_internal()
+        .expect("layout should compute");
+    let frame = result.rects.get("frame").expect("frame should exist");
+
+    assert_close(frame.width, 85.0);
+    assert_close(frame.height, 95.0);
 }
