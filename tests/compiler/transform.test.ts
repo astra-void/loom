@@ -56,6 +56,7 @@ describe("@loom-dev/compiler preview transform", () => {
         labelRef: ReactTypes.MutableRefObject<GuiLabel | undefined>;
         layer?: LayerCollector;
         container?: BasePlayerGui;
+        playerGui?: PlayerGui;
         viewRef: ReactTypes.MutableRefObject<Instance | undefined>;
       };
 
@@ -70,6 +71,7 @@ describe("@loom-dev/compiler preview transform", () => {
             {label && label.IsA("GuiLabel") ? <frame /> : null}
             {props.layer && props.layer.IsA("LayerCollector") ? <frame /> : null}
             {props.container && props.container.IsA("BasePlayerGui") ? <frame /> : null}
+            {props.playerGui && props.playerGui.IsA("PlayerGui") ? <frame /> : null}
           </textlabel>
         );
       }
@@ -99,6 +101,9 @@ describe("@loom-dev/compiler preview transform", () => {
 		);
 		expect(result.code).toContain(
 			'isPreviewElement(props.container, "BasePlayerGui")',
+		);
+		expect(result.code).toContain(
+			'isPreviewElement(props.playerGui, "PlayerGui")',
 		);
 		expect(result.code).toContain("<TextLabel");
 	});

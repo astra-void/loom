@@ -16,6 +16,7 @@ export type PreviewHostMetadataRecord = {
 };
 
 type PreviewHostMetadataDocument = {
+	runtimeOnlyTypeNames: string[];
 	hosts: PreviewHostMetadataRecord[];
 };
 
@@ -80,6 +81,9 @@ export const previewHostMetadataByRuntimeName = new Map(
 	),
 );
 
+export const runtimeOnlyTypeNames = Object.freeze([
+	...previewHostMetadataDocument.runtimeOnlyTypeNames,
+]);
 export const layoutHostMetadataRecords = Object.freeze(
 	previewHostMetadataRecords.filter((record) => record.participatesInLayout),
 );
@@ -119,23 +123,26 @@ export const supportedHostRuntimeNames = Object.freeze(
 );
 export const supportedTypeRewriteNames = Object.freeze(
 	dedupeAndSort(
-		previewHostMetadataRecords.flatMap((record) =>
-			record.supportsTypeRewrite
-				? [record.runtimeName, ...record.abstractAncestors]
-				: [],
-		),
+		previewHostMetadataRecords
+			.flatMap((record) =>
+				record.supportsTypeRewrite
+					? [record.runtimeName, ...record.abstractAncestors]
+					: [],
+			)
+			.concat(runtimeOnlyTypeNames),
 	),
 );
 export const supportedIsaNames = Object.freeze(
 	dedupeAndSort(
-		previewHostMetadataRecords.flatMap((record) =>
-			record.supportsIsa
-				? [record.runtimeName, ...record.abstractAncestors]
-				: [],
-		),
+		previewHostMetadataRecords
+			.flatMap((record) =>
+				record.supportsIsa
+					? [record.runtimeName, ...record.abstractAncestors]
+					: [],
+			)
+			.concat(runtimeOnlyTypeNames),
 	),
 );
-
 export function getPreviewHostMetadataByJsxName(jsxName: string) {
 	return previewHostMetadataByJsxName.get(jsxName);
 }

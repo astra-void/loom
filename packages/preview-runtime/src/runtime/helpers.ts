@@ -1,4 +1,7 @@
-import { previewHostMatchesType } from "../hosts/metadata";
+import {
+	previewHostMatchesType,
+	runtimeOnlyTypeNames,
+} from "../hosts/metadata";
 import robloxMock from "./robloxMock";
 
 const robloxMockRecord = robloxMock as unknown as Record<PropertyKey, unknown>;
@@ -550,7 +553,7 @@ export function isPreviewElement(
 
 	if (value.dataset.previewPlayerGui === "true") {
 		return (
-			typeName === "PlayerGui" ||
+			runtimeOnlyTypeNames.includes(typeName) ||
 			typeName === "BasePlayerGui" ||
 			typeName === "LayerCollector" ||
 			typeName === "Instance"

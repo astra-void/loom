@@ -22,7 +22,9 @@ pub struct PreviewHostMetadataRecord {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct PreviewHostMetadataDocument {
+    runtime_only_type_names: Vec<String>,
     hosts: Vec<PreviewHostMetadataRecord>,
 }
 
@@ -69,6 +71,14 @@ pub fn is_supported_preview_host_type(type_name: &str, kind: PreviewTypeSupportK
         };
     }
 
+    if preview_host_metadata_document()
+        .runtime_only_type_names
+        .iter()
+        .any(|runtime_only_type_name| runtime_only_type_name == type_name)
+    {
+        return true;
+    }
+
     preview_host_metadata_records()
         .iter()
         .any(|record| match kind {
@@ -113,6 +123,14 @@ mod tests {
         ));
         assert!(is_supported_preview_host_type(
             "BasePlayerGui",
+            PreviewTypeSupportKind::TypeRewrite
+        ));
+        assert!(is_supported_preview_host_type(
+            "PlayerGui",
+            PreviewTypeSupportKind::Isa
+        ));
+        assert!(is_supported_preview_host_type(
+            "PlayerGui",
             PreviewTypeSupportKind::TypeRewrite
         ));
         assert!(

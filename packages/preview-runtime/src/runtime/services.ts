@@ -1,3 +1,4 @@
+import { runtimeOnlyTypeNames } from "../hosts/metadata";
 import { PREVIEW_HOST_DATA_ATTRIBUTE } from "../internal/previewAttributes";
 import { Enum } from "./Enum";
 import {
@@ -284,6 +285,15 @@ function defineOwnPropertyIfMissing<T extends object>(
 	return descriptor;
 }
 
+function isPlayerGuiTypeName(typeName: string) {
+	return (
+		runtimeOnlyTypeNames.includes(typeName) ||
+		typeName === "BasePlayerGui" ||
+		typeName === "LayerCollector" ||
+		typeName === "Instance"
+	);
+}
+
 function createServiceBase(name: PreviewServiceName | "game") {
 	return {
 		GetFullName() {
@@ -444,12 +454,7 @@ function createPlayerGui(): PreviewPlayerGui {
 				return [];
 			},
 			IsA(typeName: string) {
-				return (
-					typeName === "PlayerGui" ||
-					typeName === "BasePlayerGui" ||
-					typeName === "LayerCollector" ||
-					typeName === "Instance"
-				);
+				return isPlayerGuiTypeName(typeName);
 			},
 			IsDescendantOf() {
 				return false;
@@ -510,12 +515,7 @@ function createPlayerGui(): PreviewPlayerGui {
 		return guiObjects;
 	};
 	element.IsA = (typeName: string) => {
-		return (
-			typeName === "PlayerGui" ||
-			typeName === "BasePlayerGui" ||
-			typeName === "LayerCollector" ||
-			typeName === "Instance"
-		);
+		return isPlayerGuiTypeName(typeName);
 	};
 	element.IsDescendantOf = (ancestor: unknown) => {
 		const domAncestor = getDomElement(ancestor);

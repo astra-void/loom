@@ -1,4 +1,5 @@
 {
+	"runtimeOnlyTypeNames": ["PlayerGui"],
 	"hosts": [
 		{
 			"jsxName": "frame",

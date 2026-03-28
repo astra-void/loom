@@ -28,6 +28,7 @@ describe("preview source transform", () => {
         labelRef: ReactTypes.MutableRefObject<GuiLabel | undefined>;
         container?: BasePlayerGui;
         layer?: LayerCollector;
+        playerGui?: PlayerGui;
         surface?: SurfaceGui;
         viewportRef: ReactTypes.MutableRefObject<ViewportFrame | undefined>;
         viewRef: ReactTypes.MutableRefObject<Instance | undefined>;
@@ -59,6 +60,7 @@ describe("preview source transform", () => {
             {label && label.IsA("GuiLabel") ? <frame /> : null}
             {props.layer && props.layer.IsA("LayerCollector") ? <frame /> : null}
             {props.container && props.container.IsA("BasePlayerGui") ? <frame /> : null}
+            {props.playerGui && props.playerGui.IsA("PlayerGui") ? <frame /> : null}
           </surfacegui>
         );
       }
@@ -79,6 +81,7 @@ describe("preview source transform", () => {
 		);
 		expect(result.code).toContain("container?: HTMLElement | null");
 		expect(result.code).toContain("surface?: HTMLElement | null");
+		expect(result.code).toContain("playerGui?: HTMLElement | null");
 		expect(result.code).toContain("<TextLabel");
 		expect(result.code).toContain("<ImageButton");
 		expect(result.code).toContain("<CanvasGroup");
@@ -96,6 +99,9 @@ describe("preview source transform", () => {
 		);
 		expect(result.code).toContain(
 			'isPreviewElement(props.container, "BasePlayerGui")',
+		);
+		expect(result.code).toContain(
+			'isPreviewElement(props.playerGui, "PlayerGui")',
 		);
 		expect(result.code).toContain('"left"');
 	});

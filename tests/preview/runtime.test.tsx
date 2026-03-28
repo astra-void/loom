@@ -1,4 +1,4 @@
-﻿// @vitest-environment jsdom
+// @vitest-environment jsdom
 
 import {
 	BillboardGui,
@@ -357,8 +357,10 @@ describe("preview runtime Roblox globals", () => {
 		expect(playerGui).toBe(players.LocalPlayer.PlayerGui);
 		expect(playerGui).toBeInstanceOf(HTMLElement);
 		expect(isPreviewElement(playerGui, "BasePlayerGui")).toBe(true);
+		expect(isPreviewElement(playerGui, "PlayerGui")).toBe(true);
 		expect(playerGui.style.pointerEvents).toBe("none");
 		expect(players.LocalPlayer.PlayerGui.IsA("BasePlayerGui")).toBe(true);
+		expect(players.LocalPlayer.PlayerGui.IsA("PlayerGui")).toBe(true);
 		expect(players.LocalPlayer.PlayerGui.GetFullName()).toBe(
 			"Players.LocalPlayer.PlayerGui",
 		);
