@@ -24,7 +24,7 @@ export default defineConfig({
 				find: /^@loom-dev\/compiler$/,
 				replacement: path.resolve(
 					workspaceRoot,
-					"packages/compiler/wrapper.mjs",
+					"packages/compiler/sync.mjs",
 				),
 			},
 			{
@@ -70,5 +70,6 @@ export default defineConfig({
 	},
 	test: {
 		include: ["tests/**/*.test.ts", "tests/**/*.test.tsx"],
+		maxWorkers: 4,
 	},
 });
