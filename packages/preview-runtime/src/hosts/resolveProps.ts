@@ -308,6 +308,7 @@ function coerceTextValue(value: unknown): string | undefined {
 export function applyComputedLayoutStyle(
 	style: React.CSSProperties,
 	computed: ComputedRect | null,
+	parentRect?: ComputedRect | null,
 ): void {
 	delete style.left;
 	delete style.top;
@@ -324,8 +325,10 @@ export function applyComputedLayoutStyle(
 	}
 
 	style.visibility = "visible";
-	style.left = `${computed.x}px`;
-	style.top = `${computed.y}px`;
+	const originX = parentRect?.x ?? 0;
+	const originY = parentRect?.y ?? 0;
+	style.left = `${computed.x - originX}px`;
+	style.top = `${computed.y - originY}px`;
 	style.width = `${computed.width}px`;
 	style.height = `${computed.height}px`;
 }
