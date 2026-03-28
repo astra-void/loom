@@ -1,4 +1,3 @@
-﻿import path from "node:path";
 import type {
 	PreviewDiagnostic,
 	PreviewEntryDescriptor,
@@ -183,21 +182,16 @@ function normalizePreviewAnalysisValue<T>(value: T): T {
 	return value;
 }
 
-function resolvePreviewGraphModulePath() {
-	const candidatePaths = [
-		"@loom-dev/preview-analysis",
-		path.resolve(__dirname, "../../preview-analysis/pkg/preview_analysis.js"),
-	];
-
-	for (const candidatePath of candidatePaths) {
-		try {
-			return require.resolve(candidatePath);
-		} catch {
-			// Try the next candidate.
-		}
+export function resolvePreviewGraphModulePath(
+	resolveModule: (specifier: string) => string = require.resolve,
+) {
+	try {
+		return resolveModule("@loom-dev/preview-analysis");
+	} catch {
+		throw new Error(
+			"Unable to resolve @loom-dev/preview-analysis. Build @loom-dev/preview-analysis before running preview-harness.",
+		);
 	}
-
-	throw new Error("Unable to resolve @loom-dev/preview-analysis.");
 }
 
 function getPreviewGraphWasmModule() {

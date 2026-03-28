@@ -421,7 +421,9 @@ function createRuntimeDependencyResolvePlugin(
 				return undefined;
 			}
 
-			const normalizedImporter = stripFileIdDecorations(importer ?? "");
+			const normalizedImporter = stripFileIdDecorations(importer ?? "")
+				.split(path.sep)
+				.join("/");
 			if (normalizedImporter?.startsWith(browserShimsRoot)) {
 				return undefined;
 			}
