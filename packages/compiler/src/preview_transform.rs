@@ -54,6 +54,8 @@ const NEVER_REWRITE_IDENTIFIER_NAMES: &[&str] = &[
 ];
 const KNOWN_PREVIEW_GLOBAL_NAMES: &[&str] = &[
     "Enum",
+    "ColorSequence",
+    "ColorSequenceKeypoint",
     "RunService",
     "TweenInfo",
     "os",
@@ -1867,6 +1869,46 @@ const proxied = new Proxy(target, {
         assert!(
             !result.code.contains(r#"__previewGlobal("Proxy")"#),
             "expected Proxy constructor to avoid preview global rewriting, got: {}",
+            result.code
+        );
+    }
+    #[test]
+    fn preview_color_sequence_globals_do_not_report_unresolved_identifier() {
+        let source = r#"
+const sequence = ColorSequence;
+const keypoint = ColorSequenceKeypoint;
+"#;
+
+        let result = transform_preview_source(
+            source.to_owned(),
+            TransformPreviewSourceOptions {
+                file_path: "src/example.ts".to_owned(),
+                react_aliases: None,
+                react_roblox_aliases: None,
+                runtime_module: "@loom-dev/preview-runtime".to_owned(),
+                runtime_aliases: None,
+                target: "compatibility".to_owned(),
+            },
+        )
+        .expect("preview transform should succeed");
+
+        assert!(
+            result.errors.is_empty(),
+            "unexpected transform errors: {:?}",
+            result
+                .errors
+                .iter()
+                .map(|error| (&error.code, &error.symbol, &error.message))
+                .collect::<Vec<_>>()
+        );
+        assert!(
+            result.code.contains(r#"__previewGlobal("ColorSequence")"#),
+            "expected ColorSequence to rewrite to preview global access, got: {}",
+            result.code
+        );
+        assert!(
+            result.code.contains(r#"__previewGlobal("ColorSequenceKeypoint")"#),
+            "expected ColorSequenceKeypoint to rewrite to preview global access, got: {}",
             result.code
         );
     }
