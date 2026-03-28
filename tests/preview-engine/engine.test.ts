@@ -3,10 +3,19 @@ import os from "node:os";
 import path from "node:path";
 import { createPreviewEngine } from "@loom-dev/preview-engine";
 import type { PreviewRuntimeIssue } from "@loom-dev/preview-runtime";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { resolveRealFilePath } from "../../packages/preview-engine/src/pathUtils";
 
 const temporaryRoots: string[] = [];
+let compiler: Awaited<typeof import("../../packages/compiler/sync.mjs")>;
+
+beforeAll(async () => {
+	compiler = await import("../../packages/compiler/sync.mjs");
+});
+
+afterAll(() => {
+	compiler = undefined as never;
+});
 
 afterEach(() => {
 	for (const root of temporaryRoots.splice(0)) {
@@ -105,6 +114,7 @@ function createEngineForPackage(
 		| "design-time" = "strict-fidelity",
 ) {
 	return createPreviewEngine({
+		compiler,
 		projectName: "Fixture Preview",
 		targets: [
 			{
@@ -289,6 +299,7 @@ describe("createPreviewEngine", () => {
 		const sharedTarget = workspace.getPackage("@fixtures/shared");
 		const uiTarget = workspace.getPackage("@fixtures/ui");
 		const engine = createPreviewEngine({
+			compiler,
 			projectName: "Workspace Preview",
 			targets: [
 				{
@@ -435,6 +446,7 @@ describe("createPreviewEngine", () => {
 
 		const uiTarget = workspace.getPackage("@fixtures/ui");
 		const engine = createPreviewEngine({
+			compiler,
 			projectName: "Workspace Preview",
 			targets: [
 				{
@@ -535,6 +547,7 @@ describe("createPreviewEngine", () => {
 		const sharedTarget = workspace.getPackage("@fixtures/shared");
 		const uiTarget = workspace.getPackage("@fixtures/ui");
 		const engine = createPreviewEngine({
+			compiler,
 			projectName: "Workspace Preview",
 			targets: [
 				{

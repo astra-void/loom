@@ -153,10 +153,10 @@ describe("createPreviewVitePlugin lazy initialization", () => {
 			| ((id: string) => string | undefined)
 			| undefined;
 		const load = previewPlugin.load as
-			| ((id: string) => string | undefined)
+			| ((id: string) => Promise<string | undefined> | string | undefined)
 			| undefined;
 		const resolvedWorkspaceId = resolveId?.("virtual:loom-preview-workspace-index");
-		const workspaceModuleCode = load?.(
+		const workspaceModuleCode = await load?.(
 			resolvedWorkspaceId ?? "virtual:loom-preview-workspace-index",
 		);
 

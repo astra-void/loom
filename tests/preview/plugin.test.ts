@@ -11,9 +11,13 @@ const temporaryRoots: string[] = [];
 
 type MockServer = ReturnType<typeof createMockServer>;
 type TestResolveIdHook = (id: string) => string | undefined;
-type TestLoadHook = (id: string) => string | undefined;
+type TestLoadHook = (
+	id: string,
+) => Promise<string | undefined> | string | undefined;
 type TestConfigureServerHook = (server: MockServer) => void;
-type TestHotUpdateHook = (context: { file: string }) => [] | undefined;
+type TestHotUpdateHook = (
+	context: { file: string },
+) => Promise<[] | undefined> | [] | undefined;
 type TestTransformHook = (
 	code: string,
 	id: string,
@@ -195,7 +199,12 @@ function createMockServer() {
 	};
 }
 
-function readWorkspaceEntries(previewPlugin: PreviewPlugin) {
+async function flushAsyncWork() {
+	await Promise.resolve();
+	await new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+async function readWorkspaceEntries(previewPlugin: PreviewPlugin) {
 	const resolveId = getHookHandler<TestResolveIdHook>(
 		previewPlugin.resolveId as TestResolveIdHook | undefined,
 	);
@@ -204,7 +213,7 @@ function readWorkspaceEntries(previewPlugin: PreviewPlugin) {
 	);
 
 	const resolvedWorkspaceId = resolveId?.(WORKSPACE_INDEX_MODULE_ID);
-	const workspaceModuleCode = load?.(
+	const workspaceModuleCode = await load?.(
 		resolvedWorkspaceId ?? WORKSPACE_INDEX_MODULE_ID,
 	);
 	if (typeof workspaceModuleCode !== "string") {
@@ -233,7 +242,7 @@ function readWorkspaceEntries(previewPlugin: PreviewPlugin) {
 	}>;
 }
 
-function readEntryPayload(previewPlugin: PreviewPlugin, entryId: string) {
+async function readEntryPayload(previewPlugin: PreviewPlugin, entryId: string) {
 	const resolveId = getHookHandler<TestResolveIdHook>(
 		previewPlugin.resolveId as TestResolveIdHook | undefined,
 	);
@@ -244,7 +253,7 @@ function readEntryPayload(previewPlugin: PreviewPlugin, entryId: string) {
 	const resolvedEntryId = resolveId?.(
 		`virtual:loom-preview-entry:${encodeURIComponent(entryId)}`,
 	);
-	const entryModuleCode = load?.(resolvedEntryId ?? entryId);
+	const entryModuleCode = await load?.(resolvedEntryId ?? entryId);
 	if (typeof entryModuleCode !== "string") {
 		throw new Error("Expected the preview entry module to load as a string.");
 	}
@@ -279,7 +288,7 @@ function readEntryPayload(previewPlugin: PreviewPlugin, entryId: string) {
 }
 
 describe("createPreviewVitePlugin", () => {
-	it("uses the configured runtime module for virtual runtime and entry modules", () => {
+	it("uses the configured runtime module for virtual runtime and entry modules", async () => {
 		const { fixtureRoot, sourceRoot } = createFixtureRoot();
 		const sourceFile = path.join(sourceRoot, "CustomRuntimeEntry.loom.tsx");
 		const runtimeModulePath = path.join(
@@ -318,7 +327,7 @@ describe("createPreviewVitePlugin", () => {
 		);
 
 		const resolvedRuntimeId = resolveId?.("virtual:loom-preview-runtime");
-		const runtimeModuleCode = load?.(
+		const runtimeModuleCode = await load?.(
 			resolvedRuntimeId ?? "virtual:loom-preview-runtime",
 		);
 		expect(runtimeModuleCode).toContain(runtimeModulePath.replace(/\\/g, "/"));
@@ -327,7 +336,7 @@ describe("createPreviewVitePlugin", () => {
 			"virtual:loom-preview-entry:" +
 				encodeURIComponent("fixture:CustomRuntimeEntry.loom.tsx"),
 		);
-		const entryModuleCode = load?.(
+		const entryModuleCode = await load?.(
 			resolvedEntryId ?? "fixture:CustomRuntimeEntry.loom.tsx",
 		);
 		expect(entryModuleCode).toContain(runtimeModulePath.replace(/\\/g, "/"));
@@ -431,7 +440,7 @@ describe("createPreviewVitePlugin", () => {
 		);
 
 		const previewPlugin = createPreviewPlugin(fixtureRoot, sourceRoot);
-		expect(readWorkspaceEntries(previewPlugin)).toEqual([
+		expect(await readWorkspaceEntries(previewPlugin)).toEqual([
 			expect.objectContaining({
 				relativePath: "Button.loom.tsx",
 				status: "ready",
@@ -483,7 +492,7 @@ describe("createPreviewVitePlugin", () => {
 		);
 
 		const previewPlugin = createPreviewPlugin(fixtureRoot, sourceRoot);
-		expect(readWorkspaceEntries(previewPlugin)).toEqual([
+		expect(await readWorkspaceEntries(previewPlugin)).toEqual([
 			expect.objectContaining({
 				relativePath: "Button.tsx",
 				status: "ready",
@@ -519,7 +528,7 @@ describe("createPreviewVitePlugin", () => {
 		);
 
 		const previewPlugin = createPreviewPlugin(fixtureRoot, sourceRoot);
-		expect(readWorkspaceEntries(previewPlugin)).toEqual([
+		expect(await readWorkspaceEntries(previewPlugin)).toEqual([
 			expect.objectContaining({
 				relativePath: "Button.loom.tsx",
 				status: "ready",
@@ -673,13 +682,13 @@ describe("createPreviewVitePlugin", () => {
 		);
 
 		expect(handleHotUpdate).toBeTypeOf("function");
-		expect(handleHotUpdate?.({ file: sourceFile })).toEqual([]);
+		expect(await handleHotUpdate?.({ file: sourceFile })).toEqual([]);
 		expect(
-			handleHotUpdate?.({ file: path.join(fixtureRoot, "README.md") }),
+			await handleHotUpdate?.({ file: path.join(fixtureRoot, "README.md") }),
 		).toBe(undefined);
 	});
 
-	it("treats tracked workspace dependencies outside the target source root as hot-update candidates", () => {
+	it("treats tracked workspace dependencies outside the target source root as hot-update candidates", async () => {
 		const { fixtureRoot, sourceRoot } = createFixtureRoot();
 		const sharedRoot = path.join(fixtureRoot, "shared");
 		const sourceFile = path.join(sourceRoot, "AnimatedSlot.loom.tsx");
@@ -715,7 +724,7 @@ describe("createPreviewVitePlugin", () => {
 
 		fs.writeFileSync(dependencyFile, 'export const LABEL = "two";\n', "utf8");
 
-		expect(handleHotUpdate?.({ file: dependencyFile })).toEqual([]);
+		expect(await handleHotUpdate?.({ file: dependencyFile })).toEqual([]);
 		expect(mockServer.moduleGraph.invalidateModule).toHaveBeenCalledTimes(1);
 		expect(mockServer.ws.send).toHaveBeenCalledWith(
 			expect.objectContaining({
@@ -728,7 +737,7 @@ describe("createPreviewVitePlugin", () => {
 		);
 	});
 
-	it("refreshes the workspace index and sends custom hmr updates for add, delete, rename, and non-target watcher events", () => {
+	it("refreshes the workspace index and sends custom hmr updates for add, delete, rename, and non-target watcher events", async () => {
 		const { fixtureRoot, sourceRoot } = createFixtureRoot();
 		const sourceFile = path.join(sourceRoot, "AnimatedSlot.loom.tsx");
 		const addedFile = path.join(sourceRoot, "FreshSlot.loom.tsx");
@@ -748,7 +757,9 @@ describe("createPreviewVitePlugin", () => {
 		configureServer?.(mockServer);
 
 		expect(
-			readWorkspaceEntries(previewPlugin).map((entry) => entry.relativePath),
+			(await readWorkspaceEntries(previewPlugin)).map(
+				(entry) => entry.relativePath,
+			),
 		).toEqual(["AnimatedSlot.loom.tsx"]);
 
 		fs.writeFileSync(
@@ -757,26 +768,38 @@ describe("createPreviewVitePlugin", () => {
 			"utf8",
 		);
 		mockServer.emit("add", addedFile);
+		await flushAsyncWork();
 		expect(
-			readWorkspaceEntries(previewPlugin).map((entry) => entry.relativePath),
+			(await readWorkspaceEntries(previewPlugin)).map(
+				(entry) => entry.relativePath,
+			),
 		).toEqual(["AnimatedSlot.loom.tsx", "FreshSlot.loom.tsx"]);
 
 		fs.renameSync(addedFile, renamedFile);
 		mockServer.emit("unlink", addedFile);
 		mockServer.emit("add", renamedFile);
+		await flushAsyncWork();
 		expect(
-			readWorkspaceEntries(previewPlugin).map((entry) => entry.relativePath),
+			(await readWorkspaceEntries(previewPlugin)).map(
+				(entry) => entry.relativePath,
+			),
 		).toEqual(["AnimatedSlot.loom.tsx", "RenamedSlot.loom.tsx"]);
 
 		mockServer.emit("add", path.join(fixtureRoot, "README.md"));
+		await flushAsyncWork();
 		expect(
-			readWorkspaceEntries(previewPlugin).map((entry) => entry.relativePath),
+			(await readWorkspaceEntries(previewPlugin)).map(
+				(entry) => entry.relativePath,
+			),
 		).toEqual(["AnimatedSlot.loom.tsx", "RenamedSlot.loom.tsx"]);
 
 		fs.rmSync(renamedFile);
 		mockServer.emit("unlink", renamedFile);
+		await flushAsyncWork();
 		expect(
-			readWorkspaceEntries(previewPlugin).map((entry) => entry.relativePath),
+			(await readWorkspaceEntries(previewPlugin)).map(
+				(entry) => entry.relativePath,
+			),
 		).toEqual(["AnimatedSlot.loom.tsx"]);
 
 		expect(mockServer.moduleGraph.invalidateModule).toHaveBeenCalledTimes(4);
@@ -789,7 +812,7 @@ describe("createPreviewVitePlugin", () => {
 		);
 	});
 
-	it("recomputes entry status and render targets before sending entry-scoped updates", () => {
+	it("recomputes entry status and render targets before sending entry-scoped updates", async () => {
 		const { fixtureRoot, sourceRoot } = createFixtureRoot();
 		const sourceFile = path.join(sourceRoot, "AnimatedSlot.loom.tsx");
 		fs.writeFileSync(
@@ -817,7 +840,7 @@ describe("createPreviewVitePlugin", () => {
 
 		configureServer?.(mockServer);
 
-		expect(readWorkspaceEntries(previewPlugin)).toEqual(
+		expect(await readWorkspaceEntries(previewPlugin)).toEqual(
 			expect.arrayContaining([
 				expect.objectContaining({
 					relativePath: "AnimatedSlot.loom.tsx",
@@ -839,8 +862,8 @@ describe("createPreviewVitePlugin", () => {
       `,
 			"utf8",
 		);
-		expect(handleHotUpdate?.({ file: sourceFile })).toEqual([]);
-		expect(readWorkspaceEntries(previewPlugin)).toEqual(
+		expect(await handleHotUpdate?.({ file: sourceFile })).toEqual([]);
+		expect(await readWorkspaceEntries(previewPlugin)).toEqual(
 			expect.arrayContaining([
 				expect.objectContaining({
 					relativePath: "AnimatedSlot.loom.tsx",
@@ -855,8 +878,8 @@ describe("createPreviewVitePlugin", () => {
 		);
 
 		fs.writeFileSync(sourceFile, "export const value = 1;\n", "utf8");
-		expect(handleHotUpdate?.({ file: sourceFile })).toEqual([]);
-		expect(readWorkspaceEntries(previewPlugin)).toEqual(
+		expect(await handleHotUpdate?.({ file: sourceFile })).toEqual([]);
+		expect(await readWorkspaceEntries(previewPlugin)).toEqual(
 			expect.arrayContaining([
 				expect.objectContaining({
 					relativePath: "AnimatedSlot.loom.tsx",
@@ -882,8 +905,8 @@ describe("createPreviewVitePlugin", () => {
       `,
 			"utf8",
 		);
-		expect(handleHotUpdate?.({ file: sourceFile })).toEqual([]);
-		expect(readWorkspaceEntries(previewPlugin)).toEqual(
+		expect(await handleHotUpdate?.({ file: sourceFile })).toEqual([]);
+		expect(await readWorkspaceEntries(previewPlugin)).toEqual(
 			expect.arrayContaining([
 				expect.objectContaining({
 					relativePath: "AnimatedSlot.loom.tsx",
@@ -896,7 +919,7 @@ describe("createPreviewVitePlugin", () => {
 		expect(mockServer.ws.send).toHaveBeenCalledTimes(3);
 	});
 
-	it("loads entry payloads with transform diagnostics on demand", () => {
+	it("loads entry payloads with transform diagnostics on demand", async () => {
 		const { fixtureRoot, sourceRoot } = createFixtureRoot();
 		const sourceFile = path.join(sourceRoot, "Broken.loom.tsx");
 		fs.writeFileSync(
@@ -914,7 +937,7 @@ describe("createPreviewVitePlugin", () => {
 		);
 
 		const previewPlugin = createPreviewPlugin(fixtureRoot, sourceRoot);
-		const entryPayload = readEntryPayload(
+		const entryPayload = await readEntryPayload(
 			previewPlugin,
 			"fixture:Broken.loom.tsx",
 		);

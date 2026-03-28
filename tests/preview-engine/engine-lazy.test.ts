@@ -37,6 +37,7 @@ describe("createPreviewEngine", () => {
 		const { createPreviewEngine } = await import(
 			"../../packages/preview-engine/src/engine"
 		);
+		const compiler = await import("../../packages/compiler/sync.mjs");
 		const workspaceRoot = createTempRoot("loom-preview-engine-lazy-");
 		const packageRoot = path.join(workspaceRoot, "packages", "fixture");
 		const sourceRoot = path.join(packageRoot, "src");
@@ -59,6 +60,7 @@ describe("createPreviewEngine", () => {
 		});
 
 		const engine = createPreviewEngine({
+			compiler,
 			projectName: "Fixture Preview",
 			targets: [target],
 			workspaceRoot,
