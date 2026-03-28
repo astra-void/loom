@@ -14,14 +14,14 @@
 		"README.md"
 	],
 	"scripts": {
-		"build:native": "PATH=\"$HOME/.cargo/bin:$PATH\" wasm-pack build --target nodejs --out-dir pkg",
-		"build": "PATH=\"$HOME/.cargo/bin:$PATH\" wasm-pack build --target nodejs --out-dir pkg",
-		"build:release": "PATH=\"$HOME/.cargo/bin:$PATH\" wasm-pack build --release --target nodejs --out-dir pkg",
-		"build:rust": "PATH=\"$HOME/.cargo/bin:$PATH\" cargo build",
+		"build:native": "node ../../scripts/run-wasm-pack.mjs build --target nodejs --out-dir pkg",
+		"build": "node ../../scripts/run-wasm-pack.mjs build --target nodejs --out-dir pkg",
+		"build:release": "node ../../scripts/run-wasm-pack.mjs build --release --target nodejs --out-dir pkg",
+		"build:rust": "cargo build",
 		"format": "cargo fmt --all",
 		"lint": "cargo fmt --all --check && cargo check",
 		"lint:fix": "cargo fmt --all",
-		"prepack": "pnpm run build:release",
+		"prepack": "node ../../scripts/run-wasm-pack.mjs build --release --target nodejs --out-dir pkg",
 		"test": "cargo test"
 	},
 	"exports": {

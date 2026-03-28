@@ -13,15 +13,15 @@
 		"pkg/layout_engine_bg.wasm.d.ts"
 	],
 	"scripts": {
-		"build:native": "PATH=\"$HOME/.cargo/bin:$PATH\" wasm-pack build --target web --out-dir pkg",
-		"build": "PATH=\"$HOME/.cargo/bin:$PATH\" wasm-pack build --target web --out-dir pkg",
-		"build:release": "PATH=\"$HOME/.cargo/bin:$PATH\" wasm-pack build --release --target web --out-dir pkg",
-		"build:rust": "PATH=\"$HOME/.cargo/bin:$PATH\" cargo build",
+		"build:native": "node ../../scripts/run-wasm-pack.mjs build --target web --out-dir pkg",
+		"build": "node ../../scripts/run-wasm-pack.mjs build --target web --out-dir pkg",
+		"build:release": "node ../../scripts/run-wasm-pack.mjs build --release --target web --out-dir pkg",
+		"build:rust": "cargo build",
 		"format": "pnpm exec biome format --write .",
 		"lint": "pnpm exec biome check .",
 		"lint:fix": "pnpm exec biome check --write --unsafe .",
-		"prepack": "pnpm run build:release",
-		"test": "PATH=\"$HOME/.cargo/bin:$PATH\" cargo test"
+		"prepack": "node ../../scripts/run-wasm-pack.mjs build --release --target web --out-dir pkg",
+		"test": "cargo test"
 	},
 	"exports": {
 		".": {
