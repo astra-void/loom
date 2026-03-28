@@ -709,6 +709,27 @@ code {
 	position: relative;
 	width: 100%;
 }
+.preview-stage-overlay {
+	align-items: center;
+	display: grid;
+	inset: 0;
+	justify-items: center;
+	padding: 16px;
+	pointer-events: none;
+	position: absolute;
+	z-index: 2;
+}
+
+.preview-stage-overlay-card {
+	background: var(--panel);
+	border: 1px solid var(--line);
+	border-radius: 10px;
+	box-shadow: var(--shadow);
+	max-width: 38rem;
+	padding: 20px;
+	pointer-events: auto;
+	width: min(100%, 38rem);
+}
 
 .wasm-viewport {
 	margin: 0 auto;

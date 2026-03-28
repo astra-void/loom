@@ -178,6 +178,32 @@ describe("preview source transform", () => {
 		);
 	});
 
+	it("keeps UIListLayout as a direct sibling in the rich-hosts fixture", () => {
+		const source = fs.readFileSync(
+			path.resolve(__dirname, "fixtures/rich-hosts/src/index.tsx"),
+			"utf8",
+		);
+
+		const result = transformPreviewSource(source, {
+			filePath: "/virtual/rich-hosts.tsx",
+			mode: "compatibility",
+			runtimeModule: "@loom-dev/preview-runtime",
+			target: "rich-hosts",
+		});
+
+		expect(result.diagnostics).toHaveLength(0);
+
+		const listLayoutIndex = result.code.indexOf("<UIListLayout");
+		const paddingIndex = result.code.indexOf("<UIPadding");
+		const textLabelIndex = result.code.indexOf("<TextLabel");
+		const scrollingFrameIndex = result.code.indexOf("<ScrollingFrame");
+
+		expect(listLayoutIndex).toBeGreaterThanOrEqual(0);
+		expect(paddingIndex).toBeGreaterThan(listLayoutIndex);
+		expect(textLabelIndex).toBeGreaterThan(paddingIndex);
+		expect(scrollingFrameIndex).toBeGreaterThan(textLabelIndex);
+	});
+
 	it("merges rewritten runtime imports without duplicate bindings", () => {
 		const source = `
       import { React, Slot } from "@loom-dev/core";

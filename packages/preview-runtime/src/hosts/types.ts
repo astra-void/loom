@@ -110,6 +110,7 @@ export type PreviewDomProps = {
 	Selectable?: boolean;
 	ShrinkRatio?: number;
 	Size?: UDim2Like;
+	SizeConstraint?: string;
 	SortOrder?: string;
 	StartCorner?: string;
 	Text?: unknown;

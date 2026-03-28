@@ -127,6 +127,10 @@ export type PreviewLayoutModifiers = {
 };
 
 export type PreviewLayoutPositionMode = "absolute";
+export type PreviewLayoutSizeConstraintMode =
+	| "RelativeXX"
+	| "RelativeXY"
+	| "RelativeYY";
 export type PreviewLayoutNodeKind = "host" | "layout" | "root";
 export type PreviewLayoutSource =
 	| "explicit-size"
@@ -157,6 +161,7 @@ export type PreviewLayoutNodeLayout = {
 	constraints?: PreviewLayoutConstraints;
 	position: PreviewLayoutSize;
 	positionMode: PreviewLayoutPositionMode;
+	sizeConstraintMode: PreviewLayoutSizeConstraintMode;
 	size?: PreviewLayoutSize;
 };
 
@@ -221,6 +226,7 @@ export type RobloxLayoutNodeInput = {
 	parentId?: string;
 	position?: UDim2Like;
 	size?: UDim2Like;
+	sizeConstraintMode?: string;
 };
 
 export type RobloxLayoutRegistrationInput = RobloxLayoutNodeInput & {
@@ -347,6 +353,23 @@ function normalizeLowerCaseString(value: unknown): string | undefined {
 
 	const normalized = value.trim().toLowerCase();
 	return normalized.length > 0 ? normalized : undefined;
+}
+
+function normalizeSizeConstraintMode(
+	value: unknown,
+): PreviewLayoutSizeConstraintMode {
+	if (typeof value !== "string") {
+		return "RelativeXY";
+	}
+
+	switch (value.trim().toLowerCase()) {
+		case "relativexx":
+			return "RelativeXX";
+		case "relativeyy":
+			return "RelativeYY";
+		default:
+			return "RelativeXY";
+	}
 }
 
 function isZeroAxisValue(value: SerializedUDim) {
@@ -765,6 +788,24 @@ function resolveAxis(udim: PreviewLayoutAxis, parentAxisSize: number): number {
 	return parentAxisSize * udim.scale + udim.offset;
 }
 
+function resolveAxisForSizeConstraintMode(
+	axis: PreviewLayoutAxis,
+	parentRect: ComputedRect,
+	mode: PreviewLayoutSizeConstraintMode,
+	isX: boolean,
+): number {
+	const parentAxisSize =
+		mode === "RelativeXX"
+			? parentRect.width
+			: mode === "RelativeYY"
+				? parentRect.height
+				: isX
+					? parentRect.width
+					: parentRect.height;
+
+	return resolveAxis(axis, parentAxisSize);
+}
+
 function clampAxis(
 	value: number,
 	constraints: PreviewLayoutAxisConstraints | undefined,
@@ -881,6 +922,7 @@ export function adaptRobloxNodeInput(
 				serializeUDim2(input.position, ZERO_UDIM2) ?? ZERO_UDIM2,
 			),
 			positionMode: "absolute",
+			sizeConstraintMode: normalizeSizeConstraintMode(input.sizeConstraintMode),
 			size: input.size
 				? toLayoutSize(serializeUDim2(input.size, ZERO_UDIM2) ?? ZERO_UDIM2)
 				: undefined,
@@ -1019,6 +1061,7 @@ export function areNodesEqual(
 		a.layout.position.y.scale === b.layout.position.y.scale &&
 		a.layout.position.y.offset === b.layout.position.y.offset &&
 		a.layout.positionMode === b.layout.positionMode &&
+		a.layout.sizeConstraintMode === b.layout.sizeConstraintMode &&
 		(a.layout.size?.x.scale ?? 0) === (b.layout.size?.x.scale ?? 0) &&
 		(a.layout.size?.x.offset ?? 0) === (b.layout.size?.x.offset ?? 0) &&
 		(a.layout.size?.y.scale ?? 0) === (b.layout.size?.y.scale ?? 0) &&
@@ -1097,9 +1140,22 @@ export function computeRectFromParentRect(
 	parentRect: ComputedRect,
 ): { layoutSource: PreviewLayoutSource; rect: ComputedRect } {
 	const resolved = resolveNodeSize(node);
+	const sizeConstraintMode = normalizeSizeConstraintMode(
+		(node.layout as { sizeConstraintMode?: unknown }).sizeConstraintMode,
+	);
 
-	let width = resolveAxis(resolved.resolvedSize.x, parentRect.width);
-	let height = resolveAxis(resolved.resolvedSize.y, parentRect.height);
+	let width = resolveAxisForSizeConstraintMode(
+		resolved.resolvedSize.x,
+		parentRect,
+		sizeConstraintMode,
+		true,
+	);
+	let height = resolveAxisForSizeConstraintMode(
+		resolved.resolvedSize.y,
+		parentRect,
+		sizeConstraintMode,
+		false,
+	);
 	width = clampAxis(width, node.layout.constraints?.width);
 	height = clampAxis(height, node.layout.constraints?.height);
 

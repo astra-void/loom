@@ -70,6 +70,7 @@ type LayoutNode = {
 		anchorPoint?: { x: number; y: number };
 		position?: { x: SerializedAxis; y: SerializedAxis };
 		size?: { x: SerializedAxis; y: SerializedAxis };
+        sizeConstraintMode?: string;
 	};
 	name?: string;
 	nodeType?: string;
@@ -1310,6 +1311,41 @@ describe("preview runtime host mapping", () => {
 			expect(fourth.style.top).toBe("72.5px");
 		});
 	});
+	it("preserves SizeConstraint through host normalization and fallback layout math", async () => {
+		let capturedNodes: LayoutNode[] = [];
+		layoutEngineMocks.computeDirty.mockImplementation((nodes) => {
+			capturedNodes = JSON.parse(JSON.stringify(nodes)) as LayoutNode[];
+			throw new Error("compute failed");
+		});
+
+		render(
+			<LayoutProvider debounceMs={0} viewportHeight={240} viewportWidth={320}>
+				<ScreenGui>
+					<Frame Id="size-constraint-frame" Size={UDim2.fromOffset(320, 240)}>
+						<Frame
+							Id="size-constraint-child"
+							Position={UDim2.fromOffset(0, 0)}
+							Size={UDim2.fromScale(0.25, 0.5)}
+							SizeConstraint="RelativeYY"
+						/>
+					</Frame>
+				</ScreenGui>
+			</LayoutProvider>,
+		);
+
+		const child = document.querySelector(
+			'[data-preview-node-id="size-constraint-child"]',
+		) as HTMLElement;
+
+		await waitFor(() => {
+			expect(capturedNodes.length).toBeGreaterThan(0);
+			expect(
+				findNode(capturedNodes, "size-constraint-child")?.layout?.sizeConstraintMode,
+			).toBe("RelativeYY");
+			expect(child.style.width).toBe("60px");
+			expect(child.style.height).toBe("120px");
+		});
+	});
 
 	it("applies size, aspect, and text-size constraints in provider fallback DOM", async () => {
 		layoutEngineMocks.computeDirty.mockImplementation(() => {
@@ -1908,4 +1944,6 @@ describe("preview runtime host mapping", () => {
 		expect(snapshots[snapshots.length - 1]).toEqual(getPreviewRuntimeIssues());
 	});
 });
+
+
 

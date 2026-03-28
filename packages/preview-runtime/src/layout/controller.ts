@@ -74,6 +74,65 @@ function resolveAxisValue(
 	);
 }
 
+function resolveSizeConstraintMode(
+	value: unknown,
+): "RelativeXX" | "RelativeXY" | "RelativeYY" {
+	if (typeof value !== "string") {
+		return "RelativeXY";
+	}
+
+	switch (value.trim().toLowerCase()) {
+		case "relativexx":
+			return "RelativeXX";
+		case "relativeyy":
+			return "RelativeYY";
+		default:
+			return "RelativeXY";
+	}
+}
+
+function resolveAxisValueForSizeConstraintMode(
+	axis:
+		| {
+				offset: number;
+				scale: number;
+		  }
+		| {
+				Offset: number;
+				Scale: number;
+		  },
+	parentRect: { height: number; width: number; x: number; y: number },
+	mode: "RelativeXX" | "RelativeXY" | "RelativeYY",
+	isX: boolean,
+) {
+	const parentSize =
+		mode === "RelativeXX"
+			? parentRect.width
+			: mode === "RelativeYY"
+				? parentRect.height
+				: isX
+					? parentRect.width
+					: parentRect.height;
+
+	return resolveAxisValue(axis, parentSize);
+}
+
+function applyAnchorPoint(
+	x: number,
+	y: number,
+	width: number,
+	height: number,
+	anchorX: number,
+	anchorY: number,
+) {
+	return {
+		height,
+		width,
+		x: x - anchorX * width,
+		y: y - anchorY * height,
+	};
+}
+
 function clampValue(value: number, min?: number, max?: number) {
 	let next = value;
 
@@ -176,10 +235,23 @@ function resolveBaseNodeSize(
 	parentRect: { height: number; width: number; x: number; y: number },
 ) {
 	const resolved = resolveNodeSize(node);
+	const sizeConstraintMode = resolveSizeConstraintMode(
+		(node.layout as { sizeConstraintMode?: unknown }).sizeConstraintMode,
+	);
 	return {
-		height: resolveAxisValue(resolved.resolvedSize.y, parentRect.height),
+		height: resolveAxisValueForSizeConstraintMode(
+			resolved.resolvedSize.y,
+			parentRect,
+			sizeConstraintMode,
+			false,
+		),
 		layoutSource: resolved.layoutSource,
-		width: resolveAxisValue(resolved.resolvedSize.x, parentRect.width),
+		width: resolveAxisValueForSizeConstraintMode(
+			resolved.resolvedSize.x,
+			parentRect,
+			sizeConstraintMode,
+			true,
+		),
 	};
 }
 
@@ -320,6 +392,10 @@ function alignStart(
 	}
 
 	return 0;
+}
+
+function advanceMainCursor(cursor: number, itemMain: number, gap: number) {
+	return cursor + itemMain + gap;
 }
 
 function buildDebugNodeMap(
@@ -691,12 +767,14 @@ export class LayoutController {
 
 			this.computeFallbackSubtreeFromRect(
 				childNode.id,
-				{
-					height: dimensions.height,
-					width: dimensions.width,
-					x: cellX + Math.max(0, (cellWidth - dimensions.width) / 2),
-					y: cellY + Math.max(0, (cellHeight - dimensions.height) / 2),
-				},
+				applyAnchorPoint(
+					cellX + Math.max(0, (cellWidth - dimensions.width) / 2),
+					cellY + Math.max(0, (cellHeight - dimensions.height) / 2),
+					dimensions.width,
+					dimensions.height,
+					childNode.layout.anchorPoint.x,
+					childNode.layout.anchorPoint.y,
+				),
 				output,
 			);
 		}
@@ -867,16 +945,18 @@ export class LayoutController {
 
 				this.computeFallbackSubtreeFromRect(
 					item.childNode.id,
-					{
-						height,
-						width,
+					applyAnchorPoint(
 						x,
 						y,
-					},
+						width,
+						height,
+						item.childNode.layout.anchorPoint.x,
+						item.childNode.layout.anchorPoint.y,
+					),
 					output,
 				);
 
-				mainCursor += item.main + gap;
+				mainCursor = advanceMainCursor(mainCursor, item.main, gap);
 			}
 
 			crossCursor += metric.lineCross + gap;

@@ -16,6 +16,7 @@ import {
 	pickViewport,
 	setPreviewRuntimeIssueContext,
 	subscribePreviewRuntimeIssues,
+	usePreviewLayoutProbeSnapshot,
 	type ViewportSize,
 } from "@loom-dev/preview-runtime";
 import React from "react";
@@ -43,6 +44,7 @@ type PreviewAppProps = {
 type PreviewCanvasProps = {
 	entry: PreviewEntryDescriptor;
 	isDebugMode: boolean;
+	isTransitioning: boolean;
 	module: PreviewModule;
 	onRenderError: (error: unknown | null) => void;
 };
@@ -264,7 +266,7 @@ function formatImportChain(importChain: string[] | undefined) {
 			?.map((segment) => segment.trim())
 			.filter((segment) => segment.length > 0) ?? [];
 
-	return parts.length > 0 ? parts.join(" → ") : null;
+	return parts.length > 0 ? parts.join(" -> ") : null;
 }
 
 function getIssueSeverityLabel(issue: IssueCard) {
@@ -738,6 +740,21 @@ function usePreviewViewport() {
 
 function PreviewCanvas(props: PreviewCanvasProps) {
 	const { viewport, viewportRef } = usePreviewViewport();
+	const layoutProbe = usePreviewLayoutProbeSnapshot();
+	const isCanvasReady =
+		!layoutProbe.error && layoutProbe.isReady && layoutProbe.viewportReady;
+	const showLoadingOverlay = props.isTransitioning || !isCanvasReady;
+	const overlayMessage = layoutProbe.error
+		? {
+				body: layoutProbe.error,
+				eyebrow: "Error",
+				title: "Preview canvas failed to initialize.",
+			}
+		: {
+				body: "The selected module is being prepared for preview.",
+				eyebrow: "Loading",
+				title: "Preparing transformed source.",
+			};
 
 	return (
 		<div className="preview-canvas">
@@ -749,7 +766,19 @@ function PreviewCanvas(props: PreviewCanvasProps) {
 					data-preview-stage-width={viewport.width}
 					ref={viewportRef}
 				>
+					{showLoadingOverlay ? (
+						<div aria-live="polite" className="preview-stage-overlay">
+							<div className="preview-stage-overlay-card preview-empty preview-empty-centered">
+								<p className="preview-empty-eyebrow">
+									{overlayMessage.eyebrow}
+								</p>
+								<h2>{overlayMessage.title}</h2>
+								<p>{overlayMessage.body}</p>
+							</div>
+						</div>
+					) : null}
 					<LayoutProvider
+						key={props.entry.id}
 						viewportHeight={viewport.height}
 						viewportWidth={viewport.width}
 					>
@@ -815,6 +844,7 @@ export function PreviewApp(props: PreviewAppProps) {
 	const [loadedEntry, setLoadedEntry] = React.useState<
 		LoadedPreviewEntry | undefined
 	>();
+	const [isLoadingEntry, setIsLoadingEntry] = React.useState(false);
 	const [loadIssue, setLoadIssue] = React.useState<PreviewRuntimeIssue | null>(
 		null,
 	);
@@ -833,9 +863,17 @@ export function PreviewApp(props: PreviewAppProps) {
 	);
 	const selectedEntry =
 		props.entries.find((entry) => entry.id === selectedId) ?? props.entries[0];
+	const loadedEntryPayload = loadedEntry?.payload;
+	const loadedEntryPayloadMatchesSelected =
+		loadedEntryPayload != null &&
+		selectedEntry != null &&
+		loadedEntryPayload.descriptor.id === selectedEntry.id;
+	const selectedLoadedEntry = loadedEntryPayloadMatchesSelected
+		? loadedEntry
+		: undefined;
 	const selectedEntryPayload =
 		(selectedEntry ? props.entryPayloads?.[selectedEntry.id] : undefined) ??
-		loadedEntry?.payload;
+		(loadedEntryPayloadMatchesSelected ? loadedEntryPayload : undefined);
 	const selectedEntryDiscoveryDiagnostics =
 		selectedEntry == null
 			? []
@@ -929,6 +967,8 @@ export function PreviewApp(props: PreviewAppProps) {
 	const selectedEntrySourceFilePath = selectedEntry?.sourceFilePath;
 	const selectedEntryRelativePath = selectedEntry?.relativePath;
 	const selectedEntryTargetName = selectedEntry?.targetName;
+	const isPreviewCanvasTransitioning =
+		selectedEntry?.status === "ready" && isLoadingEntry;
 	const [collapsedFolderIds, setCollapsedFolderIds] = React.useState<
 		Set<string>
 	>(() => new Set());
@@ -992,13 +1032,14 @@ export function PreviewApp(props: PreviewAppProps) {
 			!isLoadableEntryStatus(selectedEntryStatus)
 		) {
 			setLoadedEntry(undefined);
+			setIsLoadingEntry(false);
 			setLoadIssue(null);
 			setRenderIssue(null);
 			return;
 		}
 
 		let cancelled = false;
-		setLoadedEntry(undefined);
+		setIsLoadingEntry(true);
 		setLoadIssue(null);
 		setRenderIssue(null);
 
@@ -1006,6 +1047,7 @@ export function PreviewApp(props: PreviewAppProps) {
 			.then((entryResult) => {
 				if (!cancelled) {
 					setLoadedEntry(entryResult);
+					setIsLoadingEntry(false);
 				}
 			})
 			.catch((error: unknown) => {
@@ -1014,6 +1056,7 @@ export function PreviewApp(props: PreviewAppProps) {
 					if (currentSelectedEntry) {
 						setLoadIssue(createPreviewLoadIssue(currentSelectedEntry, error));
 					}
+					setIsLoadingEntry(false);
 				}
 			});
 
@@ -1214,7 +1257,13 @@ export function PreviewApp(props: PreviewAppProps) {
 						<section className="preview-card">
 							<div className="preview-card-body">
 								{selectedEntry.status === "ready" ? (
-									loadedEntry ? (
+									loadIssue ? (
+										<div className="preview-empty">
+											<p className="preview-empty-eyebrow">Load error</p>
+											<h2>Preview module failed to load.</h2>
+											<p>{loadIssue.summary}</p>
+										</div>
+									) : selectedLoadedEntry ? (
 										selectedEntryBlockingDiagnostics.length > 0 ? (
 											<div className="preview-empty">
 												<p className="preview-empty-eyebrow">Diagnostics</p>
@@ -1229,7 +1278,8 @@ export function PreviewApp(props: PreviewAppProps) {
 											<PreviewCanvas
 												entry={selectedEntry}
 												isDebugMode={isDebugMode}
-												module={loadedEntry.module}
+												isTransitioning={isPreviewCanvasTransitioning}
+												module={selectedLoadedEntry.module}
 												onRenderError={(error) => {
 													if (error == null) {
 														setRenderIssue(null);
@@ -1242,12 +1292,6 @@ export function PreviewApp(props: PreviewAppProps) {
 												}}
 											/>
 										)
-									) : loadIssue ? (
-										<div className="preview-empty">
-											<p className="preview-empty-eyebrow">Load error</p>
-											<h2>Preview module failed to load.</h2>
-											<p>{loadIssue.summary}</p>
-										</div>
 									) : (
 										<div className="preview-empty">
 											<p className="preview-empty-eyebrow">Loading</p>

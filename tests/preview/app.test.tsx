@@ -6,13 +6,13 @@ import type {
 	PreviewEntryPayload,
 } from "@loom-dev/preview-engine";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
-import userEvent from "../testUserEvent";
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PreviewApp } from "../../packages/preview/src/shell/PreviewApp";
 import { PreviewThemeProvider } from "../../packages/preview/src/shell/theme";
 import { PREVIEW_ENGINE_PROTOCOL_VERSION } from "../../packages/preview-engine/src/types";
 import { suppressExpectedConsoleMessages } from "../testLogUtils";
+import userEvent from "../testUserEvent";
 import {
 	installTestPreviewLayoutEngineLoader,
 	resetTestPreviewLayoutEngineLoader,
@@ -353,7 +353,9 @@ describe("preview shell", () => {
 
 		expect(screen.getByText("Preparing transformed source.")).toBeTruthy();
 		expect(await screen.findByRole("button", { name: "test" })).toBeTruthy();
-		expect(screen.queryByText("Preparing transformed source.")).toBeNull();
+		await waitFor(() => {
+			expect(screen.queryByText("Preparing transformed source.")).toBeNull();
+		});
 		await waitFor(() => {
 			expect(loadEntrySpy).toHaveBeenCalledTimes(1);
 		});
@@ -735,6 +737,59 @@ describe("preview shell", () => {
 			await screen.findByRole("button", { name: "Healthy preview" }),
 		).toBeTruthy();
 	});
+	it("keeps loading visible while switching between ready entries", async () => {
+		const user = userEvent.setup();
+		const firstEntry = createEntryDescriptor({
+			id: "First.tsx",
+			relativePath: "First.tsx",
+			title: "First",
+		});
+		const secondEntry = createEntryDescriptor({
+			id: "Second.tsx",
+			relativePath: "Second.tsx",
+			title: "Second",
+		});
+		let resolveSecondLoad: (value: unknown) => void = () => undefined;
+		const loadEntry = vi.fn((id: string) => {
+			if (id === firstEntry.id) {
+				return createLoadedEntry(firstEntry, {
+					default: () => <button type="button">First preview</button>,
+				});
+			}
+
+			return new Promise((resolve) => {
+				resolveSecondLoad = resolve;
+			});
+		});
+
+		renderPreviewApp(
+			<PreviewApp
+				entries={[firstEntry, secondEntry]}
+				initialSelectedId={firstEntry.id}
+				loadEntry={loadEntry}
+				projectName="@loom-dev/preview-smoke"
+			/>,
+		);
+
+		expect(
+			await screen.findByRole("button", { name: "First preview" }),
+		).toBeTruthy();
+		await user.click(screen.getByRole("button", { name: /second/i }));
+		await waitFor(() => {
+			expect(loadEntry).toHaveBeenCalledWith(secondEntry.id);
+		});
+		expect(screen.getByText("Preparing transformed source.")).toBeTruthy();
+		expect(screen.queryByRole("button", { name: "First preview" })).toBeNull();
+		expect(screen.queryByRole("button", { name: "Second preview" })).toBeNull();
+		resolveSecondLoad(
+			createLoadedEntry(secondEntry, {
+				default: () => <button type="button">Second preview</button>,
+			}),
+		);
+		expect(
+			await screen.findByRole("button", { name: "Second preview" }),
+		).toBeTruthy();
+	});
 
 	it("clears render errors when the user switches to another entry", async () => {
 		const user = userEvent.setup();
@@ -819,4 +874,3 @@ describe("preview shell", () => {
 		).toBeNull();
 	});
 });
-

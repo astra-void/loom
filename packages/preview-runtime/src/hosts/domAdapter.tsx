@@ -372,6 +372,7 @@ function createHostNode(source: SourceHostDescriptor): PreviewHostNode {
 		anchorPoint?: unknown;
 		position?: unknown;
 		size?: unknown;
+		sizeConstraintMode?: unknown;
 	};
 	const resolved = resolvePreviewDomProps(source.props, {
 		applyComputedLayout: false,
@@ -415,6 +416,11 @@ function createHostNode(source: SourceHostDescriptor): PreviewHostNode {
 				source.props.Position ??
 				(rawProps.position as PreviewDomProps["Position"] | undefined),
 			sourceOrder: source.sourceOrder,
+			sizeConstraintMode:
+				source.props.SizeConstraint ??
+				(rawProps.sizeConstraintMode as
+					| PreviewDomProps["SizeConstraint"]
+					| undefined),
 			size:
 				serializeUDim2(source.props.Size ?? rawProps.size, undefined) ??
 				undefined,

@@ -87,6 +87,7 @@ const PREVIEW_ONLY_PROP_NAMES = new Set([
 	"Selectable",
 	"ShrinkRatio",
 	"Size",
+	"SizeConstraint",
 	"SortOrder",
 	"StartCorner",
 	"Text",
@@ -358,6 +359,7 @@ export function resolvePreviewDomProps(
 		Scale,
 		Selectable,
 		Size,
+		SizeConstraint,
 		Text,
 		TextColor3,
 		TextEditable,
@@ -401,6 +403,7 @@ export function resolvePreviewDomProps(
 	void Position;
 	void Scale;
 	void Size;
+	void SizeConstraint;
 	void TextScaled;
 	void TextTransparency;
 	void Thickness;
