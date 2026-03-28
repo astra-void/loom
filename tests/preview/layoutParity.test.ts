@@ -102,8 +102,8 @@ function assertParity(
 	fallback.setViewport(viewport);
 	wasm.setViewport(viewport);
 
-	const fallbackResult = fallback.compute(false);
-	const wasmResult = wasm.compute(true);
+	const fallbackResult = (fallback as any).computeFallback();
+	const wasmResult = wasm.compute();
 
 	expect(wasmResult.dirtyNodeIds).toEqual(fallbackResult.dirtyNodeIds);
 	expect(wasmResult.rects).toEqual(fallbackResult.rects);

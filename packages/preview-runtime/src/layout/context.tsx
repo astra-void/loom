@@ -425,7 +425,7 @@ export function LayoutProvider(props: LayoutProviderProps) {
 				}
 
 				try {
-					const nextResult = controller.compute(isReady);
+					const nextResult = controller.compute();
 					setLayoutResult(nextResult);
 					setError(null);
 				} catch (nextError) {
@@ -445,37 +445,13 @@ export function LayoutProvider(props: LayoutProviderProps) {
 							nextError,
 						),
 					);
-					try {
-						const fallbackResult = controller.compute(false);
-						setLayoutResult(fallbackResult);
-						setError(`Wasm layout failed: ${toErrorMessage(nextError)}`);
-					} catch (fallbackError) {
-						publishPreviewRuntimeIssue(
-							normalizePreviewRuntimeError(
-								{
-									code: isValidationError(fallbackError)
-										? "LAYOUT_VALIDATION_ERROR"
-										: "LAYOUT_FALLBACK_COMPUTE_FAILED",
-									kind: isValidationError(fallbackError)
-										? "LayoutValidationError"
-										: "LayoutExecutionError",
-									phase: "layout",
-									summary: `Fallback layout failed: ${toErrorMessage(fallbackError)}`,
-									target: "@loom-dev/layout-engine",
-								},
-								fallbackError,
-							),
-						);
-						setLayoutResult(
-							createEmptyLayoutResult({
-								height: viewportHeight,
-								width: viewportWidth,
-							}),
-						);
-						setError(
-							`Fallback layout failed: ${toErrorMessage(fallbackError)}`,
-						);
-					}
+					setLayoutResult(
+						createEmptyLayoutResult({
+							height: viewportHeight,
+							width: viewportWidth,
+						}),
+					);
+					setError(`Wasm layout failed: ${toErrorMessage(nextError)}`);
 				}
 			},
 			Math.max(0, debounceMs),
@@ -487,7 +463,6 @@ export function LayoutProvider(props: LayoutProviderProps) {
 	}, [
 		controller,
 		debounceMs,
-		isReady,
 		treeVersion,
 		viewportHeight,
 		viewportReady,

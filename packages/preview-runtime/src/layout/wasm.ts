@@ -75,26 +75,17 @@ export function setPreviewLayoutEngineLoader(
 	globalRecord[LAYOUT_ENGINE_LOADER_KEY] = loader;
 }
 
-function resolveLayoutEngineWasmUrl(url: string): string {
-	try {
-		return new URL(url).toString();
-	} catch {
-		const baseUrl =
-			typeof window !== "undefined" &&
-			window.location &&
-			typeof window.location.href === "string"
-				? window.location.href
-				: typeof document !== "undefined" &&
-						typeof document.baseURI === "string"
-					? document.baseURI
-					: undefined;
+export function resolveLayoutEngineWasmUrl(url: string): string {
+	const baseUrl =
+		typeof window !== "undefined" &&
+		window.location &&
+		typeof window.location.href === "string"
+			? window.location.href
+			: typeof document !== "undefined" && typeof document.baseURI === "string"
+				? document.baseURI
+				: undefined;
 
-		if (!baseUrl) {
-			return url;
-		}
-
-		return new URL(url, baseUrl).toString();
-	}
+	return baseUrl ? new URL(url, baseUrl).toString() : url;
 }
 
 function createLazyPromise<T>(factory: () => Promise<T>): Promise<T> {

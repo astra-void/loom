@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { resolveLayoutEngineWasmUrl } from "../../packages/preview-runtime/src/layout/wasm";
 
 const layoutEngineMocks = vi.hoisted(() => ({
 	createLayoutSession: vi.fn(),
@@ -14,6 +15,18 @@ type PreviewRuntimeWasmModule =
 	typeof import("../../packages/preview-runtime/src/layout/wasm");
 
 describe("preview runtime layout engine initialization", () => {
+	it("resolves relative layout-engine Wasm URLs against the browser base URI", () => {
+		vi.stubGlobal("window", {
+			location: { href: "http://localhost/" },
+		});
+
+		expect(resolveLayoutEngineWasmUrl("assets/layout_engine_bg.wasm")).toBe(
+			"http://localhost/assets/layout_engine_bg.wasm",
+		);
+		expect(resolveLayoutEngineWasmUrl("/assets/layout_engine_bg.wasm")).toBe(
+			"http://localhost/assets/layout_engine_bg.wasm",
+		);
+	});
 	let previewRuntime: PreviewRuntimeWasmModule | undefined;
 
 	async function loadPreviewRuntime() {

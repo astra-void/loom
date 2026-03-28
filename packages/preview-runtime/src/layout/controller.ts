@@ -2,7 +2,6 @@ import { normalizePreviewNodeId } from "../internal/robloxValues";
 import {
 	areNodesEqual,
 	createEmptyLayoutResult,
-	createViewportRect,
 	type PreviewLayoutDebugNode,
 	type PreviewLayoutNode,
 	type PreviewLayoutResult,
@@ -383,10 +382,13 @@ export class LayoutController {
 
 	public constructor(private readonly options: LayoutControllerOptions = {}) {}
 
-	public compute(preferSession: boolean): PreviewLayoutResult {
-		const nextResult = preferSession
-			? this.computeWithSession()
-			: this.computeFallback();
+	public compute(): PreviewLayoutResult {
+		let nextResult: PreviewLayoutResult;
+		try {
+			nextResult = this.computeWithSession();
+		} catch {
+			nextResult = this.computeFallback();
+		}
 		this.result = nextResult;
 		this.debugNodesById = buildDebugNodeMap(nextResult.debug.roots);
 		this.dirtyNodeIds.clear();
@@ -881,61 +883,6 @@ export class LayoutController {
 		}
 	}
 
-	private computeFallback(): PreviewLayoutResult {
-		if (this.nodes.size === 0) {
-			return createEmptyLayoutResult(this.viewport);
-		}
-
-		const dirtyRootIds = this.getDirtyRootIds();
-		const nextRects: Record<
-			string,
-			{ height: number; width: number; x: number; y: number }
-		> = {
-			...this.result.rects,
-		};
-
-		for (const removedId of this.pendingRemovedIds) {
-			delete nextRects[removedId];
-		}
-
-		const viewportRect = createViewportRect(
-			this.viewport.width,
-			this.viewport.height,
-		);
-
-		for (const rootId of dirtyRootIds) {
-			for (const affectedId of this.collectSubtreeIds(rootId)) {
-				delete nextRects[affectedId];
-			}
-
-			this.computeFallbackSubtree(rootId, viewportRect, nextRects);
-		}
-
-		const provisionalResult: PreviewLayoutResult = {
-			debug: createEmptyLayoutResult(this.viewport).debug,
-			dirtyNodeIds: [
-				...new Set([...this.getDirtyNodeIds(), ...this.pendingRemovedIds]),
-			].sort(compareIds),
-			rects: nextRects,
-		};
-
-		this.result = provisionalResult;
-
-		return {
-			debug: {
-				dirtyNodeIds: provisionalResult.dirtyNodeIds,
-				roots: this.rootIds
-					.map((rootId) =>
-						this.buildDebugTree(rootId, viewportRect, "fallback"),
-					)
-					.filter((node): node is PreviewLayoutDebugNode => node !== null),
-				viewport: cloneViewport(this.viewport),
-			},
-			dirtyNodeIds: provisionalResult.dirtyNodeIds,
-			rects: provisionalResult.rects,
-		};
-	}
-
 	private computeFallbackSubtree(
 		nodeId: string,
 		parentRect: { height: number; width: number; x: number; y: number },
@@ -956,9 +903,58 @@ export class LayoutController {
 		);
 	}
 
+	private computeFallback(): PreviewLayoutResult {
+		const viewport = cloneViewport(this.viewport);
+		const viewportRect = {
+			height: viewport.height,
+			width: viewport.width,
+			x: 0,
+			y: 0,
+		};
+		const rects: Record<
+			string,
+			{ height: number; width: number; x: number; y: number }
+		> = {};
+		const dirtyNodeIds = [...this.dirtyNodeIds].sort(compareIds);
+
+		this.result = {
+			debug: {
+				dirtyNodeIds,
+				roots: [],
+				viewport,
+			},
+			dirtyNodeIds,
+			rects,
+		};
+
+		for (const rootId of this.rootIds) {
+			this.computeFallbackSubtree(rootId, viewportRect, rects);
+		}
+
+		const roots = this.rootIds
+			.map((rootId) => this.buildDebugTree(rootId, viewportRect, "fallback"))
+			.filter((root): root is PreviewLayoutDebugNode => root !== null);
+		const nextResult: PreviewLayoutResult = {
+			debug: {
+				dirtyNodeIds,
+				roots,
+				viewport,
+			},
+			dirtyNodeIds,
+			rects,
+		};
+
+		this.result = nextResult;
+		return nextResult;
+	}
+
 	private computeWithSession(): PreviewLayoutResult {
-		if (this.hasUnsupportedLayoutNodes()) {
-			return this.computeFallback();
+		const unsupportedLayoutCapabilities =
+			this.collectUnsupportedLayoutCapabilities();
+		if (unsupportedLayoutCapabilities.length > 0) {
+			throw new Error(
+				`WASM layout engine does not support these layout capabilities: ${unsupportedLayoutCapabilities.join(", ")}.`,
+			);
 		}
 
 		const session = this.getOrCreateSession();
@@ -974,30 +970,6 @@ export class LayoutController {
 			dirtyNodeIds: [...nextResult.dirtyNodeIds].sort(compareIds),
 			rects: nextResult.rects,
 		};
-	}
-
-	private getDirtyRootIds() {
-		if (this.dirtyRootIds.size > 0) {
-			return [...this.dirtyRootIds].sort(compareIds);
-		}
-
-		if (Object.keys(this.result.rects).length === 0) {
-			return [...this.rootIds];
-		}
-
-		return [];
-	}
-
-	private getDirtyNodeIds() {
-		if (this.dirtyNodeIds.size > 0) {
-			return [...this.dirtyNodeIds].sort(compareIds);
-		}
-
-		if (Object.keys(this.result.rects).length === 0) {
-			return [...this.nodes.keys()].sort(compareIds);
-		}
-
-		return [];
 	}
 
 	private getOrCreateSession() {
@@ -1062,18 +1034,18 @@ export class LayoutController {
 			});
 	}
 
-	private hasUnsupportedLayoutNodes() {
+	private collectUnsupportedLayoutCapabilities() {
+		const unsupportedLayoutCapabilities = new Set<string>();
+
 		for (const node of this.nodes.values()) {
-			if (
-				getNodeLayoutCapabilities(node).some(
-					(capability) => !SUPPORTED_WASM_LAYOUT_CAPABILITIES.has(capability),
-				)
-			) {
-				return true;
+			for (const capability of getNodeLayoutCapabilities(node)) {
+				if (!SUPPORTED_WASM_LAYOUT_CAPABILITIES.has(capability)) {
+					unsupportedLayoutCapabilities.add(capability);
+				}
 			}
 		}
 
-		return false;
+		return [...unsupportedLayoutCapabilities].sort(compareIds);
 	}
 
 	private resolveRootId(nodeId: string) {
