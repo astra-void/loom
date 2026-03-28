@@ -49,9 +49,12 @@ type PreviewTransformOutcome = {
 };
 type TransformPreviewSourceOptions = {
 	filePath: string;
+	reactAliases?: string[] | undefined;
+	reactRobloxAliases?: string[] | undefined;
 	mode?: PreviewTransformMode | undefined;
 	fileExists?: ((candidatePath: string) => boolean) | undefined;
 	runtimeModule: string;
+	runtimeAliases?: string[] | undefined;
 	target: string;
 };
 type TransformPreviewSourceResultInput = {

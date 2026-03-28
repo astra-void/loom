@@ -35,9 +35,12 @@ export interface PreviewTransformOutcome {
 
 export interface TransformPreviewSourceOptions {
 	filePath: string;
+	reactAliases?: string[] | undefined;
+	reactRobloxAliases?: string[] | undefined;
 	mode?: PreviewTransformMode;
 	fileExists?: ((candidatePath: string) => boolean) | undefined;
 	runtimeModule: string;
+	runtimeAliases?: string[] | undefined;
 	target: string;
 }
 

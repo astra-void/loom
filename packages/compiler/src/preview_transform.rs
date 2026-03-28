@@ -119,6 +119,8 @@ const RUNTIME_HELPER_NAMES: [&str; 11] = [
     "error",
     "isPreviewElement",
 ];
+const DEFAULT_RUNTIME_ALIASES: &[&str] = &[];
+const DEFAULT_REACT_ALIASES: &[&str] = &["@rbxts/react"];
 
 #[allow(non_snake_case)]
 #[cfg_attr(not(target_arch = "wasm32"), napi(object))]
@@ -139,7 +141,13 @@ pub struct UnsupportedPatternError {
 #[cfg_attr(target_arch = "wasm32", serde(rename_all = "camelCase"))]
 pub struct TransformPreviewSourceOptions {
     pub file_path: String,
+    #[cfg_attr(target_arch = "wasm32", serde(default))]
+    pub react_aliases: Option<Vec<String>>,
+    #[cfg_attr(target_arch = "wasm32", serde(default))]
+    pub react_roblox_aliases: Option<Vec<String>>,
     pub runtime_module: String,
+    #[cfg_attr(target_arch = "wasm32", serde(default))]
+    pub runtime_aliases: Option<Vec<String>>,
     pub target: String,
 }
 
@@ -480,7 +488,18 @@ enum PreviewGlobalRewriteKind {
     Warn,
 }
 
+fn merge_aliases(defaults: &[&str], aliases: Option<&[String]>) -> HashSet<String> {
+    let mut merged = HashSet::new();
+    merged.extend(defaults.iter().copied().map(ToOwned::to_owned));
+    if let Some(aliases) = aliases {
+        merged.extend(aliases.iter().cloned());
+    }
+    merged
+}
+
 struct PreviewTransform<'a> {
+    react_aliases: HashSet<String>,
+    runtime_aliases: HashSet<String>,
     options: &'a TransformPreviewSourceOptions,
     checker: &'a dyn RelativeModuleCandidateChecker,
     cm: Lrc<SourceMap>,
@@ -497,6 +516,14 @@ impl<'a> PreviewTransform<'a> {
         checker: &'a dyn RelativeModuleCandidateChecker,
     ) -> Self {
         Self {
+            react_aliases: merge_aliases(
+                DEFAULT_REACT_ALIASES,
+                options.react_aliases.as_deref(),
+            ),
+            runtime_aliases: merge_aliases(
+                DEFAULT_RUNTIME_ALIASES,
+                options.runtime_aliases.as_deref(),
+            ),
             options,
             checker,
             cm,
@@ -734,9 +761,9 @@ impl VisitMut for PreviewTransform<'_> {
 
     fn visit_mut_import_decl(&mut self, import_decl: &mut ImportDecl) {
         let module_name = import_decl.src.value.to_string_lossy().into_owned();
-        let next_module = if is_preview_runtime_alias_source(&module_name) {
+        let next_module = if self.runtime_aliases.contains(&module_name) {
             Some(self.options.runtime_module.clone())
-        } else if module_name == "@rbxts/react" {
+        } else if self.react_aliases.contains(&module_name) {
             Some("react".to_owned())
         } else if module_name.starts_with('.') {
             Some(resolve_relative_module_specifier(
@@ -965,13 +992,6 @@ fn runtime_binding_names() -> HashSet<String> {
         )
         .map(ToOwned::to_owned)
         .collect()
-}
-
-fn is_preview_runtime_alias_source(module_name: &str) -> bool {
-    matches!(
-        module_name,
-        "@loom-dev/core" | "@loom-dev/layer" | "@loom-dev/focus" | "@loom-dev/style"
-    )
 }
 
 fn supported_host_mapping(host_name: &str) -> Option<&'static str> {
@@ -1821,7 +1841,10 @@ const proxied = new Proxy(target, {
             source.to_owned(),
             TransformPreviewSourceOptions {
                 file_path: "src/example.ts".to_owned(),
+                react_aliases: None,
+                react_roblox_aliases: None,
                 runtime_module: "@loom-dev/preview-runtime".to_owned(),
+                runtime_aliases: None,
                 target: "compatibility".to_owned(),
             },
         )
@@ -1860,7 +1883,10 @@ export const value = ScreenGui;
             source.to_owned(),
             TransformPreviewSourceOptions {
                 file_path: "packages/preview-runtime/src/hosts/preview-targets/PreviewTargetShell.tsx".to_owned(),
+                react_aliases: None,
+                react_roblox_aliases: None,
                 runtime_module: "@loom-dev/preview-runtime".to_owned(),
+                runtime_aliases: None,
                 target: "runtime-hosts".to_owned(),
             },
         )
@@ -1883,6 +1909,40 @@ export const value = ScreenGui;
         assert!(
             result.code.contains("import { ScreenGui } from \"../components\";"),
             "expected original local ScreenGui import to remain, got: {}",
+            result.code
+        );
+    }
+
+    #[test]
+    fn custom_runtime_and_react_aliases_are_rewritten() {
+        let source = r#"
+import { runtimeValue } from "@my/runtime";
+import { reactValue } from "@my/react";
+
+export const value = runtimeValue ?? reactValue;
+"#;
+
+        let result = transform_preview_source(
+            source.to_owned(),
+            TransformPreviewSourceOptions {
+                file_path: "src/example.ts".to_owned(),
+                react_aliases: Some(vec!["@my/react".to_owned()]),
+                react_roblox_aliases: None,
+                runtime_module: "virtual:preview-runtime".to_owned(),
+                runtime_aliases: Some(vec!["@my/runtime".to_owned()]),
+                target: "compatibility".to_owned(),
+            },
+        )
+        .expect("preview transform should succeed");
+
+        assert!(
+            result.code.contains(r#"from "virtual:preview-runtime""#),
+            "expected custom runtime alias to rewrite to the configured runtime module, got: {}",
+            result.code
+        );
+        assert!(
+            result.code.contains(r#"from "react""#),
+            "expected custom react alias to rewrite to react, got: {}",
             result.code
         );
     }

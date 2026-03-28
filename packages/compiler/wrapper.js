@@ -29,9 +29,12 @@
  *
  * @typedef {object} TransformPreviewSourceOptions
  * @property {string} filePath
+ * @property {string[] | undefined} [reactAliases]
+ * @property {string[] | undefined} [reactRobloxAliases]
  * @property {PreviewTransformMode | undefined} [mode]
  * @property {((candidatePath: string) => boolean) | undefined} [fileExists]
  * @property {string} runtimeModule
+ * @property {string[] | undefined} [runtimeAliases]
  * @property {string} target
  *
  * @typedef {object} TransformPreviewSourceResultInput

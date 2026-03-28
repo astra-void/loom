@@ -8,10 +8,28 @@ const WASM_BINARY_URL = new URL("./wasm/compiler_bg.wasm", import.meta.url);
 const isNodeRuntime =
 	typeof process !== "undefined" && Boolean(process.versions?.node);
 
+function resolveModuleFilePath(url) {
+	if (url.protocol === "file:") {
+		const filePath = decodeURIComponent(url.pathname);
+		return /^\/[A-Za-z]:\//.test(filePath) ? filePath.slice(1) : filePath;
+	}
+
+	if (
+		(url.protocol === "http:" || url.protocol === "https:") &&
+		url.pathname.startsWith("/@fs/")
+	) {
+		return decodeURIComponent(url.pathname.slice("/@fs".length));
+	}
+
+	return `${process.cwd().replace(/\\/g, "/")}/packages/compiler/wasm/compiler_bg.wasm`;
+}
+
 await initWasm({
 	module_or_path: isNodeRuntime
 		? new Uint8Array(
-				await (await import("node:fs/promises")).readFile(WASM_BINARY_URL),
+				await (await import("node:fs/promises")).readFile(
+					resolveModuleFilePath(WASM_BINARY_URL),
+				),
 			)
 		: WASM_BINARY_URL,
 });
@@ -50,8 +68,11 @@ const UNRESOLVED_FREE_IDENTIFIER_CODE = "UNRESOLVED_FREE_IDENTIFIER";
  *
  * @typedef {object} TransformPreviewSourceOptions
  * @property {string} filePath
+ * @property {string[] | undefined} [reactAliases]
+ * @property {string[] | undefined} [reactRobloxAliases]
  * @property {PreviewTransformMode | undefined} [mode]
  * @property {string} runtimeModule
+ * @property {string[] | undefined} [runtimeAliases]
  * @property {string} target
  * @property {((candidatePath: string) => boolean) | undefined} [fileExists]
  *

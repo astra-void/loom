@@ -1,4 +1,5 @@
-import { readFileSync } from "node:fs";
+import fs, { readFileSync } from "node:fs";
+import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
 	compile_tsx as compileTsxWasm,
@@ -8,7 +9,31 @@ import {
 } from "./wasm/compiler.js";
 
 const WASM_BINARY_URL = new URL("./wasm/compiler_bg.wasm", import.meta.url);
-const wasmBytes = readFileSync(fileURLToPath(WASM_BINARY_URL));
+
+function resolveModuleFilePath(url) {
+	if (url.protocol === "file:") {
+		return fileURLToPath(url);
+	}
+
+	if (
+		(url.protocol === "http:" || url.protocol === "https:") &&
+		url.pathname.startsWith("/@fs/")
+	) {
+		return decodeURIComponent(url.pathname.slice("/@fs".length));
+	}
+
+	const repoFallbackPath = path.resolve(
+		process.cwd(),
+		"packages/compiler/wasm/compiler_bg.wasm",
+	);
+	if (fs.existsSync(repoFallbackPath)) {
+		return repoFallbackPath;
+	}
+
+	throw new TypeError("The URL must be of scheme file");
+}
+
+const wasmBytes = readFileSync(resolveModuleFilePath(WASM_BINARY_URL));
 
 initSync({ module: wasmBytes });
 
