@@ -1,4 +1,6 @@
-﻿import {
+﻿import path from "node:path";
+import { pathToFileURL } from "node:url";
+import {
 	createPreviewEngine,
 	type PreviewEngine,
 	type PreviewEngineSnapshot,
@@ -53,6 +55,21 @@ export type CreatePreviewHeadlessSessionOptions = StartPreviewServerInput;
 type CollectedExecutionResult = Awaited<
 	ReturnType<typeof executeHeadlessEntry>
 >;
+
+const nativeImport = new Function("specifier", "return import(specifier);") as (
+	specifier: string,
+) => Promise<typeof import("@loom-dev/compiler/wasm")>;
+
+function loadCompilerModule() {
+	if (process.env.VITEST) {
+		return import(
+			/* @vite-ignore */
+			pathToFileURL(path.resolve(__dirname, "../../compiler/sync.mjs")).href
+		);
+	}
+
+	return nativeImport("@loom-dev/compiler/wasm");
+}
 
 function getEngineSnapshot(engine: PreviewEngine): PreviewEngineSnapshot {
 	if (
@@ -204,12 +221,17 @@ export async function createPreviewHeadlessSession(
 	const runtimeModuleId = (
 		resolvedConfig.runtimeModule ?? resolvePreviewRuntimeRootEntry()
 	).replace(/\\/g, "/");
+	const compiler = await loadCompilerModule();
 	const engine = createPreviewEngine({
+		compiler,
+		reactAliases: resolvedConfig.reactAliases,
+		reactRobloxAliases: resolvedConfig.reactRobloxAliases,
 		projectName: resolvedConfig.projectName,
 		runtimeModule: runtimeModuleId,
+		runtimeAliases: resolvedConfig.runtimeAliases,
 		targets: resolvedConfig.targets,
 		transformMode: resolvedConfig.transformMode,
-	});
+	} as Parameters<typeof createPreviewEngine>[0]);
 	let collectedExecutionsById = new Map<string, CollectedExecutionResult>();
 	let selectedEntryIds: string[] = [];
 	let disposed = false;

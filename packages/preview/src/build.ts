@@ -45,9 +45,12 @@ export type BuildPreviewArtifactsOptions =
 	| (ResolvedPreviewConfig & BuildPreviewArtifactsOverrides);
 
 export type BuildPreviewModulesOptions = {
+	reactAliases?: string[];
+	reactRobloxAliases?: string[];
 	targets: PreviewBuildTarget[];
 	outDir?: string;
 	runtimeModule?: string;
+	runtimeAliases?: string[];
 	failOnUnsupported?: boolean;
 	transformMode?: PreviewExecutionMode;
 };
@@ -161,11 +164,14 @@ export async function buildPreviewArtifacts(
 	return buildPreviewArtifactsFromEngine({
 		artifactKinds: options.artifactKinds ?? ["module"],
 		outDir: resolveOutputDirectory(options.outDir, resolvedConfig.cwd),
+		reactAliases: resolvedConfig.reactAliases,
+		reactRobloxAliases: resolvedConfig.reactRobloxAliases,
 		projectName: resolvedConfig.projectName,
 		runtimeModule: resolvePreviewRuntimeModule(
 			options.runtimeModule ?? resolvedConfig.runtimeModule,
 			resolvedConfig.configDir,
 		),
+		runtimeAliases: resolvedConfig.runtimeAliases,
 		targets: resolvedConfig.targets,
 		transformMode: options.transformMode ?? resolvedConfig.transformMode,
 		workspaceRoot: resolvedConfig.workspaceRoot,
@@ -189,8 +195,11 @@ export async function buildPreviewModules(
 	const result = await buildPreviewArtifactsFromEngine({
 		artifactKinds: ["module"],
 		outDir,
+		reactAliases: options.reactAliases,
+		reactRobloxAliases: options.reactRobloxAliases,
 		projectName: "Preview Build",
 		runtimeModule: options.runtimeModule,
+		runtimeAliases: options.runtimeAliases,
 		targets: inferPreviewSourceTargets(options.targets),
 		transformMode,
 	});

@@ -6,6 +6,9 @@ import type {
 } from "@loom-dev/preview-engine";
 import { loadConfigFromFile, searchForWorkspaceRoot } from "vite";
 import { matchesGlobPatterns } from "./globMatcher";
+import { resolvePreviewAliasConfig } from "./source/aliasConfig";
+
+export type { PreviewAliasConfig } from "./source/aliasConfig";
 
 const DEFAULT_CONFIG_FILE_NAME = "loom.config.ts";
 const DEFAULT_PREVIEW_PORT = 4174;
@@ -45,8 +48,11 @@ export type PreviewConfigServer = {
 };
 
 export type PreviewConfig = {
+	reactAliases?: string[];
+	reactRobloxAliases?: string[];
 	projectName?: string;
 	runtimeModule?: string;
+	runtimeAliases?: string[];
 	server?: PreviewConfigServer;
 	targetDiscovery:
 		| PreviewTargetDiscoveryAdapter
@@ -97,8 +103,11 @@ export type ResolvedPreviewConfig = {
 	configFilePath?: string;
 	cwd: string;
 	mode: "config-file" | "config-object" | "package-root";
+	reactAliases: string[];
+	reactRobloxAliases: string[];
 	projectName: string;
 	runtimeModule?: string;
+	runtimeAliases: string[];
 	server: {
 		fsAllow: string[];
 		host?: string;
@@ -555,6 +564,7 @@ async function resolvePreviewConfigValue(
 		cwd: options.cwd,
 		workspaceRoot,
 	});
+	const aliasConfig = resolvePreviewAliasConfig(config);
 
 	if (targets.length === 0) {
 		throw new Error(
@@ -569,11 +579,14 @@ async function resolvePreviewConfigValue(
 		configFilePath: options.configFilePath,
 		cwd: options.cwd,
 		mode: options.configFilePath ? "config-file" : "config-object",
+		reactAliases: aliasConfig.reactAliases,
+		reactRobloxAliases: aliasConfig.reactRobloxAliases,
 		projectName: config.projectName ?? createDefaultProjectName(targets),
 		runtimeModule: resolvePreviewRuntimeModule(
 			config.runtimeModule,
 			options.configDir,
 		),
+		runtimeAliases: aliasConfig.runtimeAliases,
 		server: {
 			fsAllow: resolveFsAllow(
 				config.server?.fsAllow,
@@ -662,17 +675,21 @@ function normalizePackageRootFallback(cwd: string): ResolvedPreviewConfig {
 			sourceRoot,
 		},
 	];
+	const aliasConfig = resolvePreviewAliasConfig();
 
 	return {
 		configDir: packageRoot,
 		cwd,
 		mode: "package-root",
+		reactAliases: aliasConfig.reactAliases,
+		reactRobloxAliases: aliasConfig.reactRobloxAliases,
 		projectName: packageName,
 		server: {
 			fsAllow: resolveFsAllow(undefined, packageRoot, targets, workspaceRoot),
 			open: false,
 			port: DEFAULT_PREVIEW_PORT,
 		},
+		runtimeAliases: aliasConfig.runtimeAliases,
 		targetDiscovery: [
 			createPackageTargetDiscovery({
 				packageName,

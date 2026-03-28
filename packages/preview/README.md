@@ -36,6 +36,9 @@ import { createStaticTargetsDiscovery, defineConfig } from "@loom-dev/preview";
 
 export default defineConfig({
   projectName: "Loom Preview",
+  runtimeAliases: ["@my-studio/core"],
+  reactAliases: ["@my-studio/react"],
+  reactRobloxAliases: ["@my-studio/react-roblox"],
   targetDiscovery: createStaticTargetsDiscovery([
     {
       name: "preview-shell",

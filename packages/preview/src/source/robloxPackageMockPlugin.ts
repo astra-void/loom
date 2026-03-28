@@ -1,6 +1,7 @@
 ﻿import path from "node:path";
 import ts from "typescript";
 import type { Plugin } from "vite";
+import { createNonMockableSpecifiers } from "./aliasConfig";
 
 export const UNRESOLVED_MOCK_MODULE_ID = "virtual:loom-preview-unresolved-env";
 const RESOLVED_UNRESOLVED_MOCK_MODULE_ID = `\0${UNRESOLVED_MOCK_MODULE_ID}`;
@@ -8,14 +9,6 @@ const SCRIPT_FILE_PATTERN = /\.[cm]?[jt]sx?$/;
 const DEFAULT_MOCK_IMPORT_BASENAME = "__loomUnresolvedEnvMock";
 const MODULE_MOCK_IMPORT_BASENAME = "__loomUnresolvedModuleMock";
 const UNSUPPORTED_RESOLVED_EXTENSIONS = new Set([".lua", ".luau"]);
-const NON_MOCKABLE_SPECIFIERS = new Set([
-	"react",
-	"react-dom",
-	"react-dom/client",
-	"react-dom/server",
-	"react/jsx-dev-runtime",
-	"react/jsx-runtime",
-]);
 function normalizeResolvedId(id: string) {
 	return stripQuery(id)
 		.split("#", 1)[0]
@@ -38,6 +31,11 @@ export type TransformResolveContext = {
 		importer?: string,
 		options?: { skipSelf?: boolean },
 	) => Promise<unknown> | unknown;
+};
+
+export type RobloxPackageMockPluginOptions = {
+	reactAliases?: string[];
+	reactRobloxAliases?: string[];
 };
 
 function stripQuery(id: string) {
@@ -101,11 +99,12 @@ async function shouldMockSpecifier(
 	context: TransformResolveContext,
 	specifier: string,
 	importer: string,
+	nonMockableSpecifiers: Set<string>,
 ) {
 	if (
 		!isBareModuleSpecifier(specifier) ||
 		specifier === UNRESOLVED_MOCK_MODULE_ID ||
-		NON_MOCKABLE_SPECIFIERS.has(specifier)
+		nonMockableSpecifiers.has(specifier)
 	) {
 		return false;
 	}
@@ -343,7 +342,9 @@ function rewriteExpressionLevelLoads<T extends ts.Node>(
 
 export function createUnresolvedPackageMockResolvePlugin(
 	mockEntryPath: string,
+	options: RobloxPackageMockPluginOptions = {},
 ): Plugin {
+	const nonMockableSpecifiers = createNonMockableSpecifiers(options);
 	return {
 		name: "loom-preview-unresolved-package-mock-resolve",
 		enforce: "pre",
@@ -367,7 +368,7 @@ export default mock;
 				return RESOLVED_UNRESOLVED_MOCK_MODULE_ID;
 			}
 
-			if (!isBareModuleSpecifier(id) || NON_MOCKABLE_SPECIFIERS.has(id)) {
+			if (!isBareModuleSpecifier(id) || nonMockableSpecifiers.has(id)) {
 				return undefined;
 			}
 
@@ -387,7 +388,10 @@ export default mock;
 	};
 }
 
-export function createUnresolvedPackageMockTransformPlugin(): Plugin {
+export function createUnresolvedPackageMockTransformPlugin(
+	options: RobloxPackageMockPluginOptions = {},
+): Plugin {
+	const nonMockableSpecifiers = createNonMockableSpecifiers(options);
 	return {
 		name: "loom-preview-unresolved-package-mock-transform",
 		enforce: "pre",
@@ -414,7 +418,14 @@ export function createUnresolvedPackageMockTransformPlugin(): Plugin {
 
 			const mockedSpecifiers = new Set<string>();
 			for (const specifier of specifiers) {
-				if (await shouldMockSpecifier(this, specifier, filePath)) {
+				if (
+					await shouldMockSpecifier(
+						this,
+						specifier,
+						filePath,
+						nonMockableSpecifiers,
+					)
+				) {
 					mockedSpecifiers.add(specifier);
 				}
 			}

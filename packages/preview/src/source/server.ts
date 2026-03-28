@@ -15,6 +15,10 @@ import type {
 } from "../config";
 import { loadPreviewConfig, resolvePreviewConfigObject } from "../config";
 import { createErrorWithCause } from "../errorWithCause";
+import {
+	createReactShimSpecifierMap,
+	resolvePreviewAliasConfig,
+} from "./aliasConfig";
 import { createAutoMockPropsPlugin } from "./autoMockPlugin";
 import { isFilePathUnderRoot, resolveRealFilePath } from "./pathUtils";
 import { createPreviewVitePlugin } from "./plugin";
@@ -53,7 +57,10 @@ export type StartPreviewServerOptions = {
 	packageName: string;
 	packageRoot: string;
 	port?: number;
+	reactAliases?: string[];
+	reactRobloxAliases?: string[];
 	runtimeModule?: string;
+	runtimeAliases?: string[];
 	sourceRoot: string;
 	transformMode?: PreviewExecutionMode;
 };
@@ -335,29 +342,18 @@ function createTsconfigCacheInvalidationPlugin(
 	};
 }
 
-function createRuntimeDependencyResolvePlugin(): PreviewPluginOption {
-	const browserShimEntries = new Map<string, string>([
-		[
-			"react-dom/client",
-			resolveReactShimEntry("react-dom-client.js", "browser"),
-		],
-		[
-			"react-dom/server",
-			resolveReactShimEntry("react-dom-server.js", "browser"),
-		],
-		["react-dom", resolveReactShimEntry("react-dom.js", "browser")],
-		[
-			"react/jsx-dev-runtime",
-			resolveReactShimEntry("react-jsx-dev-runtime.js", "browser"),
-		],
-		[
-			"react/jsx-runtime",
-			resolveReactShimEntry("react-jsx-runtime.js", "browser"),
-		],
-		["react", resolveReactShimEntry("react.js", "browser")],
-		["@rbxts/react", resolveReactShimEntry("react.js", "browser")],
-		["@rbxts/react-roblox", resolveReactRobloxShimEntry("browser")],
-	]);
+function createRuntimeDependencyResolvePlugin(options: {
+	reactAliases?: string[];
+	reactRobloxAliases?: string[];
+}): PreviewPluginOption {
+	const browserShimEntries = createReactShimSpecifierMap({
+		mode: "browser",
+		reactAliases: options.reactAliases,
+		reactRobloxAliases: options.reactRobloxAliases,
+		resolveReactRobloxShimEntry: (mode) => resolveReactRobloxShimEntry(mode),
+		resolveReactShimEntry: (fileName, mode) =>
+			resolveReactShimEntry(fileName, mode),
+	});
 	const browserShimsRoot = resolvePreviewPackageEntry(
 		[
 			path.resolve(__dirname, "./react-shims/browser"),
@@ -372,22 +368,14 @@ function createRuntimeDependencyResolvePlugin(): PreviewPluginOption {
 		],
 		"react shims root",
 	);
-	const nodeShimEntries = new Map<string, string>([
-		["react-dom/client", resolveReactShimEntry("react-dom-client.js", "node")],
-		["react-dom/server", resolveReactShimEntry("react-dom-server.js", "node")],
-		["react-dom", resolveReactShimEntry("react-dom.js", "node")],
-		[
-			"react/jsx-dev-runtime",
-			resolveReactShimEntry("react-jsx-dev-runtime.js", "node"),
-		],
-		[
-			"react/jsx-runtime",
-			resolveReactShimEntry("react-jsx-runtime.js", "node"),
-		],
-		["react", resolveReactShimEntry("react.js", "node")],
-		["@rbxts/react", resolveReactShimEntry("react.js", "node")],
-		["@rbxts/react-roblox", resolveReactRobloxShimEntry("node")],
-	]);
+	const nodeShimEntries = createReactShimSpecifierMap({
+		mode: "node",
+		reactAliases: options.reactAliases,
+		reactRobloxAliases: options.reactRobloxAliases,
+		resolveReactRobloxShimEntry: (mode) => resolveReactRobloxShimEntry(mode),
+		resolveReactShimEntry: (fileName, mode) =>
+			resolveReactShimEntry(fileName, mode),
+	});
 
 	return {
 		enforce: "pre",
@@ -554,6 +542,7 @@ export async function resolvePreviewServerConfig(
 	}
 
 	if (isShorthandServerOptions(options)) {
+		const aliasConfig = resolvePreviewAliasConfig(options);
 		const workspaceRoot = path.resolve(
 			searchForWorkspaceRoot(options.packageRoot),
 		);
@@ -561,8 +550,11 @@ export async function resolvePreviewServerConfig(
 			configDir: path.resolve(options.packageRoot),
 			cwd: path.resolve(options.cwd ?? options.packageRoot),
 			mode: "package-root",
+			reactAliases: aliasConfig.reactAliases,
+			reactRobloxAliases: aliasConfig.reactRobloxAliases,
 			projectName: options.packageName,
 			runtimeModule: options.runtimeModule,
+			runtimeAliases: aliasConfig.runtimeAliases,
 			server: {
 				fsAllow: [
 					path.resolve(options.packageRoot),
@@ -635,8 +627,11 @@ export async function createPreviewViteServer(
 	const tsconfigParseCache = createTsconfigParseCache();
 	const previewPlugin = createPreviewVitePlugin({
 		previewEngine: options.previewEngine,
+		reactAliases: resolvedConfig.reactAliases,
+		reactRobloxAliases: resolvedConfig.reactRobloxAliases,
 		projectName: resolvedConfig.projectName,
 		runtimeModule: previewRuntimeRootEntry,
+		runtimeAliases: resolvedConfig.runtimeAliases,
 		targets: resolvedConfig.targets,
 		transformMode: resolvedConfig.transformMode,
 		workspaceRoot: resolvedConfig.workspaceRoot,
@@ -660,7 +655,10 @@ export async function createPreviewViteServer(
 				: {}),
 		},
 		plugins: [
-			createRuntimeDependencyResolvePlugin(),
+			createRuntimeDependencyResolvePlugin({
+				reactAliases: resolvedConfig.reactAliases,
+				reactRobloxAliases: resolvedConfig.reactRobloxAliases,
+			}),
 			createTsconfigCacheInvalidationPlugin(
 				resolvedConfig.server.fsAllow,
 				tsconfigParseCache,

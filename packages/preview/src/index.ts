@@ -14,6 +14,7 @@ export {
 } from "./build";
 export type {
 	LoadPreviewConfigOptions,
+	PreviewAliasConfig,
 	PreviewConfig,
 	PreviewConfigServer,
 	PreviewTargetDiscoveryAdapter,

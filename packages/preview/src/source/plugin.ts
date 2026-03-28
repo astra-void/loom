@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import type { TransformPreviewSourceOptions } from "@loom-dev/compiler";
 import {
 	createPreviewEngine,
@@ -14,6 +15,11 @@ import {
 } from "@loom-dev/preview-engine";
 import type { PreviewRuntimeIssue } from "@loom-dev/preview-runtime";
 import { createErrorWithCause } from "../errorWithCause";
+import { normalizeTransformPreviewSourceResult } from "../transformResult";
+import {
+	createReactShimSpecifierMap,
+	isInternalPreviewPackageName,
+} from "./aliasConfig";
 import {
 	isFilePathIncludedByTarget,
 	isFilePathUnderRoot,
@@ -41,6 +47,23 @@ const PREVIEW_UPDATE_EVENT = "loom-preview:update";
 const RUNTIME_ISSUES_EVENT = "loom-preview:runtime-issues";
 const RBX_STYLE_HELPER_NAME = "__rbxStyle";
 const PREVIEW_TIMING_ENABLED = process.env.LOOM_PREVIEW_TIMINGS === "1";
+type CompilerModule =
+	| typeof import("@loom-dev/compiler/sync")
+	| typeof import("@loom-dev/compiler/wasm");
+const nativeImport = new Function("specifier", "return import(specifier);") as (
+	specifier: string,
+) => Promise<typeof import("@loom-dev/compiler/wasm")>;
+
+function loadCompilerModule() {
+	if (process.env.VITEST) {
+		return import(
+			/* @vite-ignore */
+			pathToFileURL(path.resolve(__dirname, "../../../compiler/sync.mjs")).href
+		);
+	}
+
+	return nativeImport("@loom-dev/compiler/wasm");
+}
 
 function logPreviewTiming(label: string, startedAt: number) {
 	if (!PREVIEW_TIMING_ENABLED) {
@@ -68,9 +91,12 @@ type TransformPreviewSourceInvocationOptions = TransformPreviewSourceOptions & {
 };
 
 export type CreatePreviewVitePluginOptions = {
+	reactAliases?: string[];
+	reactRobloxAliases?: string[];
 	previewEngine?: PreviewEngine;
 	projectName: string;
 	runtimeModule?: string;
+	runtimeAliases?: string[];
 	targets: PreviewSourceTarget[];
 	transformMode?: PreviewExecutionMode;
 	workspaceRoot: string;
@@ -194,12 +220,11 @@ async function stripTypeSyntax(code: string, filePath: string) {
 async function transformPreviewSourceOrThrow(
 	sourceText: string,
 	options: TransformPreviewSourceInvocationOptions,
-) {
+): Promise<ReturnType<typeof normalizeTransformPreviewSourceResult>> {
 	const { mode = "strict-fidelity", ...compilerOptions } = options;
 
 	try {
-		const { normalizeTransformPreviewSourceResult, transformPreviewSource } =
-			await import("@loom-dev/compiler");
+		const { transformPreviewSource } = await loadCompilerModule();
 		return normalizeTransformPreviewSourceResult(
 			transformPreviewSource(sourceText, compilerOptions),
 			mode,
@@ -335,7 +360,7 @@ function getTransformTargetName(
 				normalizedFilePath,
 			) ||
 			isFilePathUnderRoot(previewShellRoot, normalizedFilePath) ||
-			fileContext.packageName?.startsWith("@loom-dev/preview")
+			isInternalPreviewPackageName(fileContext.packageName)
 		) {
 			return undefined;
 		}
@@ -362,7 +387,12 @@ function resolveWatchRoots(targets: PreviewSourceTarget[]) {
 	].sort((left, right) => left.localeCompare(right));
 }
 
-function createRuntimeDependencyResolvePlugin(): PreviewPluginOption {
+function createRuntimeDependencyResolvePlugin(
+	options: Pick<
+		CreatePreviewVitePluginOptions,
+		"reactAliases" | "reactRobloxAliases"
+	>,
+): PreviewPluginOption {
 	const browserShimsRoot = resolvePreviewPackageEntry(
 		[
 			path.resolve(__dirname, "./react-shims/browser"),
@@ -370,19 +400,13 @@ function createRuntimeDependencyResolvePlugin(): PreviewPluginOption {
 		],
 		"react shims root",
 	);
-	const shimEntries = new Map<string, string>([
-		["react-dom/client", resolveBrowserReactShimEntry("react-dom-client.js")],
-		["react-dom/server", resolveBrowserReactShimEntry("react-dom-server.js")],
-		["react-dom", resolveBrowserReactShimEntry("react-dom.js")],
-		[
-			"react/jsx-dev-runtime",
-			resolveBrowserReactShimEntry("react-jsx-dev-runtime.js"),
-		],
-		["react/jsx-runtime", resolveBrowserReactShimEntry("react-jsx-runtime.js")],
-		["react", resolveBrowserReactShimEntry("react.js")],
-		["@rbxts/react", resolveBrowserReactShimEntry("react.js")],
-		["@rbxts/react-roblox", resolveBrowserReactRobloxShimEntry()],
-	]);
+	const shimEntries = createReactShimSpecifierMap({
+		mode: "browser",
+		reactAliases: options.reactAliases,
+		reactRobloxAliases: options.reactRobloxAliases,
+		resolveReactRobloxShimEntry: () => resolveBrowserReactRobloxShimEntry(),
+		resolveReactShimEntry: (fileName) => resolveBrowserReactShimEntry(fileName),
+	});
 
 	return {
 		enforce: "pre",
@@ -426,15 +450,17 @@ export function createPreviewVitePlugin(
 	const rbxStyleImport = createRbxStyleImport(runtimeEntryPath);
 	const mockEntryPath = resolveMockEntryPath();
 	const previewEngineOptions = {
+		reactAliases: options.reactAliases,
+		reactRobloxAliases: options.reactRobloxAliases,
 		projectName: options.projectName,
 		runtimeModule: runtimeEntryPath,
+		runtimeAliases: options.runtimeAliases,
 		targets: options.targets,
 		transformMode: options.transformMode ?? "strict-fidelity",
 		workspaceRoot: options.workspaceRoot,
-	} as Parameters<typeof createPreviewEngine>[0] & {
-		workspaceRoot?: string;
-	};
+	} as Omit<Parameters<typeof createPreviewEngine>[0], "compiler">;
 	let previewEngine: PreviewEngine | undefined;
+	let compilerPromise: Promise<CompilerModule> | undefined;
 	let workspaceGraphService: WorkspaceGraphService | undefined;
 	const getWorkspaceGraphService = () => {
 		if (!workspaceGraphService) {
@@ -448,11 +474,22 @@ export function createPreviewVitePlugin(
 
 		return workspaceGraphService;
 	};
-	const getPreviewEngine = () => {
+	const getCompiler = async () => {
+		if (!compilerPromise) {
+			compilerPromise = loadCompilerModule();
+		}
+
+		return compilerPromise;
+	};
+	const getPreviewEngine = async () => {
 		if (!previewEngine) {
 			const startedAt = Date.now();
 			previewEngine =
-				options.previewEngine ?? createPreviewEngine(previewEngineOptions);
+				options.previewEngine ??
+				createPreviewEngine({
+					...previewEngineOptions,
+					compiler: await getCompiler(),
+				} as Parameters<typeof createPreviewEngine>[0]);
 			logPreviewTiming("preview engine initialized", startedAt);
 		}
 
@@ -483,9 +520,11 @@ export function createPreviewVitePlugin(
 		}
 	};
 
-	const refreshPreviewEngine = (filePath: string) => {
+	const refreshPreviewEngine = async (filePath: string) => {
 		try {
-			const update = getPreviewEngine().invalidateSourceFiles([filePath]);
+			const update = (await getPreviewEngine()).invalidateSourceFiles([
+				filePath,
+			]);
 			invalidateVirtualModules(update.changedEntryIds);
 
 			if (server) {
@@ -523,40 +562,46 @@ export function createPreviewVitePlugin(
 					) => void;
 				}
 			).on?.(RUNTIME_ISSUES_EVENT, (issues: PreviewRuntimeIssue[]) => {
-				const update = getPreviewEngine().replaceRuntimeIssues(
-					Array.isArray(issues) ? issues : [],
-				);
-				invalidateVirtualModules(update.changedEntryIds);
-				configuredServer.ws.send({
-					data: update,
-					event: PREVIEW_UPDATE_EVENT,
-					type: "custom",
+				void getPreviewEngine().then((previewEngineInstance) => {
+					const update = previewEngineInstance.replaceRuntimeIssues(
+						Array.isArray(issues) ? issues : [],
+					);
+					invalidateVirtualModules(update.changedEntryIds);
+					configuredServer.ws.send({
+						data: update,
+						event: PREVIEW_UPDATE_EVENT,
+						type: "custom",
+					});
 				});
 			});
 			configuredServer.watcher.on("add", (filePath: string) => {
-				const previewEngineInstance = getPreviewEngine();
-				if (isWatchedCandidate(previewEngineInstance, filePath)) {
-					refreshPreviewEngine(filePath);
-				}
+				void getPreviewEngine().then((previewEngineInstance) => {
+					if (!isWatchedCandidate(previewEngineInstance, filePath)) {
+						return;
+					}
+
+					void refreshPreviewEngine(filePath);
+				});
 			});
 			configuredServer.watcher.on("unlink", (filePath: string) => {
-				const previewEngineInstance = getPreviewEngine();
-				if (isWatchedCandidate(previewEngineInstance, filePath)) {
-					refreshPreviewEngine(filePath);
-				}
+				void getPreviewEngine().then((previewEngineInstance) => {
+					if (isWatchedCandidate(previewEngineInstance, filePath)) {
+						void refreshPreviewEngine(filePath);
+					}
+				});
 			});
 		},
-		handleHotUpdate(context: { file: string }) {
-			const previewEngineInstance = getPreviewEngine();
+		async handleHotUpdate(context: { file: string }) {
+			const previewEngineInstance = await getPreviewEngine();
 			if (!isWatchedCandidate(previewEngineInstance, context.file)) {
 				return undefined;
 			}
 
-			refreshPreviewEngine(context.file);
+			await refreshPreviewEngine(context.file);
 			return [];
 		},
-		load(id: string) {
-			const previewEngineInstance = getPreviewEngine();
+		async load(id: string) {
+			const previewEngineInstance = await getPreviewEngine();
 
 			if (id === RESOLVED_WORKSPACE_INDEX_MODULE_ID) {
 				return getWorkspaceModuleCode(previewEngineInstance);
@@ -595,7 +640,7 @@ export function createPreviewVitePlugin(
 			return undefined;
 		},
 		async transform(code: string, id: string) {
-			const previewEngineInstance = getPreviewEngine();
+			const previewEngineInstance = await getPreviewEngine();
 			const workspaceGraphServiceInstance = getWorkspaceGraphService();
 			const filePath = stripFileIdDecorations(id);
 			const targetName = getTransformTargetName(
@@ -612,7 +657,10 @@ export function createPreviewVitePlugin(
 			const transformed = await transformPreviewSourceOrThrow(code, {
 				filePath,
 				mode: options.transformMode ?? "strict-fidelity",
+				reactAliases: options.reactAliases,
+				reactRobloxAliases: options.reactRobloxAliases,
 				runtimeModule: runtimeEntryPath,
+				runtimeAliases: options.runtimeAliases,
 				target: targetName,
 			});
 			if (transformed.code == null) {
@@ -625,7 +673,7 @@ export function createPreviewVitePlugin(
 				);
 			}
 
-			const { compile_tsx } = await import("@loom-dev/compiler");
+			const { compile_tsx } = await getCompiler();
 			let transformedCode = compile_tsx(transformed.code);
 			transformedCode = await stripTypeSyntax(transformedCode, filePath);
 			if (
@@ -647,9 +695,18 @@ export function createPreviewVitePlugin(
 			getWorkspaceGraphService,
 			isBareModuleSpecifier,
 		),
-		createRuntimeDependencyResolvePlugin(),
-		createUnresolvedPackageMockResolvePlugin(mockEntryPath),
+		createRuntimeDependencyResolvePlugin({
+			reactAliases: options.reactAliases,
+			reactRobloxAliases: options.reactRobloxAliases,
+		}),
+		createUnresolvedPackageMockResolvePlugin(mockEntryPath, {
+			reactAliases: options.reactAliases,
+			reactRobloxAliases: options.reactRobloxAliases,
+		}),
 		previewPlugin,
-		createUnresolvedPackageMockTransformPlugin(),
+		createUnresolvedPackageMockTransformPlugin({
+			reactAliases: options.reactAliases,
+			reactRobloxAliases: options.reactRobloxAliases,
+		}),
 	];
 }

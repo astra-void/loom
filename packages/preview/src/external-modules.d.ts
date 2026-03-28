@@ -1204,9 +1204,12 @@ declare module "@loom-dev/preview-engine" {
 		artifactKinds: PreviewBuildArtifactKind[];
 		cacheDir?: string;
 		concurrency?: number;
+		reactAliases?: string[];
+		reactRobloxAliases?: string[];
 		outDir?: string;
 		projectName: string;
 		runtimeModule?: string;
+		runtimeAliases?: string[];
 		targets: PreviewSourceTarget[];
 		transformMode?: PreviewExecutionMode;
 		workspaceRoot?: string;
@@ -1252,8 +1255,11 @@ declare module "@loom-dev/preview-engine" {
 		workspaceIndex: PreviewWorkspaceIndex;
 	};
 	export type CreatePreviewEngineOptions = {
+		reactAliases?: string[];
+		reactRobloxAliases?: string[];
 		projectName: string;
 		runtimeModule?: string;
+		runtimeAliases?: string[];
 		targets: PreviewSourceTarget[];
 		transformMode?: PreviewExecutionMode;
 	};
