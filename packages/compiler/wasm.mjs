@@ -158,44 +158,20 @@ function inferTransformOutcome(mode, diagnostics) {
 }
 
 export function normalizeTransformPreviewSourceResult(result, mode) {
-	const code = typeof result.code === "string" ? result.code : undefined;
-	const diagnostics = [];
-
-	if (Array.isArray(result.errors)) {
-		for (const error of result.errors) {
-			diagnostics.push(toTransformDiagnostic(mode, error));
-		}
-	}
-
-	if (Array.isArray(result.diagnostics)) {
-		for (const diagnostic of result.diagnostics) {
-			diagnostics.push(diagnostic);
-		}
-	}
-
-	diagnostics.sort((left, right) => {
-		if (left.file !== right.file) {
-			return left.file.localeCompare(right.file);
-		}
-
-		if (left.line !== right.line) {
-			return left.line - right.line;
-		}
-
-		if (left.column !== right.column) {
-			return left.column - right.column;
-		}
-
-		return left.code.localeCompare(right.code);
-	});
-
+	const diagnostics = Array.isArray(result.diagnostics)
+		? result.diagnostics
+		: Array.isArray(result.errors)
+			? result.errors.map((error) => toTransformDiagnostic(mode, error))
+			: [];
 	const outcome = result.outcome ?? inferTransformOutcome(mode, diagnostics);
 
 	return {
 		code:
 			outcome.kind === "blocked" || outcome.kind === "design-time"
 				? undefined
-				: code,
+				: typeof result.code === "string"
+					? result.code
+					: undefined,
 		diagnostics,
 		outcome,
 	};

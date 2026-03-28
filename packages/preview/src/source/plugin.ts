@@ -226,7 +226,10 @@ async function transformPreviewSourceOrThrow(
 	try {
 		const { transformPreviewSource } = await loadCompilerModule();
 		return normalizeTransformPreviewSourceResult(
-			transformPreviewSource(sourceText, compilerOptions),
+			transformPreviewSource(sourceText, {
+				...compilerOptions,
+				mode,
+			}),
 			mode,
 		);
 	} catch (error) {

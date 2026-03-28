@@ -1988,4 +1988,128 @@ export const value = runtimeValue ?? reactValue;
             result.code
         );
     }
+
+    #[test]
+    fn supported_text_box_isa_rewrites_to_preview_predicate() {
+        let source = r#"
+function toTextBox(instance: Instance | undefined) {
+    if (!instance || !instance.IsA("TextBox")) {
+        return undefined;
+    }
+
+    return instance;
 }
+"#;
+
+        let result = transform_preview_source(
+            source.to_owned(),
+            TransformPreviewSourceOptions {
+                file_path: "src/example.tsx".to_owned(),
+                react_aliases: None,
+                react_roblox_aliases: None,
+                runtime_module: "@loom-dev/preview-runtime".to_owned(),
+                runtime_aliases: None,
+                target: "compatibility".to_owned(),
+            },
+        )
+        .expect("preview transform should succeed");
+
+        assert!(
+            result.errors.is_empty(),
+            "unexpected transform errors: {:?}",
+            result
+                .errors
+                .iter()
+                .map(|error| (&error.code, &error.symbol, &error.message))
+                .collect::<Vec<_>>()
+        );
+        assert!(
+            result.code.contains(r#"isPreviewElement(instance, "TextBox")"#),
+            "expected TextBox IsA check to rewrite to preview predicate, got: {}",
+            result.code
+        );
+    }
+
+    #[test]
+    fn supported_ui_padding_isa_rewrites_to_preview_predicate() {
+        let source = r#"
+function findPadding(children: Instance[]) {
+    for (const child of children) {
+        if (child.IsA("UIPadding")) {
+            return child;
+        }
+    }
+
+    return undefined;
+}
+"#;
+
+        let result = transform_preview_source(
+            source.to_owned(),
+            TransformPreviewSourceOptions {
+                file_path: "src/example.tsx".to_owned(),
+                react_aliases: None,
+                react_roblox_aliases: None,
+                runtime_module: "@loom-dev/preview-runtime".to_owned(),
+                runtime_aliases: None,
+                target: "compatibility".to_owned(),
+            },
+        )
+        .expect("preview transform should succeed");
+
+        assert!(
+            result.errors.is_empty(),
+            "unexpected transform errors: {:?}",
+            result
+                .errors
+                .iter()
+                .map(|error| (&error.code, &error.symbol, &error.message))
+                .collect::<Vec<_>>()
+        );
+        assert!(
+            result.code.contains(r#"isPreviewElement(child, "UIPadding")"#),
+            "expected UIPadding IsA check to rewrite to preview predicate, got: {}",
+            result.code
+        );
+    }
+
+    #[test]
+    fn unsupported_isa_reports_a_single_error() {
+        let source = r#"
+function isPart(instance: Instance) {
+    return instance.IsA("BasePart");
+}
+"#;
+
+        let result = transform_preview_source(
+            source.to_owned(),
+            TransformPreviewSourceOptions {
+                file_path: "src/example.tsx".to_owned(),
+                react_aliases: None,
+                react_roblox_aliases: None,
+                runtime_module: "@loom-dev/preview-runtime".to_owned(),
+                runtime_aliases: None,
+                target: "compatibility".to_owned(),
+            },
+        )
+        .expect("preview transform should succeed");
+
+        assert_eq!(
+            result.errors.len(),
+            1,
+            "expected a single unsupported pattern error, got: {:?}",
+            result
+                .errors
+                .iter()
+                .map(|error| (&error.code, error.line, error.column, &error.message))
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(result.errors[0].code, "UNSUPPORTED_RUNTIME_PATTERN");
+        assert!(
+            result.code.contains(r#"instance.IsA("BasePart")"#),
+            "expected unsupported IsA call to remain intact, got: {}",
+            result.code
+        );
+    }
+}
+
