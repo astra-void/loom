@@ -1440,6 +1440,38 @@ describe("createPreviewViteServer", () => {
 		}
 	});
 
+	it("does not self-resolve react-dom/client from the browser shim", async () => {
+		const fixture = createTempPreviewPackage();
+
+		const resolvedConfig = await resolvePreviewServerConfig({
+			cwd: fixture.packageRoot,
+			packageName: "rbxts-react-preview",
+			packageRoot: fixture.packageRoot,
+			sourceRoot: fixture.sourceRoot,
+		});
+		const server = await createPreviewViteServer(resolvedConfig, {
+			appType: "custom",
+		});
+
+		try {
+			const browserShimImporter = normalizePathSlashes(
+				path.resolve(
+					process.cwd(),
+					"packages/preview/src/source/react-shims/browser/react-dom-client.js",
+				),
+			);
+			const resolvedImportId = toResolvedId(
+				await server.pluginContainer.resolveId(
+					"react-dom/client",
+					browserShimImporter,
+				),
+			);
+			expect(normalizePathSlashes(resolvedImportId)).not.toBe(browserShimImporter);
+		} finally {
+			await server.close();
+		}
+	});
+
 	it("resolves @rbxts/react to the browser shim in normal preview mode", async () => {
 		const fixture = createTempPreviewPackage();
 		fs.writeFileSync(

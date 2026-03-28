@@ -183,6 +183,10 @@ function normalizeResolvedImporter(importer?: string) {
 		.replace(/^\/@id\/__x00__/, "\0");
 }
 
+function normalizePathSlashes(filePath: string) {
+	return filePath.replace(/\\/g, "/");
+}
+
 function isAbsoluteFileSpecifier(specifier: string) {
 	return /^[A-Za-z]:[\\/]/.test(specifier);
 }
@@ -360,14 +364,18 @@ function createRuntimeDependencyResolvePlugin(options: {
 			path.resolve(__dirname, "../../src/source/react-shims/browser"),
 		],
 		"react shims root",
-	);
+	)
+		.split(path.sep)
+		.join("/");
 	const nodeShimsRoot = resolvePreviewPackageEntry(
 		[
 			path.resolve(__dirname, "./react-shims"),
 			path.resolve(__dirname, "../../src/source/react-shims"),
 		],
 		"react shims root",
-	);
+	)
+		.split(path.sep)
+		.join("/");
 	const nodeShimEntries = createReactShimSpecifierMap({
 		mode: "node",
 		reactAliases: options.reactAliases,
@@ -389,9 +397,11 @@ function createRuntimeDependencyResolvePlugin(options: {
 				return undefined;
 			}
 
-			const normalizedImporter = normalizeResolvedImporter(importer);
+			const normalizedImporter = normalizePathSlashes(
+				normalizeResolvedImporter(importer) ?? "",
+			);
 			const shimsRoot = isSsr ? nodeShimsRoot : browserShimsRoot;
-			if (normalizedImporter?.startsWith(shimsRoot)) {
+			if (normalizedImporter.startsWith(shimsRoot)) {
 				return undefined;
 			}
 
