@@ -5,14 +5,16 @@ import type {
 	PluginOption,
 	UserConfig,
 	ViteDevServer,
-} from "vite";
+} from "vite" with { "resolution-mode": "import" };
 
 export type PreviewDevServer = ViteDevServer;
 export type PreviewPlugin = Plugin;
 export type PreviewPluginOption = PluginOption;
 export type PreviewServerConfig = UserConfig;
 
-export type ViteModule = typeof import("vite");
+export type ViteModule = typeof import("vite", { with: {
+	"resolution-mode": "import",
+}});
 export type ViteLogger = Logger;
 export type ViteLogErrorOptions = LogErrorOptions;
 

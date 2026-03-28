@@ -92,6 +92,7 @@ export {
 	captureOwnerStack,
 	cloneElement,
 	createContext,
+	createElement,
 	createRef,
 	Fragment,
 	forwardRef,
@@ -125,4 +126,3 @@ export {
 	useTransition,
 	version,
 };
-export { createElement };

@@ -1,4 +1,4 @@
-import * as React from "react";
+﻿import * as React from "react";
 import { destroyTweensForTarget } from "../runtime/tween";
 
 const HOST_BRIDGE_STATE_KEY = Symbol.for(
@@ -13,12 +13,16 @@ const emptySnapshot = Object.freeze({}) as Readonly<Record<string, unknown>>;
 export const bridgedPreviewHostProperties = [
 	"AbsolutePosition",
 	"AbsoluteSize",
+	"AbsoluteWindowSize",
 	"AnchorPoint",
 	"BackgroundColor3",
 	"BackgroundTransparency",
 	"CanvasPosition",
+	"CanvasSize",
+	"Parent",
 	"Position",
 	"Size",
+	"TextBounds",
 	"TextColor3",
 	"TextSize",
 	"Visible",
@@ -55,11 +59,12 @@ type GlobalHostOverrideStore = typeof globalThis & {
 };
 
 type PreviewSignalConnection = {
+	Connected: boolean;
 	Disconnect(): void;
 };
 
 type PreviewPropertyChangedSignal = {
-	Connect(): PreviewSignalConnection;
+	Connect(listener?: (...args: unknown[]) => void): PreviewSignalConnection;
 };
 
 type PreviewHostElement = HTMLElement & {
@@ -243,10 +248,23 @@ export function installPreviewHostPropertyBridge(
 			enumerable: false,
 			value() {
 				return {
-					Connect() {
-						return {
-							Disconnect() {},
+					Connect(listener?: (...args: unknown[]) => void) {
+						const connection = {
+							Connected: true,
+							Disconnect() {
+								connection.Connected = false;
+							},
 						};
+
+						if (typeof listener === "function") {
+							setTimeout(() => {
+								if (connection.Connected) {
+									listener();
+								}
+							}, 0);
+						}
+
+						return connection;
 					},
 				};
 			},

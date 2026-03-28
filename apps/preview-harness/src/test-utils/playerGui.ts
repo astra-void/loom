@@ -21,7 +21,7 @@ export function getLocalPlayerGui(): PreviewPlayerGuiElement {
 	const playerGuiInstance =
 		localPlayer.FindFirstChild("PlayerGui") ??
 		localPlayer.WaitForChild("PlayerGui");
-	if (!playerGuiInstance || !playerGuiInstance.IsA("BasePlayerGui")) {
+	if (!playerGuiInstance?.IsA("BasePlayerGui")) {
 		throw new Error(
 			"[preview-harness] LocalPlayer.PlayerGui is required to run tests.",
 		);

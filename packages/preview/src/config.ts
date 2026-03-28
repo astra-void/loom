@@ -4,7 +4,6 @@ import type {
 	PreviewExecutionMode,
 	PreviewSourceTarget,
 } from "@loom-dev/preview-engine";
-import { loadConfigFromFile, searchForWorkspaceRoot } from "vite";
 import { matchesGlobPatterns } from "./globMatcher";
 import { resolvePreviewAliasConfig } from "./source/aliasConfig";
 
@@ -549,12 +548,13 @@ async function resolvePreviewConfigValue(
 		cwd: string;
 	},
 ): Promise<ResolvedPreviewConfig> {
+	const vite = await import("vite");
 	const targetDiscovery = Array.isArray(config.targetDiscovery)
 		? config.targetDiscovery
 		: [config.targetDiscovery];
 	const workspaceRoot = path.resolve(
 		resolveMaybeRelativePath(
-			config.workspaceRoot ?? searchForWorkspaceRoot(options.configDir),
+			config.workspaceRoot ?? vite.searchForWorkspaceRoot(options.configDir),
 			options.configDir,
 		),
 	);
@@ -588,7 +588,7 @@ async function resolvePreviewConfigValue(
 		),
 		runtimeAliases: aliasConfig.runtimeAliases,
 		server: {
-			fsAllow: resolveFsAllow(
+			fsAllow: await resolveFsAllow(
 				config.server?.fsAllow,
 				options.configDir,
 				targets,
@@ -624,17 +624,18 @@ export function resolvePreviewRuntimeModule(
 	return resolveMaybeRelativePath(runtimeModule, baseDir).replace(/\\/g, "/");
 }
 
-function resolveFsAllow(
+async function resolveFsAllow(
 	configFsAllow: string[] | undefined,
 	baseDir: string,
 	targets: PreviewSourceTarget[],
 	workspaceRoot: string,
 ) {
+	const vite = await import("vite");
 	const explicitAllow = (configFsAllow ?? []).map((entry) =>
 		resolveExistingRealPath(resolveMaybeRelativePath(entry, baseDir)),
 	);
 	const targetWorkspaceRoots = targets.map((target) =>
-		resolveExistingRealPath(searchForWorkspaceRoot(target.packageRoot)),
+		resolveExistingRealPath(vite.searchForWorkspaceRoot(target.packageRoot)),
 	);
 	return [
 		...new Set([
@@ -649,7 +650,10 @@ function resolveFsAllow(
 	].sort((left, right) => left.localeCompare(right));
 }
 
-function normalizePackageRootFallback(cwd: string): ResolvedPreviewConfig {
+async function normalizePackageRootFallback(
+	cwd: string,
+): Promise<ResolvedPreviewConfig> {
+	const vite = await import("vite");
 	const packageRoot = path.resolve(cwd);
 	const packageJsonPath = path.join(packageRoot, PACKAGE_JSON_FILE_NAME);
 	const sourceRoot = path.join(packageRoot, DEFAULT_SOURCE_DIR_NAME);
@@ -666,7 +670,7 @@ function normalizePackageRootFallback(cwd: string): ResolvedPreviewConfig {
 
 	const packageJson = readPackageMetadata(packageRoot);
 	const packageName = packageJson.name ?? path.basename(packageRoot);
-	const workspaceRoot = path.resolve(searchForWorkspaceRoot(packageRoot));
+	const workspaceRoot = path.resolve(vite.searchForWorkspaceRoot(packageRoot));
 	const targets = [
 		{
 			name: packageName,
@@ -685,7 +689,12 @@ function normalizePackageRootFallback(cwd: string): ResolvedPreviewConfig {
 		reactRobloxAliases: aliasConfig.reactRobloxAliases,
 		projectName: packageName,
 		server: {
-			fsAllow: resolveFsAllow(undefined, packageRoot, targets, workspaceRoot),
+			fsAllow: await resolveFsAllow(
+				undefined,
+				packageRoot,
+				targets,
+				workspaceRoot,
+			),
 			open: false,
 			port: DEFAULT_PREVIEW_PORT,
 		},
@@ -848,12 +857,13 @@ async function loadPreviewConfigWithContext(
 	const discoveredConfigPath = explicitConfigPath ?? findPreviewConfigPath(cwd);
 
 	if (!discoveredConfigPath) {
-		return normalizePackageRootFallback(cwd);
+		return await normalizePackageRootFallback(cwd);
 	}
 
 	const configFilePath = path.resolve(discoveredConfigPath);
 	const configDir = path.dirname(configFilePath);
-	const loadedConfig = await loadConfigFromFile(
+	const vite = await import("vite");
+	const loadedConfig = await vite.loadConfigFromFile(
 		{
 			command: context.command,
 			isPreview: false,

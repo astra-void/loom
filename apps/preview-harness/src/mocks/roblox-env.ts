@@ -63,7 +63,6 @@ export function setupRobloxEnvironment(
 	return initializedTarget;
 }
 
-export { React };
 export * from "../../../../packages/preview-runtime/src/hosts/components";
 export * from "../../../../packages/preview-runtime/src/hosts/domAdapter";
 export * from "../../../../packages/preview-runtime/src/hosts/hostComponent";
@@ -87,4 +86,4 @@ export * from "../../../../packages/preview-runtime/src/runtime/runtimeError";
 export * from "../../../../packages/preview-runtime/src/runtime/services";
 export * from "../../../../packages/preview-runtime/src/runtime/task";
 export * from "../../../../packages/preview-runtime/src/style/index";
-export { PreviewTargetShell };
+export { PreviewTargetShell, React };

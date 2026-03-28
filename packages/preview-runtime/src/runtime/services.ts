@@ -1,4 +1,4 @@
-import { runtimeOnlyTypeNames } from "../hosts/metadata";
+﻿import { runtimeOnlyTypeNames } from "../hosts/metadata";
 import { PREVIEW_HOST_DATA_ATTRIBUTE } from "../internal/previewAttributes";
 import { Enum } from "./Enum";
 import {
@@ -21,6 +21,67 @@ const USER_INPUT_TRACKER_KEY = Symbol.for(
 );
 
 const robloxMockRecord = robloxMock as unknown as Record<PropertyKey, unknown>;
+
+function createMockVector2(x: number, y: number) {
+	return { X: x, Y: y };
+}
+
+function createMockUDim(offset: number, scale: number) {
+	return { Offset: offset, Scale: scale };
+}
+
+function createMockUDim2() {
+	return {
+		X: createMockUDim(0, 0),
+		Y: createMockUDim(0, 0),
+	};
+}
+
+function createMockSignal() {
+	return {
+		Connect(listener?: (...args: unknown[]) => void) {
+			const connection = {
+				Connected: true,
+				Disconnect() {
+					connection.Connected = false;
+				},
+			};
+
+			if (typeof listener === "function") {
+				setTimeout(() => {
+					if (connection.Connected) {
+						listener();
+					}
+				}, 0);
+			}
+
+			return connection;
+		},
+	};
+}
+
+const mockScreenGui = {
+	AbsolutePosition: createMockVector2(0, 0),
+	AbsoluteSize: createMockVector2(1000, 1000),
+	AbsoluteWindowSize: createMockVector2(0, 0),
+	CanvasSize: createMockUDim2(),
+	ClassName: "ScreenGui" as const,
+	GetFullName() {
+		return "MockScreenGui";
+	},
+	GetPropertyChangedSignal() {
+		return createMockSignal();
+	},
+	IsA(name: string) {
+		return (
+			name === "ScreenGui" || name === "LayerCollector" || name === "Instance"
+		);
+	},
+	Name: "MockScreenGui" as const,
+	Parent: undefined,
+	TextBounds: createMockVector2(0, 0),
+};
+
 type PreviewEnumValueLookup = Record<string, unknown>;
 
 const previewEnum = Enum as unknown as {
@@ -376,6 +437,7 @@ function createPreviewGuiObjectHandle(
 		element.getAttribute("data-preview-node-id") ??
 		element.getAttribute("aria-label") ??
 		className;
+	const rect = element.getBoundingClientRect();
 	const handle = {
 		ClassName: className,
 		Name: name,
@@ -406,6 +468,53 @@ function createPreviewGuiObjectHandle(
 			return domAncestor ? domAncestor.contains(element) : false;
 		},
 	};
+
+	Object.defineProperties(handle, {
+		AbsolutePosition: {
+			configurable: false,
+			enumerable: false,
+			value: createMockVector2(rect.left, rect.top),
+			writable: false,
+		},
+		AbsoluteSize: {
+			configurable: false,
+			enumerable: false,
+			value: createMockVector2(rect.width, rect.height),
+			writable: false,
+		},
+		AbsoluteWindowSize: {
+			configurable: false,
+			enumerable: false,
+			value: createMockVector2(0, 0),
+			writable: false,
+		},
+		CanvasSize: {
+			configurable: false,
+			enumerable: false,
+			value: createMockUDim2(),
+			writable: false,
+		},
+		GetPropertyChangedSignal: {
+			configurable: false,
+			enumerable: false,
+			value() {
+				return createMockSignal();
+			},
+			writable: false,
+		},
+		Parent: {
+			configurable: false,
+			enumerable: false,
+			value: mockScreenGui,
+			writable: false,
+		},
+		TextBounds: {
+			configurable: false,
+			enumerable: false,
+			value: createMockVector2(0, 0),
+			writable: false,
+		},
+	});
 
 	Object.defineProperty(handle, "element", {
 		configurable: false,
@@ -442,8 +551,11 @@ function createPlayerGui(): PreviewPlayerGui {
 		typeof document.createElement !== "function"
 	) {
 		const fallback = withRobloxFallback({
+			AbsolutePosition: createMockVector2(0, 0),
+			AbsoluteSize: createMockVector2(1000, 1000),
+			AbsoluteWindowSize: createMockVector2(0, 0),
+			CanvasSize: createMockUDim2(),
 			ClassName: "PlayerGui" as const,
-			Name: "PlayerGui" as const,
 			FindFirstChild(name: string) {
 				return name === "PlayerGui" ? (fallback as PreviewPlayerGui) : null;
 			},
@@ -453,12 +565,18 @@ function createPlayerGui(): PreviewPlayerGui {
 			GetGuiObjectsAtPosition() {
 				return [];
 			},
+			GetPropertyChangedSignal() {
+				return createMockSignal();
+			},
 			IsA(typeName: string) {
 				return isPlayerGuiTypeName(typeName);
 			},
 			IsDescendantOf() {
 				return false;
 			},
+			Name: "PlayerGui" as const,
+			Parent: mockScreenGui,
+			TextBounds: createMockVector2(0, 0),
 			WaitForChild(name: string) {
 				return name === "PlayerGui"
 					? (fallback as PreviewPlayerGui)
@@ -476,6 +594,13 @@ function createPlayerGui(): PreviewPlayerGui {
 		};
 	element.ClassName = "PlayerGui";
 	element.Name = "PlayerGui";
+	element.Parent = mockScreenGui;
+	element.AbsolutePosition = createMockVector2(0, 0);
+	element.AbsoluteSize = createMockVector2(1000, 1000);
+	element.AbsoluteWindowSize = createMockVector2(0, 0);
+	element.CanvasSize = createMockUDim2();
+	element.GetPropertyChangedSignal = () => createMockSignal();
+	element.TextBounds = createMockVector2(0, 0);
 	element.dataset.previewPlayerGui = "true";
 	element.style.position = "absolute";
 	element.style.inset = "0";

@@ -1,6 +1,75 @@
-const inspectSymbol = Symbol.for("nodejs.util.inspect.custom");
+﻿const inspectSymbol = Symbol.for("nodejs.util.inspect.custom");
 
 type MockPath = readonly PropertyKey[];
+
+type MockSignalConnection = {
+	Connected: boolean;
+	Disconnect(): void;
+};
+
+type MockSignal = {
+	Connect(listener?: (...args: unknown[]) => void): MockSignalConnection;
+};
+
+function createMockVector2(x: number, y: number) {
+	return { X: x, Y: y };
+}
+
+function createMockUDim(offset: number, scale: number) {
+	return { Offset: offset, Scale: scale };
+}
+
+function createMockUDim2() {
+	return {
+		X: createMockUDim(0, 0),
+		Y: createMockUDim(0, 0),
+	};
+}
+
+function createMockSignal(): MockSignal {
+	return {
+		Connect(listener?: (...args: unknown[]) => void) {
+			const connection: MockSignalConnection = {
+				Connected: true,
+				Disconnect() {
+					connection.Connected = false;
+				},
+			};
+
+			if (typeof listener === "function") {
+				setTimeout(() => {
+					if (connection.Connected) {
+						listener();
+					}
+				}, 0);
+			}
+
+			return connection;
+		},
+	};
+}
+
+const mockScreenGui = {
+	AbsolutePosition: createMockVector2(0, 0),
+	AbsoluteSize: createMockVector2(1000, 1000),
+	AbsoluteWindowSize: createMockVector2(0, 0),
+	CanvasSize: createMockUDim2(),
+	ClassName: "ScreenGui",
+	GetFullName() {
+		return "MockScreenGui";
+	},
+	GetPropertyChangedSignal() {
+		return createMockSignal();
+	},
+	IsA(name: string) {
+		return (
+			name === "ScreenGui" || name === "LayerCollector" || name === "Instance"
+		);
+	},
+	Name: "MockScreenGui",
+	Parent: undefined,
+	TextBounds: createMockVector2(0, 0),
+};
 
 export type UniversalRobloxMock = ((
 	...args: unknown[]
@@ -95,6 +164,30 @@ function createUniversalRobloxMockInternal(
 				return label;
 			}
 
+			if (key === "Parent") {
+				return mockScreenGui;
+			}
+
+			if (key === "AbsolutePosition") {
+				return createMockVector2(0, 0);
+			}
+
+			if (key === "AbsoluteSize") {
+				return createMockVector2(1000, 1000);
+			}
+
+			if (key === "AbsoluteWindowSize") {
+				return createMockVector2(0, 0);
+			}
+
+			if (key === "CanvasSize") {
+				return createMockUDim2();
+			}
+
+			if (key === "GetPropertyChangedSignal") {
+				return () => createMockSignal();
+			}
+
 			if (key === "default") {
 				return proxy;
 			}
@@ -109,6 +202,10 @@ function createUniversalRobloxMockInternal(
 
 			if (key === "length") {
 				return 0;
+			}
+
+			if (key === "TextBounds") {
+				return createMockVector2(0, 0);
 			}
 
 			const cached = members.get(key);

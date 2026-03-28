@@ -1,4 +1,4 @@
-import * as React from "react";
+﻿import * as React from "react";
 import { normalizePreviewNodeId } from "../internal/robloxValues";
 import {
 	LayoutNodeParentProvider,
@@ -34,11 +34,76 @@ function createZeroVector2() {
 	return { X: 0, Y: 0 };
 }
 
-function getHostPropertyFallback(property: string) {
+function createVector2(x: number, y: number) {
+	return { X: x, Y: y };
+}
+
+function createZeroUDim2() {
+	return {
+		X: { Offset: 0, Scale: 0 },
+		Y: { Offset: 0, Scale: 0 },
+	};
+}
+
+function createMockSignal() {
+	return {
+		Connect(listener?: (...args: unknown[]) => void) {
+			const connection = {
+				Connected: true,
+				Disconnect() {
+					connection.Connected = false;
+				},
+			};
+
+			if (typeof listener === "function") {
+				setTimeout(() => {
+					if (connection.Connected) {
+						listener();
+					}
+				}, 0);
+			}
+
+			return connection;
+		},
+	};
+}
+
+const mockScreenGui = {
+	AbsolutePosition: createZeroVector2(),
+	AbsoluteSize: createVector2(1000, 1000),
+	AbsoluteWindowSize: createZeroVector2(),
+	CanvasSize: createZeroUDim2(),
+	ClassName: "ScreenGui" as const,
+	GetFullName() {
+		return "MockScreenGui";
+	},
+	GetPropertyChangedSignal() {
+		return createMockSignal();
+	},
+	IsA(name: string) {
+		return (
+			name === "ScreenGui" || name === "LayerCollector" || name === "Instance"
+		);
+	},
+	Name: "MockScreenGui" as const,
+	Parent: undefined,
+	TextBounds: createZeroVector2(),
+};
+
+function getHostPropertyFallback(property: string, isRootNode: boolean) {
 	switch (property) {
 		case "AbsolutePosition":
-		case "AbsoluteSize":
 		case "CanvasPosition":
+			return createZeroVector2();
+		case "AbsoluteSize":
+			return isRootNode ? createVector2(1000, 1000) : createZeroVector2();
+		case "AbsoluteWindowSize":
+			return createZeroVector2();
+		case "CanvasSize":
+			return createZeroUDim2();
+		case "Parent":
+			return mockScreenGui;
+		case "TextBounds":
 			return createZeroVector2();
 		default:
 			return undefined;
@@ -292,6 +357,8 @@ export function useHostLayout(host: LayoutHostName, props: PreviewDomProps) {
 		[host, mergedProps, nodeId, normalizedParentId, sourceOrder],
 	);
 
+	const isRootNode = normalizedNode.kind === "root";
+
 	React.useLayoutEffect(() => {
 		const element = elementRef.current;
 		if (!element) {
@@ -300,13 +367,13 @@ export function useHostLayout(host: LayoutHostName, props: PreviewDomProps) {
 
 		installPreviewHostPropertyBridge(element, nodeId, (property) => {
 			const value = (basePropsRef.current as Record<string, unknown>)[property];
-			return value ?? getHostPropertyFallback(property);
+			return value ?? getHostPropertyFallback(property, isRootNode);
 		});
 
 		return () => {
 			cleanupPreviewHostBridge(element, nodeId);
 		};
-	}, [nodeId]);
+	}, [isRootNode, nodeId]);
 
 	const intrinsicSize = useObservedIntrinsicSize(
 		elementRef,
@@ -369,7 +436,11 @@ export function withNodeParent(
 ) {
 	return (
 		<PreviewLayoutChildOrderProvider>
-			<LayoutNodeParentProvider nodeId={nodeId} rect={contentRect ?? rect}>
+			<LayoutNodeParentProvider
+				contentRect={contentRect ?? rect}
+				nodeId={nodeId}
+				renderRect={rect}
+			>
 				{children}
 			</LayoutNodeParentProvider>
 		</PreviewLayoutChildOrderProvider>

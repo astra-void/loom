@@ -73,6 +73,7 @@ type LayoutContexts = {
 	layout: React.Context<LayoutContextValue | null>;
 	parentNode: React.Context<string | undefined>;
 	parentRect: React.Context<ComputedRect | null>;
+	parentRenderRect: React.Context<ComputedRect | null>;
 };
 
 type PreviewLayoutProbeListener = (
@@ -180,6 +181,7 @@ function getSharedLayoutContexts(): LayoutContexts {
 			layout: React.createContext<LayoutContextValue | null>(null),
 			parentNode: React.createContext<string | undefined>(undefined),
 			parentRect: React.createContext<ComputedRect | null>(null),
+			parentRenderRect: React.createContext<ComputedRect | null>(null),
 		};
 	}
 
@@ -190,6 +192,7 @@ const sharedLayoutContexts = getSharedLayoutContexts();
 const LayoutContext = sharedLayoutContexts.layout;
 const ParentNodeContext = sharedLayoutContexts.parentNode;
 const ParentRectContext = sharedLayoutContexts.parentRect;
+const ParentRenderRectContext = sharedLayoutContexts.parentRenderRect;
 
 function toErrorMessage(error: unknown): string {
 	if (error instanceof Error) {
@@ -539,9 +542,11 @@ export function LayoutProvider(props: LayoutProviderProps) {
 				style={containerStyle}
 			>
 				<ParentRectContext.Provider value={viewportRect}>
-					<ParentNodeContext.Provider value={undefined}>
-						{props.children}
-					</ParentNodeContext.Provider>
+					<ParentRenderRectContext.Provider value={viewportRect}>
+						<ParentNodeContext.Provider value={undefined}>
+							{props.children}
+						</ParentNodeContext.Provider>
+					</ParentRenderRectContext.Provider>
 				</ParentRectContext.Provider>
 			</div>
 		</LayoutContext.Provider>
@@ -550,14 +555,19 @@ export function LayoutProvider(props: LayoutProviderProps) {
 
 export function LayoutNodeParentProvider(props: {
 	children: React.ReactNode;
+	contentRect: ComputedRect | null;
 	nodeId: string;
-	rect: ComputedRect | null;
+	renderRect?: ComputedRect | null;
 }) {
 	return (
-		<ParentRectContext.Provider value={props.rect}>
-			<ParentNodeContext.Provider value={props.nodeId}>
-				{props.children}
-			</ParentNodeContext.Provider>
+		<ParentRectContext.Provider value={props.contentRect}>
+			<ParentRenderRectContext.Provider
+				value={props.renderRect ?? props.contentRect}
+			>
+				<ParentNodeContext.Provider value={props.nodeId}>
+					{props.children}
+				</ParentNodeContext.Provider>
+			</ParentRenderRectContext.Provider>
 		</ParentRectContext.Provider>
 	);
 }
@@ -573,17 +583,21 @@ export function useLayoutEngineStatus() {
 export function useLayoutDebugState(nodeId?: string) {
 	const context = React.useContext(LayoutContext);
 	const inheritedParentRect = React.useContext(ParentRectContext);
+	const inheritedRenderRect = React.useContext(ParentRenderRectContext);
 	const debugNode = nodeId ? (context?.getDebugNode(nodeId) ?? null) : null;
 
 	return React.useMemo(
 		() => ({
 			debugNode,
 			hasContext: context !== null,
-			inheritedParentRect: debugNode?.parentConstraints ?? inheritedParentRect,
+			inheritedParentRect:
+				debugNode?.parentConstraints ??
+				inheritedRenderRect ??
+				inheritedParentRect,
 			viewport: context?.viewport ?? null,
 			viewportReady: context?.viewportReady ?? false,
 		}),
-		[context, debugNode, inheritedParentRect],
+		[context, debugNode, inheritedParentRect, inheritedRenderRect],
 	);
 }
 

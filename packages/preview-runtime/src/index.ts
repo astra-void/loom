@@ -175,11 +175,81 @@ const previewRuntimePrimitives = {
 };
 
 export {
+	BillboardGui,
+	CanvasGroup,
+	Frame,
+	ImageButton,
+	ImageLabel,
+	ScreenGui,
+	ScrollingFrame,
+	SurfaceGui,
+	TextBox,
+	TextButton,
+	TextLabel,
+	UIAspectRatioConstraint,
+	UICorner,
+	UIFlexItem,
+	UIGradient,
+	UIGridLayout,
+	UIListLayout,
+	UIPadding,
+	UIPageLayout,
+	UIScale,
+	UISizeConstraint,
+	UIStroke,
+	UITableLayout,
+	UITextSizeConstraint,
+	VideoFrame,
+	ViewportFrame,
+} from "./hosts";
+export { PreviewTargetShell } from "./hosts/preview-targets/PreviewTargetShell";
+export type {
+	PreviewLayoutDebugNode,
+	PreviewLayoutDebugPayload,
+	PreviewLayoutHostMetadata,
+	PreviewLayoutNode,
+} from "./layout";
+export {
+	areViewportsEqual,
+	createViewportSize,
+	createWindowViewport,
+	getPreviewLayoutProbeSnapshot,
+	initializeLayoutEngine,
+	isViewportLargeEnough,
+	LayoutProvider,
+	loadPreviewLayoutEngineWasmBytes,
+	measureElementViewport,
+	type PreviewLayoutEngineInitOptions,
+	type PreviewLayoutEngineLoader,
+	type PreviewLayoutEngineModuleOrPath,
+	type PreviewLayoutProbeSnapshot,
+	pickViewport,
+	setPreviewLayoutEngineLoader,
+	subscribePreviewLayoutProbe,
+	useLayoutEngineStatus,
+	usePreviewLayoutProbeSnapshot,
+	useRobloxLayout,
+	type ViewportSize,
+} from "./layout";
+export type {
+	PreviewComponentPropsMetadata,
+	PreviewPropMetadata,
+} from "./preview";
+export {
 	AutoMockProvider,
 	buildAutoMockProps,
 	type PreviewAutoMockableComponent,
 	withAutoMockedProps,
 } from "./preview";
+export type { LayerInteractEvent } from "./react";
+export {
+	DismissableLayer,
+	FocusScope,
+	Portal,
+	PortalProvider,
+	Presence,
+	usePortalContext,
+} from "./react";
 export type {
 	PreviewEnumCategory,
 	PreviewEnumItem,
@@ -214,117 +284,24 @@ export {
 	getPreviewRuntimeReporter,
 	installPreviewRuntimeGlobals,
 	installPreviewRuntimePolyfills,
+	LayoutExecutionError,
+	LayoutValidationError,
+	ModuleLoadError,
 	normalizePreviewRuntimeError,
 	os,
+	PreviewRuntimeError,
 	previewRuntimeGlobalNames,
 	previewRuntimeGlobalValues,
 	print,
 	publishPreviewRuntimeIssue,
 	RunService,
+	RuntimeMockError,
 	setPreviewRuntimeIssueContext,
 	string,
 	subscribePreviewRuntimeIssues,
-	task,
-} from "./runtime";
-
-export { React };
-export { createStrictContext, useControllableState, Slot };
-export {
-	BillboardGui,
-	CanvasGroup,
-	Frame,
-	ImageButton,
-	ImageLabel,
-	ScreenGui,
-	ScrollingFrame,
-	SurfaceGui,
-	TextBox,
-	TextButton,
-	TextLabel,
-	UIAspectRatioConstraint,
-	UICorner,
-	UIFlexItem,
-	UIGradient,
-	UIGridLayout,
-	UIListLayout,
-	UIPadding,
-	UIPageLayout,
-	UIScale,
-	UISizeConstraint,
-	UIStroke,
-	UITableLayout,
-	UITextSizeConstraint,
-	VideoFrame,
-	ViewportFrame,
-} from "./hosts";
-export { PreviewTargetShell } from "./hosts/preview-targets/PreviewTargetShell";
-export {
-	areViewportsEqual,
-	createViewportSize,
-	createWindowViewport,
-	getPreviewLayoutProbeSnapshot,
-	initializeLayoutEngine,
-	isViewportLargeEnough,
-	LayoutProvider,
-	loadPreviewLayoutEngineWasmBytes,
-	measureElementViewport,
-	type PreviewLayoutEngineInitOptions,
-	type PreviewLayoutEngineLoader,
-	type PreviewLayoutEngineModuleOrPath,
-	type PreviewLayoutProbeSnapshot,
-	pickViewport,
-	setPreviewLayoutEngineLoader,
-	subscribePreviewLayoutProbe,
-	useLayoutEngineStatus,
-	usePreviewLayoutProbeSnapshot,
-	useRobloxLayout,
-	type ViewportSize,
-} from "./layout";
-export {
-	DismissableLayer,
-	FocusScope,
-	Portal,
-	PortalProvider,
-	Presence,
-	usePortalContext,
-} from "./react";
-export {
-	__previewGlobal,
-	Color3,
-	UDim,
-	UDim2,
-	Vector2,
-	Vector3,
-	next,
-	typeIs,
-	pairs,
-	error,
-	game,
-	isPreviewElement,
-	math,
-	TweenInfo,
-	warn,
-	workspace,
-};
-export type {
-	PreviewLayoutDebugNode,
-	PreviewLayoutDebugPayload,
-	PreviewLayoutHostMetadata,
-	PreviewLayoutNode,
-} from "./layout";
-export type {
-	PreviewComponentPropsMetadata,
-	PreviewPropMetadata,
-} from "./preview";
-export type { LayerInteractEvent } from "./react";
-export {
-	LayoutExecutionError,
-	LayoutValidationError,
-	ModuleLoadError,
-	PreviewRuntimeError,
-	RuntimeMockError,
 	TransformExecutionError,
 	TransformValidationError,
+	task,
 	UnsupportedPatternError,
 } from "./runtime";
 export {
@@ -334,6 +311,28 @@ export {
 	robloxModuleMock,
 } from "./runtime/robloxMock";
 export { __rbxStyle, Box, Text } from "./style/index";
+export {
+	__previewGlobal,
+	Color3,
+	createStrictContext,
+	error,
+	game,
+	isPreviewElement,
+	math,
+	next,
+	pairs,
+	React,
+	Slot,
+	TweenInfo,
+	typeIs,
+	UDim,
+	UDim2,
+	useControllableState,
+	Vector2,
+	Vector3,
+	warn,
+	workspace,
+};
 
 export type PreviewRuntime = {
 	hosts: typeof previewRuntimeHosts;

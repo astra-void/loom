@@ -1,6 +1,6 @@
-﻿import path from "node:path";
+import path from "node:path";
 import ts from "typescript";
-import type { Plugin } from "vite";
+import type { Plugin } from "vite" with { "resolution-mode": "import" };
 import { createNonMockableSpecifiers } from "./aliasConfig";
 
 export const UNRESOLVED_MOCK_MODULE_ID = "virtual:loom-preview-unresolved-env";

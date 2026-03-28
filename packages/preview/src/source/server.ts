@@ -6,8 +6,9 @@ import type {
 	PreviewExecutionMode,
 } from "@loom-dev/preview-engine";
 import ts from "typescript";
-import type { LogErrorOptions, Logger } from "vite";
-import { searchForWorkspaceRoot } from "vite";
+import type { LogErrorOptions, Logger } from "vite" with {
+	"resolution-mode": "import",
+};
 import type {
 	LoadPreviewConfigOptions,
 	PreviewConfig,
@@ -553,6 +554,7 @@ export async function resolvePreviewServerConfig(
 
 	if (isShorthandServerOptions(options)) {
 		const aliasConfig = resolvePreviewAliasConfig(options);
+		const { searchForWorkspaceRoot } = await import("vite");
 		const workspaceRoot = path.resolve(
 			searchForWorkspaceRoot(options.packageRoot),
 		);
