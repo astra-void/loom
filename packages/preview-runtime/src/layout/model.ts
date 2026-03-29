@@ -158,6 +158,7 @@ export type PreviewLayoutStyleHints = {
 
 export type PreviewLayoutNodeLayout = {
 	anchorPoint: PreviewLayoutVector;
+	automaticSize?: "none" | "x" | "xy" | "y";
 	constraints?: PreviewLayoutConstraints;
 	position: PreviewLayoutSize;
 	positionMode: PreviewLayoutPositionMode;
@@ -179,6 +180,7 @@ export type PreviewLayoutNode = {
 	parentId?: string;
 	sourceOrder?: number;
 	styleHints?: PreviewLayoutStyleHints;
+	visible?: boolean;
 };
 
 export type PreviewLayoutDebugNode = {
@@ -220,6 +222,7 @@ export type RegisteredNode = PreviewLayoutNode;
 
 export type RobloxLayoutNodeInput = {
 	anchorPoint?: Vector2Like;
+	automaticSize?: string;
 	id: string;
 	kind?: PreviewLayoutNodeKind;
 	nodeType: string;
@@ -227,6 +230,7 @@ export type RobloxLayoutNodeInput = {
 	position?: UDim2Like;
 	size?: UDim2Like;
 	sizeConstraintMode?: string;
+	visible?: boolean;
 };
 
 export type RobloxLayoutRegistrationInput = RobloxLayoutNodeInput & {
@@ -369,6 +373,18 @@ function normalizeSizeConstraintMode(
 			return "RelativeYY";
 		default:
 			return "RelativeXY";
+	}
+}
+
+function normalizeAutomaticSize(value: unknown): "none" | "x" | "xy" | "y" {
+	const normalized = normalizeLowerCaseString(value);
+	switch (normalized) {
+		case "x":
+		case "y":
+		case "xy":
+			return normalized;
+		default:
+			return "none";
 	}
 }
 
@@ -681,6 +697,7 @@ function normalizeLayoutModifiers(
 
 	const record = value as {
 		aspectRatioConstraint?: unknown;
+		automaticSize?: unknown;
 		flexItem?: unknown;
 		grid?: unknown;
 		list?: unknown;
@@ -886,10 +903,12 @@ export function adaptRobloxNodeInput(
 	const normalizedParentId = normalizePreviewNodeId(input.parentId ?? parentId);
 	const normalizedId = normalizePreviewNodeId(input.id) ?? input.id;
 	const rawLayoutInput = input as {
+		automaticSize?: unknown;
 		layoutModifiers?: unknown;
 		layoutOrder?: unknown;
 		name?: unknown;
 		sourceOrder?: unknown;
+		visible?: unknown;
 	};
 	const measuredSize = normalizeIntrinsicSize(
 		input.intrinsicSize ??
@@ -915,6 +934,7 @@ export function adaptRobloxNodeInput(
 			anchorPoint: toLayoutVector(
 				serializeVector2(input.anchorPoint, ZERO_VECTOR2),
 			),
+			automaticSize: normalizeAutomaticSize(rawLayoutInput.automaticSize),
 			constraints: normalizeConstraints(
 				(input as { constraints?: unknown }).constraints,
 			),
@@ -941,6 +961,7 @@ export function adaptRobloxNodeInput(
 						Math.floor(toFiniteNumber(rawLayoutInput.sourceOrder, 0)),
 					),
 		styleHints: normalizeStyleHints(input.styleHints),
+		visible: rawLayoutInput.visible !== false,
 	};
 
 	return normalizeRootScreenGuiNode(nextNode);
@@ -957,6 +978,8 @@ export function areNodesEqual(
 		a.hostMetadata?.placeholderBehavior ===
 			b.hostMetadata?.placeholderBehavior &&
 		a.id === b.id &&
+		a.visible === b.visible &&
+		a.layout.automaticSize === b.layout.automaticSize &&
 		(a.intrinsicSize?.width ?? 0) === (b.intrinsicSize?.width ?? 0) &&
 		(a.intrinsicSize?.height ?? 0) === (b.intrinsicSize?.height ?? 0) &&
 		a.kind === b.kind &&
@@ -1089,36 +1112,62 @@ export function resolveNodeSize(
 		};
 	}
 
-	if (node.layout.size) {
+	const automaticSize = node.layout.automaticSize ?? "none";
+	const automaticX = automaticSize === "x" || automaticSize === "xy";
+	const automaticY = automaticSize === "y" || automaticSize === "xy";
+	const hasIntrinsicSize =
+		node.intrinsicSize !== null && node.intrinsicSize !== undefined;
+	const hasExplicitSize = node.layout.size !== undefined;
+	const resolvedSize = {
+		x:
+			automaticX && hasIntrinsicSize
+				? createMeasuredSizeLayout(node.intrinsicSize as MeasuredNodeSize).x
+				: (node.layout.size?.x ??
+					(node.hostMetadata?.fullSizeDefault
+						? FULL_SIZE_UDIM2.X
+						: ZERO_UDIM2.X)),
+		y:
+			automaticY && hasIntrinsicSize
+				? createMeasuredSizeLayout(node.intrinsicSize as MeasuredNodeSize).y
+				: (node.layout.size?.y ??
+					(node.hostMetadata?.fullSizeDefault
+						? FULL_SIZE_UDIM2.Y
+						: ZERO_UDIM2.Y)),
+	};
+
+	if (hasExplicitSize && automaticSize === "none") {
 		return {
 			layoutSource: "explicit-size",
-			resolvedSize: node.layout.size,
+			resolvedSize: node.layout.size as PreviewLayoutSize,
 			sizeResolution: createSizeResolution(
 				true,
-				node.intrinsicSize !== null && node.intrinsicSize !== undefined,
+				hasIntrinsicSize,
 				"explicit-size",
 			),
 		};
 	}
 
-	if (node.hostMetadata?.fullSizeDefault) {
+	if (node.hostMetadata?.fullSizeDefault && !hasExplicitSize) {
 		return {
 			layoutSource: "full-size-default",
-			resolvedSize: toLayoutSize(FULL_SIZE_UDIM2),
+			resolvedSize: resolvedSize as PreviewLayoutSize,
 			sizeResolution: createSizeResolution(
 				false,
-				node.intrinsicSize !== null && node.intrinsicSize !== undefined,
+				hasIntrinsicSize,
 				"full-size-default",
 			),
 		};
 	}
 
-	if (node.intrinsicSize) {
+	if (hasIntrinsicSize) {
 		return {
 			layoutSource: "intrinsic-size",
-			resolvedSize: createMeasuredSizeLayout(node.intrinsicSize),
+			resolvedSize:
+				automaticSize === "none" && !hasExplicitSize
+					? createMeasuredSizeLayout(node.intrinsicSize as MeasuredNodeSize)
+					: (resolvedSize as PreviewLayoutSize),
 			sizeResolution: createSizeResolution(
-				false,
+				hasExplicitSize,
 				true,
 				"intrinsic-measurement",
 			),
@@ -1127,8 +1176,12 @@ export function resolveNodeSize(
 
 	return {
 		layoutSource: "intrinsic-size",
-		resolvedSize: toLayoutSize(ZERO_UDIM2),
-		sizeResolution: createSizeResolution(false, false, "intrinsic-empty"),
+		resolvedSize: resolvedSize as PreviewLayoutSize,
+		sizeResolution: createSizeResolution(
+			hasExplicitSize,
+			false,
+			"intrinsic-empty",
+		),
 	};
 }
 

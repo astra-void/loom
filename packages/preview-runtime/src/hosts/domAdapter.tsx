@@ -6,6 +6,7 @@ import {
 import {
 	adaptRobloxNodeInput,
 	type ComputedRect,
+	computeNodeRect,
 	type PreviewLayoutHostPolicy,
 	type PreviewLayoutModifiers,
 	type PreviewLayoutNode,
@@ -117,7 +118,7 @@ function getDegradedHostDetail(node: PreviewHostNode) {
 		debugNode?.sizeResolution.reason ??
 		(hostPolicy.fullSizeDefault ? "full-size-default" : "intrinsic-empty");
 
-	return `${hostPolicy.placeholderBehavior} placeholder · ${sizeReason}`;
+	return `${hostPolicy.placeholderBehavior} placeholder - ${sizeReason}`;
 }
 
 function renderDegradedHostLabel(node: PreviewHostNode) {
@@ -330,20 +331,22 @@ function createRenderedDomProps(node: PreviewHostNode) {
 		...(domProps.style as React.CSSProperties | undefined),
 	};
 
+	const layoutRect =
+		node.computed ??
+		(node.layoutDebug?.inheritedParentRect
+			? computeNodeRect(node, node.layoutDebug.inheritedParentRect).rect
+			: null);
+
 	applyComputedLayoutStyle(
 		style,
-		node.computed ?? null,
+		layoutRect,
 		node.layoutDebug?.inheritedParentRect ?? null,
 	);
-	applyPaddingStyle(
-		style,
-		node.layoutModifiers?.padding,
-		node.computed ?? null,
-	);
+	applyPaddingStyle(style, node.layoutModifiers?.padding, layoutRect);
 	applyHoistedModifierStyles(
 		style,
 		node.hoistedModifierState,
-		node.computed ?? null,
+		layoutRect,
 		node.sourceProps.AnchorPoint,
 	);
 	if (isDegradedPreviewHost(node.host)) {
@@ -368,15 +371,16 @@ function createRenderedDomProps(node: PreviewHostNode) {
 		node,
 	);
 }
-
 function createHostNode(source: SourceHostDescriptor): PreviewHostNode {
 	const nodeId = normalizePreviewNodeId(source.nodeId) ?? source.nodeId;
 	const parentId = normalizePreviewNodeId(source.parentId);
 	const rawProps = source.props as PreviewDomProps & {
 		anchorPoint?: unknown;
+		automaticSize?: unknown;
 		position?: unknown;
 		size?: unknown;
 		sizeConstraintMode?: unknown;
+		visible?: unknown;
 	};
 	const resolved = resolvePreviewDomProps(source.props, {
 		applyComputedLayout: false,

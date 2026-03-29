@@ -165,10 +165,63 @@ fn resolve_node_size(node: &PreviewLayoutNode) -> ResolvedNodeSize {
         };
     }
 
-    if let Some(size) = node.layout.size {
+    let automatic_size = node.layout.automatic_size.as_deref().unwrap_or("none");
+    let automatic_x = automatic_size == "x" || automatic_size == "xy";
+    let automatic_y = automatic_size == "y" || automatic_size == "xy";
+    let has_intrinsic_size = node.intrinsic_size.is_some();
+    let has_explicit_size = node.layout.size.is_some();
+    let intrinsic_size = node.intrinsic_size.unwrap_or_default();
+    let explicit_size = node.layout.size.unwrap_or_else(zero_size);
+    let full_size = full_size();
+    let resolved_size = LayoutSize {
+        x: if automatic_x && has_intrinsic_size {
+            LayoutAxis {
+                offset: intrinsic_size.width,
+                scale: 0.0,
+            }
+        } else if has_explicit_size {
+            explicit_size.x
+        } else if node
+            .host_metadata
+            .as_ref()
+            .is_some_and(|metadata| metadata.full_size_default)
+        {
+            full_size.x
+        } else if has_intrinsic_size {
+            LayoutAxis {
+                offset: intrinsic_size.width,
+                scale: 0.0,
+            }
+        } else {
+            zero_size().x
+        },
+        y: if automatic_y && has_intrinsic_size {
+            LayoutAxis {
+                offset: intrinsic_size.height,
+                scale: 0.0,
+            }
+        } else if has_explicit_size {
+            explicit_size.y
+        } else if node
+            .host_metadata
+            .as_ref()
+            .is_some_and(|metadata| metadata.full_size_default)
+        {
+            full_size.y
+        } else if has_intrinsic_size {
+            LayoutAxis {
+                offset: intrinsic_size.height,
+                scale: 0.0,
+            }
+        } else {
+            zero_size().y
+        },
+    };
+
+    if has_explicit_size && automatic_size == "none" {
         return ResolvedNodeSize {
             layout_source: "explicit-size",
-            resolved_size: size,
+            resolved_size: explicit_size,
             size_resolution_reason: "explicit-size",
         };
     }
@@ -177,25 +230,26 @@ fn resolve_node_size(node: &PreviewLayoutNode) -> ResolvedNodeSize {
         .host_metadata
         .as_ref()
         .is_some_and(|metadata| metadata.full_size_default)
+        && !has_explicit_size
     {
         return ResolvedNodeSize {
             layout_source: "full-size-default",
-            resolved_size: full_size(),
+            resolved_size,
             size_resolution_reason: "full-size-default",
         };
     }
 
-    if let Some(intrinsic_size) = node.intrinsic_size {
+    if has_intrinsic_size {
         return ResolvedNodeSize {
             layout_source: "intrinsic-size",
-            resolved_size: create_measured_size_layout(intrinsic_size),
+            resolved_size: resolved_size,
             size_resolution_reason: "intrinsic-measurement",
         };
     }
 
     ResolvedNodeSize {
         layout_source: "intrinsic-size",
-        resolved_size: zero_size(),
+        resolved_size,
         size_resolution_reason: "intrinsic-empty",
     }
 }
@@ -465,10 +519,12 @@ pub(crate) fn legacy_to_preview_nodes(
         } else {
             "host".to_owned()
         },
+        visible: true,
         layout_modifiers: None,
         layout_order: None,
         layout: PreviewNodeLayout {
             anchor_point: node.anchor_point,
+            automatic_size: None,
             constraints: None,
             position: node.position,
             position_mode: default_position_mode(),
@@ -492,8 +548,3 @@ pub(crate) fn sort_ids(ids: &mut Vec<String>) {
     ids.sort();
     ids.dedup();
 }
-
-
-
-
-

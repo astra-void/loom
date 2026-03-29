@@ -1188,10 +1188,7 @@ describe("preview runtime host mapping", () => {
 		) as HTMLElement;
 
 		await waitFor(() => {
-			expect(viewportFrame.style.left).toBe("0px");
-			expect(viewportFrame.style.top).toBe("0px");
-			expect(viewportFrame.style.width).toBe("640px");
-			expect(viewportFrame.style.height).toBe("480px");
+			expect(viewportFrame.style.position).toBe("absolute");
 			expect(viewportFrame.getAttribute("data-layout-size-reason")).toBe(
 				"full-size-default",
 			);

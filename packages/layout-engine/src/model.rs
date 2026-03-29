@@ -50,6 +50,8 @@ pub struct PreviewNodeLayout {
     #[serde(alias = "anchor_point")]
     pub anchor_point: LayoutVector,
     #[serde(default)]
+    pub automatic_size: Option<String>,
+    #[serde(default)]
     pub constraints: Option<LayoutConstraints>,
     pub position: LayoutSize,
     #[serde(default = "default_position_mode")]
@@ -235,6 +237,8 @@ pub struct PreviewLayoutNode {
     pub node_type: String,
     #[serde(default, alias = "parent_id")]
     pub parent_id: Option<String>,
+    #[serde(default = "default_visible")]
+    pub visible: bool,
     #[serde(default)]
     pub source_order: Option<i32>,
     #[serde(default)]
@@ -361,7 +365,11 @@ pub(crate) fn default_sort_order() -> String {
     "source".to_owned()
 }
 
-pub(crate) fn default_top_left_corner() -> String {
+pub(crate) fn default_visible() -> bool {
+    true
+}
+
+fn default_top_left_corner() -> String {
     "top-left".to_owned()
 }
 
@@ -400,4 +408,3 @@ pub(crate) fn zero_size() -> LayoutSize {
 pub(crate) fn zero_vector() -> LayoutVector {
     LayoutVector { x: 0.0, y: 0.0 }
 }
-

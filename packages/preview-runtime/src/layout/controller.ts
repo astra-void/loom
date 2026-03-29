@@ -576,7 +576,9 @@ export class LayoutController {
 		}
 
 		const rect = this.result.rects[nodeId] ?? null;
-		const childIds = this.childIdsByParent.get(nodeId) ?? [];
+		const childIds = (this.childIdsByParent.get(nodeId) ?? []).filter(
+			(childId) => this.nodes.get(childId)?.visible !== false,
+		);
 		const sizeResolution = resolveNodeSize(node);
 
 		return {
@@ -636,7 +638,9 @@ export class LayoutController {
 
 		output[node.id] = rect;
 
-		const childIds = this.childIdsByParent.get(nodeId) ?? [];
+		const childIds = (this.childIdsByParent.get(nodeId) ?? []).filter(
+			(childId) => this.nodes.get(childId)?.visible !== false,
+		);
 		if (childIds.length === 0) {
 			return;
 		}

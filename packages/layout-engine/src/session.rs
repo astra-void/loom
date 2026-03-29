@@ -11,7 +11,7 @@ use crate::model::{
 use crate::resolve::{
     compare_nodes_for_parent, compare_source_order, compute_absolute_rect, create_viewport_rect,
     normalize_root_node, resolve_content_rect, resolve_host_policy, resolve_layout_source,
-    resolve_size_resolution, sort_ids,
+    resolve_padding_inset, resolve_size_resolution, sort_ids,
 };
 
 pub(crate) fn to_js_error(message: String) -> JsValue {
@@ -70,17 +70,102 @@ impl LayoutSession {
         child_ids
     }
 
+    fn visible_child_ids_for_parent(&self, parent_id: &str) -> Vec<String> {
+        self.child_ids_for_parent(parent_id)
+            .into_iter()
+            .filter(|child_id| self.nodes.get(child_id).is_some_and(|node| node.visible))
+            .collect::<Vec<_>>()
+    }
+
     fn child_nodes_for_layout_parent(
         &self,
         parent_node: &PreviewLayoutNode,
     ) -> Vec<PreviewLayoutNode> {
         let mut child_nodes = self
-            .child_ids_for_parent(&parent_node.id)
+            .visible_child_ids_for_parent(&parent_node.id)
             .into_iter()
             .filter_map(|child_id| self.nodes.get(&child_id).cloned())
             .collect::<Vec<_>>();
         child_nodes.sort_by(|left, right| compare_nodes_for_parent(parent_node, left, right));
         child_nodes
+    }
+
+    fn resolve_automatic_content_size(
+        &self,
+        node: &PreviewLayoutNode,
+        current_rect: &ComputedRect,
+        content_rect: &ComputedRect,
+        child_ids: &[String],
+    ) -> Option<ComputedRect> {
+        let automatic_size = node.layout.automatic_size.as_deref().unwrap_or("none");
+        if automatic_size == "none" || child_ids.is_empty() {
+            return None;
+        }
+
+        let mut min_x = f32::INFINITY;
+        let mut min_y = f32::INFINITY;
+        let mut max_x = f32::NEG_INFINITY;
+        let mut max_y = f32::NEG_INFINITY;
+        let mut found = false;
+
+        for child_id in child_ids {
+            let Some(child_rect) = self.last_rects.get(child_id) else {
+                continue;
+            };
+
+            found = true;
+            min_x = min_x.min(child_rect.x - content_rect.x);
+            min_y = min_y.min(child_rect.y - content_rect.y);
+            max_x = max_x.max(child_rect.x + child_rect.width - content_rect.x);
+            max_y = max_y.max(child_rect.y + child_rect.height - content_rect.y);
+        }
+
+        if !found {
+            return None;
+        }
+
+        let padding = node
+            .layout_modifiers
+            .as_ref()
+            .and_then(|modifiers| modifiers.padding.as_ref());
+        let padding_left = padding
+            .map(|insets| resolve_padding_inset(Some(&insets.left), current_rect.width))
+            .unwrap_or(0.0);
+        let padding_right = padding
+            .map(|insets| resolve_padding_inset(Some(&insets.right), current_rect.width))
+            .unwrap_or(0.0);
+        let padding_top = padding
+            .map(|insets| resolve_padding_inset(Some(&insets.top), current_rect.height))
+            .unwrap_or(0.0);
+        let padding_bottom = padding
+            .map(|insets| resolve_padding_inset(Some(&insets.bottom), current_rect.height))
+            .unwrap_or(0.0);
+
+        let content_width = (max_x - min_x).max(0.0);
+        let content_height = (max_y - min_y).max(0.0);
+        let mut width = current_rect.width;
+        let mut height = current_rect.height;
+
+        if automatic_size == "x" || automatic_size == "xy" {
+            width = content_width + padding_left + padding_right;
+        }
+
+        if automatic_size == "y" || automatic_size == "xy" {
+            height = content_height + padding_top + padding_bottom;
+        }
+
+        if (width - current_rect.width).abs() < f32::EPSILON
+            && (height - current_rect.height).abs() < f32::EPSILON
+        {
+            return None;
+        }
+
+        Some(ComputedRect {
+            x: current_rect.x,
+            y: current_rect.y,
+            width,
+            height,
+        })
     }
 
     fn collect_subtree_ids(
@@ -112,46 +197,70 @@ impl LayoutSession {
             return;
         };
 
-        self.last_rects.insert(node.id.clone(), rect);
+        let mut current_rect = rect;
 
-        let child_ids = self.child_ids_for_parent(&node.id);
-        if child_ids.is_empty() {
-            return;
-        }
+        for _ in 0..2 {
+            self.last_rects.insert(node.id.clone(), current_rect);
 
-        let content_rect = resolve_content_rect(rect, &node);
+            if !node.visible {
+                return;
+            }
 
-        if node
-            .layout_modifiers
-            .as_ref()
-            .and_then(|modifiers| modifiers.grid.as_ref())
-            .is_some()
-        {
-            self.apply_child_placements(compute_grid_layout(
+            let child_ids = self.visible_child_ids_for_parent(&node.id);
+            if child_ids.is_empty() {
+                break;
+            }
+
+            let content_rect = resolve_content_rect(current_rect, &node);
+
+            if node
+                .layout_modifiers
+                .as_ref()
+                .and_then(|modifiers| modifiers.grid.as_ref())
+                .is_some()
+            {
+                self.apply_child_placements(compute_grid_layout(
+                    &node,
+                    content_rect,
+                    self.child_nodes_for_layout_parent(&node),
+                ));
+            } else if node
+                .layout_modifiers
+                .as_ref()
+                .and_then(|modifiers| modifiers.list.as_ref())
+                .is_some()
+            {
+                self.apply_child_placements(compute_list_layout(
+                    &node,
+                    content_rect,
+                    self.child_nodes_for_layout_parent(&node),
+                ));
+            } else {
+                for child_id in child_ids {
+                    self.compute_subtree(&child_id, &content_rect);
+                }
+            }
+
+            let Some(next_rect) = self.resolve_automatic_content_size(
                 &node,
-                content_rect,
-                self.child_nodes_for_layout_parent(&node),
-            ));
-            return;
+                &current_rect,
+                &content_rect,
+                &self.visible_child_ids_for_parent(&node.id),
+            ) else {
+                break;
+            };
+
+            if (next_rect.width - current_rect.width).abs() < f32::EPSILON
+                && (next_rect.height - current_rect.height).abs() < f32::EPSILON
+            {
+                break;
+            }
+
+            current_rect.width = next_rect.width;
+            current_rect.height = next_rect.height;
         }
 
-        if node
-            .layout_modifiers
-            .as_ref()
-            .and_then(|modifiers| modifiers.list.as_ref())
-            .is_some()
-        {
-            self.apply_child_placements(compute_list_layout(
-                &node,
-                content_rect,
-                self.child_nodes_for_layout_parent(&node),
-            ));
-            return;
-        }
-
-        for child_id in child_ids {
-            self.compute_subtree(&child_id, &content_rect);
-        }
+        self.last_rects.insert(node.id.clone(), current_rect);
     }
 
     pub(crate) fn compute_dirty_internal(&mut self) -> Result<PreviewLayoutResult, String> {
@@ -236,7 +345,7 @@ impl LayoutSession {
         let host_policy = resolve_host_policy(node);
         let size_resolution = resolve_size_resolution(node);
         let children = self
-            .child_ids_for_parent(node_id)
+            .visible_child_ids_for_parent(node_id)
             .iter()
             .filter_map(|child_id| self.build_debug_tree(child_id, rect))
             .collect::<Vec<_>>();

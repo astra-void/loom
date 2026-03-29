@@ -1,5 +1,7 @@
 use super::*;
-use crate::model::{default_position_mode, default_size_constraint_mode, full_size, zero_size, zero_vector};
+use crate::model::{
+    default_position_mode, default_size_constraint_mode, full_size, zero_size, zero_vector,
+};
 use crate::resolve::legacy_to_preview_nodes;
 use serde_json::json;
 
@@ -29,6 +31,7 @@ fn node(id: &str, parent_id: Option<&str>, kind: &str, node_type: &str) -> Previ
         layout_modifiers: None,
         layout_order: None,
         layout: PreviewNodeLayout {
+            automatic_size: None,
             anchor_point: zero_vector(),
             constraints: None,
             position: zero_size(),
@@ -39,6 +42,7 @@ fn node(id: &str, parent_id: Option<&str>, kind: &str, node_type: &str) -> Previ
         name: Some(id.to_owned()),
         node_type: node_type.to_owned(),
         parent_id: parent_id.map(ToOwned::to_owned),
+        visible: true,
         source_order: None,
         style_hints: None,
     }
@@ -51,6 +55,7 @@ fn computes_rooted_tree_layout_for_hosts() {
         node("screen", None, "root", "ScreenGui"),
         PreviewLayoutNode {
             layout: PreviewNodeLayout {
+                automatic_size: None,
                 anchor_point: LayoutVector { x: 0.5, y: 0.5 },
                 constraints: None,
                 position: size(0.5, 0.0, 0.5, 0.0),
@@ -94,6 +99,7 @@ fn uses_intrinsic_size_when_explicit_size_is_missing() {
                 width: 88.0,
             }),
             layout: PreviewNodeLayout {
+                automatic_size: None,
                 anchor_point: zero_vector(),
                 constraints: None,
                 position: zero_size(),
@@ -148,6 +154,7 @@ fn uses_full_size_default_when_explicit_size_is_missing() {
                 placeholder_behavior: "opaque".to_owned(),
             }),
             layout: PreviewNodeLayout {
+                automatic_size: None,
                 anchor_point: zero_vector(),
                 constraints: None,
                 position: zero_size(),
@@ -218,11 +225,12 @@ fn marks_only_dirty_subtrees_after_incremental_update() {
 
     session.apply_preview_nodes(vec![PreviewLayoutNode {
         layout: PreviewNodeLayout {
+            automatic_size: None,
             anchor_point: zero_vector(),
             constraints: None,
             position: size(0.5, 0.0, 0.0, 0.0),
             position_mode: default_position_mode(),
-                size_constraint_mode: default_size_constraint_mode(),
+            size_constraint_mode: default_size_constraint_mode(),
             size: Some(size(0.0, 120.0, 0.0, 40.0)),
         },
         ..node("right", Some("screen"), "host", "Frame")
@@ -310,6 +318,7 @@ fn applies_padding_and_list_layout_semantics() {
     session.apply_preview_nodes(vec![
         PreviewLayoutNode {
             layout: PreviewNodeLayout {
+                automatic_size: None,
                 anchor_point: zero_vector(),
                 constraints: None,
                 position: zero_size(),
@@ -322,6 +331,7 @@ fn applies_padding_and_list_layout_semantics() {
         },
         PreviewLayoutNode {
             layout: PreviewNodeLayout {
+                automatic_size: None,
                 anchor_point: zero_vector(),
                 constraints: None,
                 position: zero_size(),
@@ -360,6 +370,7 @@ fn applies_padding_and_list_layout_semantics() {
             layout_order: Some(2),
             source_order: Some(1),
             layout: PreviewNodeLayout {
+                automatic_size: None,
                 anchor_point: zero_vector(),
                 constraints: None,
                 position: zero_size(),
@@ -373,6 +384,7 @@ fn applies_padding_and_list_layout_semantics() {
             layout_order: Some(1),
             source_order: Some(0),
             layout: PreviewNodeLayout {
+                automatic_size: None,
                 anchor_point: zero_vector(),
                 constraints: None,
                 position: zero_size(),
@@ -423,6 +435,7 @@ fn applies_vertical_list_cursor_accumulates_child_height_and_padding() {
     session.apply_preview_nodes(vec![
         PreviewLayoutNode {
             layout: PreviewNodeLayout {
+                automatic_size: None,
                 anchor_point: zero_vector(),
                 constraints: None,
                 position: zero_size(),
@@ -435,6 +448,7 @@ fn applies_vertical_list_cursor_accumulates_child_height_and_padding() {
         },
         PreviewLayoutNode {
             layout: PreviewNodeLayout {
+                automatic_size: None,
                 anchor_point: zero_vector(),
                 constraints: None,
                 position: zero_size(),
@@ -472,6 +486,7 @@ fn applies_vertical_list_cursor_accumulates_child_height_and_padding() {
         PreviewLayoutNode {
             source_order: Some(0),
             layout: PreviewNodeLayout {
+                automatic_size: None,
                 anchor_point: zero_vector(),
                 constraints: None,
                 position: zero_size(),
@@ -484,6 +499,7 @@ fn applies_vertical_list_cursor_accumulates_child_height_and_padding() {
         PreviewLayoutNode {
             source_order: Some(1),
             layout: PreviewNodeLayout {
+                automatic_size: None,
                 anchor_point: zero_vector(),
                 constraints: None,
                 position: zero_size(),
@@ -496,6 +512,7 @@ fn applies_vertical_list_cursor_accumulates_child_height_and_padding() {
         PreviewLayoutNode {
             source_order: Some(2),
             layout: PreviewNodeLayout {
+                automatic_size: None,
                 anchor_point: zero_vector(),
                 constraints: None,
                 position: zero_size(),
@@ -544,6 +561,7 @@ fn applies_grid_layout_semantics() {
     session.apply_preview_nodes(vec![
         PreviewLayoutNode {
             layout: PreviewNodeLayout {
+                automatic_size: None,
                 anchor_point: zero_vector(),
                 constraints: None,
                 position: zero_size(),
@@ -555,6 +573,7 @@ fn applies_grid_layout_semantics() {
         },
         PreviewLayoutNode {
             layout: PreviewNodeLayout {
+                automatic_size: None,
                 anchor_point: zero_vector(),
                 constraints: None,
                 position: zero_size(),
@@ -585,6 +604,7 @@ fn applies_grid_layout_semantics() {
         PreviewLayoutNode {
             source_order: Some(0),
             layout: PreviewNodeLayout {
+                automatic_size: None,
                 anchor_point: zero_vector(),
                 constraints: None,
                 position: zero_size(),
@@ -630,6 +650,7 @@ fn applies_size_and_aspect_constraints() {
     session.apply_preview_nodes(vec![
         PreviewLayoutNode {
             layout: PreviewNodeLayout {
+                automatic_size: None,
                 anchor_point: zero_vector(),
                 constraints: None,
                 position: zero_size(),
@@ -641,6 +662,7 @@ fn applies_size_and_aspect_constraints() {
         },
         PreviewLayoutNode {
             layout: PreviewNodeLayout {
+                automatic_size: None,
                 anchor_point: zero_vector(),
                 constraints: None,
                 position: zero_size(),
@@ -652,6 +674,7 @@ fn applies_size_and_aspect_constraints() {
         },
         PreviewLayoutNode {
             layout: PreviewNodeLayout {
+                automatic_size: None,
                 anchor_point: zero_vector(),
                 constraints: None,
                 position: zero_size(),
@@ -697,6 +720,7 @@ fn distributes_flex_grow_ratios() {
     session.apply_preview_nodes(vec![
         PreviewLayoutNode {
             layout: PreviewNodeLayout {
+                automatic_size: None,
                 anchor_point: zero_vector(),
                 constraints: None,
                 position: zero_size(),
@@ -708,6 +732,7 @@ fn distributes_flex_grow_ratios() {
         },
         PreviewLayoutNode {
             layout: PreviewNodeLayout {
+                automatic_size: None,
                 anchor_point: zero_vector(),
                 constraints: None,
                 position: zero_size(),
@@ -738,6 +763,7 @@ fn distributes_flex_grow_ratios() {
         },
         PreviewLayoutNode {
             layout: PreviewNodeLayout {
+                automatic_size: None,
                 anchor_point: zero_vector(),
                 constraints: None,
                 position: zero_size(),
@@ -763,6 +789,7 @@ fn distributes_flex_grow_ratios() {
         },
         PreviewLayoutNode {
             layout: PreviewNodeLayout {
+                automatic_size: None,
                 anchor_point: zero_vector(),
                 constraints: None,
                 position: zero_size(),
@@ -895,11 +922,12 @@ fn normalizes_top_level_screen_gui_roots() {
     let mut session = LayoutSession::new();
     session.apply_preview_nodes(vec![PreviewLayoutNode {
         layout: PreviewNodeLayout {
+            automatic_size: None,
             anchor_point: LayoutVector { x: 0.5, y: 0.5 },
             constraints: None,
             position: size(0.25, 15.0, 0.5, 20.0),
             position_mode: default_position_mode(),
-                size_constraint_mode: default_size_constraint_mode(),
+            size_constraint_mode: default_size_constraint_mode(),
             size: Some(size(0.0, 150.0, 0.0, 80.0)),
         },
         ..node("screen", None, "host", "ScreenGui")
@@ -938,6 +966,7 @@ fn list_and_grid_sort_orders_follow_requested_strategy() {
     session.apply_preview_nodes(vec![
         PreviewLayoutNode {
             layout: PreviewNodeLayout {
+                automatic_size: None,
                 anchor_point: zero_vector(),
                 constraints: None,
                 position: zero_size(),
@@ -949,6 +978,7 @@ fn list_and_grid_sort_orders_follow_requested_strategy() {
         },
         PreviewLayoutNode {
             layout: PreviewNodeLayout {
+                automatic_size: None,
                 anchor_point: zero_vector(),
                 constraints: None,
                 position: size(0.0, 0.0, 0.0, 0.0),
@@ -982,6 +1012,7 @@ fn list_and_grid_sort_orders_follow_requested_strategy() {
             layout_order: Some(5),
             name: Some("Zulu".to_owned()),
             layout: PreviewNodeLayout {
+                automatic_size: None,
                 anchor_point: zero_vector(),
                 constraints: None,
                 position: zero_size(),
@@ -996,6 +1027,7 @@ fn list_and_grid_sort_orders_follow_requested_strategy() {
             layout_order: Some(0),
             name: Some("Alpha".to_owned()),
             layout: PreviewNodeLayout {
+                automatic_size: None,
                 anchor_point: zero_vector(),
                 constraints: None,
                 position: zero_size(),
@@ -1007,6 +1039,7 @@ fn list_and_grid_sort_orders_follow_requested_strategy() {
         },
         PreviewLayoutNode {
             layout: PreviewNodeLayout {
+                automatic_size: None,
                 anchor_point: zero_vector(),
                 constraints: None,
                 position: size(0.0, 120.0, 0.0, 0.0),
@@ -1039,6 +1072,7 @@ fn list_and_grid_sort_orders_follow_requested_strategy() {
             source_order: Some(1),
             name: Some("Alpha".to_owned()),
             layout: PreviewNodeLayout {
+                automatic_size: None,
                 anchor_point: zero_vector(),
                 constraints: None,
                 position: zero_size(),
@@ -1052,6 +1086,7 @@ fn list_and_grid_sort_orders_follow_requested_strategy() {
             source_order: Some(0),
             name: Some("Zulu".to_owned()),
             layout: PreviewNodeLayout {
+                automatic_size: None,
                 anchor_point: zero_vector(),
                 constraints: None,
                 position: zero_size(),
@@ -1063,6 +1098,7 @@ fn list_and_grid_sort_orders_follow_requested_strategy() {
         },
         PreviewLayoutNode {
             layout: PreviewNodeLayout {
+                automatic_size: None,
                 anchor_point: zero_vector(),
                 constraints: None,
                 position: size(0.0, 0.0, 0.0, 60.0),
@@ -1094,6 +1130,7 @@ fn list_and_grid_sort_orders_follow_requested_strategy() {
             source_order: Some(1),
             layout_order: Some(1),
             layout: PreviewNodeLayout {
+                automatic_size: None,
                 anchor_point: zero_vector(),
                 constraints: None,
                 position: zero_size(),
@@ -1107,6 +1144,7 @@ fn list_and_grid_sort_orders_follow_requested_strategy() {
             source_order: Some(0),
             layout_order: Some(2),
             layout: PreviewNodeLayout {
+                automatic_size: None,
                 anchor_point: zero_vector(),
                 constraints: None,
                 position: zero_size(),
@@ -1166,6 +1204,7 @@ fn resolves_size_constraint_modes_against_the_expected_parent_axis() {
         node("screen", None, "root", "ScreenGui"),
         PreviewLayoutNode {
             layout: PreviewNodeLayout {
+                automatic_size: None,
                 anchor_point: zero_vector(),
                 constraints: None,
                 position: zero_size(),
@@ -1177,6 +1216,7 @@ fn resolves_size_constraint_modes_against_the_expected_parent_axis() {
         },
         PreviewLayoutNode {
             layout: PreviewNodeLayout {
+                automatic_size: None,
                 anchor_point: zero_vector(),
                 constraints: None,
                 position: zero_size(),
@@ -1188,6 +1228,7 @@ fn resolves_size_constraint_modes_against_the_expected_parent_axis() {
         },
         PreviewLayoutNode {
             layout: PreviewNodeLayout {
+                automatic_size: None,
                 anchor_point: zero_vector(),
                 constraints: None,
                 position: zero_size(),
@@ -1225,6 +1266,7 @@ fn applies_anchor_point_for_list_layout_children() {
     session.apply_preview_nodes(vec![
         PreviewLayoutNode {
             layout: PreviewNodeLayout {
+                automatic_size: None,
                 anchor_point: zero_vector(),
                 constraints: None,
                 position: zero_size(),
@@ -1236,6 +1278,7 @@ fn applies_anchor_point_for_list_layout_children() {
         },
         PreviewLayoutNode {
             layout: PreviewNodeLayout {
+                automatic_size: None,
                 anchor_point: zero_vector(),
                 constraints: None,
                 position: zero_size(),
@@ -1266,6 +1309,7 @@ fn applies_anchor_point_for_list_layout_children() {
         },
         PreviewLayoutNode {
             layout: PreviewNodeLayout {
+                automatic_size: None,
                 anchor_point: LayoutVector { x: 0.5, y: 0.5 },
                 constraints: None,
                 position: size(0.0, 30.0, 0.0, 40.0),
@@ -1298,6 +1342,7 @@ fn applies_anchor_point_for_grid_layout_children() {
     session.apply_preview_nodes(vec![
         PreviewLayoutNode {
             layout: PreviewNodeLayout {
+                automatic_size: None,
                 anchor_point: zero_vector(),
                 constraints: None,
                 position: zero_size(),
@@ -1309,6 +1354,7 @@ fn applies_anchor_point_for_grid_layout_children() {
         },
         PreviewLayoutNode {
             layout: PreviewNodeLayout {
+                automatic_size: None,
                 anchor_point: zero_vector(),
                 constraints: None,
                 position: zero_size(),
@@ -1338,6 +1384,7 @@ fn applies_anchor_point_for_grid_layout_children() {
         },
         PreviewLayoutNode {
             layout: PreviewNodeLayout {
+                automatic_size: None,
                 anchor_point: LayoutVector { x: 0.5, y: 0.5 },
                 constraints: None,
                 position: size(0.0, 20.0, 0.0, 15.0),

@@ -17,8 +17,10 @@ import {
 	patchPreviewHostNodeDomProps,
 } from "./domAdapter";
 import {
+	bridgedPreviewHostProperties,
 	cleanupPreviewHostBridge,
 	installPreviewHostPropertyBridge,
+	notifyPreviewHostPropertyChanged,
 	usePreviewHostOverrides,
 } from "./hostOverrides";
 import { isDegradedPreviewHost } from "./metadata";
@@ -282,6 +284,48 @@ function readIntrinsicSize(element: HTMLElement | null) {
 	};
 }
 
+function readTextBounds(element: HTMLElement | null) {
+	if (!element) {
+		return null;
+	}
+
+	const rect = element.getBoundingClientRect();
+	const width = Math.max(element.scrollWidth, rect.width);
+	const height = Math.max(element.scrollHeight, rect.height);
+	if (!Number.isFinite(width) || !Number.isFinite(height)) {
+		return null;
+	}
+
+	return {
+		height: Math.max(0, height),
+		width: Math.max(0, width),
+	};
+}
+
+function normalizeBridgedValue(value: unknown) {
+	if (value === null || value === undefined) {
+		return value;
+	}
+
+	if (typeof value !== "object") {
+		return value;
+	}
+
+	if (typeof HTMLElement !== "undefined" && value instanceof HTMLElement) {
+		return value;
+	}
+
+	try {
+		return JSON.stringify(value);
+	} catch {
+		return value;
+	}
+}
+
+function areBridgedValuesEqual(left: unknown, right: unknown) {
+	return Object.is(normalizeBridgedValue(left), normalizeBridgedValue(right));
+}
+
 function useObservedIntrinsicSize(
 	elementRef: React.RefObject<HTMLElement | null>,
 	measurementEnabled: boolean,
@@ -416,14 +460,80 @@ export function useHostLayout(host: LayoutHostName, props: PreviewDomProps) {
 		}
 
 		installPreviewHostPropertyBridge(element, nodeId, (property) => {
-			const value = (basePropsRef.current as Record<string, unknown>)[property];
-			return value ?? getHostPropertyFallback(property, isRootNode);
+			const currentProps = basePropsRef.current as Record<string, unknown>;
+			switch (property) {
+				case "AbsolutePosition": {
+					const rect = element.getBoundingClientRect();
+					return createVector2(rect.left, rect.top);
+				}
+				case "AbsoluteSize": {
+					const rect = element.getBoundingClientRect();
+					return createVector2(rect.width, rect.height);
+				}
+				case "AbsoluteCanvasSize": {
+					if (host === "scrollingframe") {
+						return createVector2(element.scrollWidth, element.scrollHeight);
+					}
+
+					const rect = element.getBoundingClientRect();
+					return createVector2(rect.width, rect.height);
+				}
+				case "AbsoluteWindowSize": {
+					return createVector2(
+						globalThis.innerWidth ?? 0,
+						globalThis.innerHeight ?? 0,
+					);
+				}
+				case "CanvasPosition": {
+					if (host === "scrollingframe") {
+						return createVector2(element.scrollLeft, element.scrollTop);
+					}
+
+					return createZeroVector2();
+				}
+				case "CanvasSize":
+					return (
+						currentProps.CanvasSize ??
+						getHostPropertyFallback(property, isRootNode)
+					);
+				case "Parent":
+					return (
+						currentProps.Parent ?? getHostPropertyFallback(property, isRootNode)
+					);
+				case "TextBounds":
+					return (
+						readTextBounds(element) ??
+						getHostPropertyFallback(property, isRootNode)
+					);
+				default:
+					return (
+						currentProps[property] ??
+						getHostPropertyFallback(property, isRootNode)
+					);
+			}
 		});
 
 		return () => {
 			cleanupPreviewHostBridge(element, nodeId);
 		};
-	}, [isRootNode, nodeId]);
+	}, [isRootNode, nodeId, host]);
+
+	React.useLayoutEffect(() => {
+		const element = elementRef.current;
+		if (!element || host !== "scrollingframe") {
+			return;
+		}
+
+		const handleScroll = () => {
+			notifyPreviewHostPropertyChanged(nodeId, "CanvasPosition");
+			notifyPreviewHostPropertyChanged(nodeId, "AbsoluteCanvasSize");
+		};
+
+		element.addEventListener("scroll", handleScroll);
+		return () => {
+			element.removeEventListener("scroll", handleScroll);
+		};
+	}, [host, nodeId]);
 
 	const intrinsicSize = useObservedIntrinsicSize(
 		elementRef,
@@ -445,6 +555,7 @@ export function useHostLayout(host: LayoutHostName, props: PreviewDomProps) {
 			parentId: normalizedNode.parentId,
 			sourceOrder: normalizedNode.sourceOrder,
 			styleHints: normalizedNode.styleHints,
+			visible: normalizedNode.visible,
 		}),
 		[intrinsicSize, normalizedNode],
 	);
@@ -452,6 +563,104 @@ export function useHostLayout(host: LayoutHostName, props: PreviewDomProps) {
 	const computed = useRobloxLayout(layoutNode);
 	const diagnostics = useLayoutDebugState(nodeId) as LayoutDebugState;
 
+	const bridgedHostPropertySnapshot = (() => {
+		const element = elementRef.current;
+		const currentProps = basePropsRef.current as Record<string, unknown>;
+		return Object.fromEntries(
+			bridgedPreviewHostProperties.map((property) => {
+				switch (property) {
+					case "AbsolutePosition": {
+						const rect = element?.getBoundingClientRect();
+						return [
+							property,
+							rect ? createVector2(rect.left, rect.top) : createZeroVector2(),
+						];
+					}
+					case "AbsoluteSize": {
+						const rect = element?.getBoundingClientRect();
+						return [
+							property,
+							rect
+								? createVector2(rect.width, rect.height)
+								: createZeroVector2(),
+						];
+					}
+					case "AbsoluteCanvasSize":
+						return [
+							property,
+							host === "scrollingframe" && element
+								? createVector2(element.scrollWidth, element.scrollHeight)
+								: createVector2(
+										element?.getBoundingClientRect().width ?? 0,
+										element?.getBoundingClientRect().height ?? 0,
+									),
+						];
+					case "AbsoluteWindowSize":
+						return [
+							property,
+							createVector2(
+								globalThis.innerWidth ?? 0,
+								globalThis.innerHeight ?? 0,
+							),
+						];
+					case "CanvasPosition":
+						return [
+							property,
+							host === "scrollingframe" && element
+								? createVector2(element.scrollLeft, element.scrollTop)
+								: createZeroVector2(),
+						];
+					case "CanvasSize":
+						return [
+							property,
+							currentProps.CanvasSize ??
+								getHostPropertyFallback(property, isRootNode),
+						];
+					case "Parent":
+						return [
+							property,
+							currentProps.Parent ??
+								getHostPropertyFallback(property, isRootNode),
+						];
+					case "TextBounds":
+						return [
+							property,
+							readTextBounds(element) ??
+								getHostPropertyFallback(property, isRootNode),
+						];
+					default:
+						return [
+							property,
+							currentProps[property] ??
+								getHostPropertyFallback(property, isRootNode),
+						];
+				}
+			}),
+		) as Record<string, unknown>;
+	})();
+	const previousBridgedHostPropertySnapshotRef = React.useRef<Record<
+		string,
+		unknown
+	> | null>(null);
+
+	React.useLayoutEffect(() => {
+		const previousSnapshot = previousBridgedHostPropertySnapshotRef.current;
+		if (previousSnapshot) {
+			for (const property of bridgedPreviewHostProperties) {
+				if (
+					!areBridgedValuesEqual(
+						previousSnapshot[property],
+						bridgedHostPropertySnapshot[property],
+					)
+				) {
+					notifyPreviewHostPropertyChanged(nodeId, property);
+				}
+			}
+		}
+
+		previousBridgedHostPropertySnapshotRef.current =
+			bridgedHostPropertySnapshot;
+	}, [bridgedHostPropertySnapshot, nodeId]);
 	const hostNode = React.useMemo(
 		() => ({
 			...normalizedNode,

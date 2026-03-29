@@ -13,6 +13,7 @@ const emptySnapshot = Object.freeze({}) as Readonly<Record<string, unknown>>;
 export const bridgedPreviewHostProperties = [
 	"AbsolutePosition",
 	"AbsoluteSize",
+	"AbsoluteCanvasSize",
 	"AbsoluteWindowSize",
 	"AnchorPoint",
 	"BackgroundColor3",
@@ -35,6 +36,7 @@ type HostOverrideListener = () => void;
 
 type HostOverrideEntry = {
 	listeners: Set<HostOverrideListener>;
+	propertyListeners: Map<string, Set<HostOverrideListener>>;
 	snapshot: Readonly<Record<string, unknown>>;
 };
 
@@ -46,7 +48,13 @@ type HostOverrideStore = {
 		property: string,
 	): { hasValue: boolean; value: unknown };
 	setValue(nodeId: string, property: string, value: unknown): void;
+	notifyPropertyChange(nodeId: string, property: string): void;
 	subscribe(nodeId: string, listener: HostOverrideListener): () => void;
+	subscribeProperty(
+		nodeId: string,
+		property: string,
+		listener: HostOverrideListener,
+	): () => void;
 };
 
 type HostBridgeState = {
@@ -91,6 +99,22 @@ function createHostOverrideStore(): HostOverrideStore {
 		}
 	};
 
+	const emitProperty = (nodeId: string, property: string) => {
+		const entry = entries.get(nodeId);
+		if (!entry) {
+			return;
+		}
+
+		const listeners = entry.propertyListeners.get(property);
+		if (!listeners) {
+			return;
+		}
+
+		for (const listener of listeners) {
+			listener();
+		}
+	};
+
 	const ensureEntry = (nodeId: string) => {
 		const existing = entries.get(nodeId);
 		if (existing) {
@@ -99,34 +123,16 @@ function createHostOverrideStore(): HostOverrideStore {
 
 		const created: HostOverrideEntry = {
 			listeners: new Set(),
+			propertyListeners: new Map(),
 			snapshot: emptySnapshot,
 		};
 		entries.set(nodeId, created);
 		return created;
 	};
 
-	const maybeDeleteEntry = (nodeId: string) => {
-		const entry = entries.get(nodeId);
-		if (!entry) {
-			return;
-		}
-
-		if (entry.listeners.size === 0 && entry.snapshot === emptySnapshot) {
-			entries.delete(nodeId);
-		}
-	};
-
 	return {
 		clearNode(nodeId) {
-			const entry = entries.get(nodeId);
-			if (!entry || entry.snapshot === emptySnapshot) {
-				maybeDeleteEntry(nodeId);
-				return;
-			}
-
-			entry.snapshot = emptySnapshot;
-			emit(nodeId);
-			maybeDeleteEntry(nodeId);
+			entries.delete(nodeId);
 		},
 		getSnapshot(nodeId) {
 			return entries.get(nodeId)?.snapshot ?? emptySnapshot;
@@ -157,13 +163,42 @@ function createHostOverrideStore(): HostOverrideStore {
 				[property]: value,
 			};
 			emit(nodeId);
+			emitProperty(nodeId, property);
+		},
+		notifyPropertyChange(nodeId, property) {
+			emitProperty(nodeId, property);
 		},
 		subscribe(nodeId, listener) {
 			const entry = ensureEntry(nodeId);
 			entry.listeners.add(listener);
 			return () => {
 				entry.listeners.delete(listener);
-				maybeDeleteEntry(nodeId);
+				if (
+					entry.listeners.size === 0 &&
+					entry.propertyListeners.size === 0 &&
+					entry.snapshot === emptySnapshot
+				) {
+					entries.delete(nodeId);
+				}
+			};
+		},
+		subscribeProperty(nodeId, property, listener) {
+			const entry = ensureEntry(nodeId);
+			const listeners = entry.propertyListeners.get(property) ?? new Set();
+			listeners.add(listener);
+			entry.propertyListeners.set(property, listeners);
+			return () => {
+				listeners.delete(listener);
+				if (listeners.size === 0) {
+					entry.propertyListeners.delete(property);
+				}
+				if (
+					entry.listeners.size === 0 &&
+					entry.propertyListeners.size === 0 &&
+					entry.snapshot === emptySnapshot
+				) {
+					entries.delete(nodeId);
+				}
 			};
 		},
 	};
@@ -208,6 +243,21 @@ export function clearPreviewHostOverrides(nodeId: string) {
 	getHostOverrideStore().clearNode(nodeId);
 }
 
+export function notifyPreviewHostPropertyChanged(
+	nodeId: string,
+	property: string,
+) {
+	getHostOverrideStore().notifyPropertyChange(nodeId, property);
+}
+
+export function subscribePreviewHostPropertyChanged(
+	nodeId: string,
+	property: string,
+	listener: HostOverrideListener,
+) {
+	return getHostOverrideStore().subscribeProperty(nodeId, property, listener);
+}
+
 export function installPreviewHostPropertyBridge(
 	element: HTMLElement,
 	nodeId: string,
@@ -246,17 +296,33 @@ export function installPreviewHostPropertyBridge(
 		Object.defineProperty(previewElement, "GetPropertyChangedSignal", {
 			configurable: true,
 			enumerable: false,
-			value() {
+			value(property: string) {
 				return {
-					Connect() {
-						const connection = {
+					Connect(listener?: (...args: unknown[]) => void) {
+						let connected = true;
+						const disconnect = subscribePreviewHostPropertyChanged(
+							nodeId,
+							property,
+							() => {
+								if (!connected) {
+									return;
+								}
+
+								listener?.();
+							},
+						);
+
+						return {
 							Connected: true,
 							Disconnect() {
-								connection.Connected = false;
+								if (!connected) {
+									return;
+								}
+
+								connected = false;
+								disconnect();
 							},
 						};
-
-						return connection;
 					},
 				};
 			},

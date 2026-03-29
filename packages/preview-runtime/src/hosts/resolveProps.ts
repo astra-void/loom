@@ -47,6 +47,7 @@ const PREVIEW_ONLY_PROP_NAMES = new Set([
 	"BorderSizePixel",
 	"CellPadding",
 	"CellSize",
+	"ClipsDescendants",
 	"CanvasSize",
 	"Change",
 	"Color",
@@ -361,6 +362,7 @@ export function resolvePreviewDomProps(
 		Position,
 		Scale,
 		Selectable,
+		ClipsDescendants,
 		Size,
 		SizeConstraint,
 		Text,
@@ -406,6 +408,7 @@ export function resolvePreviewDomProps(
 	void Position;
 	void Scale;
 	void Size;
+	void ClipsDescendants;
 	void SizeConstraint;
 	void TextScaled;
 	void TextTransparency;
@@ -430,6 +433,10 @@ export function resolvePreviewDomProps(
 
 	if (Visible === false) {
 		computedStyle.display = "none";
+	}
+
+	if (ClipsDescendants === true && options.host !== "scrollingframe") {
+		computedStyle.overflow = "hidden";
 	}
 
 	if (ZIndex !== undefined) {
@@ -515,7 +522,15 @@ export function resolvePreviewDomProps(
 	}
 
 	if (options.host === "scrollingframe") {
+		const scrollingDirection =
+			typeof props.ScrollingDirection === "string"
+				? props.ScrollingDirection.toLowerCase()
+				: "vertical";
 		computedStyle.overflow = "auto";
+		computedStyle.overflowX =
+			scrollingDirection === "vertical" ? "hidden" : "auto";
+		computedStyle.overflowY =
+			scrollingDirection === "horizontal" ? "hidden" : "auto";
 	}
 
 	const activatedHandler =
