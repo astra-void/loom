@@ -22,6 +22,7 @@ import {
 	SurfaceGui,
 	subscribePreviewLayoutProbe,
 	subscribePreviewRuntimeIssues,
+	TextBox,
 	TextButton,
 	TextLabel,
 	TweenInfo,
@@ -50,6 +51,7 @@ import {
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getLocalPlayerGui } from "../../apps/preview-harness/src/test-utils";
+import * as hostOverrides from "../../packages/preview-runtime/src/hosts/hostOverrides";
 import { suppressExpectedConsoleMessages } from "../testLogUtils";
 import userEvent from "../testUserEvent";
 
@@ -623,6 +625,102 @@ describe("preview runtime host mapping", () => {
 		expect(container.firstChild).toBeNull();
 	});
 
+	it("keeps controlled textbox text updates silent during prop sync", async () => {
+		const user = userEvent.setup();
+		const changeCalls: string[] = [];
+		const textPropertyNotifications = vi.fn();
+		const notifySpy = vi.spyOn(
+			hostOverrides,
+			"notifyPreviewHostPropertyChanged",
+		);
+		const valueSetterSpy = vi.spyOn(HTMLInputElement.prototype, "value", "set");
+		const getTextNotificationCount = () =>
+			notifySpy.mock.calls.filter(([, property]) => property === "Text").length;
+
+		function TextBoxHarness(props: { value: string }) {
+			return (
+				<TextBox
+					Change={{
+						Text: (textBox) => {
+							const currentText = (
+								textBox as HTMLInputElement & { Text?: string }
+							).Text;
+							if (typeof currentText === "string") {
+								changeCalls.push(currentText);
+							}
+						},
+					}}
+					Text={props.value}
+				/>
+			);
+		}
+
+		const { rerender } = render(<TextBoxHarness value="alpha" />);
+		const input = screen.getByRole("textbox") as HTMLInputElement & {
+			GetPropertyChangedSignal?: (property: string) => {
+				Connect(listener?: () => void): { Disconnect(): void };
+			};
+			Text?: string;
+		};
+		const textChangedSignal = input.GetPropertyChangedSignal?.("Text");
+		const textChangedConnection = textChangedSignal?.Connect(
+			textPropertyNotifications,
+		);
+
+		expect(input.value).toBe("alpha");
+		expect(input.Text).toBe("alpha");
+
+		await user.type(input, "!");
+
+		expect(changeCalls).toEqual(["alpha!"]);
+		expect(input.value).toBe("alpha!");
+		expect(input.Text).toBe("alpha!");
+		expect(textPropertyNotifications).toHaveBeenCalledTimes(0);
+		expect(getTextNotificationCount()).toBe(0);
+
+		valueSetterSpy.mockClear();
+		notifySpy.mockClear();
+		rerender(<TextBoxHarness value="beta" />);
+
+		await waitFor(() => {
+			expect(
+				(
+					screen.getByRole("textbox") as HTMLInputElement & {
+						Text?: string;
+					}
+				).Text,
+			).toBe("beta");
+		});
+
+		expect(valueSetterSpy).toHaveBeenCalledTimes(1);
+		expect(textPropertyNotifications).toHaveBeenCalledTimes(0);
+		expect(getTextNotificationCount()).toBe(0);
+		textChangedConnection?.Disconnect();
+	});
+
+	it("notifies Text property listeners for imperative Text writes", () => {
+		const textPropertyNotifications = vi.fn();
+
+		render(<TextBox Text="alpha" />);
+
+		const input = screen.getByRole("textbox") as HTMLInputElement & {
+			GetPropertyChangedSignal?: (property: string) => {
+				Connect(listener?: () => void): { Disconnect(): void };
+			};
+			Text?: string;
+		};
+		const textChangedConnection = input
+			.GetPropertyChangedSignal?.("Text")
+			?.Connect(textPropertyNotifications);
+
+		input.Text = "beta";
+
+		expect(input.value).toBe("beta");
+		expect(input.Text).toBe("beta");
+		expect(textPropertyNotifications).toHaveBeenCalledTimes(1);
+		textChangedConnection?.Disconnect();
+	});
+
 	it("merges slot and child activated handlers from preview children", async () => {
 		const user = userEvent.setup();
 		const callOrder: string[] = [];
@@ -643,6 +741,107 @@ describe("preview runtime host mapping", () => {
 		expect(childActivated).toHaveBeenCalledTimes(1);
 		expect(slotActivated).toHaveBeenCalledTimes(1);
 		expect(callOrder).toEqual(["child", "slot"]);
+	});
+
+	it("merges slot and child change handlers from preview children", async () => {
+		const user = userEvent.setup();
+		const callOrder: string[] = [];
+		const childChanged = vi.fn((input: HTMLInputElement) => {
+			callOrder.push(`child:${input.value}`);
+		});
+		const slotChanged = vi.fn((input: HTMLInputElement) => {
+			callOrder.push(`slot:${input.value}`);
+		});
+
+		render(
+			<Slot Change={{ Text: slotChanged }}>
+				<TextBox Change={{ Text: childChanged }} Text="Trigger" />
+			</Slot>,
+		);
+
+		const input = screen.getByRole("textbox") as HTMLInputElement;
+		childChanged.mockClear();
+		slotChanged.mockClear();
+		callOrder.length = 0;
+		await user.type(input, "!");
+
+		expect(childChanged).toHaveBeenCalledTimes(1);
+		expect(slotChanged).toHaveBeenCalledTimes(1);
+		expect(callOrder).toContain("child:Trigger!");
+		expect(callOrder).toContain("slot:Trigger!");
+	});
+
+	it("keeps controlled slot textbox change composition from looping", async () => {
+		const user = userEvent.setup();
+		const callOrder: string[] = [];
+		const childChanged = vi.fn(
+			(input: HTMLInputElement & { Text?: string }) => {
+				callOrder.push(`child:${input.Text ?? input.value}`);
+			},
+		);
+		const slotChanged = vi.fn((input: HTMLInputElement & { Text?: string }) => {
+			callOrder.push(`slot:${input.Text ?? input.value}`);
+		});
+		const notifySpy = vi.spyOn(
+			hostOverrides,
+			"notifyPreviewHostPropertyChanged",
+		);
+
+		function ControlledSlotHarness() {
+			const [value, setValue] = React.useState("alpha");
+
+			return (
+				<Slot Change={{ Text: slotChanged }}>
+					<TextBox
+						Change={{
+							Text: (textBox) => {
+								childChanged(textBox as HTMLInputElement & { Text?: string });
+								setValue(
+									(textBox as HTMLInputElement & { Text?: string }).Text ?? "",
+								);
+							},
+						}}
+						Text={value}
+					/>
+				</Slot>
+			);
+		}
+
+		render(<ControlledSlotHarness />);
+
+		const input = screen.getByRole("textbox") as HTMLInputElement & {
+			Text?: string;
+		};
+
+		await user.type(input, "!");
+
+		await waitFor(() => {
+			expect(input.value).toBe("alpha!");
+		});
+
+		expect(childChanged).toHaveBeenCalledTimes(1);
+		expect(slotChanged).toHaveBeenCalledTimes(1);
+		expect(callOrder.slice(0, 2)).toEqual(["child:alpha!", "slot:alpha!"]);
+		expect(input.value).toBe("alpha!");
+		expect(input.Text).toBe("alpha!");
+		expect(
+			notifySpy.mock.calls.filter(([, property]) => property === "Text"),
+		).toHaveLength(0);
+	});
+
+	it("composes refs through preview Slot asChild boundaries", () => {
+		const childRef = React.createRef<HTMLInputElement>();
+		const slotRef = React.createRef<HTMLInputElement>();
+
+		render(
+			<Slot ref={slotRef}>
+				<TextBox ref={childRef} Text="Ref sample" />
+			</Slot>,
+		);
+
+		expect(childRef.current).toBeTruthy();
+		expect(slotRef.current).toBeTruthy();
+		expect(childRef.current).toBe(slotRef.current);
 	});
 
 	it("supports rbxts-react event interop props on preview hosts", async () => {
