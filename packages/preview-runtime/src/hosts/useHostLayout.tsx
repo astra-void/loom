@@ -69,12 +69,12 @@ type MockInstanceLike = {
 };
 
 function getMockParent(value: unknown): unknown {
-	if (!value || typeof value !== "object") {
+	if (value == null || typeof value !== "object") {
 		return undefined;
 	}
 
 	const parent = (value as MockInstanceLike).Parent;
-	return parent ?? undefined;
+	return parent == null ? undefined : parent;
 }
 
 function findMockAncestor(
@@ -82,12 +82,16 @@ function findMockAncestor(
 	predicate: (ancestor: MockInstanceLike) => boolean,
 ) {
 	let current = getMockParent(value);
-	while (current !== undefined) {
-		if (
-			current &&
-			typeof current === "object" &&
-			predicate(current as MockInstanceLike)
-		) {
+	while (true) {
+		if (current == null || !current) {
+			break;
+		}
+
+		if (typeof current !== "object") {
+			break;
+		}
+
+		if (predicate(current as MockInstanceLike)) {
 			return current;
 		}
 
@@ -712,3 +716,4 @@ export function resolveHostContentRect(
 ) {
 	return resolveContentRect(rect, props?.padding);
 }
+

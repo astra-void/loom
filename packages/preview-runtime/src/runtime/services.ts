@@ -59,12 +59,12 @@ type MockInstanceLike = {
 };
 
 function getMockParent(value: unknown): unknown {
-	if (!value || typeof value !== "object") {
+	if (value == null || typeof value !== "object") {
 		return undefined;
 	}
 
 	const parent = (value as MockInstanceLike).Parent;
-	return parent ?? undefined;
+	return parent == null ? undefined : parent;
 }
 
 function findMockAncestor(
@@ -72,12 +72,16 @@ function findMockAncestor(
 	predicate: (ancestor: MockInstanceLike) => boolean,
 ) {
 	let current = getMockParent(value);
-	while (current !== undefined) {
-		if (
-			current &&
-			typeof current === "object" &&
-			predicate(current as MockInstanceLike)
-		) {
+	while (true) {
+		if (current == null || !current) {
+			break;
+		}
+
+		if (typeof current !== "object") {
+			break;
+		}
+
+		if (predicate(current as MockInstanceLike)) {
 			return current;
 		}
 
@@ -185,7 +189,7 @@ export interface PreviewPlayer {
 	readonly Name: "LocalPlayer";
 	readonly PlayerGui: PreviewPlayerGui;
 	readonly UserId: 0;
-	FindFirstChild(name: string): PreviewPlayerGui | null;
+	FindFirstChild(name: string): PreviewPlayerGui | undefined;
 	GetFullName(): string;
 	IsA(name: string): boolean;
 	WaitForChild(name: string): PreviewPlayerGui;
@@ -201,7 +205,7 @@ export type PreviewGuiHitObject = {
 
 export type PreviewPlayerGui = {
 	ClassName: "PlayerGui";
-	FindFirstChild(name: string): PreviewPlayerGui | null;
+	FindFirstChild(name: string): PreviewPlayerGui | undefined;
 	GetFullName(): string;
 	GetGuiObjectsAtPosition(x: number, y: number): PreviewGuiHitObject[];
 	IsA(name: string): boolean;
@@ -216,7 +220,7 @@ export interface PreviewPlayersService {
 	readonly Name: "Players";
 	readonly PlayerAdded: RBXScriptSignal<[player: PreviewPlayer]>;
 	readonly PlayerRemoving: RBXScriptSignal<[player: PreviewPlayer]>;
-	FindFirstChild(name: string): PreviewPlayer | null;
+	FindFirstChild(name: string): PreviewPlayer | undefined;
 	GetFullName(): string;
 	GetPlayers(): PreviewPlayer[];
 	IsA(name: string): boolean;
@@ -617,7 +621,7 @@ function createPlayerGui(): PreviewPlayerGui {
 				return findMockAncestorWhichIsA(this, className);
 			},
 			FindFirstChild(name: string) {
-				return name === "PlayerGui" ? (fallback as PreviewPlayerGui) : null;
+				return name === "PlayerGui" ? (fallback as PreviewPlayerGui) : undefined;
 			},
 			GetFullName() {
 				return "Players.LocalPlayer.PlayerGui";
@@ -677,7 +681,7 @@ function createPlayerGui(): PreviewPlayerGui {
 		return findMockAncestorWhichIsA(element, className);
 	};
 	element.FindFirstChild = (name: string) => {
-		return name === "PlayerGui" ? element : null;
+		return name === "PlayerGui" ? element : undefined;
 	};
 	element.GetGuiObjectsAtPosition = (x: number, y: number) => {
 		if (typeof document.elementsFromPoint !== "function") {
@@ -737,7 +741,7 @@ function createLocalPlayer(): PreviewPlayer {
 		UserId: 0 as const,
 		...createServiceBase("Players"),
 		FindFirstChild(name: string) {
-			return name === "PlayerGui" ? playerGui : null;
+			return name === "PlayerGui" ? playerGui : undefined;
 		},
 		GetFullName() {
 			return "Players.LocalPlayer";
@@ -863,7 +867,7 @@ function createPlayersService(
 		PlayerRemoving: playerRemoving,
 		...createServiceBase("Players"),
 		FindFirstChild(name: string) {
-			return name === localPlayer.Name ? localPlayer : null;
+			return name === localPlayer.Name ? localPlayer : undefined;
 		},
 		GetPlayers() {
 			return [localPlayer];
@@ -1197,3 +1201,4 @@ export function getTweenInfoConstructor() {
 
 export const game: PreviewGame = getGame();
 export const workspace: PreviewWorkspace = getWorkspace();
+
