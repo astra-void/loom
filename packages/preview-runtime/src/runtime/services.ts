@@ -2,6 +2,11 @@ import { runtimeOnlyTypeNames } from "../hosts/metadata";
 import { PREVIEW_HOST_DATA_ATTRIBUTE } from "../internal/previewAttributes";
 import { Enum } from "./Enum";
 import {
+	findMockAncestorOfClass,
+	findMockAncestorWhichIsA,
+	type MockInstanceLike,
+} from "./mockInstance";
+import {
 	type RBXScriptConnection,
 	type RBXScriptSignal,
 	RunService,
@@ -52,62 +57,6 @@ function createMockSignal() {
 	};
 }
 
-type MockInstanceLike = {
-	ClassName?: string;
-	IsA?(name: string): boolean;
-	Parent?: unknown;
-};
-
-function getMockParent(value: unknown): unknown {
-	if (value == null || typeof value !== "object") {
-		return undefined;
-	}
-
-	const parent = (value as MockInstanceLike).Parent;
-	return parent == null ? undefined : parent;
-}
-
-function findMockAncestor(
-	value: unknown,
-	predicate: (ancestor: MockInstanceLike) => boolean,
-) {
-	let current = getMockParent(value);
-	while (true) {
-		if (current == null || !current) {
-			break;
-		}
-
-		if (typeof current !== "object") {
-			break;
-		}
-
-		if (predicate(current as MockInstanceLike)) {
-			return current;
-		}
-
-		current = getMockParent(current);
-	}
-
-	return undefined;
-}
-
-function findMockAncestorWhichIsA(value: unknown, className: string) {
-	return findMockAncestor(value, (ancestor) => {
-		if (typeof ancestor.IsA === "function") {
-			return ancestor.IsA(className);
-		}
-
-		return ancestor.ClassName === className;
-	});
-}
-
-function findMockAncestorOfClass(value: unknown, className: string) {
-	return findMockAncestor(
-		value,
-		(ancestor) => ancestor.ClassName === className,
-	);
-}
-
 const mockScreenGui = {
 	AbsolutePosition: createMockVector2(0, 0),
 	AbsoluteSize: createMockVector2(1000, 1000),
@@ -120,10 +69,10 @@ const mockScreenGui = {
 	GetPropertyChangedSignal() {
 		return createMockSignal();
 	},
-	FindFirstAncestorOfClass(className: string) {
+	FindFirstAncestorOfClass(className: string): MockInstanceLike | undefined {
 		return findMockAncestorOfClass(this, className);
 	},
-	FindFirstAncestorWhichIsA(className: string) {
+	FindFirstAncestorWhichIsA(className: string): MockInstanceLike | undefined {
 		return findMockAncestorWhichIsA(this, className);
 	},
 	IsA(name: string) {
@@ -132,7 +81,7 @@ const mockScreenGui = {
 		);
 	},
 	Name: "MockScreenGui" as const,
-	Parent: undefined,
+	Parent: undefined as MockInstanceLike | undefined,
 	TextBounds: createMockVector2(0, 0),
 };
 
@@ -211,6 +160,7 @@ export type PreviewPlayerGui = {
 	IsA(name: string): boolean;
 	IsDescendantOf(ancestor: unknown): boolean;
 	Name: "PlayerGui";
+	Parent: MockInstanceLike | undefined;
 	WaitForChild(name: string): PreviewPlayerGui;
 };
 
@@ -614,14 +564,20 @@ function createPlayerGui(): PreviewPlayerGui {
 			AbsoluteWindowSize: createMockVector2(0, 0),
 			CanvasSize: createMockUDim2(),
 			ClassName: "PlayerGui" as const,
-			FindFirstAncestorOfClass(className: string) {
+			FindFirstAncestorOfClass(
+				className: string,
+			): MockInstanceLike | undefined {
 				return findMockAncestorOfClass(this, className);
 			},
-			FindFirstAncestorWhichIsA(className: string) {
+			FindFirstAncestorWhichIsA(
+				className: string,
+			): MockInstanceLike | undefined {
 				return findMockAncestorWhichIsA(this, className);
 			},
 			FindFirstChild(name: string) {
-				return name === "PlayerGui" ? (fallback as PreviewPlayerGui) : undefined;
+				return name === "PlayerGui"
+					? (fallback as PreviewPlayerGui)
+					: undefined;
 			},
 			GetFullName() {
 				return "Players.LocalPlayer.PlayerGui";
@@ -674,10 +630,14 @@ function createPlayerGui(): PreviewPlayerGui {
 	// hosts still receive events through their own DOM nodes.
 	element.style.pointerEvents = "none";
 	element.GetFullName = () => "Players.LocalPlayer.PlayerGui";
-	element.FindFirstAncestorOfClass = (className: string) => {
+	element.FindFirstAncestorOfClass = (
+		className: string,
+	): MockInstanceLike | undefined => {
 		return findMockAncestorOfClass(element, className);
 	};
-	element.FindFirstAncestorWhichIsA = (className: string) => {
+	element.FindFirstAncestorWhichIsA = (
+		className: string,
+	): MockInstanceLike | undefined => {
 		return findMockAncestorWhichIsA(element, className);
 	};
 	element.FindFirstChild = (name: string) => {
@@ -1201,4 +1161,3 @@ export function getTweenInfoConstructor() {
 
 export const game: PreviewGame = getGame();
 export const workspace: PreviewWorkspace = getWorkspace();
-

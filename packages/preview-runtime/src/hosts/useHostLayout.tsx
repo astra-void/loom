@@ -7,6 +7,11 @@ import {
 } from "../layout/context";
 import type { ComputedRect, PreviewLayoutNode } from "../layout/model";
 import {
+	findMockAncestorOfClass,
+	findMockAncestorWhichIsA,
+	type MockInstanceLike,
+} from "../runtime/mockInstance";
+import {
 	normalizePreviewRuntimeError,
 	publishPreviewRuntimeIssue,
 } from "../runtime/runtimeError";
@@ -62,62 +67,6 @@ function createMockSignal() {
 	};
 }
 
-type MockInstanceLike = {
-	ClassName?: string;
-	IsA?(name: string): boolean;
-	Parent?: unknown;
-};
-
-function getMockParent(value: unknown): unknown {
-	if (value == null || typeof value !== "object") {
-		return undefined;
-	}
-
-	const parent = (value as MockInstanceLike).Parent;
-	return parent == null ? undefined : parent;
-}
-
-function findMockAncestor(
-	value: unknown,
-	predicate: (ancestor: MockInstanceLike) => boolean,
-) {
-	let current = getMockParent(value);
-	while (true) {
-		if (current == null || !current) {
-			break;
-		}
-
-		if (typeof current !== "object") {
-			break;
-		}
-
-		if (predicate(current as MockInstanceLike)) {
-			return current;
-		}
-
-		current = getMockParent(current);
-	}
-
-	return undefined;
-}
-
-function findMockAncestorWhichIsA(value: unknown, className: string) {
-	return findMockAncestor(value, (ancestor) => {
-		if (typeof ancestor.IsA === "function") {
-			return ancestor.IsA(className);
-		}
-
-		return ancestor.ClassName === className;
-	});
-}
-
-function findMockAncestorOfClass(value: unknown, className: string) {
-	return findMockAncestor(
-		value,
-		(ancestor) => ancestor.ClassName === className,
-	);
-}
-
 const mockScreenGui = {
 	AbsolutePosition: createZeroVector2(),
 	AbsoluteSize: createVector2(1000, 1000),
@@ -130,10 +79,10 @@ const mockScreenGui = {
 	GetPropertyChangedSignal() {
 		return createMockSignal();
 	},
-	FindFirstAncestorOfClass(className: string) {
+	FindFirstAncestorOfClass(className: string): MockInstanceLike | undefined {
 		return findMockAncestorOfClass(this, className);
 	},
-	FindFirstAncestorWhichIsA(className: string) {
+	FindFirstAncestorWhichIsA(className: string): MockInstanceLike | undefined {
 		return findMockAncestorWhichIsA(this, className);
 	},
 	IsA(name: string) {
@@ -142,7 +91,7 @@ const mockScreenGui = {
 		);
 	},
 	Name: "MockScreenGui" as const,
-	Parent: undefined,
+	Parent: undefined as MockInstanceLike | undefined,
 	TextBounds: createZeroVector2(),
 };
 
@@ -716,4 +665,3 @@ export function resolveHostContentRect(
 ) {
 	return resolveContentRect(rect, props?.padding);
 }
-
