@@ -23,6 +23,7 @@ type SlotProps = PreviewDomProps & {
 };
 
 const EMPTY_EVENT_TABLE = Object.freeze({}) as PreviewEventTable;
+type PreviewChangeTable = NonNullable<PreviewDomProps["Change"]>;
 
 const previewIntrinsicHostComponents = {
 	billboardgui: BillboardGui,
@@ -122,6 +123,65 @@ function mergeEventTables(
 	} satisfies PreviewEventTable;
 }
 
+function getChangeHandler(
+	changeTable: PreviewChangeTable | undefined,
+	key: keyof PreviewChangeTable,
+) {
+	try {
+		const handler = changeTable?.[key];
+		return typeof handler === "function" ? handler : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+function mergeChangeTables(
+	slotChange?: PreviewChangeTable,
+	childChange?: PreviewChangeTable,
+) {
+	const text = (() => {
+		const childText = getChangeHandler(childChange, "Text");
+		const slotText = getChangeHandler(slotChange, "Text");
+
+		if (childText && slotText) {
+			return (element: HTMLInputElement) => {
+				childText(element);
+				slotText(element);
+			};
+		}
+
+		return childText ?? slotText;
+	})();
+
+	if (!text) {
+		return undefined;
+	}
+
+	return {
+		...(text ? { Text: text } : {}),
+	} satisfies PreviewChangeTable;
+}
+
+function useMergedRefs<T>(...refs: Array<React.Ref<T> | undefined>) {
+	const refsRef = React.useRef(refs);
+	refsRef.current = refs;
+
+	return React.useCallback((value: T | null) => {
+		for (const ref of refsRef.current) {
+			if (!ref) {
+				continue;
+			}
+
+			if (typeof ref === "function") {
+				ref(value);
+				continue;
+			}
+
+			(ref as React.MutableRefObject<T | null>).current = value;
+		}
+	}, []);
+}
+
 function getSlotRenderType(
 	childType: unknown,
 ): React.ElementType<Record<string, unknown>> | unknown {
@@ -137,14 +197,24 @@ function getSlotRenderType(
 export const Slot = React.forwardRef<HTMLElement, SlotProps>(
 	(props, forwardedRef) => {
 		const slotNodeId = React.useId();
-		if (!React.isValidElement(props.children)) {
+		const child = React.isValidElement(props.children)
+			? (props.children as React.ReactElement<
+					PreviewDomProps & Record<string, unknown>
+				>)
+			: null;
+		const childRef = child
+			? ((child as React.ReactElement & { ref?: React.Ref<unknown> }).ref ??
+				undefined)
+			: undefined;
+		const mergedRef = useMergedRefs(
+			childRef,
+			forwardedRef as React.Ref<unknown>,
+		);
+		if (!child) {
 			return null;
 		}
 
 		const slotProps = sanitizePreviewDomProps(props);
-		const child = props.children as React.ReactElement<
-			PreviewDomProps & Record<string, unknown>
-		>;
 		const childProps = sanitizePreviewDomProps(
 			(child.props ?? {}) as PreviewDomProps,
 		);
@@ -154,6 +224,10 @@ export const Slot = React.forwardRef<HTMLElement, SlotProps>(
 			(childProps.Event as PreviewEventTable | undefined) ?? EMPTY_EVENT_TABLE;
 		const slotHost = resolvePreviewSlotHost(child.type);
 		const slotRenderType = getSlotRenderType(child.type);
+		const slotChange =
+			(slotProps.Change as PreviewChangeTable | undefined) ?? undefined;
+		const childChange =
+			(childProps.Change as PreviewChangeTable | undefined) ?? undefined;
 
 		const mergedProps: PreviewDomProps = {
 			...slotProps,
@@ -162,6 +236,7 @@ export const Slot = React.forwardRef<HTMLElement, SlotProps>(
 
 		mergedProps.children = childProps.children;
 		mergedProps.Event = mergeEventTables(slotEvent, childEvent);
+		mergedProps.Change = mergeChangeTables(slotChange, childChange);
 
 		const normalized = resolvePreviewDomProps(mergedProps, {
 			applyComputedLayout: false,
@@ -172,7 +247,7 @@ export const Slot = React.forwardRef<HTMLElement, SlotProps>(
 
 		const clonedProps: Record<string, unknown> = {
 			...normalized.domProps,
-			ref: forwardedRef as React.Ref<unknown>,
+			ref: mergedRef,
 			children: React.Children.toArray([
 				normalized.text ? (
 					<span key="preview-slot-text" className="preview-host-text">
@@ -182,9 +257,12 @@ export const Slot = React.forwardRef<HTMLElement, SlotProps>(
 				normalized.children,
 			]),
 		};
-		if (typeof child.type !== "string") {
-			clonedProps.Event = undefined;
-		}
+		clonedProps.Change = undefined;
+		clonedProps.Event = undefined;
+		clonedProps.__previewReactChangeText = undefined;
+		clonedProps.__previewReactEventActivated = undefined;
+		clonedProps.__previewReactEventFocusLost = undefined;
+		clonedProps.__previewReactEventInputBegan = undefined;
 
 		if (slotRenderType !== child.type) {
 			return React.createElement(
