@@ -4,9 +4,10 @@ import { describe, expect, it, vi } from 'vitest';
 import { robloxMock } from '@loom-dev/preview-runtime';
 
 describe('roblox mock instance', () => {
-	it('uses a non-null root parent sentinel', () => {
-		expect(robloxMock.Parent).not.toBeNull();
-		expect(robloxMock.Parent?.Parent).toBeUndefined();
+	it('uses undefined for missing parents and ancestor misses', () => {
+		expect(robloxMock.Parent).toBeUndefined();
+		expect(robloxMock.FindFirstAncestorOfClass('ScreenGui')).toBeUndefined();
+		expect(robloxMock.FindFirstAncestorWhichIsA('ScreenGui')).toBeUndefined();
 	});
 
 	it('defers property-changed signal callbacks', async () => {
