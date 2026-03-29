@@ -23,7 +23,6 @@ type SlotProps = PreviewDomProps & {
 };
 
 const EMPTY_EVENT_TABLE = Object.freeze({}) as PreviewEventTable;
-type PreviewChangeTable = NonNullable<PreviewDomProps["Change"]>;
 
 const previewIntrinsicHostComponents = {
 	billboardgui: BillboardGui,
@@ -123,45 +122,6 @@ function mergeEventTables(
 	} satisfies PreviewEventTable;
 }
 
-function getChangeHandler(
-	changeTable: PreviewChangeTable | undefined,
-	key: keyof PreviewChangeTable,
-) {
-	try {
-		const handler = changeTable?.[key];
-		return typeof handler === "function" ? handler : undefined;
-	} catch {
-		return undefined;
-	}
-}
-
-function mergeChangeTables(
-	slotChange?: PreviewChangeTable,
-	childChange?: PreviewChangeTable,
-) {
-	const text = (() => {
-		const childText = getChangeHandler(childChange, "Text");
-		const slotText = getChangeHandler(slotChange, "Text");
-
-		if (childText && slotText) {
-			return (element: HTMLInputElement) => {
-				childText(element);
-				slotText(element);
-			};
-		}
-
-		return childText ?? slotText;
-	})();
-
-	if (!text) {
-		return undefined;
-	}
-
-	return {
-		...(text ? { Text: text } : {}),
-	} satisfies PreviewChangeTable;
-}
-
 function useMergedRefs<T>(...refs: Array<React.Ref<T> | undefined>) {
 	const refsRef = React.useRef(refs);
 	refsRef.current = refs;
@@ -224,10 +184,6 @@ export const Slot = React.forwardRef<HTMLElement, SlotProps>(
 			(childProps.Event as PreviewEventTable | undefined) ?? EMPTY_EVENT_TABLE;
 		const slotHost = resolvePreviewSlotHost(child.type);
 		const slotRenderType = getSlotRenderType(child.type);
-		const slotChange =
-			(slotProps.Change as PreviewChangeTable | undefined) ?? undefined;
-		const childChange =
-			(childProps.Change as PreviewChangeTable | undefined) ?? undefined;
 
 		const mergedProps: PreviewDomProps = {
 			...slotProps,
@@ -236,7 +192,6 @@ export const Slot = React.forwardRef<HTMLElement, SlotProps>(
 
 		mergedProps.children = childProps.children;
 		mergedProps.Event = mergeEventTables(slotEvent, childEvent);
-		mergedProps.Change = mergeChangeTables(slotChange, childChange);
 
 		const normalized = resolvePreviewDomProps(mergedProps, {
 			applyComputedLayout: false,
