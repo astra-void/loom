@@ -2059,7 +2059,7 @@ describe("preview runtime fidelity gaps", () => {
 
 	it("tracks GuiService.SelectedObject from preview pointer interactions", async () => {
 		const guiService = game.GetService("GuiService") as {
-			SelectedObject: HTMLElement | null;
+			SelectedObject: HTMLElement | undefined;
 		};
 
 		render(<TextButton Size={UDim2.fromOffset(120, 40)} Text="Select me" />);
@@ -2069,12 +2069,11 @@ describe("preview runtime fidelity gaps", () => {
 		) as HTMLElement;
 		const text = button.querySelector(".preview-host-text") as HTMLElement;
 
-		guiService.SelectedObject = null;
-		expect(guiService.SelectedObject).toBeNull();
+		guiService.SelectedObject = null as unknown as HTMLElement;
+		expect(guiService.SelectedObject).toBeUndefined();
 
 		fireEvent.mouseDown(text);
 
 		await waitFor(() => expect(guiService.SelectedObject).toBe(button));
 	});
 });
-

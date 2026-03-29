@@ -449,19 +449,21 @@ declare module "@loom-dev/preview-runtime" {
 		readonly MouseIconEnabled: true;
 		readonly Name: "UserInputService";
 		readonly TextBoxFocusReleased: RBXScriptSignal<
-			[element: HTMLElement | null]
+			[element: HTMLElement | undefined]
 		>;
-		readonly TextBoxFocused: RBXScriptSignal<[element: HTMLElement | null]>;
+		readonly TextBoxFocused: RBXScriptSignal<
+			[element: HTMLElement | undefined]
+		>;
 		readonly TouchEnabled: false;
 		readonly VREnabled: false;
-		GetFocusedTextBox(): HTMLElement | null;
+		GetFocusedTextBox(): HTMLElement | undefined;
 		GetFullName(): string;
 		GetLastInputType(): string;
 		IsA(name: string): boolean;
 	}
 	export interface PreviewGuiService {
 		readonly ClassName: "GuiService";
-		SelectedObject: HTMLElement | null;
+		SelectedObject: HTMLElement | undefined;
 		readonly Name: "GuiService";
 		GetFullName(): string;
 		GetGuiInset(): readonly [{ X: 0; Y: 0 }, { X: 0; Y: 0 }];

@@ -284,7 +284,7 @@ describe.sequential("@loom-dev/preview-runtime", () => {
 			LocalPlayer: { Name: string };
 		};
 		const userInputService = game.GetService("UserInputService") as {
-			GetFocusedTextBox(): HTMLElement | null;
+			GetFocusedTextBox(): HTMLElement | undefined;
 			GetLastInputType(): string;
 			KeyboardEnabled: boolean;
 			MouseEnabled: boolean;
@@ -322,15 +322,25 @@ describe.sequential("@loom-dev/preview-runtime", () => {
 		setupRobloxEnvironment();
 
 		const guiService = game.GetService("GuiService") as {
-			SelectedObject: HTMLElement | null;
+			SelectedObject: HTMLElement | undefined;
 		};
 		const selectedObject = document.createElement("button");
 
-		expect(guiService.SelectedObject).toBe(null);
+		expect(guiService.SelectedObject).toBeUndefined();
+
+		guiService.SelectedObject = null as unknown as HTMLElement;
+		expect(guiService.SelectedObject).toBeUndefined();
 
 		guiService.SelectedObject = selectedObject;
 
 		expect(guiService.SelectedObject).toBe(selectedObject);
+
+		expect(() => {
+			const selected = guiService.SelectedObject;
+			if (selected !== undefined) {
+				void selected.Parent;
+			}
+		}).not.toThrow();
 
 		const descriptor = Object.getOwnPropertyDescriptor(
 			guiService,
@@ -362,10 +372,10 @@ describe.sequential("@loom-dev/preview-runtime", () => {
 				Connect(listener: (inputType: string) => void): void;
 			};
 			TextBoxFocusReleased: {
-				Connect(listener: (element: HTMLElement | null) => void): void;
+				Connect(listener: (element: HTMLElement | undefined) => void): void;
 			};
 			TextBoxFocused: {
-				Connect(listener: (element: HTMLElement | null) => void): void;
+				Connect(listener: (element: HTMLElement | undefined) => void): void;
 			};
 		};
 		const inputEvents: string[] = [];
@@ -390,6 +400,7 @@ describe.sequential("@loom-dev/preview-runtime", () => {
 
 		textbox.focus();
 		textbox.blur();
+		expect(userInputService.GetFocusedTextBox()).toBeUndefined();
 		window.dispatchEvent(new MouseEvent("mousedown", { button: 0 }));
 		window.dispatchEvent(new KeyboardEvent("keydown", { key: "A" }));
 
