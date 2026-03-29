@@ -41,6 +41,11 @@ declare module "@loom-dev/layout-engine" {
 declare module "@loom-dev/preview-runtime" {
 	import type * as ReactTypes from "react";
 
+	type MockInstanceLike = {
+		ClassName?: string;
+		IsA?(name: string): boolean;
+		Parent: MockInstanceLike | undefined;
+	};
 	type PreviewHostComponent = ReactTypes.ComponentType<Record<string, unknown>>;
 	type PreviewSerializedAxis = {
 		Offset: number;
@@ -412,6 +417,9 @@ declare module "@loom-dev/preview-runtime" {
 	export type PreviewGuiHitObject = {
 		readonly ClassName: string;
 		readonly Name: string;
+		readonly Parent: MockInstanceLike | undefined;
+		FindFirstAncestorOfClass(className: string): MockInstanceLike | undefined;
+		FindFirstAncestorWhichIsA(className: string): MockInstanceLike | undefined;
 		GetFullName(): string;
 		IsA(name: string): boolean;
 		IsDescendantOf(ancestor: unknown): boolean;
@@ -463,7 +471,7 @@ declare module "@loom-dev/preview-runtime" {
 	}
 	export interface PreviewGuiService {
 		readonly ClassName: "GuiService";
-		SelectedObject: HTMLElement | undefined;
+		SelectedObject: PreviewGuiHitObject | undefined;
 		readonly Name: "GuiService";
 		GetFullName(): string;
 		GetGuiInset(): readonly [{ X: 0; Y: 0 }, { X: 0; Y: 0 }];
