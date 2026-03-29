@@ -406,14 +406,14 @@ export function useHostLayout(host: LayoutHostName, props: PreviewDomProps) {
 
 	const isRootNode = normalizedNode.kind === "root";
 
-	React.useLayoutEffect(() => {
-		const element = elementRef.current;
-		if (!element) {
-			return;
-		}
-
-		installPreviewHostPropertyBridge(element, nodeId, (property) => {
+	const resolveBridgedHostProperty = React.useCallback(
+		(property: string) => {
+			const element = elementRef.current;
 			const currentProps = basePropsRef.current as Record<string, unknown>;
+			if (!element) {
+				return getHostPropertyFallback(property, isRootNode);
+			}
+
 			switch (property) {
 				case "AbsolutePosition": {
 					const rect = element.getBoundingClientRect();
@@ -449,6 +449,16 @@ export function useHostLayout(host: LayoutHostName, props: PreviewDomProps) {
 						currentProps.CanvasSize ??
 						getHostPropertyFallback(property, isRootNode)
 					);
+				case "Name":
+					return (
+						(typeof currentProps.Name === "string" &&
+						currentProps.Name.length > 0
+							? currentProps.Name
+							: undefined) ??
+						element.getAttribute("data-preview-node-id") ??
+						element.getAttribute("aria-label") ??
+						getHostPropertyFallback(property, isRootNode)
+					);
 				case "Parent":
 					return (
 						currentProps.Parent ?? getHostPropertyFallback(property, isRootNode)
@@ -464,12 +474,29 @@ export function useHostLayout(host: LayoutHostName, props: PreviewDomProps) {
 						getHostPropertyFallback(property, isRootNode)
 					);
 			}
-		});
+		},
+		[host, isRootNode],
+	);
 
-		return () => {
-			cleanupPreviewHostBridge(element, nodeId);
-		};
-	}, [isRootNode, nodeId, host]);
+	const setElementRef = React.useCallback(
+		(element: HTMLElement | null) => {
+			const previousElement = elementRef.current;
+			if (previousElement && previousElement !== element) {
+				cleanupPreviewHostBridge(previousElement, nodeId);
+			}
+
+			elementRef.current = element;
+
+			if (element) {
+				installPreviewHostPropertyBridge(
+					element,
+					nodeId,
+					resolveBridgedHostProperty,
+				);
+			}
+		},
+		[nodeId, resolveBridgedHostProperty],
+	);
 
 	React.useLayoutEffect(() => {
 		const element = elementRef.current;
@@ -569,6 +596,18 @@ export function useHostLayout(host: LayoutHostName, props: PreviewDomProps) {
 							currentProps.CanvasSize ??
 								getHostPropertyFallback(property, isRootNode),
 						];
+					case "Name":
+						return [
+							property,
+							(typeof currentProps.Name === "string" &&
+							currentProps.Name.length > 0
+								? currentProps.Name
+								: undefined) ??
+								element?.getAttribute("data-preview-node-id") ??
+								element?.getAttribute("aria-label") ??
+								getHostPropertyFallback(property, isRootNode) ??
+								nodeId,
+						];
 					case "Parent":
 						return [
 							property,
@@ -632,6 +671,7 @@ export function useHostLayout(host: LayoutHostName, props: PreviewDomProps) {
 		elementRef,
 		hostNode,
 		nodeId,
+		setElementRef,
 		patchDomProps: React.useCallback(
 			(domProps: PreviewHostNode["presentationHints"]["domProps"]) =>
 				patchPreviewHostNodeDomProps(hostNode, domProps),

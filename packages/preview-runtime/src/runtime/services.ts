@@ -147,6 +147,9 @@ export interface PreviewPlayer {
 export type PreviewGuiHitObject = {
 	readonly ClassName: string;
 	readonly Name: string;
+	readonly Parent: MockInstanceLike | undefined;
+	FindFirstAncestorOfClass(className: string): MockInstanceLike | undefined;
+	FindFirstAncestorWhichIsA(className: string): MockInstanceLike | undefined;
 	GetFullName(): string;
 	IsA(name: string): boolean;
 	IsDescendantOf(ancestor: unknown): boolean;
@@ -201,7 +204,7 @@ export interface PreviewUserInputService {
 
 export interface PreviewGuiService {
 	readonly ClassName: "GuiService";
-	SelectedObject: HTMLElement | undefined;
+	SelectedObject: PreviewGuiHitObject | undefined;
 	readonly Name: "GuiService";
 	GetFullName(): string;
 	GetGuiInset(): readonly [{ X: 0; Y: 0 }, { X: 0; Y: 0 }];
@@ -409,7 +412,7 @@ const previewGuiObjectClassNames = new Map<string, string>([
 ]);
 
 const guiServiceState = {
-	selectedObject: undefined as HTMLElement | undefined,
+	selectedObject: undefined as PreviewGuiHitObject | undefined,
 };
 
 function getDomElement(value: unknown): HTMLElement | undefined {
@@ -428,6 +431,44 @@ function getDomElement(value: unknown): HTMLElement | undefined {
 	}
 
 	return undefined;
+}
+
+function isPreviewGuiObjectHandle(
+	value: unknown,
+): value is PreviewGuiHitObject {
+	return (
+		typeof value === "object" &&
+		value !== null &&
+		typeof (value as PreviewGuiHitObject).GetFullName === "function" &&
+		typeof (value as PreviewGuiHitObject).IsA === "function" &&
+		typeof (value as PreviewGuiHitObject).IsDescendantOf === "function"
+	);
+}
+
+function getPreviewGuiObjectFromElement(
+	element: HTMLElement,
+): PreviewGuiHitObject | undefined {
+	const host = element.getAttribute(PREVIEW_HOST_DATA_ATTRIBUTE);
+	if (!host || !isPreviewGuiObjectHost(host)) {
+		return undefined;
+	}
+
+	return createPreviewGuiObjectHandle(element, host);
+}
+
+function normalizePreviewGuiObject(
+	value: unknown,
+): PreviewGuiHitObject | undefined {
+	if (isPreviewGuiObjectHandle(value)) {
+		return value;
+	}
+
+	const element = getDomElement(value);
+	if (!element) {
+		return undefined;
+	}
+
+	return getPreviewGuiObjectFromElement(element);
 }
 
 function isPreviewGuiObjectHost(host: string) {
@@ -451,6 +492,7 @@ function createPreviewGuiObjectHandle(
 	const handle = {
 		ClassName: className,
 		Name: name,
+		Parent: mockScreenGui,
 		GetFullName() {
 			return `Players.LocalPlayer.PlayerGui.${name}`;
 		},
@@ -474,8 +516,18 @@ function createPreviewGuiObjectHandle(
 			return false;
 		},
 		IsDescendantOf(ancestor: unknown) {
+			if (ancestor === mockScreenGui) {
+				return true;
+			}
+
 			const domAncestor = getDomElement(ancestor);
 			return domAncestor ? domAncestor.contains(element) : false;
+		},
+		FindFirstAncestorOfClass(className: string) {
+			return findMockAncestorOfClass(handle, className);
+		},
+		FindFirstAncestorWhichIsA(className: string) {
+			return findMockAncestorWhichIsA(handle, className);
 		},
 	};
 
@@ -510,12 +562,6 @@ function createPreviewGuiObjectHandle(
 			value() {
 				return createMockSignal();
 			},
-			writable: false,
-		},
-		Parent: {
-			configurable: false,
-			enumerable: false,
-			value: mockScreenGui,
 			writable: false,
 		},
 		TextBounds: {
@@ -808,7 +854,7 @@ function getSelectedGuiObjectFromEvent(event: Event) {
 
 		const host = entry.getAttribute(PREVIEW_HOST_DATA_ATTRIBUTE);
 		if (host && isPreviewGuiObjectHost(host)) {
-			return entry;
+			return getPreviewGuiObjectFromElement(entry);
 		}
 	}
 
@@ -948,7 +994,7 @@ function createGuiService(): PreviewGuiService {
 			return guiServiceState.selectedObject;
 		},
 		set(value: unknown) {
-			guiServiceState.selectedObject = getDomElement(value);
+			guiServiceState.selectedObject = normalizePreviewGuiObject(value);
 		},
 	});
 

@@ -1,5 +1,16 @@
 import * as React from "react";
+import { PREVIEW_HOST_DATA_ATTRIBUTE } from "../internal/previewAttributes";
+import {
+	findMockAncestorOfClass,
+	findMockAncestorWhichIsA,
+	getMockParent,
+	type MockInstanceLike,
+} from "../runtime/mockInstance";
 import { destroyTweensForTarget } from "../runtime/tween";
+import {
+	getPreviewHostMetadataByJsxName,
+	previewHostMatchesType,
+} from "./metadata";
 
 const HOST_BRIDGE_STATE_KEY = Symbol.for(
 	"loom-dev.preview-runtime.hostBridgeState",
@@ -20,6 +31,7 @@ export const bridgedPreviewHostProperties = [
 	"BackgroundTransparency",
 	"CanvasPosition",
 	"CanvasSize",
+	"Name",
 	"Parent",
 	"Position",
 	"Size",
@@ -77,8 +89,20 @@ type PreviewPropertyChangedSignal = {
 
 type PreviewHostElement = HTMLElement & {
 	[HOST_BRIDGE_STATE_KEY]?: HostBridgeState;
-	GetChildren?: () => unknown[];
+	ClassName?: string;
+	FindFirstAncestorOfClass?: (
+		className: string,
+	) => MockInstanceLike | undefined;
+	FindFirstAncestorWhichIsA?: (
+		className: string,
+	) => MockInstanceLike | undefined;
+	GetChildren?: () => PreviewHostElement[];
+	GetDescendants?: () => PreviewHostElement[];
+	GetFullName?: () => string;
 	GetPropertyChangedSignal?: (property: string) => PreviewPropertyChangedSignal;
+	IsA?: (name: string) => boolean;
+	IsDescendantOf?: (ancestor: unknown) => boolean;
+	Name?: string;
 };
 
 function hasOwn(value: object, property: PropertyKey) {
@@ -239,6 +263,125 @@ function definePreviewHostBridgeProperty(
 	});
 }
 
+function getPreviewHostJsxName(element: PreviewHostElement) {
+	return (
+		element.getAttribute(PREVIEW_HOST_DATA_ATTRIBUTE) ??
+		element.dataset.previewHost ??
+		undefined
+	);
+}
+
+function getPreviewHostClassName(element: PreviewHostElement) {
+	const host = getPreviewHostJsxName(element);
+	if (!host) {
+		return "Instance";
+	}
+
+	return getPreviewHostMetadataByJsxName(host)?.runtimeName ?? host;
+}
+
+function getPreviewHostName(
+	element: PreviewHostElement,
+	state: HostBridgeState,
+) {
+	const bridgedName = state.getBaseValue("Name");
+	if (typeof bridgedName === "string" && bridgedName.length > 0) {
+		return bridgedName;
+	}
+
+	return (
+		element.getAttribute("data-preview-node-id") ??
+		element.getAttribute("aria-label") ??
+		getPreviewHostClassName(element)
+	);
+}
+
+function isPreviewHostElement(value: unknown): value is PreviewHostElement {
+	return (
+		typeof HTMLElement !== "undefined" &&
+		value instanceof HTMLElement &&
+		getPreviewHostJsxName(value as PreviewHostElement) !== undefined
+	);
+}
+
+function getPreviewHostAncestor(
+	element: PreviewHostElement,
+	boundary: PreviewHostElement,
+) {
+	let current = element.parentElement;
+	while (current) {
+		if (current === boundary) {
+			return boundary;
+		}
+
+		if (isPreviewHostElement(current)) {
+			return current;
+		}
+
+		current = current.parentElement;
+	}
+
+	return undefined;
+}
+
+function collectPreviewHostDescendants(
+	element: PreviewHostElement,
+): PreviewHostElement[] {
+	const descendants = Array.from(
+		element.querySelectorAll<HTMLElement>(`[${PREVIEW_HOST_DATA_ATTRIBUTE}]`),
+	);
+
+	return descendants.filter(
+		(descendant): descendant is PreviewHostElement => descendant !== element,
+	);
+}
+
+function collectPreviewHostChildren(
+	element: PreviewHostElement,
+): PreviewHostElement[] {
+	const descendants = collectPreviewHostDescendants(element);
+	return descendants.filter(
+		(descendant) => getPreviewHostAncestor(descendant, element) === element,
+	);
+}
+
+function isPreviewDescendantOf(value: unknown, ancestor: unknown) {
+	let current: unknown = value;
+	while (current !== undefined) {
+		if (current === ancestor) {
+			return true;
+		}
+
+		current = getMockParent(current);
+	}
+
+	if (typeof HTMLElement !== "undefined" && ancestor instanceof HTMLElement) {
+		return ancestor.contains(value as Node);
+	}
+
+	return false;
+}
+
+function definePreviewHostBridgeMethod(
+	element: PreviewHostElement,
+	property:
+		| "ClassName"
+		| "FindFirstAncestorOfClass"
+		| "FindFirstAncestorWhichIsA"
+		| "GetChildren"
+		| "GetDescendants"
+		| "GetFullName"
+		| "IsA"
+		| "IsDescendantOf",
+	descriptor: PropertyDescriptor,
+) {
+	if (hasOwn(element, property)) {
+		return;
+	}
+
+	Object.defineProperty(element, property, descriptor);
+}
+
 export function clearPreviewHostOverrides(nodeId: string) {
 	getHostOverrideStore().clearNode(nodeId);
 }
@@ -286,7 +429,18 @@ export function installPreviewHostPropertyBridge(
 			configurable: true,
 			enumerable: false,
 			value() {
-				return [];
+				return collectPreviewHostChildren(previewElement);
+			},
+			writable: true,
+		});
+	}
+
+	if (!hasOwn(previewElement, "GetDescendants")) {
+		Object.defineProperty(previewElement, "GetDescendants", {
+			configurable: true,
+			enumerable: false,
+			value() {
+				return collectPreviewHostDescendants(previewElement);
 			},
 			writable: true,
 		});
@@ -329,6 +483,99 @@ export function installPreviewHostPropertyBridge(
 			writable: true,
 		});
 	}
+
+	definePreviewHostBridgeProperty(previewElement, "Name", state);
+
+	definePreviewHostBridgeMethod(previewElement, "ClassName", {
+		configurable: true,
+		enumerable: false,
+		get() {
+			return getPreviewHostClassName(previewElement);
+		},
+	});
+
+	definePreviewHostBridgeMethod(previewElement, "IsA", {
+		configurable: true,
+		enumerable: false,
+		value(typeName: string) {
+			if (typeName === "Instance") {
+				return true;
+			}
+
+			const host = getPreviewHostJsxName(previewElement);
+			if (!host) {
+				return false;
+			}
+
+			return previewHostMatchesType(host, typeName, "isa");
+		},
+		writable: true,
+	});
+
+	definePreviewHostBridgeMethod(previewElement, "IsDescendantOf", {
+		configurable: true,
+		enumerable: false,
+		value(ancestor: unknown) {
+			return isPreviewDescendantOf(previewElement, ancestor);
+		},
+		writable: true,
+	});
+
+	definePreviewHostBridgeMethod(previewElement, "FindFirstAncestorOfClass", {
+		configurable: true,
+		enumerable: false,
+		value(className: string) {
+			return findMockAncestorOfClass(previewElement, className);
+		},
+		writable: true,
+	});
+
+	definePreviewHostBridgeMethod(previewElement, "FindFirstAncestorWhichIsA", {
+		configurable: true,
+		enumerable: false,
+		value(className: string) {
+			return findMockAncestorWhichIsA(previewElement, className);
+		},
+		writable: true,
+	});
+
+	definePreviewHostBridgeMethod(previewElement, "GetFullName", {
+		configurable: true,
+		enumerable: false,
+		value() {
+			const segments: string[] = [];
+			let current: unknown = previewElement;
+
+			while (current !== undefined) {
+				if (current && typeof current === "object") {
+					const name =
+						current === previewElement
+							? getPreviewHostName(previewElement, state)
+							: (() => {
+									const record = current as {
+										ClassName?: unknown;
+										Name?: unknown;
+									};
+									return typeof record.Name === "string" &&
+										record.Name.length > 0
+										? record.Name
+										: typeof record.ClassName === "string" &&
+												record.ClassName.length > 0
+											? record.ClassName
+											: undefined;
+								})();
+					if (name) {
+						segments.unshift(name);
+					}
+				}
+
+				current = getMockParent(current);
+			}
+
+			return segments.join(".");
+		},
+		writable: true,
+	});
 
 	for (const property of bridgedPreviewHostProperties) {
 		definePreviewHostBridgeProperty(previewElement, property, state);
