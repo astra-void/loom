@@ -187,11 +187,13 @@ export interface PreviewUserInputService {
 	readonly MouseEnabled: true;
 	readonly MouseIconEnabled: true;
 	readonly Name: "UserInputService";
-	readonly TextBoxFocusReleased: RBXScriptSignal<[element: HTMLElement | null]>;
-	readonly TextBoxFocused: RBXScriptSignal<[element: HTMLElement | null]>;
+	readonly TextBoxFocusReleased: RBXScriptSignal<
+		[element: HTMLElement | undefined]
+	>;
+	readonly TextBoxFocused: RBXScriptSignal<[element: HTMLElement | undefined]>;
 	readonly TouchEnabled: false;
 	readonly VREnabled: false;
-	GetFocusedTextBox(): HTMLElement | null;
+	GetFocusedTextBox(): HTMLElement | undefined;
 	GetFullName(): string;
 	GetLastInputType(): string;
 	IsA(name: string): boolean;
@@ -199,7 +201,7 @@ export interface PreviewUserInputService {
 
 export interface PreviewGuiService {
 	readonly ClassName: "GuiService";
-	SelectedObject: HTMLElement | null;
+	SelectedObject: HTMLElement | undefined;
 	readonly Name: "GuiService";
 	GetFullName(): string;
 	GetGuiInset(): readonly [{ X: 0; Y: 0 }, { X: 0; Y: 0 }];
@@ -407,10 +409,10 @@ const previewGuiObjectClassNames = new Map<string, string>([
 ]);
 
 const guiServiceState = {
-	selectedObject: null as HTMLElement | null,
+	selectedObject: undefined as HTMLElement | undefined,
 };
 
-function getDomElement(value: unknown): HTMLElement | null {
+function getDomElement(value: unknown): HTMLElement | undefined {
 	if (typeof HTMLElement !== "undefined" && value instanceof HTMLElement) {
 		return value;
 	}
@@ -425,7 +427,7 @@ function getDomElement(value: unknown): HTMLElement | null {
 		}
 	}
 
-	return null;
+	return undefined;
 }
 
 function isPreviewGuiObjectHost(host: string) {
@@ -772,11 +774,11 @@ function getUserInputTracker() {
 
 function getFocusedTextBox() {
 	if (typeof document === "undefined") {
-		return null;
+		return undefined;
 	}
 
 	const activeElement = document.activeElement;
-	return isTextBoxElement(activeElement) ? activeElement : null;
+	return isTextBoxElement(activeElement) ? activeElement : undefined;
 }
 
 function isTextBoxElement(value: unknown): value is HTMLElement {
@@ -790,7 +792,7 @@ function isTextBoxElement(value: unknown): value is HTMLElement {
 }
 
 function getTextBoxFromEventTarget(target: EventTarget | null) {
-	return isTextBoxElement(target) ? target : null;
+	return isTextBoxElement(target) ? target : undefined;
 }
 
 function getSelectedGuiObjectFromEvent(event: Event) {
@@ -810,7 +812,7 @@ function getSelectedGuiObjectFromEvent(event: Event) {
 		}
 	}
 
-	return null;
+	return undefined;
 }
 
 function createPlayersService(
@@ -840,8 +842,8 @@ function createUserInputService(): PreviewUserInputService {
 	const inputBegan = new Signal<[event: Event]>();
 	const inputChanged = new Signal<[event: Event]>();
 	const inputEnded = new Signal<[event: Event]>();
-	const textBoxFocused = new Signal<[element: HTMLElement | null]>();
-	const textBoxFocusReleased = new Signal<[element: HTMLElement | null]>();
+	const textBoxFocused = new Signal<[element: HTMLElement | undefined]>();
+	const textBoxFocusReleased = new Signal<[element: HTMLElement | undefined]>();
 	let focusedTextBox = getFocusedTextBox();
 
 	if (typeof globalThis.addEventListener === "function") {
@@ -857,12 +859,12 @@ function createUserInputService(): PreviewUserInputService {
 		});
 		globalThis.addEventListener("focusout", (event) => {
 			const releasedTextBox = getTextBoxFromEventTarget(event.target);
-			if (releasedTextBox === null) {
+			if (releasedTextBox === undefined) {
 				focusedTextBox = getFocusedTextBox();
 				return;
 			}
 
-			focusedTextBox = null;
+			focusedTextBox = undefined;
 			textBoxFocusReleased.fire(releasedTextBox);
 		});
 		globalThis.addEventListener("keydown", (event) => {
@@ -954,7 +956,7 @@ function createGuiService(): PreviewGuiService {
 }
 
 export function resetPreviewRuntimeServiceState() {
-	guiServiceState.selectedObject = null;
+	guiServiceState.selectedObject = undefined;
 }
 
 function createWorkspaceService(): PreviewWorkspace {
