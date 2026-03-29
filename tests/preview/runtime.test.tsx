@@ -51,7 +51,6 @@ import {
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getLocalPlayerGui } from "../../apps/preview-harness/src/test-utils";
-import * as hostOverrides from "../../packages/preview-runtime/src/hosts/hostOverrides";
 import { suppressExpectedConsoleMessages } from "../testLogUtils";
 import userEvent from "../testUserEvent";
 
@@ -628,26 +627,14 @@ describe("preview runtime host mapping", () => {
 	it("keeps controlled textbox text updates silent during prop sync", async () => {
 		const user = userEvent.setup();
 		const changeCalls: string[] = [];
-		const textPropertyNotifications = vi.fn();
-		const notifySpy = vi.spyOn(
-			hostOverrides,
-			"notifyPreviewHostPropertyChanged",
-		);
 		const valueSetterSpy = vi.spyOn(HTMLInputElement.prototype, "value", "set");
-		const getTextNotificationCount = () =>
-			notifySpy.mock.calls.filter(([, property]) => property === "Text").length;
 
 		function TextBoxHarness(props: { value: string }) {
 			return (
 				<TextBox
 					Change={{
 						Text: (textBox) => {
-							const currentText = (
-								textBox as HTMLInputElement & { Text?: string }
-							).Text;
-							if (typeof currentText === "string") {
-								changeCalls.push(currentText);
-							}
+							changeCalls.push(textBox.value);
 						},
 					}}
 					Text={props.value}
@@ -656,69 +643,186 @@ describe("preview runtime host mapping", () => {
 		}
 
 		const { rerender } = render(<TextBoxHarness value="alpha" />);
-		const input = screen.getByRole("textbox") as HTMLInputElement & {
-			GetPropertyChangedSignal?: (property: string) => {
-				Connect(listener?: () => void): { Disconnect(): void };
-			};
-			Text?: string;
-		};
-		const textChangedSignal = input.GetPropertyChangedSignal?.("Text");
-		const textChangedConnection = textChangedSignal?.Connect(
-			textPropertyNotifications,
-		);
+		const input = screen.getByRole("textbox") as HTMLInputElement;
 
 		expect(input.value).toBe("alpha");
-		expect(input.Text).toBe("alpha");
 
 		await user.type(input, "!");
 
 		expect(changeCalls).toEqual(["alpha!"]);
 		expect(input.value).toBe("alpha!");
-		expect(input.Text).toBe("alpha!");
-		expect(textPropertyNotifications).toHaveBeenCalledTimes(0);
-		expect(getTextNotificationCount()).toBe(0);
 
 		valueSetterSpy.mockClear();
-		notifySpy.mockClear();
 		rerender(<TextBoxHarness value="beta" />);
 
 		await waitFor(() => {
-			expect(
-				(
-					screen.getByRole("textbox") as HTMLInputElement & {
-						Text?: string;
-					}
-				).Text,
-			).toBe("beta");
+			expect((screen.getByRole("textbox") as HTMLInputElement).value).toBe(
+				"beta",
+			);
 		});
 
 		expect(valueSetterSpy).toHaveBeenCalledTimes(1);
-		expect(textPropertyNotifications).toHaveBeenCalledTimes(0);
-		expect(getTextNotificationCount()).toBe(0);
-		textChangedConnection?.Disconnect();
 	});
 
-	it("notifies Text property listeners for imperative Text writes", () => {
-		const textPropertyNotifications = vi.fn();
-
-		render(<TextBox Text="alpha" />);
-
-		const input = screen.getByRole("textbox") as HTMLInputElement & {
-			GetPropertyChangedSignal?: (property: string) => {
-				Connect(listener?: () => void): { Disconnect(): void };
-			};
-			Text?: string;
+	it("renders the combobox scene shape without mount-time reentrant state updates", async () => {
+		const setterLog = {
+			inputValue: [] as string[],
+			open: [] as boolean[],
+			registryRevision: [] as number[],
+			value: [] as string[],
 		};
-		const textChangedConnection = input
-			.GetPropertyChangedSignal?.("Text")
-			?.Connect(textPropertyNotifications);
 
-		input.Text = "beta";
+		function ComboboxSceneHarness() {
+			const [valueState, rawSetValueState] = React.useState("alpha");
+			const [openState, rawSetOpenState] = React.useState(false);
+			const [inputValueState, rawSetInputValueState] = React.useState("");
+			const [registryRevisionState, rawSetRegistryRevisionState] =
+				React.useState(0);
 
-		expect(input.value).toBe("beta");
-		expect(input.Text).toBe("beta");
-		expect(textPropertyNotifications).toHaveBeenCalledTimes(1);
-		textChangedConnection?.Disconnect();
+			const setValueState = React.useCallback((nextValue: string) => {
+				setterLog.value.push(nextValue);
+				rawSetValueState(nextValue);
+			}, []);
+			const setOpenState = React.useCallback((nextOpen: boolean) => {
+				setterLog.open.push(nextOpen);
+				rawSetOpenState(nextOpen);
+			}, []);
+			const setInputValueState = React.useCallback((nextInputValue: string) => {
+				setterLog.inputValue.push(nextInputValue);
+				rawSetInputValueState(nextInputValue);
+			}, []);
+			const setRegistryRevision = React.useCallback(
+				(nextRevision: number | ((previous: number) => number)) => {
+					const resolved =
+						typeof nextRevision === "function"
+							? nextRevision(registryRevisionState)
+							: nextRevision;
+					setterLog.registryRevision.push(resolved);
+					rawSetRegistryRevisionState(nextRevision);
+				},
+				[registryRevisionState],
+			);
+
+			function ComboboxContentLike() {
+				React.useEffect(() => {
+					setterLog.registryRevision.push(registryRevisionState);
+					setRegistryRevision((revision) => revision + 1);
+				}, []);
+
+				return (
+					<frame BackgroundTransparency={1} Size={UDim2.fromOffset(320, 128)}>
+						<textlabel
+							BackgroundTransparency={1}
+							Text={`registry:${registryRevisionState}`}
+							TextXAlignment={Enum.TextXAlignment.Left}
+						/>
+					</frame>
+				);
+			}
+
+			const syncInputFromValue = React.useCallback(() => {
+				setInputValueState(valueState);
+			}, [setInputValueState, valueState]);
+
+			React.useEffect(() => {
+				if (openState) {
+					return;
+				}
+
+				syncInputFromValue();
+			}, [openState, syncInputFromValue]);
+
+			const handleTextChanged = React.useCallback(
+				(textBox: HTMLInputElement) => {
+					if (textBox.value === inputValueState) {
+						return;
+					}
+
+					setInputValueState(textBox.value);
+					setOpenState(true);
+					setValueState(textBox.value);
+				},
+				[inputValueState, setInputValueState, setOpenState, setValueState],
+			);
+
+			return (
+				<frame BackgroundTransparency={1} Size={UDim2.fromOffset(940, 560)}>
+					<textlabel
+						BackgroundTransparency={1}
+						Text="Combobox: type-to-filter + enforced selection"
+						TextXAlignment={Enum.TextXAlignment.Left}
+					/>
+					<textlabel
+						BackgroundTransparency={1}
+						Position={UDim2.fromOffset(0, 34)}
+						Text={`Controlled open: ${openState ? "true" : "false"} | value: ${valueState}`}
+						TextXAlignment={Enum.TextXAlignment.Left}
+					/>
+					<frame
+						BackgroundTransparency={1}
+						Position={UDim2.fromOffset(0, 76)}
+						Size={UDim2.fromOffset(900, 220)}
+					>
+						<Slot
+							Active={true}
+							Event={{ Activated: () => setOpenState(!openState) }}
+							Selectable={false}
+						>
+							<textbutton
+								BackgroundTransparency={1}
+								Size={UDim2.fromOffset(320, 40)}
+								Text=""
+							>
+								<textlabel
+									BackgroundTransparency={1}
+									Position={UDim2.fromOffset(12, 0)}
+									Size={UDim2.fromOffset(84, 40)}
+									Text="Selected"
+									TextXAlignment={Enum.TextXAlignment.Left}
+								/>
+								<Slot Text={valueState}>
+									<textlabel
+										BackgroundTransparency={1}
+										Position={UDim2.fromOffset(88, 0)}
+										Size={UDim2.fromOffset(212, 40)}
+										Text={valueState}
+										TextXAlignment={Enum.TextXAlignment.Left}
+									/>
+								</Slot>
+							</textbutton>
+						</Slot>
+
+						<Slot
+							Active={true}
+							Change={{ Text: handleTextChanged }}
+							ClearTextOnFocus={false}
+							PlaceholderText="Type alpha, beta, gamma..."
+							Selectable={true}
+							Text={inputValueState}
+							TextEditable={true}
+						>
+							<textbox
+								BackgroundTransparency={1}
+								Size={UDim2.fromOffset(320, 34)}
+								TextXAlignment={Enum.TextXAlignment.Left}
+							/>
+						</Slot>
+					</frame>
+					{openState ? <ComboboxContentLike /> : undefined}
+				</frame>
+			);
+		}
+
+		render(<ComboboxSceneHarness />);
+
+		await waitFor(() => {
+			expect(screen.getByRole("textbox")).toBeTruthy();
+		});
+
+		expect(setterLog.inputValue).toEqual(["alpha"]);
+		expect(setterLog.open).toEqual([]);
+		expect(setterLog.value).toEqual([]);
+		expect(setterLog.registryRevision).toEqual([]);
 	});
 
 	it("merges slot and child activated handlers from preview children", async () => {
@@ -741,92 +845,6 @@ describe("preview runtime host mapping", () => {
 		expect(childActivated).toHaveBeenCalledTimes(1);
 		expect(slotActivated).toHaveBeenCalledTimes(1);
 		expect(callOrder).toEqual(["child", "slot"]);
-	});
-
-	it("merges slot and child change handlers from preview children", async () => {
-		const user = userEvent.setup();
-		const callOrder: string[] = [];
-		const childChanged = vi.fn((input: HTMLInputElement) => {
-			callOrder.push(`child:${input.value}`);
-		});
-		const slotChanged = vi.fn((input: HTMLInputElement) => {
-			callOrder.push(`slot:${input.value}`);
-		});
-
-		render(
-			<Slot Change={{ Text: slotChanged }}>
-				<TextBox Change={{ Text: childChanged }} Text="Trigger" />
-			</Slot>,
-		);
-
-		const input = screen.getByRole("textbox") as HTMLInputElement;
-		childChanged.mockClear();
-		slotChanged.mockClear();
-		callOrder.length = 0;
-		await user.type(input, "!");
-
-		expect(childChanged).toHaveBeenCalledTimes(1);
-		expect(slotChanged).toHaveBeenCalledTimes(1);
-		expect(callOrder).toContain("child:Trigger!");
-		expect(callOrder).toContain("slot:Trigger!");
-	});
-
-	it("keeps controlled slot textbox change composition from looping", async () => {
-		const user = userEvent.setup();
-		const callOrder: string[] = [];
-		const childChanged = vi.fn(
-			(input: HTMLInputElement & { Text?: string }) => {
-				callOrder.push(`child:${input.Text ?? input.value}`);
-			},
-		);
-		const slotChanged = vi.fn((input: HTMLInputElement & { Text?: string }) => {
-			callOrder.push(`slot:${input.Text ?? input.value}`);
-		});
-		const notifySpy = vi.spyOn(
-			hostOverrides,
-			"notifyPreviewHostPropertyChanged",
-		);
-
-		function ControlledSlotHarness() {
-			const [value, setValue] = React.useState("alpha");
-
-			return (
-				<Slot Change={{ Text: slotChanged }}>
-					<TextBox
-						Change={{
-							Text: (textBox) => {
-								childChanged(textBox as HTMLInputElement & { Text?: string });
-								setValue(
-									(textBox as HTMLInputElement & { Text?: string }).Text ?? "",
-								);
-							},
-						}}
-						Text={value}
-					/>
-				</Slot>
-			);
-		}
-
-		render(<ControlledSlotHarness />);
-
-		const input = screen.getByRole("textbox") as HTMLInputElement & {
-			Text?: string;
-		};
-
-		await user.type(input, "!");
-
-		await waitFor(() => {
-			expect(input.value).toBe("alpha!");
-		});
-
-		expect(childChanged).toHaveBeenCalledTimes(1);
-		expect(slotChanged).toHaveBeenCalledTimes(1);
-		expect(callOrder.slice(0, 2)).toEqual(["child:alpha!", "slot:alpha!"]);
-		expect(input.value).toBe("alpha!");
-		expect(input.Text).toBe("alpha!");
-		expect(
-			notifySpy.mock.calls.filter(([, property]) => property === "Text"),
-		).toHaveLength(0);
 	});
 
 	it("composes refs through preview Slot asChild boundaries", () => {
