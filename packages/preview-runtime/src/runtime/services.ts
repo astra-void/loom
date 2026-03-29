@@ -452,6 +452,10 @@ const previewGuiObjectClassNames = new Map<string, string>([
 	["viewportframe", "ViewportFrame"],
 ]);
 
+const guiServiceState = {
+	selectedObject: null as HTMLElement | null,
+};
+
 function getDomElement(value: unknown): HTMLElement | null {
 	if (typeof HTMLElement !== "undefined" && value instanceof HTMLElement) {
 		return value;
@@ -825,6 +829,26 @@ function getTextBoxFromEventTarget(target: EventTarget | null) {
 	return isTextBoxElement(target) ? target : null;
 }
 
+function getSelectedGuiObjectFromEvent(event: Event) {
+	const path =
+		typeof event.composedPath === "function"
+			? event.composedPath()
+			: [event.target];
+
+	for (const entry of path) {
+		if (typeof HTMLElement === "undefined" || !(entry instanceof HTMLElement)) {
+			continue;
+		}
+
+		const host = entry.getAttribute(PREVIEW_HOST_DATA_ATTRIBUTE);
+		if (host && isPreviewGuiObjectHost(host)) {
+			return entry;
+		}
+	}
+
+	return null;
+}
+
 function createPlayersService(
 	localPlayer: PreviewPlayer,
 ): PreviewPlayersService {
@@ -928,7 +952,16 @@ function createUserInputService(): PreviewUserInputService {
 
 function createGuiService(): PreviewGuiService {
 	const zeroVector = Object.freeze({ X: 0 as const, Y: 0 as const });
-	let selectedObject: HTMLElement | null = null;
+
+	if (typeof globalThis.addEventListener === "function") {
+		const updateSelectedObject = (event: Event) => {
+			guiServiceState.selectedObject = getSelectedGuiObjectFromEvent(event);
+		};
+
+		globalThis.addEventListener("focusin", updateSelectedObject);
+		globalThis.addEventListener("pointerdown", updateSelectedObject);
+		globalThis.addEventListener("mousedown", updateSelectedObject);
+	}
 
 	const guiServiceBase: Partial<PreviewGuiService> = {
 		ClassName: "GuiService" as const,
@@ -946,14 +979,18 @@ function createGuiService(): PreviewGuiService {
 		configurable: true,
 		enumerable: false,
 		get() {
-			return selectedObject;
+			return guiServiceState.selectedObject;
 		},
 		set(value: unknown) {
-			selectedObject = getDomElement(value);
+			guiServiceState.selectedObject = getDomElement(value);
 		},
 	});
 
 	return withRobloxFallback(guiServiceBase as PreviewGuiService);
+}
+
+export function resetPreviewRuntimeServiceState() {
+	guiServiceState.selectedObject = null;
 }
 
 function createWorkspaceService(): PreviewWorkspace {

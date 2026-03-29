@@ -362,6 +362,7 @@ export function resolvePreviewDomProps(
 		Position,
 		Scale,
 		Selectable,
+		AutomaticSize,
 		ClipsDescendants,
 		Size,
 		SizeConstraint,
@@ -396,6 +397,7 @@ export function resolvePreviewDomProps(
 	void Active;
 	void AnchorPoint;
 	void AutoButtonColor;
+	void AutomaticSize;
 	void Color;
 	void CornerRadius;
 	void Font;
@@ -519,6 +521,28 @@ export function resolvePreviewDomProps(
 
 	if (options.host === "imagebutton") {
 		computedStyle.overflow = computedStyle.overflow ?? "hidden";
+	}
+
+	if (typeof AutomaticSize === "string") {
+		const automaticSize = AutomaticSize.toLowerCase();
+		const isAutomaticX = automaticSize === "x" || automaticSize === "xy";
+		const isAutomaticY = automaticSize === "y" || automaticSize === "xy";
+
+		if (
+			options.host === "textbutton" ||
+			options.host === "textlabel" ||
+			options.host === "textbox" ||
+			options.host === "imagebutton" ||
+			options.host === "imagelabel"
+		) {
+			if (isAutomaticX) {
+				computedStyle.width = "auto";
+			}
+
+			if (isAutomaticY) {
+				computedStyle.height = "auto";
+			}
+		}
 	}
 
 	if (options.host === "scrollingframe") {

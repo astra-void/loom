@@ -108,7 +108,14 @@ function getHostPolicy(node: PreviewHostNode): PreviewLayoutHostPolicy {
 }
 
 function shouldRenderHostChildren(node: PreviewHostNode) {
-	return getHostPolicy(node).placeholderBehavior !== "opaque";
+	const style = node.presentationHints.domProps.style as
+		| React.CSSProperties
+		| undefined;
+
+	return (
+		getHostPolicy(node).placeholderBehavior !== "opaque" &&
+		style?.display !== "none"
+	);
 }
 
 function getDegradedHostDetail(node: PreviewHostNode) {
@@ -224,17 +231,26 @@ function renderHostImage(image: unknown) {
 }
 
 function shouldMeasureHost(host: LayoutHostName, props: PreviewDomProps) {
-	if (props.Size !== undefined || props.size !== undefined) {
-		return false;
-	}
-
-	return (
+	const automaticSize =
+		typeof props.AutomaticSize === "string"
+			? props.AutomaticSize.toLowerCase()
+			: undefined;
+	const canMeasureIntrinsicContent =
 		host === "imagelabel" ||
 		host === "imagebutton" ||
 		host === "textbutton" ||
 		host === "textlabel" ||
-		host === "textbox"
-	);
+		host === "textbox";
+
+	if (automaticSize && canMeasureIntrinsicContent) {
+		return true;
+	}
+
+	if (props.Size !== undefined || props.size !== undefined) {
+		return false;
+	}
+
+	return canMeasureIntrinsicContent;
 }
 
 function readMeasuredSize(element: HTMLElement | null) {
@@ -323,6 +339,37 @@ function applyPaddingStyle(
 	style.paddingTop = `${resolvePaddingInset(padding.top, computed.height)}px`;
 }
 
+function applyAutomaticSizeStyle(
+	style: React.CSSProperties,
+	automaticSize: PreviewDomProps["AutomaticSize"],
+	host: LayoutHostName,
+) {
+	if (typeof automaticSize !== "string") {
+		return;
+	}
+
+	const normalized = automaticSize.toLowerCase();
+	const isAutomaticX = normalized === "x" || normalized === "xy";
+	const isAutomaticY = normalized === "y" || normalized === "xy";
+	if (
+		host !== "textbutton" &&
+		host !== "textlabel" &&
+		host !== "textbox" &&
+		host !== "imagebutton" &&
+		host !== "imagelabel"
+	) {
+		return;
+	}
+
+	if (isAutomaticX) {
+		style.width = "auto";
+	}
+
+	if (isAutomaticY) {
+		style.height = "auto";
+	}
+}
+
 function createRenderedDomProps(node: PreviewHostNode) {
 	const domProps = {
 		...node.presentationHints.domProps,
@@ -349,6 +396,7 @@ function createRenderedDomProps(node: PreviewHostNode) {
 		layoutRect,
 		node.sourceProps.AnchorPoint,
 	);
+	applyAutomaticSizeStyle(style, node.sourceProps.AutomaticSize, node.host);
 	if (isDegradedPreviewHost(node.host)) {
 		style.backgroundImage =
 			style.backgroundImage ??
@@ -412,6 +460,11 @@ function createHostNode(source: SourceHostDescriptor): PreviewHostNode {
 			id: nodeId,
 			kind:
 				source.host === "screengui" && parentId === undefined ? "root" : "host",
+			automaticSize:
+				source.props.AutomaticSize ??
+				(rawProps.automaticSize as
+					| PreviewDomProps["AutomaticSize"]
+					| undefined),
 			layoutModifiers: extractedModifierState.layoutModifiers,
 			layoutOrder: source.props.LayoutOrder,
 			nodeType: layoutHostNodeType[source.host],

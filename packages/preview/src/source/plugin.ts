@@ -27,6 +27,11 @@ import {
 	stripFileIdDecorations,
 } from "./pathUtils";
 import {
+	type PreviewProgressScope,
+	type PreviewProgressWriter,
+	writePreviewTiming,
+} from "./progress";
+import {
 	createUnresolvedPackageMockResolvePlugin,
 	createUnresolvedPackageMockTransformPlugin,
 	isBareModuleSpecifier,
@@ -46,7 +51,6 @@ const RESOLVED_ENTRY_MODULE_ID_PREFIX = `\0${ENTRY_MODULE_ID_PREFIX}`;
 const PREVIEW_UPDATE_EVENT = "loom-preview:update";
 const RUNTIME_ISSUES_EVENT = "loom-preview:runtime-issues";
 const RBX_STYLE_HELPER_NAME = "__rbxStyle";
-const PREVIEW_TIMING_ENABLED = process.env.LOOM_PREVIEW_TIMINGS === "1";
 type CompilerModule =
 	| typeof import("@loom-dev/compiler/sync")
 	| typeof import("@loom-dev/compiler/wasm");
@@ -65,12 +69,13 @@ function loadCompilerModule() {
 	return nativeImport("@loom-dev/compiler/wasm");
 }
 
-function logPreviewTiming(label: string, startedAt: number) {
-	if (!PREVIEW_TIMING_ENABLED) {
-		return;
-	}
-
-	console.info(`[preview] ${label}: ${Date.now() - startedAt}ms`);
+function logPreviewTiming(
+	label: string,
+	startedAt: number,
+	progressWriter?: PreviewProgressWriter,
+	scope: PreviewProgressScope = "server",
+) {
+	writePreviewTiming(progressWriter, label, startedAt, { scope });
 }
 
 function createRbxStyleImport(runtimeModulePath: string) {
@@ -94,6 +99,7 @@ export type CreatePreviewVitePluginOptions = {
 	reactAliases?: string[];
 	reactRobloxAliases?: string[];
 	previewEngine?: PreviewEngine;
+	progressWriter?: PreviewProgressWriter;
 	projectName: string;
 	runtimeModule?: string;
 	runtimeAliases?: string[];
@@ -243,6 +249,7 @@ async function transformPreviewSourceOrThrow(
 
 function getWorkspaceModuleCode(
 	previewEngine: ReturnType<typeof createPreviewEngine>,
+	progressWriter?: PreviewProgressWriter,
 ) {
 	const startedAt = Date.now();
 	const discoveryWorkspaceIndex = (
@@ -250,7 +257,12 @@ function getWorkspaceModuleCode(
 			getDiscoveryWorkspaceIndex(): PreviewWorkspaceIndex;
 		}
 	).getDiscoveryWorkspaceIndex();
-	logPreviewTiming("workspace index loaded", startedAt);
+	logPreviewTiming(
+		"workspace index loaded",
+		startedAt,
+		progressWriter,
+		"client",
+	);
 	const workspaceIndex = discoveryWorkspaceIndex;
 	const importers = workspaceIndex.entries
 		.map(
@@ -273,6 +285,7 @@ function renderEntryModule(
 	previewEngine: ReturnType<typeof createPreviewEngine>,
 	entryId: string,
 	runtimeModulePath: string,
+	progressWriter?: PreviewProgressWriter,
 ) {
 	const startedAt = Date.now();
 	const entry = (
@@ -285,10 +298,20 @@ function renderEntryModule(
 	if (!entry) {
 		throw new Error(`No preview entry registered for \`${entryId}\`.`);
 	}
-	logPreviewTiming(`entry index resolved (${entryId})`, startedAt);
+	logPreviewTiming(
+		`entry index resolved (${entryId})`,
+		startedAt,
+		progressWriter,
+		"client",
+	);
 
 	const payload = previewEngine.getEntryPayload(entryId);
-	logPreviewTiming(`entry payload loaded (${entryId})`, startedAt);
+	logPreviewTiming(
+		`entry payload loaded (${entryId})`,
+		startedAt,
+		progressWriter,
+		"client",
+	);
 	if (payload.descriptor.status !== "ready") {
 		return `import * as __previewRuntimeModule from ${JSON.stringify(runtimeModulePath)};
 export const __previewEntryPayload = ${JSON.stringify(payload, null, 2)};
@@ -474,7 +497,12 @@ export function createPreviewVitePlugin(
 				targets: options.targets,
 				workspaceRoot: options.workspaceRoot,
 			});
-			logPreviewTiming("workspace graph service initialized", startedAt);
+			logPreviewTiming(
+				"workspace graph service initialized",
+				startedAt,
+				options.progressWriter,
+				"client",
+			);
 		}
 
 		return workspaceGraphService;
@@ -495,7 +523,12 @@ export function createPreviewVitePlugin(
 					...previewEngineOptions,
 					compiler: await getCompiler(),
 				} as Parameters<typeof createPreviewEngine>[0]);
-			logPreviewTiming("preview engine initialized", startedAt);
+			logPreviewTiming(
+				"preview engine initialized",
+				startedAt,
+				options.progressWriter,
+				"client",
+			);
 		}
 
 		return previewEngine;
@@ -609,7 +642,10 @@ export function createPreviewVitePlugin(
 			const previewEngineInstance = await getPreviewEngine();
 
 			if (id === RESOLVED_WORKSPACE_INDEX_MODULE_ID) {
-				return getWorkspaceModuleCode(previewEngineInstance);
+				return getWorkspaceModuleCode(
+					previewEngineInstance,
+					options.progressWriter,
+				);
 			}
 
 			if (id === RESOLVED_RUNTIME_MODULE_ID) {
@@ -624,6 +660,7 @@ export function createPreviewVitePlugin(
 					previewEngineInstance,
 					entryId,
 					runtimeEntryPath,
+					options.progressWriter,
 				);
 			}
 

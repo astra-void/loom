@@ -45,6 +45,13 @@ export {
 	SystemProvider,
 	useSystem,
 } from "./shell/preview-targets/system";
+export {
+	type PreviewProgressScope,
+	type PreviewProgressWriteOptions,
+	type PreviewProgressWriter,
+	writePreviewProgress,
+	writePreviewTiming,
+} from "./source/progress";
 export type {
 	StartPreviewServerInput,
 	StartPreviewServerOptions,

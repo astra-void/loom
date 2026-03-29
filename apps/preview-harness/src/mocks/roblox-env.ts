@@ -19,6 +19,7 @@ import {
 	installPreviewRuntimeGlobals,
 	type PreviewRuntimeGlobalTarget,
 } from "../../../../packages/preview-runtime/src/runtime/installPreviewRuntimeGlobals";
+import { resetPreviewRuntimeServiceState } from "../../../../packages/preview-runtime/src/runtime/services";
 
 const PREVIEW_INTRINSIC_HOSTS_SYMBOL = Symbol.for(
 	"loom-dev.preview-runtime.intrinsic-hosts",
@@ -44,6 +45,7 @@ export function setupRobloxEnvironment(
 	target: PreviewRuntimeGlobalTarget = globalThis as PreviewRuntimeGlobalTarget,
 ) {
 	const initializedTarget = installPreviewRuntimeGlobals(target);
+	resetPreviewRuntimeServiceState();
 	(
 		initializedTarget as PreviewRuntimeGlobalTarget & {
 			[PREVIEW_INTRINSIC_HOSTS_SYMBOL]?: typeof previewRuntimeIntrinsicHosts;

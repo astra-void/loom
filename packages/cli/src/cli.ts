@@ -601,6 +601,7 @@ export async function runCli(
 		readCliVersionFn: runtimeOverrides.readCliVersionFn ?? getCliVersion,
 		loadPreviewModuleFn: runtimeOverrides.loadPreviewModuleFn,
 		stdout: runtimeOverrides.stdout ?? process.stdout,
+		stderr: runtimeOverrides.stderr ?? process.stderr,
 		writeFileFn: runtimeOverrides.writeFileFn,
 	};
 	const parsed = parseTopLevel(argv);

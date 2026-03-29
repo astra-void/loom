@@ -1,5 +1,6 @@
 import { promises as fs } from "node:fs";
 import * as path from "node:path";
+import { writePreviewProgress, writePreviewTiming } from "@loom-dev/preview";
 import { usageError } from "./core/errors";
 
 export type CliPreviewTransformMode = "strict-fidelity" | "compatibility";
@@ -178,13 +179,17 @@ export interface CliPreviewModule {
 		configFile?: string;
 		cwd?: string;
 	}): Promise<CliResolvedPreviewConfig>;
-	startPreviewServer(options?: CliResolvedPreviewConfig): Promise<unknown>;
+	startPreviewServer(
+		options?: CliResolvedPreviewConfig,
+		runtimeOptions?: { progressWriter?: CliOutputWriter },
+	): Promise<unknown>;
 }
 
 export interface CliCommandRuntime {
 	loadPreviewModuleFn?: () => Promise<CliPreviewModule>;
 	readCliVersionFn: () => string;
 	stdout: CliOutputWriter;
+	stderr: CliOutputWriter;
 	writeFileFn?: typeof fs.writeFile;
 }
 
@@ -192,6 +197,7 @@ interface ResolvedCliCommandRuntime {
 	loadPreviewModuleFn: () => Promise<CliPreviewModule>;
 	readCliVersionFn: () => string;
 	stdout: CliOutputWriter;
+	stderr: CliOutputWriter;
 	writeFileFn: typeof fs.writeFile;
 }
 
@@ -255,6 +261,7 @@ function createRuntime(
 			runtimeOverrides.loadPreviewModuleFn ?? loadPreviewModule,
 		readCliVersionFn: runtimeOverrides.readCliVersionFn ?? (() => "0.0.0"),
 		stdout: runtimeOverrides.stdout ?? process.stdout,
+		stderr: runtimeOverrides.stderr ?? process.stderr,
 		writeFileFn: runtimeOverrides.writeFileFn ?? fs.writeFile,
 	};
 }
@@ -428,12 +435,22 @@ export async function runPreviewCommand(
 ): Promise<void> {
 	const runtime = createRuntime(runtimeOverrides);
 	const previewModule = await runtime.loadPreviewModuleFn();
+	const resolveStartedAt = Date.now();
+	writePreviewProgress(runtime.stderr, "resolving preview config...");
 	const resolvedConfig = await previewModule.loadPreviewConfig({
 		...(options.configFile ? { configFile: options.configFile } : {}),
 		...(options.cwd ? { cwd: options.cwd } : {}),
 	});
+	writePreviewTiming(
+		runtime.stderr,
+		"preview config resolved",
+		resolveStartedAt,
+	);
+	writePreviewProgress(runtime.stderr, "starting preview server...");
 	const effectiveConfig = applyResolvedConfigOverrides(resolvedConfig, options);
-	await previewModule.startPreviewServer(effectiveConfig);
+	await previewModule.startPreviewServer(effectiveConfig, {
+		progressWriter: runtime.stderr,
+	});
 }
 
 export async function runSnapshotCommand(

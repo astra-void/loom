@@ -38,7 +38,14 @@ import {
 	VideoFrame,
 	ViewportFrame,
 } from "@loom-dev/preview-runtime";
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import {
+	act,
+	cleanup,
+	fireEvent,
+	render,
+	screen,
+	waitFor,
+} from "@testing-library/react";
 import userEvent from "../testUserEvent";
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -1943,4 +1950,131 @@ describe("preview runtime host mapping", () => {
 });
 
 
+
+
+describe("preview runtime fidelity gaps", () => {
+	it("excludes invisible hosts from rendering and layout registration", async () => {
+		let latestNodes: LayoutNode[] = [];
+		layoutEngineMocks.computeDirty.mockImplementation(
+			(nodes, viewportWidth, viewportHeight) => {
+				latestNodes = nodes;
+				return createSessionResult({}, viewportWidth, viewportHeight);
+			},
+		);
+
+		render(
+			<LayoutProvider debounceMs={0} viewportHeight={240} viewportWidth={320}>
+				<ScreenGui Id="visible-screen">
+					<Frame Id="hidden-parent" Visible={false}>
+						<TextLabel Id="hidden-child" Text="Hidden" />
+					</Frame>
+				</ScreenGui>
+			</LayoutProvider>,
+		);
+
+		await waitFor(() => {
+			expect(latestNodes.length).toBeGreaterThan(0);
+		});
+
+		expect(findNode(latestNodes, "hidden-child")).toBeUndefined();
+		expect(document.querySelector('[data-preview-node-id="hidden-child"]')).toBeNull();
+	});
+
+	it("measures automatic-size text hosts and exposes content-driven bounds", async () => {
+		let latestNodes: LayoutNode[] = [];
+		const getBoundingClientRectSpy = vi
+			.spyOn(HTMLElement.prototype, "getBoundingClientRect")
+			.mockImplementation(function getBoundingClientRect(this: HTMLElement) {
+				if (this.dataset.previewHost === "textlabel") {
+					return {
+						bottom: 24,
+						height: 24,
+						left: 0,
+						right: 88,
+						toJSON: () => ({}),
+						top: 0,
+						width: 88,
+						x: 0,
+						y: 0,
+					} as DOMRect;
+				}
+
+				return {
+					bottom: 0,
+					height: 0,
+					left: 0,
+					right: 0,
+					toJSON: () => ({}),
+					top: 0,
+					width: 0,
+					x: 0,
+					y: 0,
+				} as DOMRect;
+			});
+
+		layoutEngineMocks.computeDirty.mockImplementation(
+			(nodes, viewportWidth, viewportHeight) => {
+				latestNodes = nodes;
+				return createSessionResult(
+					{
+						"auto-screen": { height: viewportHeight, width: viewportWidth, x: 0, y: 0 },
+						"auto-label": { height: 24, width: 90, x: 0, y: 0 },
+					},
+					viewportWidth,
+					viewportHeight,
+				);
+			},
+		);
+
+		try {
+			render(
+				<LayoutProvider debounceMs={0} viewportHeight={240} viewportWidth={320}>
+					<ScreenGui Id="auto-screen">
+						<TextLabel
+							AutomaticSize="xy"
+							Id="auto-label"
+							Size={UDim2.fromOffset(90, 24)}
+							Text="Automatic size"
+						/>
+					</ScreenGui>
+				</LayoutProvider>,
+			);
+
+			const label = document.querySelector(
+				'[data-preview-node-id="auto-label"]',
+			) as HTMLElement;
+
+			await waitFor(() => {
+				expect(label.style.width).toBe("auto");
+				expect(label.style.height).toBe("auto");
+				expect(findNode(latestNodes, "auto-label")?.intrinsicSize).toEqual({
+					height: 24,
+					width: 88,
+				});
+			});
+		} finally {
+			getBoundingClientRectSpy.mockRestore();
+		}
+	});
+
+	it("tracks GuiService.SelectedObject from preview pointer interactions", async () => {
+		const guiService = game.GetService("GuiService") as {
+			SelectedObject: HTMLElement | null;
+		};
+
+		render(<TextButton Size={UDim2.fromOffset(120, 40)} Text="Select me" />);
+
+		const button = document.querySelector(
+			'[data-preview-host="textbutton"]',
+		) as HTMLElement;
+		const text = button.querySelector(".preview-host-text") as HTMLElement;
+
+		guiService.SelectedObject = null;
+		expect(guiService.SelectedObject).toBeNull();
+
+		fireEvent.mouseDown(text);
+
+		await waitFor(() => expect(guiService.SelectedObject).toBe(button));
+	});
+});
 

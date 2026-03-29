@@ -22,7 +22,7 @@ function createTempRoot(prefix: string) {
 	return root;
 }
 
-function createWriter() {
+function createWriter(options: { isTTY?: boolean } = {}) {
 	let output = "";
 
 	return {
@@ -30,6 +30,7 @@ function createWriter() {
 			return output;
 		},
 		writer: {
+			isTTY: options.isTTY,
 			write(chunk: string) {
 				output += chunk;
 				return true;
@@ -368,6 +369,7 @@ describe("loom cli", () => {
 					port: 4175,
 				}),
 			}),
+			expect.any(Object),
 		);
 	});
 
@@ -379,6 +381,34 @@ describe("loom cli", () => {
 		});
 
 		expect(previewModule.startPreviewServer).toHaveBeenCalledTimes(1);
+	});
+
+	it("writes preview progress to stderr", async () => {
+		const stdoutWriter = createWriter();
+		const stderrWriter = createWriter();
+		const { previewModule } = createPreviewModule();
+
+		await runCli(["preview", "--cwd", "/workspace"], {
+			loadPreviewModuleFn: async () => previewModule,
+			stdout: stdoutWriter.writer,
+			stderr: stderrWriter.writer,
+		});
+
+		expect(stderrWriter.read()).toContain(
+			"[preview] (server) resolving preview config...",
+		);
+		expect(stderrWriter.read()).toContain(
+			"[preview] (server) preview config resolved in",
+		);
+		expect(stderrWriter.read()).toContain(
+			"[preview] (server) starting preview server...",
+		);
+		expect(previewModule.startPreviewServer).toHaveBeenCalledWith(
+			expect.any(Object),
+			expect.objectContaining({
+				progressWriter: stderrWriter.writer,
+			}),
+		);
 	});
 
 	it("builds preview artifacts through the config-aware preview API", async () => {

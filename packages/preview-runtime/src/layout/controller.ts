@@ -638,6 +638,10 @@ export class LayoutController {
 
 		output[node.id] = rect;
 
+		if (node.visible === false) {
+			return;
+		}
+
 		const childIds = (this.childIdsByParent.get(nodeId) ?? []).filter(
 			(childId) => this.nodes.get(childId)?.visible !== false,
 		);

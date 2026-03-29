@@ -9,6 +9,10 @@ import {
 	resolvePreviewServerConfig,
 } from "../../packages/preview/src/source/server";
 import {
+	writePreviewProgress,
+	writePreviewTiming,
+} from "../../packages/preview/src/source/progress";
+import {
 	suppressExpectedConsoleMessages,
 	suppressExpectedStderrMessages,
 } from "../testLogUtils";
@@ -23,6 +27,44 @@ afterEach(() => {
 	for (const root of temporaryRoots.splice(0)) {
 		fs.rmSync(root, { force: true, recursive: true });
 	}
+});
+
+describe("preview progress logging", () => {
+	it("writes progress lines to the provided writer", () => {
+		const writer = createWriter();
+
+		writePreviewProgress(writer.writer, "creating preview server...");
+
+		expect(writer.read()).toContain(
+			"[preview] (server) creating preview server...",
+		);
+	});
+
+	it("writes timing lines to the provided writer", () => {
+		const writer = createWriter();
+		const nowSpy = vi.spyOn(Date, "now").mockReturnValue(1500);
+
+		try {
+			writePreviewTiming(writer.writer, "preview engine initialized", 1000);
+			expect(writer.read()).toContain(
+				"[preview] (server) preview engine initialized in 500ms",
+			);
+		} finally {
+			nowSpy.mockRestore();
+		}
+	});
+
+	it("adds ansi color when the writer is tty", () => {
+		const writer = createWriter({ isTTY: true });
+
+		writePreviewProgress(writer.writer, "starting preview server...");
+		const output = writer.read();
+
+		expect(output).toContain("\u001b[");
+		expect(output).toContain("\u001b[1m\u001b[36m[preview]\u001b[0m");
+		expect(output).toContain("\u001b[34m(server)\u001b[0m");
+		expect(output).toContain("starting preview server...");
+	});
 });
 
 type MiddlewareResponse = {
@@ -42,6 +84,23 @@ type TestWritableResponse = Writable & {
 		headers?: Record<string, unknown>,
 	) => TestWritableResponse;
 };
+
+function createWriter(options: { isTTY?: boolean } = {}) {
+	let output = "";
+
+	return {
+		read() {
+			return output;
+		},
+		writer: {
+			isTTY: options.isTTY,
+			write(chunk: string) {
+				output += chunk;
+				return true;
+			},
+		},
+	};
+}
 
 function writeFakeRbxtsReact(packageRoot: string) {
 	const fakeReactRoot = path.join(packageRoot, "node_modules/@rbxts/react/src");
@@ -1186,7 +1245,10 @@ describe("createPreviewViteServer", () => {
 			const stylesCssResponse = await requestServerPath(server, "/styles.css");
 			expect(stylesCssResponse.statusCode).toBe(200);
 
-			const viteClientResponse = await requestServerPath(server, "/@vite/client");
+			const viteClientResponse = await requestServerPath(
+				server,
+				"/@vite/client",
+			);
 			expect(viteClientResponse.statusCode).toBe(200);
 		} finally {
 			await server.close();
@@ -1217,7 +1279,10 @@ describe("createPreviewViteServer", () => {
 			const stylesCssResponse = await requestServerPath(server, "/styles.css");
 			expect(stylesCssResponse.statusCode).toBe(200);
 
-			const viteClientResponse = await requestServerPath(server, "/@vite/client");
+			const viteClientResponse = await requestServerPath(
+				server,
+				"/@vite/client",
+			);
 			expect(viteClientResponse.statusCode).toBe(200);
 
 			const transformedSource = await server.transformRequest(
@@ -1466,7 +1531,9 @@ describe("createPreviewViteServer", () => {
 					browserShimImporter,
 				),
 			);
-			expect(normalizePathSlashes(resolvedImportId)).not.toBe(browserShimImporter);
+			expect(normalizePathSlashes(resolvedImportId)).not.toBe(
+				browserShimImporter,
+			);
 		} finally {
 			await server.close();
 		}

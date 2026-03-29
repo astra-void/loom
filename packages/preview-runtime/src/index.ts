@@ -54,6 +54,7 @@ import {
 	type PreviewRuntimeGlobalTarget,
 	pairs,
 	previewRuntimeGlobalValues,
+	resetPreviewRuntimeServiceState,
 	TweenInfo,
 	typeIs,
 	UDim,
@@ -80,6 +81,7 @@ export function setupRobloxEnvironment(
 	target: SetupRobloxEnvironmentTarget = globalThis as SetupRobloxEnvironmentTarget,
 ) {
 	const initializedTarget = installPreviewRuntimeGlobals(target);
+	resetPreviewRuntimeServiceState();
 	(
 		initializedTarget as SetupRobloxEnvironmentTarget & {
 			[PREVIEW_INTRINSIC_HOSTS_SYMBOL]?: typeof previewRuntimeIntrinsicHosts;

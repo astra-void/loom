@@ -21,6 +21,11 @@ import { createAutoMockPropsPlugin } from "./autoMockPlugin";
 import { isFilePathUnderRoot, resolveRealFilePath } from "./pathUtils";
 import { createPreviewVitePlugin } from "./plugin";
 import {
+	type PreviewProgressWriter,
+	writePreviewProgress,
+	writePreviewTiming,
+} from "./progress";
+import {
 	createTsconfigParseCache,
 	findNearestTsconfig,
 	isTsconfigLikeFile,
@@ -63,6 +68,10 @@ export type StartPreviewServerOptions = {
 	transformMode?: PreviewExecutionMode;
 };
 
+export type PreviewServerProgressOptions = {
+	progressWriter?: PreviewProgressWriter;
+};
+
 export type StartPreviewServerInput =
 	| LoadPreviewConfigOptions
 	| PreviewConfig
@@ -73,6 +82,7 @@ export type CreatePreviewViteServerOptions = {
 	appType?: "custom" | "spa";
 	middlewareMode?: boolean;
 	previewEngine?: PreviewEngine;
+	progressWriter?: PreviewProgressWriter;
 };
 
 type PackageManifest = {
@@ -592,10 +602,31 @@ export async function resolvePreviewServerConfig(
 
 export async function startPreviewServer(
 	options: StartPreviewServerInput = {},
+	runtimeOptions: PreviewServerProgressOptions = {},
 ) {
+	const { progressWriter } = runtimeOptions;
+	const resolveStartedAt = Date.now();
+	if (!isResolvedPreviewConfig(options)) {
+		writePreviewProgress(progressWriter, "resolving preview config...");
+	}
+
 	const resolvedConfig = await resolvePreviewServerConfig(options);
-	const server = await createPreviewViteServer(resolvedConfig);
+	if (!isResolvedPreviewConfig(options)) {
+		writePreviewTiming(
+			progressWriter,
+			"preview config resolved",
+			resolveStartedAt,
+		);
+	}
+
+	writePreviewProgress(progressWriter, "creating preview server...");
+	const server = await createPreviewViteServer(resolvedConfig, {
+		progressWriter,
+	});
+	writePreviewProgress(progressWriter, "starting preview server...");
+	const listenStartedAt = Date.now();
 	await server.listen();
+	writePreviewTiming(progressWriter, "preview server started", listenStartedAt);
 	process.stdout.write(
 		`Previewing ${resolvedConfig.projectName} from ${resolvedConfig.workspaceRoot}\n`,
 	);
@@ -636,6 +667,7 @@ export async function createPreviewViteServer(
 	const tsconfigParseCache = createTsconfigParseCache();
 	const previewPlugin = createPreviewVitePlugin({
 		previewEngine: options.previewEngine,
+		progressWriter: options.progressWriter,
 		reactAliases: resolvedConfig.reactAliases,
 		reactRobloxAliases: resolvedConfig.reactRobloxAliases,
 		projectName: resolvedConfig.projectName,
@@ -646,6 +678,9 @@ export async function createPreviewViteServer(
 		workspaceRoot: resolvedConfig.workspaceRoot,
 	});
 	const previewLogger = createPreviewViteLogger(vite);
+	const progressWriter = options.progressWriter;
+	const createStartedAt = Date.now();
+	writePreviewProgress(progressWriter, "initializing preview Vite server...");
 
 	const server = await vite.createServer({
 		appType: options.appType ?? "spa",
@@ -718,6 +753,12 @@ export async function createPreviewViteServer(
 				}
 			: undefined,
 	});
+
+	writePreviewTiming(
+		progressWriter,
+		"preview Vite server initialized",
+		createStartedAt,
+	);
 
 	return server;
 }
