@@ -6,6 +6,7 @@ import {
 	Color3,
 	clearPreviewRuntimeIssues,
 	Enum,
+	FocusScope,
 	Frame,
 	game,
 	getPreviewLayoutProbeSnapshot,
@@ -46,11 +47,11 @@ import {
 	screen,
 	waitFor,
 } from "@testing-library/react";
-import userEvent from "../testUserEvent";
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { suppressExpectedConsoleMessages } from "../testLogUtils";
 import { getLocalPlayerGui } from "../../apps/preview-harness/src/test-utils";
+import { suppressExpectedConsoleMessages } from "../testLogUtils";
+import userEvent from "../testUserEvent";
 
 type LayoutRect = { height: number; width: number; x: number; y: number };
 type SerializedAxis = { offset: number; scale: number };
@@ -77,7 +78,7 @@ type LayoutNode = {
 		anchorPoint?: { x: number; y: number };
 		position?: { x: SerializedAxis; y: SerializedAxis };
 		size?: { x: SerializedAxis; y: SerializedAxis };
-        sizeConstraintMode?: string;
+		sizeConstraintMode?: string;
 	};
 	name?: string;
 	nodeType?: string;
@@ -94,6 +95,15 @@ type ComputeDirty = (
 	viewportWidth: number,
 	viewportHeight: number,
 ) => LayoutSessionResult;
+type BridgedHostHandle = HTMLElement & {
+	GetChildren(): BridgedHostHandle[];
+	GetDescendants(): BridgedHostHandle[];
+	IsA(name: string): boolean;
+	IsDescendantOf(ancestor: unknown): boolean;
+	Parent: { ClassName: string } | undefined;
+	ClassName: string;
+	Name: string;
+};
 
 class RafController {
 	private readonly callbacks = new Map<number, FrameRequestCallback>();
@@ -372,9 +382,9 @@ describe("preview runtime Roblox globals", () => {
 		expect(players.LocalPlayer.PlayerGui.GetFullName()).toBe(
 			"Players.LocalPlayer.PlayerGui",
 		);
-		expect(
-			players.LocalPlayer.PlayerGui.GetGuiObjectsAtPosition(0, 0),
-		).toEqual([]);
+		expect(players.LocalPlayer.PlayerGui.GetGuiObjectsAtPosition(0, 0)).toEqual(
+			[],
+		);
 	});
 });
 
@@ -404,7 +414,7 @@ describe("preview runtime host mapping", () => {
 	it("tweens bridged host properties through the preview render pipeline", async () => {
 		rafController = new RafController();
 
-		render(
+		const { rerender } = render(
 			<Frame
 				BackgroundColor3={Color3.fromRGB(0, 0, 0)}
 				Position={UDim2.fromOffset(10, 20)}
@@ -478,6 +488,18 @@ describe("preview runtime host mapping", () => {
 			expect(frame.style.display).not.toBe("none");
 			expect(frame.style.zIndex).toBe("3");
 		});
+
+		rerender(
+			<Frame
+				BackgroundColor3={Color3.fromRGB(0, 0, 0)}
+				BackgroundTransparency={0.25}
+				Position={UDim2.fromOffset(10, 20)}
+				Size={UDim2.fromOffset(40, 20)}
+				ZIndex={1}
+			>
+				Tween frame
+			</Frame>,
+		);
 
 		await act(async () => {
 			await rafController?.step(50);
@@ -1344,7 +1366,8 @@ describe("preview runtime host mapping", () => {
 		await waitFor(() => {
 			expect(capturedNodes.length).toBeGreaterThan(0);
 			expect(
-				findNode(capturedNodes, "size-constraint-child")?.layout?.sizeConstraintMode,
+				findNode(capturedNodes, "size-constraint-child")?.layout
+					?.sizeConstraintMode,
 			).toBe("RelativeYY");
 			expect(child.style.width).toBe("60px");
 			expect(child.style.height).toBe("120px");
@@ -1949,9 +1972,6 @@ describe("preview runtime host mapping", () => {
 	});
 });
 
-
-
-
 describe("preview runtime fidelity gaps", () => {
 	it("excludes invisible hosts from rendering and layout registration", async () => {
 		let latestNodes: LayoutNode[] = [];
@@ -1977,7 +1997,9 @@ describe("preview runtime fidelity gaps", () => {
 		});
 
 		expect(findNode(latestNodes, "hidden-child")).toBeUndefined();
-		expect(document.querySelector('[data-preview-node-id="hidden-child"]')).toBeNull();
+		expect(
+			document.querySelector('[data-preview-node-id="hidden-child"]'),
+		).toBeNull();
 	});
 
 	it("measures automatic-size text hosts and exposes content-driven bounds", async () => {
@@ -2017,7 +2039,12 @@ describe("preview runtime fidelity gaps", () => {
 				latestNodes = nodes;
 				return createSessionResult(
 					{
-						"auto-screen": { height: viewportHeight, width: viewportWidth, x: 0, y: 0 },
+						"auto-screen": {
+							height: viewportHeight,
+							width: viewportWidth,
+							x: 0,
+							y: 0,
+						},
 						"auto-label": { height: 24, width: 90, x: 0, y: 0 },
 					},
 					viewportWidth,
@@ -2059,7 +2086,14 @@ describe("preview runtime fidelity gaps", () => {
 
 	it("tracks GuiService.SelectedObject from preview pointer interactions", async () => {
 		const guiService = game.GetService("GuiService") as {
-			SelectedObject: HTMLElement | undefined;
+			SelectedObject:
+				| {
+						ClassName: string;
+						IsDescendantOf(ancestor: unknown): boolean;
+						Name: string;
+						Parent: { ClassName: string } | undefined;
+				  }
+				| undefined;
 		};
 
 		render(<TextButton Size={UDim2.fromOffset(120, 40)} Text="Select me" />);
@@ -2069,11 +2103,128 @@ describe("preview runtime fidelity gaps", () => {
 		) as HTMLElement;
 		const text = button.querySelector(".preview-host-text") as HTMLElement;
 
-		guiService.SelectedObject = null as unknown as HTMLElement;
+		guiService.SelectedObject = null as unknown as never;
 		expect(guiService.SelectedObject).toBeUndefined();
+
+		guiService.SelectedObject = button;
+		expect(guiService.SelectedObject).toMatchObject({
+			ClassName: "TextButton",
+		});
+		expect(guiService.SelectedObject?.IsA("GuiObject")).toBe(true);
+		expect(guiService.SelectedObject?.IsDescendantOf(document.body)).toBe(true);
+		expect(guiService.SelectedObject?.IsDescendantOf(button)).toBe(true);
 
 		fireEvent.mouseDown(text);
 
-		await waitFor(() => expect(guiService.SelectedObject).toBe(button));
+		await waitFor(() =>
+			expect(guiService.SelectedObject).toMatchObject({
+				ClassName: "TextButton",
+			}),
+		);
+		expect(guiService.SelectedObject?.IsDescendantOf(document.body)).toBe(true);
+	});
+
+	it("bridges forwarded host refs into Roblox-like gui objects", async () => {
+		const ref = React.createRef<
+			HTMLElement & {
+				FindFirstAncestorOfClass(className: string): unknown;
+				FindFirstAncestorWhichIsA(className: string): unknown;
+				GetChildren(): unknown[];
+				GetDescendants(): unknown[];
+				IsA(name: string): boolean;
+				IsDescendantOf(ancestor: unknown): boolean;
+				Parent: { ClassName: string } | undefined;
+			}
+		>();
+
+		render(
+			<TextButton
+				ref={ref}
+				Size={UDim2.fromOffset(120, 40)}
+				Text="Ref bridge"
+			/>,
+		);
+
+		await waitFor(() => {
+			expect(ref.current).toBeDefined();
+		});
+
+		expect(ref.current).toMatchObject({
+			className: "preview-host preview-textbutton",
+		});
+		expect(ref.current?.Parent).toMatchObject({
+			ClassName: "ScreenGui",
+		});
+		expect(ref.current?.IsA("GuiObject")).toBe(true);
+		expect(ref.current?.IsA("GuiButton")).toBe(true);
+		expect(ref.current?.IsDescendantOf(ref.current?.Parent)).toBe(true);
+		expect(ref.current?.FindFirstAncestorOfClass("ScreenGui")).toMatchObject({
+			ClassName: "ScreenGui",
+		});
+		expect(
+			ref.current?.FindFirstAncestorWhichIsA("LayerCollector"),
+		).toMatchObject({
+			ClassName: "ScreenGui",
+		});
+	});
+
+	it("bridges host subtree traversal through wrappers for focus scopes", async () => {
+		const ref = React.createRef<BridgedHostHandle>();
+
+		render(
+			<ScreenGui ref={ref}>
+				<FocusScope active trapped>
+					<Frame Name="outer-frame">
+						<TextButton Name="inner-button" />
+					</Frame>
+				</FocusScope>
+			</ScreenGui>,
+		);
+
+		await waitFor(() => {
+			expect(ref.current).toBeDefined();
+		});
+
+		const root = ref.current;
+		expect(root).toBeDefined();
+
+		const rootChildren = root ? root.GetChildren() : [];
+		const rootDescendants = root ? root.GetDescendants() : [];
+
+		expect(rootChildren).toHaveLength(1);
+		expect(rootDescendants).toHaveLength(2);
+		expect(rootChildren[0]).toMatchObject({
+			ClassName: "Frame",
+			Name: "outer-frame",
+		});
+		expect(rootDescendants[0]).toMatchObject({
+			ClassName: "Frame",
+			Name: "outer-frame",
+		});
+		expect(rootDescendants[1]).toMatchObject({
+			ClassName: "TextButton",
+			Name: "inner-button",
+		});
+		expect(rootChildren[0]?.IsA("GuiObject")).toBe(true);
+		expect(rootChildren[0]?.IsDescendantOf(root)).toBe(true);
+		expect(rootChildren[0]?.Parent).toMatchObject({
+			ClassName: "ScreenGui",
+		});
+
+		const outerFrame = rootChildren[0];
+		const outerChildren = outerFrame ? outerFrame.GetChildren() : [];
+		const outerDescendants = outerFrame ? outerFrame.GetDescendants() : [];
+
+		expect(outerChildren).toHaveLength(1);
+		expect(outerDescendants).toHaveLength(1);
+		expect(outerChildren[0]).toMatchObject({
+			ClassName: "TextButton",
+			Name: "inner-button",
+		});
+		expect(outerChildren[0]?.IsA("GuiButton")).toBe(true);
+		expect(outerChildren[0]?.IsDescendantOf(root)).toBe(true);
+		expect(outerChildren[0]?.Parent).toMatchObject({
+			ClassName: "ScreenGui",
+		});
 	});
 });

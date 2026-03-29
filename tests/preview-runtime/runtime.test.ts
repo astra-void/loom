@@ -321,26 +321,46 @@ describe.sequential("@loom-dev/preview-runtime", () => {
 	it("exposes an idempotent GuiService.SelectedObject bridge", () => {
 		setupRobloxEnvironment();
 
+		const players = game.GetService("Players") as {
+			LocalPlayer: {
+				PlayerGui: HTMLElement;
+			};
+		};
+		const playerGui = players.LocalPlayer.PlayerGui;
 		const guiService = game.GetService("GuiService") as {
-			SelectedObject: HTMLElement | undefined;
+			SelectedObject:
+				| {
+						ClassName: string;
+						IsA(name: string): boolean;
+						IsDescendantOf(ancestor: unknown): boolean;
+						Name: string;
+						Parent: { ClassName: string } | undefined;
+				  }
+				| undefined;
 		};
 		const selectedObject = document.createElement("button");
+		selectedObject.dataset.previewHost = "textbutton";
+		selectedObject.dataset.previewNodeId = "selected-object";
+		playerGui.append(selectedObject);
 
 		expect(guiService.SelectedObject).toBeUndefined();
 
-		guiService.SelectedObject = null as unknown as HTMLElement;
+		guiService.SelectedObject = null as unknown as never;
 		expect(guiService.SelectedObject).toBeUndefined();
 
 		guiService.SelectedObject = selectedObject;
 
-		expect(guiService.SelectedObject).toBe(selectedObject);
-
-		expect(() => {
-			const selected = guiService.SelectedObject;
-			if (selected !== undefined) {
-				void selected.Parent;
-			}
-		}).not.toThrow();
+		expect(guiService.SelectedObject).not.toBe(selectedObject);
+		expect(guiService.SelectedObject).toMatchObject({
+			ClassName: "TextButton",
+			Name: "selected-object",
+		});
+		expect(guiService.SelectedObject?.Parent).toMatchObject({
+			ClassName: "ScreenGui",
+		});
+		expect(guiService.SelectedObject?.IsA("GuiObject")).toBe(true);
+		expect(guiService.SelectedObject?.IsDescendantOf(playerGui)).toBe(true);
+		expect(guiService.SelectedObject?.IsDescendantOf(selectedObject)).toBe(true);
 
 		const descriptor = Object.getOwnPropertyDescriptor(
 			guiService,
@@ -360,7 +380,62 @@ describe.sequential("@loom-dev/preview-runtime", () => {
 			Object.defineProperty(guiService, "SelectedObject", descriptor);
 		}).not.toThrow();
 
-		expect(guiService.SelectedObject).toBe(selectedObject);
+		expect(guiService.SelectedObject).toMatchObject({
+			ClassName: "TextButton",
+			Name: "selected-object",
+		});
+	});
+
+	it("returns Roblox-like gui object handles from GetGuiObjectsAtPosition", () => {
+		setupRobloxEnvironment();
+
+		const players = game.GetService("Players") as {
+			LocalPlayer: {
+				PlayerGui: HTMLElement & {
+					GetGuiObjectsAtPosition(x: number, y: number): Array<{
+						ClassName: string;
+						IsA(name: string): boolean;
+						FindFirstAncestorWhichIsA(name: string): unknown;
+						IsDescendantOf(ancestor: unknown): boolean;
+						Name: string;
+						Parent: { ClassName: string } | undefined;
+					}>;
+				};
+			};
+		};
+		const playerGui = players.LocalPlayer.PlayerGui;
+		const button = document.createElement("button");
+		button.dataset.previewHost = "textbutton";
+		button.dataset.previewNodeId = "hit-button";
+		playerGui.append(button);
+
+		const originalElementsFromPoint = document.elementsFromPoint;
+		Object.defineProperty(document, "elementsFromPoint", {
+			configurable: true,
+			value: vi.fn(() => [button]),
+		});
+
+		try {
+			const [hit] = playerGui.GetGuiObjectsAtPosition(10, 20);
+
+			expect(hit).toMatchObject({
+				ClassName: "TextButton",
+				Name: "hit-button",
+			});
+			expect(hit.Parent).toMatchObject({
+				ClassName: "ScreenGui",
+			});
+			expect(hit.IsA("GuiObject")).toBe(true);
+			expect(hit.IsDescendantOf(playerGui)).toBe(true);
+			expect(hit.FindFirstAncestorWhichIsA("ScreenGui")).toMatchObject({
+				ClassName: "ScreenGui",
+			});
+		} finally {
+			Object.defineProperty(document, "elementsFromPoint", {
+				configurable: true,
+				value: originalElementsFromPoint,
+			});
+		}
 	});
 
 	it("emits deterministic focus and input signals for UserInputService", () => {
