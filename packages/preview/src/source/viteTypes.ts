@@ -1,31 +1,24 @@
-import type {
-	LogErrorOptions,
-	Logger,
-	Plugin,
-	PluginOption,
-	UserConfig,
-	ViteDevServer,
-} from "vite" with { "resolution-mode": "import" };
-
-export type PreviewDevServer = ViteDevServer;
-export type PreviewPlugin = Plugin;
-export type PreviewPluginOption = PluginOption;
-export type PreviewServerConfig = UserConfig;
+export type PreviewDevServer = import("vite").ViteDevServer;
+export type PreviewPlugin = import("vite").Plugin;
+export type PreviewPluginOption = import("vite").PluginOption;
+export type PreviewServerConfig = import("vite").UserConfig;
 
 export type ViteModule = typeof import("vite", { with: {
 	"resolution-mode": "import",
 }});
-export type ViteLogger = Logger;
-export type ViteLogErrorOptions = LogErrorOptions;
+export type ViteLogger = import("vite").Logger;
+export type ViteLogErrorOptions = import("vite").LogErrorOptions;
 
 export type ReactPluginModule = {
-	default: (options?: unknown) => PluginOption | PluginOption[];
+	default: (
+		options?: unknown,
+	) => import("vite").PluginOption | import("vite").PluginOption[];
 };
 
 export type ViteWasmPluginModule = {
-	default: (options?: unknown) => PluginOption;
+	default: (options?: unknown) => import("vite").PluginOption;
 };
 
 export type ViteTopLevelAwaitPluginModule = {
-	default: (options?: unknown) => PluginOption;
+	default: (options?: unknown) => import("vite").PluginOption;
 };

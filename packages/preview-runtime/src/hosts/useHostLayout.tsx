@@ -1,4 +1,4 @@
-﻿import * as React from "react";
+import * as React from "react";
 import { normalizePreviewNodeId } from "../internal/robloxValues";
 import {
 	LayoutNodeParentProvider,
@@ -47,7 +47,7 @@ function createZeroUDim2() {
 
 function createMockSignal() {
 	return {
-		Connect(listener?: (...args: unknown[]) => void) {
+		Connect() {
 			const connection = {
 				Connected: true,
 				Disconnect() {
@@ -55,17 +55,61 @@ function createMockSignal() {
 				},
 			};
 
-			if (typeof listener === "function") {
-				setTimeout(() => {
-					if (connection.Connected) {
-						listener();
-					}
-				}, 0);
-			}
-
 			return connection;
 		},
 	};
+}
+
+type MockInstanceLike = {
+	ClassName?: string;
+	IsA?(name: string): boolean;
+	Parent?: unknown;
+};
+
+function getMockParent(value: unknown): unknown {
+	if (!value || typeof value !== "object") {
+		return undefined;
+	}
+
+	const parent = (value as MockInstanceLike).Parent;
+	return parent ?? undefined;
+}
+
+function findMockAncestor(
+	value: unknown,
+	predicate: (ancestor: MockInstanceLike) => boolean,
+) {
+	let current = getMockParent(value);
+	while (current !== undefined) {
+		if (
+			current &&
+			typeof current === "object" &&
+			predicate(current as MockInstanceLike)
+		) {
+			return current;
+		}
+
+		current = getMockParent(current);
+	}
+
+	return undefined;
+}
+
+function findMockAncestorWhichIsA(value: unknown, className: string) {
+	return findMockAncestor(value, (ancestor) => {
+		if (typeof ancestor.IsA === "function") {
+			return ancestor.IsA(className);
+		}
+
+		return ancestor.ClassName === className;
+	});
+}
+
+function findMockAncestorOfClass(value: unknown, className: string) {
+	return findMockAncestor(
+		value,
+		(ancestor) => ancestor.ClassName === className,
+	);
 }
 
 const mockScreenGui = {
@@ -79,6 +123,12 @@ const mockScreenGui = {
 	},
 	GetPropertyChangedSignal() {
 		return createMockSignal();
+	},
+	FindFirstAncestorOfClass(className: string) {
+		return findMockAncestorOfClass(this, className);
+	},
+	FindFirstAncestorWhichIsA(className: string) {
+		return findMockAncestorWhichIsA(this, className);
 	},
 	IsA(name: string) {
 		return (

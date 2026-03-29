@@ -1,4 +1,4 @@
-﻿import * as React from "react";
+import * as React from "react";
 import { destroyTweensForTarget } from "../runtime/tween";
 
 const HOST_BRIDGE_STATE_KEY = Symbol.for(
@@ -248,21 +248,13 @@ export function installPreviewHostPropertyBridge(
 			enumerable: false,
 			value() {
 				return {
-					Connect(listener?: (...args: unknown[]) => void) {
+					Connect() {
 						const connection = {
 							Connected: true,
 							Disconnect() {
 								connection.Connected = false;
 							},
 						};
-
-						if (typeof listener === "function") {
-							setTimeout(() => {
-								if (connection.Connected) {
-									listener();
-								}
-							}, 0);
-						}
 
 						return connection;
 					},

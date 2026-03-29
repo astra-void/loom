@@ -6,9 +6,6 @@ import type {
 	PreviewExecutionMode,
 } from "@loom-dev/preview-engine";
 import ts from "typescript";
-import type { LogErrorOptions, Logger } from "vite" with {
-	"resolution-mode": "import",
-};
 import type {
 	LoadPreviewConfigOptions,
 	PreviewConfig,
@@ -86,15 +83,15 @@ type PackageManifest = {
 
 function isViteLoggableError(
 	error: unknown,
-): error is NonNullable<LogErrorOptions["error"]> {
+): error is NonNullable<import("vite").LogErrorOptions["error"]> {
 	return Boolean(
 		error && (typeof error === "object" || typeof error === "function"),
 	);
 }
 
-export function normalizeViteLogErrorOptions<TOptions extends LogErrorOptions>(
-	options?: TOptions,
-): TOptions | undefined {
+export function normalizeViteLogErrorOptions<
+	TOptions extends import("vite").LogErrorOptions,
+>(options?: TOptions): TOptions | undefined {
 	const error = options?.error;
 	if (!options || error == null || isViteLoggableError(error)) {
 		return options;
@@ -106,9 +103,9 @@ export function normalizeViteLogErrorOptions<TOptions extends LogErrorOptions>(
 	} as TOptions;
 }
 
-function createPreviewViteLogger(vite: ViteModule): Logger {
+function createPreviewViteLogger(vite: ViteModule): import("vite").Logger {
 	const baseLogger = vite.createLogger();
-	const previewLogger = Object.create(baseLogger) as Logger;
+	const previewLogger = Object.create(baseLogger) as import("vite").Logger;
 
 	previewLogger.warn = (msg, options) =>
 		baseLogger.warn(msg, normalizeViteLogErrorOptions(options));

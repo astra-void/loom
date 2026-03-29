@@ -6,7 +6,6 @@ import type {
 	PreviewPropMetadata,
 } from "@loom-dev/preview-runtime";
 import ts from "typescript";
-import type { Plugin } from "vite" with { "resolution-mode": "import" };
 import {
 	isFilePathIncludedByTarget,
 	resolveRealFilePath,
@@ -18,6 +17,7 @@ import {
 	type TsconfigParseCache,
 } from "./tsconfigUtils";
 
+type Plugin = import("vite").Plugin;
 const SUPPORTED_COMPONENT_EXTENSIONS = new Set([".jsx", ".tsx"]);
 const MAX_SERIALIZED_OBJECT_PROPERTIES = 16;
 const SYNTHETIC_DEFAULT_EXPORT_NAME = "__previewDefaultExport";
