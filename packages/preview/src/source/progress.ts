@@ -9,6 +9,7 @@ const ANSI = {
 	blue: "\u001b[34m",
 	bold: "\u001b[1m",
 	cyan: "\u001b[36m",
+	dim: "\u001b[2m",
 	gray: "\u001b[90m",
 	green: "\u001b[32m",
 	reset: "\u001b[0m",
@@ -37,11 +38,10 @@ function colorize(value: string, color: string, enabled: boolean) {
 }
 
 function formatTimestamp() {
-	return new Intl.DateTimeFormat("en-US", {
+	return new Intl.DateTimeFormat(undefined, {
 		hour: "numeric",
-		hour12: true,
-		minute: "2-digit",
-		second: "2-digit",
+		minute: "numeric",
+		second: "numeric",
 	}).format(new Date());
 }
 
@@ -50,9 +50,9 @@ function formatPrefix(
 	scope: PreviewProgressScope,
 ) {
 	const useColors = supportsPreviewColors(writer);
-	const timestamp = colorize(formatTimestamp(), ANSI.gray, useColors);
+	const timestamp = colorize(formatTimestamp(), ANSI.dim, useColors);
 	const tag = colorize("[preview]", `${ANSI.bold}${ANSI.cyan}`, useColors);
-	const scopeLabel = colorize(`(${scope})`, ANSI.blue, useColors);
+	const scopeLabel = colorize(`(${scope})`, `${ANSI.dim}`, useColors);
 
 	return `${timestamp} ${tag} ${scopeLabel}`;
 }
