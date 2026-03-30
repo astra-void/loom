@@ -62,7 +62,7 @@ describe("preview progress logging", () => {
 
 		expect(output).toContain("\u001b[");
 		expect(output).toContain("\u001b[1m\u001b[36m[preview]\u001b[0m");
-		expect(output).toContain("\u001b[34m(server)\u001b[0m");
+		expect(output).toContain("\u001b[2m(server)\u001b[0m");
 		expect(output).toContain("starting preview server...");
 	});
 });

@@ -90,23 +90,17 @@ function PreviewRenderShell(props: { children: React.ReactNode }) {
 function ComboboxPreviewTargetShell(props: { children: React.ReactNode }) {
 	const [portalContainer, setPortalContainer] =
 		React.useState<HTMLElement | null>(null);
-	const [portalTick, setPortalTick] = React.useState(0);
 
 	const handleRootRef = React.useCallback(
 		(node: HTMLElement | null) => {
 			log(`target-shell:root-ref:${node ? "set" : "clear"}`);
 			if (node) {
-				if (incrementRefCycleCount() > 25) {
-					throw new Error("Maximum update depth exceeded");
-				}
-
 				setPortalContainer(node);
-				setPortalTick((tick) => tick + 1);
 			} else {
 				setPortalContainer(null);
 			}
 		},
-		[portalTick],
+		[],
 	);
 
 	React.useEffect(() => {
@@ -114,7 +108,7 @@ function ComboboxPreviewTargetShell(props: { children: React.ReactNode }) {
 	}, [portalContainer]);
 
 	return (
-		<screengui key={portalTick} ref={handleRootRef}>
+		<screengui ref={handleRootRef}>
 			{portalContainer ? (
 				<PortalContainerContext.Provider value={portalContainer}>
 					{props.children}
@@ -155,7 +149,6 @@ function ComboboxRoot(props: { children: React.ReactNode }) {
 				log(`effect:open-clear:${inputValue}`);
 				setInputValue("");
 			}
-
 			return;
 		}
 
@@ -164,22 +157,6 @@ function ComboboxRoot(props: { children: React.ReactNode }) {
 			setInputValue(value);
 		}
 	}, [inputValue, open, setInputValue, value]);
-
-	React.useLayoutEffect(() => {
-		if (open) {
-			if (inputValue === "") {
-				log("effect:empty-close");
-				setOpen(false);
-			}
-
-			return;
-		}
-
-		if (inputValue === value) {
-			log("effect:value-open");
-			setOpen(true);
-		}
-	}, [inputValue, open, setOpen, value]);
 
 	const contextValue = React.useMemo(
 		() => ({

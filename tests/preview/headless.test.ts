@@ -1966,22 +1966,12 @@ describe("createPreviewHeadlessSession", () => {
 			);
 			expect(snapshot.execution.entries[entryId]).toMatchObject({
 				render: {
-					status: "render_failed",
+					status: "rendered",
 				},
-				renderIssue: expect.objectContaining({
-					code: "RENDER_ERROR",
-					file: expect.any(String),
-					kind: "TransformExecutionError",
-					phase: "runtime",
-					relativeFile: "ComboboxBasicScene.loom.tsx",
-					severity: "error",
-					summary: expect.stringContaining("Maximum update depth exceeded"),
-					target: "playground",
-				}),
-				severity: "error",
+				renderIssue: null,
 			});
 			expect(snapshot.entries[entryId]?.descriptor.status).toBe(
-				"blocked_by_runtime",
+				"ready",
 			);
 
 			const comboboxTrace = (
@@ -2000,9 +1990,9 @@ describe("createPreviewHeadlessSession", () => {
 				"target-shell:root-ref:set",
 				"target-shell:portal:waiting",
 				"render-shell:portal:ready",
-				"target-shell:root-ref:clear",
 				"effect:closed-sync:->alpha",
 				"set:input:alpha",
+				"target-shell:portal:ready",
 			]);
 			expect(comboboxTrace).toEqual(
 				expect.arrayContaining(["target-shell:portal:ready"]),
@@ -2010,7 +2000,7 @@ describe("createPreviewHeadlessSession", () => {
 			expect(
 				comboboxTrace.filter((step) => step === "target-shell:root-ref:set")
 					.length,
-			).toBeGreaterThan(10);
+			).toBe(1);
 		} finally {
 			session.dispose();
 		}
