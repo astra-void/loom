@@ -2,6 +2,7 @@ import * as React from "react";
 import { clampPreviewTextSize, useTextScaleStyle } from "../style/textStyles";
 import { domPresentationAdapter } from "./domAdapter";
 import { markPreviewHostComponent } from "./hostComponent";
+import { notifyPreviewHostPropertyChanged } from "./hostOverrides";
 import type { PreviewDomProps } from "./types";
 import {
 	resolveHostContentRect,
@@ -183,11 +184,33 @@ function createTextHost(host: TextHostName, displayName: string) {
 				}
 
 				const input = element as HTMLInputElement & { Text?: string };
+				if (!Object.hasOwn(input, "Text")) {
+					Object.defineProperty(input, "Text", {
+						configurable: true,
+						enumerable: false,
+						get() {
+							return input.value;
+						},
+						set(value: unknown) {
+							const nextValue =
+								value === undefined || value === null ? "" : String(value);
+							if (input.value === nextValue) {
+								return;
+							}
+
+							input.value = nextValue;
+							notifyPreviewHostPropertyChanged(nodeId, "Text");
+						},
+					});
+				}
+
 				const nextText = hostNode.presentationHints.text ?? "";
 				if (input.value !== nextText) {
+					// Keep prop-driven synchronization silent. User edits still flow
+					// through the Text setter below and through the DOM change bridge.
 					input.value = nextText;
 				}
-			}, [elementRef, hostNode.presentationHints.text]);
+			}, [elementRef, hostNode.presentationHints.text, nodeId]);
 
 			return domPresentationAdapter.render(
 				renderNode,

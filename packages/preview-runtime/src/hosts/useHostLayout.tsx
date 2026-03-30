@@ -463,6 +463,12 @@ export function useHostLayout(host: LayoutHostName, props: PreviewDomProps) {
 					return (
 						currentProps.Parent ?? getHostPropertyFallback(property, isRootNode)
 					);
+				case "Text":
+					return (
+						(element instanceof HTMLInputElement ? element.value : undefined) ??
+						currentProps.Text ??
+						getHostPropertyFallback(property, isRootNode)
+					);
 				case "TextBounds":
 					return (
 						readTextBounds(element) ??
@@ -614,6 +620,14 @@ export function useHostLayout(host: LayoutHostName, props: PreviewDomProps) {
 							currentProps.Parent ??
 								getHostPropertyFallback(property, isRootNode),
 						];
+					case "Text":
+						return [
+							property,
+							element instanceof HTMLInputElement
+								? element.value
+								: (currentProps.Text ??
+									getHostPropertyFallback(property, isRootNode)),
+						];
 					case "TextBounds":
 						return [
 							property,
@@ -639,6 +653,10 @@ export function useHostLayout(host: LayoutHostName, props: PreviewDomProps) {
 		const previousSnapshot = previousBridgedHostPropertySnapshotRef.current;
 		if (previousSnapshot) {
 			for (const property of bridgedPreviewHostProperties) {
+				if (property === "Text") {
+					continue;
+				}
+
 				if (
 					!areBridgedValuesEqual(
 						previousSnapshot[property],

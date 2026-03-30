@@ -35,6 +35,7 @@ export const bridgedPreviewHostProperties = [
 	"Parent",
 	"Position",
 	"Size",
+	"Text",
 	"TextBounds",
 	"TextColor3",
 	"TextSize",
