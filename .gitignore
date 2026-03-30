@@ -17,3 +17,6 @@ packages/preview-runtime/src/**/*.d.ts
 *.tsbuildinfo
 
 .turbo
+
+.env
+.env.*
