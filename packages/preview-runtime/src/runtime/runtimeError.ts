@@ -32,6 +32,7 @@ export type PreviewRuntimeIssue = {
 	details?: string;
 	importChain?: string[];
 	symbol?: string;
+	stack?: string;
 };
 
 export type PreviewRuntimeIssueContext = Partial<
@@ -114,6 +115,54 @@ function normalizeContext(context?: PreviewRuntimeIssueContext | null) {
 	return context ?? {};
 }
 
+function formatStackHeader(error: Error) {
+	return (
+		error.stack?.split(/\r?\n/u, 1)[0] ?? `${error.name}: ${error.message}`
+	);
+}
+
+function formatErrorChain(
+	error: unknown,
+	prefix?: string,
+	seen = new Set<unknown>(),
+): string | undefined {
+	if (error == null) {
+		return undefined;
+	}
+
+	if (typeof error !== "object" && typeof error !== "function") {
+		return prefix ? `${prefix}: ${String(error)}` : String(error);
+	}
+
+	if (seen.has(error)) {
+		return prefix ? `${prefix}: [Circular cause]` : "[Circular cause]";
+	}
+
+	seen.add(error);
+
+	if (error instanceof Error) {
+		const lines = [
+			prefix
+				? `${prefix}: ${formatStackHeader(error)}`
+				: formatStackHeader(error),
+		];
+		const stackLines = error.stack ? error.stack.split(/\r?\n/u).slice(1) : [];
+		if (stackLines.length > 0) {
+			lines.push(...stackLines);
+		}
+
+		const cause = (error as Error & { cause?: unknown }).cause;
+		const causeChain = formatErrorChain(cause, "Caused by", seen);
+		if (causeChain) {
+			lines.push(causeChain);
+		}
+
+		return lines.join("\n");
+	}
+
+	return prefix ? `${prefix}: ${String(error)}` : String(error);
+}
+
 export class PreviewRuntimeError extends Error {
 	public readonly code: string;
 	public readonly details?: string;
@@ -154,6 +203,7 @@ export class PreviewRuntimeError extends Error {
 		this.codeFrame = options.codeFrame;
 		this.symbol = options.symbol;
 		this.importChain = options.importChain;
+		this.stack = formatErrorChain(this) ?? this.stack;
 	}
 
 	public toIssue(
@@ -175,6 +225,7 @@ export class PreviewRuntimeError extends Error {
 			severity: normalized.severity ?? this.severity,
 			summary: normalized.summary ?? this.summary,
 			symbol: normalized.symbol ?? this.symbol,
+			stack: normalized.stack ?? this.stack,
 			target: normalized.target ?? this.target ?? "preview-runtime",
 		};
 	}

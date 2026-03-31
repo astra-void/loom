@@ -21,6 +21,7 @@ import {
 	UDim2,
 	Vector2,
 	workspace,
+	normalizePreviewRuntimeError,
 } from "@loom-dev/preview-runtime";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -831,5 +832,26 @@ describe.sequential("@loom-dev/preview-runtime", () => {
 
 		expect(typeof callableMember.displayName).toBe("string");
 		expect(callableMember.displayName).toBe("mockedObject.run");
+	});
+
+	it("preserves chained stacks when normalizing runtime errors", () => {
+		const cause = new Error("inner failure");
+		const error = new Error("outer failure", { cause });
+		const issue = normalizePreviewRuntimeError(
+			{
+				code: "RUNTIME_ERROR",
+				entryId: "fixture:entry",
+				file: "/virtual/fixture.tsx",
+				kind: "TransformExecutionError",
+				phase: "runtime",
+				relativeFile: "src/fixture.tsx",
+				summary: "outer failure",
+				target: "fixture",
+			},
+			error,
+		);
+
+		expect(issue.stack).toContain("Error: outer failure");
+		expect(issue.stack).toContain("Caused by: Error: inner failure");
 	});
 });
