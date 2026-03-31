@@ -129,8 +129,8 @@ class PreviewErrorBoundary extends React.Component<
 		};
 	}
 
-	componentDidCatch(error: unknown) {
-		this.props.onError(error);
+	componentDidCatch(error: unknown, errorInfo: React.ErrorInfo) {
+		this.props.onError({ error, componentStack: errorInfo.componentStack });
 	}
 
 	render() {

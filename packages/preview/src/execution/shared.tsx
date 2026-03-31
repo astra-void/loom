@@ -212,6 +212,11 @@ function getRuntimeIssueContext(entry: PreviewEntryDescriptor) {
 	};
 }
 
+import {
+	analyzePreviewRuntimeError,
+	type CapturedRenderError,
+} from "./analyzeRuntimeError";
+
 export function createPreviewLoadIssue(
 	entry: PreviewEntryDescriptor,
 	error: unknown,
@@ -230,16 +235,12 @@ export function createPreviewLoadIssue(
 
 export function createPreviewRenderIssue(
 	entry: PreviewEntryDescriptor,
-	error: unknown,
+	error: unknown | CapturedRenderError,
 ) {
-	return normalizePreviewRuntimeError(
-		{
-			...getRuntimeIssueContext(entry),
-			code: "RENDER_ERROR",
-			kind: "TransformExecutionError",
-			phase: "runtime",
-			summary: error instanceof Error ? error.message : String(error),
-		},
-		error,
-	);
+	return analyzePreviewRuntimeError(entry, error, {
+		...getRuntimeIssueContext(entry),
+		code: "RENDER_ERROR",
+		kind: "TransformExecutionError",
+		phase: "runtime",
+	});
 }

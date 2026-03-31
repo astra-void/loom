@@ -1,4 +1,4 @@
-﻿import { readFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import type { PreviewEntryDescriptor } from "@loom-dev/preview-engine";
 import type {
@@ -187,8 +187,8 @@ class HeadlessRenderBoundary extends React.Component<
 		};
 	}
 
-	public componentDidCatch(error: unknown) {
-		this.props.onError(error);
+	public componentDidCatch(error: unknown, errorInfo: React.ErrorInfo) {
+		this.props.onError({ error, componentStack: errorInfo.componentStack });
 	}
 
 	public render() {
@@ -199,7 +199,6 @@ class HeadlessRenderBoundary extends React.Component<
 		return this.props.children;
 	}
 }
-
 function sleep(ms: number) {
 	return new Promise<void>((resolve) => {
 		globalThis.setTimeout(resolve, ms);
