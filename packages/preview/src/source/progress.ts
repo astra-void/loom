@@ -52,7 +52,11 @@ function formatPrefix(
 	const useColors = supportsPreviewColors(writer);
 	const timestamp = colorize(formatTimestamp(), ANSI.dim, useColors);
 	const tag = colorize("[preview]", `${ANSI.bold}${ANSI.cyan}`, useColors);
-	const scopeLabel = colorize(`(${scope})`, `${ANSI.dim}`, useColors);
+	const scopeLabel = colorize(
+		`(${scope})`,
+		`${ANSI.dim}${ANSI.gray}`,
+		useColors,
+	);
 
 	return `${timestamp} ${tag} ${scopeLabel}`;
 }
