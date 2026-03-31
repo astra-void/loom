@@ -3,6 +3,12 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { runCli } from "../../packages/cli/src/cli";
+import {
+	CliError,
+	ExitCode,
+	formatCliError,
+	usageError,
+} from "../../packages/cli/src/core/errors";
 import type {
 	CliPreviewModule,
 	CliResolvedPreviewConfig,
@@ -14,6 +20,31 @@ afterEach(() => {
 	for (const root of temporaryRoots.splice(0)) {
 		fs.rmSync(root, { force: true, recursive: true });
 	}
+});
+
+describe("CLI error formatting", () => {
+	it("keeps usage errors terse", () => {
+		expect(formatCliError(usageError("Invalid command"))).toBe(
+			"Error: Invalid command\n",
+		);
+	});
+
+	it("prints chained stacks for unexpected errors", () => {
+		const cause = new Error("inner failure");
+		const error = new Error("outer failure", { cause });
+		const cliError = new CliError(
+			"Unexpected command failure.",
+			"Unexpected",
+			ExitCode.Unexpected,
+			error,
+		);
+
+		const output = formatCliError(cliError);
+
+		expect(output).toContain("Error: Unexpected command failure.");
+		expect(output).toContain("Error: outer failure");
+		expect(output).toContain("Caused by: Error: inner failure");
+	});
 });
 
 function createTempRoot(prefix: string) {

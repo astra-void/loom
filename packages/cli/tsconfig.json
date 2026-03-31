@@ -6,6 +6,8 @@
 		"rootDir": "src",
 		"outDir": "dist",
 		"declaration": true,
+		"sourceMap": true,
+		"inlineSources": true,
 		"lib": ["ES2021"],
 		"types": ["node"]
 	},
