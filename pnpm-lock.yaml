@@ -200,13 +200,13 @@ importers:
       '@loom-dev/preview-runtime':
         specifier: workspace:*
         version: link:../preview-runtime
-      typescript:
-        specifier: 5.9.3
-        version: 5.9.3
     devDependencies:
       '@types/react':
         specifier: ^19.2.14
         version: 19.2.14
+      typescript:
+        specifier: 6.0.2
+        version: 6.0.2
 
   packages/preview-runtime:
     dependencies:
