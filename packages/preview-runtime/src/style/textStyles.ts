@@ -317,6 +317,7 @@ export function useTextScaleStyle(
 		options.text,
 		options.wrapped,
 		size,
+		options,
 	]);
 	if (!options.enabled || fontSize === null) {
 		return undefined;
