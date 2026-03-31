@@ -445,6 +445,9 @@ export class LayoutController {
 	private readonly nodes = new Map<string, PreviewLayoutNode>();
 	private debugNodesById = new Map<string, PreviewLayoutDebugNode>();
 	private pendingRemovedIds = new Set<string>();
+	private pendingUpsertIds = new Set<string>();
+	private viewportDirty = false;
+	private sessionNeedsRebuild = false;
 	private result: PreviewLayoutResult = createEmptyLayoutResult({
 		height: 0,
 		width: 0,
@@ -458,11 +461,16 @@ export class LayoutController {
 
 	public constructor(private readonly options: LayoutControllerOptions = {}) {}
 
-	public compute(): PreviewLayoutResult {
+	public compute(options?: { isReady?: boolean }): PreviewLayoutResult {
 		let nextResult: PreviewLayoutResult;
 		try {
-			nextResult = this.computeWithSession();
+			if (options?.isReady !== false) {
+				nextResult = this.computeWithSession();
+			} else {
+				nextResult = this.computeFallback();
+			}
 		} catch {
+			this.sessionNeedsRebuild = true;
 			nextResult = this.computeFallback();
 		}
 		this.result = nextResult;
@@ -470,11 +478,18 @@ export class LayoutController {
 		this.dirtyNodeIds.clear();
 		this.dirtyRootIds.clear();
 		this.pendingRemovedIds.clear();
+		this.pendingUpsertIds.clear();
 		return nextResult;
 	}
 
 	public dispose() {
-		this.session?.dispose();
+		if (this.session) {
+			try {
+				this.session.dispose();
+			} catch {
+				// Ignore errors from poisoned session
+			}
+		}
 		this.session = null;
 		this.childIdsByParent.clear();
 		this.debugNodesById.clear();
@@ -482,6 +497,7 @@ export class LayoutController {
 		this.dirtyRootIds.clear();
 		this.nodes.clear();
 		this.pendingRemovedIds.clear();
+		this.pendingUpsertIds.clear();
 		this.result = createEmptyLayoutResult({ height: 0, width: 0 });
 		this.rootIds = [];
 	}
@@ -513,10 +529,10 @@ export class LayoutController {
 			this.nodes.delete(affectedId);
 			this.dirtyNodeIds.add(affectedId);
 			this.pendingRemovedIds.add(affectedId);
+			this.pendingUpsertIds.delete(affectedId);
 		}
 
 		this.rebuildRelationships();
-		this.session?.removeNodes(affectedIds);
 		return true;
 	}
 
@@ -529,7 +545,7 @@ export class LayoutController {
 		}
 
 		this.viewport = cloneViewport(viewport);
-		this.session?.setViewport(viewport);
+		this.viewportDirty = true;
 		for (const rootId of this.rootIds) {
 			this.dirtyRootIds.add(rootId);
 		}
@@ -556,7 +572,7 @@ export class LayoutController {
 		this.rebuildRelationships();
 		this.markDirtyFromNode(node.id);
 		this.dirtyNodeIds.add(node.id);
-		this.session?.applyNodes([node]);
+		this.pendingUpsertIds.add(node.id);
 		return true;
 	}
 
@@ -1046,6 +1062,27 @@ export class LayoutController {
 		}
 
 		const session = this.getOrCreateSession();
+
+		if (this.viewportDirty) {
+			session.setViewport(this.viewport);
+			this.viewportDirty = false;
+		}
+
+		if (this.pendingRemovedIds.size > 0) {
+			session.removeNodes(Array.from(this.pendingRemovedIds));
+		}
+
+		if (this.pendingUpsertIds.size > 0) {
+			const nodesToApply = [];
+			for (const id of this.pendingUpsertIds) {
+				const node = this.nodes.get(id);
+				if (node) {
+					nodesToApply.push(node);
+				}
+			}
+			session.applyNodes(nodesToApply);
+		}
+
 		const nextResult = session.computeDirty();
 		return {
 			...nextResult,
@@ -1061,6 +1098,15 @@ export class LayoutController {
 	}
 
 	private getOrCreateSession() {
+		if (this.sessionNeedsRebuild && this.session) {
+			try {
+				this.session.dispose();
+			} catch {
+				// Ignore errors from poisoned session
+			}
+			this.session = null;
+		}
+
 		if (!this.session) {
 			const nextSession = this.options.sessionFactory?.();
 			if (!nextSession) {
@@ -1068,10 +1114,15 @@ export class LayoutController {
 			}
 
 			this.session = nextSession;
+			this.viewportDirty = false;
+			this.pendingRemovedIds.clear();
+			this.pendingUpsertIds.clear();
+
 			this.session.setViewport(this.viewport);
 			if (this.nodes.size > 0) {
 				this.session.applyNodes([...this.nodes.values()]);
 			}
+			this.sessionNeedsRebuild = false;
 		}
 
 		return this.session;

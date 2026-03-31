@@ -428,7 +428,7 @@ export function LayoutProvider(props: LayoutProviderProps) {
 				}
 
 				try {
-					const nextResult = controller.compute();
+					const nextResult = controller.compute({ isReady });
 					setLayoutResult(nextResult);
 					setError(null);
 				} catch (nextError) {
@@ -470,6 +470,7 @@ export function LayoutProvider(props: LayoutProviderProps) {
 		viewportHeight,
 		viewportReady,
 		viewportWidth,
+		isReady,
 	]);
 
 	const getRect = React.useCallback(
