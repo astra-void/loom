@@ -2593,3 +2593,122 @@ describe("preview runtime fidelity gaps", () => {
 		});
 	});
 });
+describe("Layout Engine Resilience", () => {
+	it("does not flush the Wasm session from layout effects before layout engine init is ready", async () => {
+		const applyNodesSpy = vi.fn();
+		layoutEngineMocks.createLayoutSession.mockImplementation(() => {
+			return {
+				applyNodes: applyNodesSpy,
+				computeDirty: vi.fn(() => ({
+					debug: { dirtyNodeIds: [], roots: [], viewport: { height: 0, width: 0 } },
+					dirtyNodeIds: [],
+					rects: {},
+				})),
+				dispose: vi.fn(),
+				removeNodes: vi.fn(),
+				setViewport: vi.fn(),
+			};
+		});
+
+		render(
+			<LayoutProvider debounceMs={0} viewportHeight={480} viewportWidth={640}>
+				<ScreenGui Id="screen">
+					<Frame Id="frame" />
+				</ScreenGui>
+			</LayoutProvider>
+		);
+
+		// Before init is complete, Wasm session shouldn't be created or have applyNodes called
+		expect(applyNodesSpy).not.toHaveBeenCalled();
+
+		// Once ready, compute should eventually sync nodes to session
+		await waitFor(() => {
+			expect(applyNodesSpy).toHaveBeenCalled();
+		});
+	});
+
+	it("does not immediately mutate the live Wasm session during strict-mode effect churn", async () => {
+		const applyNodesSpy = vi.fn();
+		const removeNodesSpy = vi.fn();
+		layoutEngineMocks.createLayoutSession.mockImplementation(() => {
+			return {
+				applyNodes: applyNodesSpy,
+				computeDirty: vi.fn(() => ({
+					debug: { dirtyNodeIds: [], roots: [], viewport: { height: 0, width: 0 } },
+					dirtyNodeIds: [],
+					rects: {},
+				})),
+				dispose: vi.fn(),
+				removeNodes: removeNodesSpy,
+				setViewport: vi.fn(),
+			};
+		});
+
+		function ChurningComponent() {
+			const [count, setCount] = React.useState(0);
+			
+			React.useLayoutEffect(() => {
+				if (count < 5) {
+					setCount(c => c + 1);
+				}
+			}, [count]);
+
+			return count % 2 === 0 ? <Frame Id={`frame-${count}`} /> : <TextLabel Id={`label-${count}`} />;
+		}
+
+		render(
+			<LayoutProvider debounceMs={0} viewportHeight={480} viewportWidth={640}>
+				<ScreenGui Id="churn-screen">
+					<ChurningComponent />
+				</ScreenGui>
+			</LayoutProvider>
+		);
+
+		await waitFor(() => {
+			expect(applyNodesSpy).toHaveBeenCalled();
+		});
+
+		expect(applyNodesSpy.mock.calls.length).toBeLessThanOrEqual(2);
+	});
+
+	it("recovers safely from a Wasm layout crash without throwing during unmount", async () => {
+		let throwOnNextCompute = true;
+		layoutEngineMocks.createLayoutSession.mockImplementation(() => {
+			return {
+				applyNodes: vi.fn(),
+				computeDirty: vi.fn(() => {
+					if (throwOnNextCompute) {
+						throwOnNextCompute = false;
+						throw new Error("Wasm aliasing error");
+					}
+					return {
+						debug: { dirtyNodeIds: [], roots: [], viewport: { height: 0, width: 0 } },
+						dirtyNodeIds: [],
+						rects: {},
+					};
+				}),
+				dispose: vi.fn(() => {
+					throw new Error("Poisoned dispose error");
+				}),
+				removeNodes: vi.fn(() => {
+					throw new Error("recursive use of an object detected which would lead to unsafe aliasing in rust");
+				}),
+				setViewport: vi.fn(),
+			};
+		});
+
+		const { unmount } = render(
+			<LayoutProvider debounceMs={0} viewportHeight={480} viewportWidth={640}>
+				<ScreenGui Id="crash-screen">
+					<Frame Id="crash-frame" />
+				</ScreenGui>
+			</LayoutProvider>
+		);
+
+		await new Promise(resolve => setTimeout(resolve, 50));
+
+		expect(() => {
+			unmount();
+		}).not.toThrow();
+	});
+});
