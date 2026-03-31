@@ -51,6 +51,9 @@
 		"summary": {
 			"type": "string"
 		},
+		"stack": {
+			"type": "string"
+		},
 		"symbol": {
 			"type": "string"
 		},

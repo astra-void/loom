@@ -259,6 +259,7 @@ function toRuntimeDiagnostic(issue: PreviewRuntimeIssue): PreviewDiagnostic {
 		severity: issue.severity ?? "error",
 		summary: issue.summary,
 		...(issue.symbol ? { symbol: issue.symbol } : {}),
+		...(issue.stack ? { stack: issue.stack } : {}),
 		target: issue.target,
 	};
 }
@@ -619,6 +620,10 @@ function groupRuntimeIssues(issues: PreviewRuntimeIssue[]) {
 
 				if (left.code !== right.code) {
 					return left.code.localeCompare(right.code);
+				}
+
+				if ((left.stack ?? "") !== (right.stack ?? "")) {
+					return (left.stack ?? "").localeCompare(right.stack ?? "");
 				}
 
 				return left.summary.localeCompare(right.summary);

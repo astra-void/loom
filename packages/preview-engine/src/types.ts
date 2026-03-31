@@ -189,6 +189,7 @@ export type PreviewDiagnostic = {
 	severity: PreviewDiagnosticSeverity;
 	summary: string;
 	symbol?: string;
+	stack?: string;
 	target: string;
 };
 

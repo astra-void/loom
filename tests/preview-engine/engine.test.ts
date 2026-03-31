@@ -980,6 +980,7 @@ describe("createPreviewEngine", () => {
 				phase: "runtime",
 				relativeFile: "src/Runtime.loom.tsx",
 				summary: "Preview module failed to load.",
+				stack: "Error: Preview module failed to load.\n    at Runtime.loom.tsx:1:1",
 				target: "fixture",
 			},
 		];
@@ -1003,6 +1004,7 @@ describe("createPreviewEngine", () => {
 					code: "MODULE_LOAD_ERROR",
 					phase: "runtime",
 					severity: "error",
+					stack: expect.stringContaining("Error: Preview module failed to load."),
 				}),
 			],
 		});
