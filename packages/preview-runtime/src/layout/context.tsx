@@ -644,16 +644,20 @@ export function useRobloxLayout(
 	const computed = context ? context.getRect(normalizedNode.id) : null;
 
 	React.useLayoutEffect(() => {
-		if (!register || !unregister) {
+		if (register) {
+			register(normalizedNode);
+		}
+	}, [normalizedNode, register]);
+
+	React.useLayoutEffect(() => {
+		if (!unregister) {
 			return;
 		}
-
-		register(normalizedNode);
+		const id = normalizedNode.id;
 		return () => {
-			unregister(normalizedNode.id);
+			unregister(id);
 		};
-	}, [normalizedNode, register, unregister]);
-
+	}, [normalizedNode.id, unregister]);
 	if (context && !context.viewportReady) {
 		return null;
 	}

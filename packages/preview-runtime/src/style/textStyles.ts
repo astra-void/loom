@@ -297,11 +297,13 @@ export function useTextScaleStyle(
 			return;
 		}
 
-		setFontSize(
-			measureScaledFontSize({
-				...options,
-				size,
-			}),
+		const nextFontSize = measureScaledFontSize({
+			...options,
+			size,
+		});
+
+		setFontSize((previous) =>
+			previous === nextFontSize ? previous : nextFontSize,
 		);
 	}, [
 		options.elementRef,
@@ -310,12 +312,12 @@ export function useTextScaleStyle(
 		options.fontStyle,
 		options.fontWeight,
 		options.lineHeight,
+		options.maxTextSize,
+		options.minTextSize,
 		options.text,
 		options.wrapped,
 		size,
-		options,
 	]);
-
 	if (!options.enabled || fontSize === null) {
 		return undefined;
 	}
