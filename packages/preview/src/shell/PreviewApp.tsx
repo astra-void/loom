@@ -180,6 +180,7 @@ function getRuntimeIssueFingerprint(issue: PreviewRuntimeIssue) {
 		issue.target,
 		issue.relativeFile,
 		issue.summary,
+		issue.stack ?? "",
 		issue.details ?? "",
 		issue.symbol ?? "",
 		issue.codeFrame ?? "",
@@ -241,6 +242,7 @@ type IssueCard = {
 	severity?: PreviewDiagnostic["severity"] | PreviewRuntimeIssue["severity"];
 	summary: string;
 	symbol?: string;
+	stack?: string;
 	target: string;
 };
 
@@ -330,6 +332,20 @@ function renderIssueCodeFrame(issue: IssueCard) {
 	return <pre className="diagnostic-codeframe">{codeFrame}</pre>;
 }
 
+function renderIssueStack(issue: IssueCard) {
+	const stack = normalizeDisplayBlock(issue.stack);
+	if (!stack) {
+		return null;
+	}
+
+	return (
+		<details className="diagnostic-stack">
+			<summary className="diagnostic-stack-summary">stack trace</summary>
+			<pre className="diagnostic-codeframe">{stack}</pre>
+		</details>
+	);
+}
+
 function renderIssueCard(
 	issue: IssueCard,
 	variant: "discovery" | "other",
@@ -361,6 +377,7 @@ function renderIssueCard(
 				{issue.kind ? `:${issue.kind}` : ""}
 				{locationSuffix ? `:${locationSuffix}` : ""}
 			</p>
+			{renderIssueStack(issue)}
 			{renderIssueCodeFrame(issue)}
 		</article>
 	);

@@ -319,6 +319,7 @@ declare module "@loom-dev/preview-runtime" {
 		details?: string;
 		importChain?: string[];
 		symbol?: string;
+		stack?: string;
 	};
 	export type PreviewRuntimeIssueContext = Partial<
 		Omit<PreviewRuntimeIssue, "kind" | "phase" | "summary">
@@ -1075,6 +1076,7 @@ declare module "@loom-dev/preview-engine" {
 		severity: PreviewDiagnosticSeverity;
 		summary: string;
 		symbol?: string;
+		stack?: string;
 		target: string;
 	};
 	export type PreviewRenderTarget =

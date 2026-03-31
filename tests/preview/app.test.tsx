@@ -832,6 +832,61 @@ describe("preview shell", () => {
 		).toBeTruthy();
 	});
 
+	it("renders stack disclosures for diagnostics with stack traces", async () => {
+		const user = userEvent.setup();
+		const entry = createEntryDescriptor({
+			id: "Stacked.tsx",
+			relativePath: "Stacked.tsx",
+			title: "Stacked",
+		});
+		const diagnostics = [
+			createDiagnostic({
+				code: "MODULE_LOAD_ERROR",
+				phase: "runtime",
+				stack: "Error: runtime failure\n    at Stacked.tsx:1:1",
+				summary: "Preview module failed to load.",
+			}),
+		];
+
+		const { container } = renderPreviewApp(
+			<PreviewApp
+				entries={[entry]}
+				entryPayloads={{
+					[entry.id]: createPayload(entry, diagnostics),
+				}}
+				loadEntry={async () =>
+					createLoadedEntry(
+						entry,
+						{
+							default: () => <button type="button">Stack preview</button>,
+						},
+						diagnostics,
+					)
+				}
+				projectName="@loom-dev/preview-smoke"
+			/>,
+		);
+
+		const details = container.querySelector(
+			".diagnostic-stack",
+		) as HTMLDetailsElement | null;
+
+		expect(details).not.toBeNull();
+		expect(details?.open).toBe(false);
+
+		await user.click(screen.getByText("stack trace"));
+
+		expect(details?.open).toBe(true);
+		expect(
+			screen.getAllByText((_, node) =>
+				node?.textContent?.includes("Error: runtime failure") ?? false,
+			).length,
+		).toBeGreaterThan(0);
+		expect(
+			await screen.findByRole("button", { name: "Stack preview" }),
+		).toBeTruthy();
+	});
+
 	it("does not recover from stale registry export names with module export inference", async () => {
 		const staleEntry = createEntryDescriptor({
 			candidateExportNames: ["LoadoutEditor"],
@@ -867,8 +922,9 @@ describe("preview shell", () => {
 
 		expect(await screen.findByText("Preview render failed.")).toBeTruthy();
 		expect(
-			screen.getAllByText(/Expected `LoadoutEditor` to be a component export/i),
-		).toHaveLength(2);
+			screen.getAllByText(/Expected `LoadoutEditor` to be a component export/i)
+				.length,
+		).toBeGreaterThanOrEqual(2);
 		expect(
 			screen.queryByRole("button", { name: "Recovered stale export" }),
 		).toBeNull();

@@ -990,6 +990,30 @@ code {
 	word-break: break-word;
 }
 
+.diagnostic-stack {
+	display: grid;
+	gap: 8px;
+}
+
+.diagnostic-stack-summary {
+	color: var(--muted);
+	cursor: pointer;
+	font-size: 0.72rem;
+	font-weight: 700;
+	letter-spacing: 0.08em;
+	list-style: none;
+	margin: 0;
+	text-transform: uppercase;
+}
+
+.diagnostic-stack-summary::-webkit-details-marker {
+	display: none;
+}
+
+.diagnostic-stack[open] .diagnostic-stack-summary {
+	color: var(--ink);
+}
+
 .wasm-meta {
 	margin-bottom: 12px;
 }

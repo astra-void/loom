@@ -214,6 +214,7 @@ function getRuntimeIssueFingerprint(issue: PreviewRuntimeIssue) {
 		issue.phase,
 		issue.relativeFile,
 		issue.summary,
+		issue.stack ?? "",
 		issue.details ?? "",
 		issue.symbol ?? "",
 		issue.codeFrame ?? "",
@@ -235,6 +236,10 @@ function dedupeRuntimeIssues(issues: PreviewRuntimeIssue[]) {
 
 		if (left.code !== right.code) {
 			return left.code.localeCompare(right.code);
+		}
+
+		if ((left.stack ?? "") !== (right.stack ?? "")) {
+			return (left.stack ?? "").localeCompare(right.stack ?? "");
 		}
 
 		return left.summary.localeCompare(right.summary);
