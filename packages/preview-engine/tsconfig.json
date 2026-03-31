@@ -1,15 +1,14 @@
 {
 	"extends": "../../tsconfig.base.json",
 	"compilerOptions": {
-		"baseUrl": ".",
-		"module": "CommonJS",
-		"moduleResolution": "Node",
+		"module": "node16",
+		"moduleResolution": "node16",
 		"rootDir": "src",
 		"outDir": "dist",
 		"declaration": true,
 		"sourceMap": true,
 		"inlineSources": true,
-		"lib": ["ES2021", "DOM"],
+		"lib": ["ES2022", "DOM"],
 		"types": ["node"]
 	},
 	"include": ["src/**/*.ts", "src/**/*.d.ts"]

@@ -23,11 +23,11 @@
 	"dependencies": {
 		"@loom-dev/compiler": "workspace:*",
 		"@loom-dev/preview-analysis": "workspace:*",
-		"@loom-dev/preview-runtime": "workspace:*",
-		"typescript": "5.9.3"
+		"@loom-dev/preview-runtime": "workspace:*"
 	},
 	"devDependencies": {
-		"@types/react": "^19.2.14"
+		"@types/react": "^19.2.14",
+		"typescript": "6.0.2"
 	},
 	"exports": {
 		".": {
