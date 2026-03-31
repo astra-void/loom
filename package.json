@@ -29,7 +29,7 @@
 		"jsdom": "^29.0.1",
 		"react": "^19.2.4",
 		"react-dom": "^19.2.4",
-		"turbo": "^2.8.21",
+		"turbo": "^2.9.1",
 		"typescript": "6.0.2",
 		"vite-plugin-top-level-await": "^1.6.0",
 		"vite-plugin-wasm": "^3.6.0",
