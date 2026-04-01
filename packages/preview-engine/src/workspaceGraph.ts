@@ -17,7 +17,7 @@ const TRACEABLE_SOURCE_EXTENSIONS = new Set([".ts", ".tsx", ".d.ts", ".d.tsx"]);
 const DEFAULT_COMPILER_OPTIONS: ts.CompilerOptions = {
 	jsx: ts.JsxEmit.Preserve,
 	module: ts.ModuleKind.ESNext,
-	moduleResolution: ts.ModuleResolutionKind.NodeJs,
+	moduleResolution: ts.ModuleResolutionKind.Node16,
 	target: ts.ScriptTarget.ESNext,
 };
 const DIRECTORY_SCAN_EXCLUDES = new Set([
