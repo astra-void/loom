@@ -12,6 +12,7 @@ import {
 	getPreviewLayoutProbeSnapshot,
 	getPreviewRuntimeIssues,
 	ImageButton,
+	ImageLabel,
 	isPreviewElement,
 	LayoutProvider,
 	normalizePreviewRuntimeError,
@@ -518,8 +519,96 @@ describe("preview runtime host mapping", () => {
 		});
 	});
 
-	it("supports Roblox-style UDim2 construction and add chaining", () => {
-		const position = UDim2.fromScale(0.5, 0.5).add(UDim2.fromOffset(12, 18));
+	it("tweens missing properties like ImageTransparency, TextTransparency, and Rotation", async () => {
+	rafController = new RafController();
+
+	render(
+		<>
+			<ImageLabel
+				Image="rbxassetid://123"
+				ImageTransparency={0}
+				Rotation={0}
+				Size={UDim2.fromOffset(100, 100)}
+			/>
+			<TextLabel
+				Text="Hello"
+				TextTransparency={0}
+				Size={UDim2.fromOffset(100, 100)}
+			/>
+		</>
+	);
+
+	const imageLabel = document.querySelector('[data-preview-host="imagelabel"]') as HTMLElement & { ImageTransparency?: unknown; Rotation?: unknown; };
+	const textLabel = document.querySelector('[data-preview-host="textlabel"]') as HTMLElement & { TextTransparency?: unknown; };
+
+	const tweenService = game.GetService("TweenService") as {
+		Create(
+			instance: unknown,
+			tweenInfo: TweenInfo,
+			goal: Record<string, unknown>,
+		): { Play(): void };
+	};
+
+	const previewEnum = Enum as { EasingStyle: { Linear: unknown }; EasingDirection: { In: unknown } };
+	const tweenInfo = new TweenInfo(0.1, previewEnum.EasingStyle.Linear, previewEnum.EasingDirection.In);
+
+	const tween1 = tweenService.Create(imageLabel, tweenInfo, {
+		ImageTransparency: 1,
+		Rotation: 45,
+	});
+
+	const tween2 = tweenService.Create(textLabel, tweenInfo, {
+		TextTransparency: 0.5,
+	});
+
+	tween1.Play();
+	tween2.Play();
+
+	await act(async () => {
+		await rafController?.step(50);
+	});
+
+	await waitFor(() => {
+		expect(imageLabel.style.opacity).toBe("0.5");
+		expect(imageLabel.style.transform).toBe("rotate(22.5deg)");
+		expect(textLabel.style.color).toContain("0.75)");
+	});
+
+	await act(async () => {
+		await rafController?.step(50);
+	});
+
+	await waitFor(() => {
+		expect(imageLabel.style.opacity).toBe("0");
+		expect(imageLabel.style.transform).toBe("rotate(45deg)");
+		expect(textLabel.style.color).toContain("0.5)");
+	});
+	});
+
+	it("keeps negative repeat zero-duration tweens in playing state perpetually", () => {
+	const target = { Value: 0 };
+	const tweenService = game.GetService("TweenService") as {
+		Create(
+			instance: unknown,
+			tweenInfo: TweenInfo,
+			goal: Record<string, unknown>,
+		): { Play(): void; PlaybackState: unknown; Cancel(): void };
+	};
+
+	const previewEnum = Enum as { EasingStyle: { Linear: unknown }; EasingDirection: { In: unknown }, PlaybackState: { Playing: unknown; Cancelled: unknown } };
+	const tweenInfo = new TweenInfo(0, previewEnum.EasingStyle.Linear, previewEnum.EasingDirection.In, -1);
+	const tween = tweenService.Create(target, tweenInfo, { Value: 1 });
+
+	tween.Play();
+
+	expect(tween.PlaybackState).toBe(previewEnum.PlaybackState.Playing);
+	expect(target.Value).toBe(1);
+
+	tween.Cancel();
+	expect(tween.PlaybackState).toBe(previewEnum.PlaybackState.Cancelled);
+	});
+
+	it("supports Roblox-style UDim2 construction and add chaining", () => {		const position = UDim2.fromScale(0.5, 0.5).add(UDim2.fromOffset(12, 18));
 		const size = new UDim2(0, 120, 0, 48);
 
 		expect(position).toBeInstanceOf(UDim2);
@@ -1361,6 +1450,8 @@ describe("preview runtime host mapping", () => {
 
 		globalThis.ResizeObserver = MockResizeObserver as typeof ResizeObserver;
 
+		const offsetWidthSpy = vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockImplementation(function (this: HTMLElement) { return this.getBoundingClientRect().width; });
+		const offsetHeightSpy = vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(function (this: HTMLElement) { return this.getBoundingClientRect().height; });
 		const getBoundingClientRectSpy = vi
 			.spyOn(HTMLElement.prototype, "getBoundingClientRect")
 			.mockImplementation(function getBoundingClientRect(this: HTMLElement) {
@@ -1427,6 +1518,8 @@ describe("preview runtime host mapping", () => {
 		} finally {
 			globalThis.ResizeObserver = originalResizeObserver;
 			getBoundingClientRectSpy.mockRestore();
+			offsetWidthSpy.mockRestore();
+			offsetHeightSpy.mockRestore();
 			scrollWidthSpy.mockRestore();
 			scrollHeightSpy.mockRestore();
 		}
@@ -1504,6 +1597,8 @@ describe("preview runtime host mapping", () => {
 	it("uses measurable host bounds in provider fallback layout when size is omitted", async () => {
 		layoutEngineMocks.init.mockRejectedValue(new Error("init failed"));
 
+		const offsetWidthSpy = vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockImplementation(function (this: HTMLElement) { return this.getBoundingClientRect().width; });
+		const offsetHeightSpy = vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(function (this: HTMLElement) { return this.getBoundingClientRect().height; });
 		const getBoundingClientRectSpy = vi
 			.spyOn(HTMLElement.prototype, "getBoundingClientRect")
 			.mockImplementation(function getBoundingClientRect(this: HTMLElement) {
@@ -1562,6 +1657,8 @@ describe("preview runtime host mapping", () => {
 			});
 		} finally {
 			getBoundingClientRectSpy.mockRestore();
+			offsetWidthSpy.mockRestore();
+			offsetHeightSpy.mockRestore();
 		}
 	});
 
@@ -2369,6 +2466,8 @@ describe("preview runtime fidelity gaps", () => {
 
 	it("measures automatic-size text hosts and exposes content-driven bounds", async () => {
 		let latestNodes: LayoutNode[] = [];
+		const offsetWidthSpy = vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockImplementation(function (this: HTMLElement) { return this.getBoundingClientRect().width; });
+		const offsetHeightSpy = vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(function (this: HTMLElement) { return this.getBoundingClientRect().height; });
 		const getBoundingClientRectSpy = vi
 			.spyOn(HTMLElement.prototype, "getBoundingClientRect")
 			.mockImplementation(function getBoundingClientRect(this: HTMLElement) {
@@ -2446,6 +2545,8 @@ describe("preview runtime fidelity gaps", () => {
 			});
 		} finally {
 			getBoundingClientRectSpy.mockRestore();
+			offsetWidthSpy.mockRestore();
+			offsetHeightSpy.mockRestore();
 		}
 	});
 
