@@ -5,6 +5,9 @@
 	"description": "WASM-backed preview graph traversal and trace engine for Loom.",
 	"main": "pkg/preview_analysis.js",
 	"types": "pkg/preview_analysis.d.ts",
+	"publishConfig": {
+		"access": "public"
+	},
 	"files": [
 		"pkg/preview_analysis.d.ts",
 		"pkg/preview_analysis.js",
