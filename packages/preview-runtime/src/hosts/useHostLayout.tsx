@@ -96,15 +96,21 @@ const mockScreenGui = {
 	TextBounds: createZeroVector2(),
 };
 
-function getHostPropertyFallback(property: string, isRootNode: boolean) {
+function getHostPropertyFallback(
+	property: string,
+	isRootNode: boolean,
+	viewport?: { width: number; height: number } | null,
+) {
 	switch (property) {
 		case "AbsolutePosition":
 		case "CanvasPosition":
 			return createZeroVector2();
 		case "AbsoluteSize":
-			return isRootNode ? createVector2(1000, 1000) : createZeroVector2();
+			return isRootNode
+				? createVector2(viewport?.width ?? 1000, viewport?.height ?? 1000)
+				: createZeroVector2();
 		case "AbsoluteWindowSize":
-			return createZeroVector2();
+			return createVector2(viewport?.width ?? 0, viewport?.height ?? 0);
 		case "CanvasSize":
 			return createZeroUDim2();
 		case "Parent":
@@ -409,30 +415,60 @@ export function useHostLayout(host: LayoutHostName, props: PreviewDomProps) {
 
 	const layoutContext = React.useContext(LayoutContext);
 
+	const intrinsicSize = useObservedIntrinsicSize(
+		elementRef,
+		normalizedNode.measurementEnabled,
+	);
+
+	const layoutNode = React.useMemo<PreviewLayoutNode>(
+		() => ({
+			debugLabel: normalizedNode.debugLabel,
+			hostMetadata: normalizedNode.hostMetadata,
+			id: normalizedNode.id,
+			intrinsicSize,
+			kind: normalizedNode.kind,
+			layout: normalizedNode.layout,
+			layoutModifiers: normalizedNode.layoutModifiers,
+			layoutOrder: normalizedNode.layoutOrder,
+			name: normalizedNode.name,
+			nodeType: normalizedNode.nodeType,
+			parentId: normalizedNode.parentId,
+			sourceOrder: normalizedNode.sourceOrder,
+			styleHints: normalizedNode.styleHints,
+			visible: normalizedNode.visible,
+		}),
+		[intrinsicSize, normalizedNode],
+	);
+
+	const computed = useRobloxLayout(layoutNode);
+
 	const resolveBridgedHostProperty = React.useCallback(
 		(property: string) => {
 			const element = elementRef.current;
 			const currentProps = basePropsRef.current as Record<string, unknown>;
+			const viewport = layoutContext?.viewport;
 			if (!element) {
-				return getHostPropertyFallback(property, isRootNode);
+				return getHostPropertyFallback(property, isRootNode, viewport);
 			}
 
 			const containerRect = layoutContext?.getContainerRect?.();
 
 			const offsetX = containerRect?.left ?? 0;
 			const offsetY = containerRect?.top ?? 0;
-			const viewport = layoutContext?.viewport;
 			const scaleX =
-				containerRect && viewport?.width
+				containerRect?.width && viewport?.width
 					? containerRect.width / viewport.width
 					: 1;
 			const scaleY =
-				containerRect && viewport?.height
+				containerRect?.height && viewport?.height
 					? containerRect.height / viewport.height
 					: 1;
 
 			switch (property) {
 				case "AbsolutePosition": {
+					if (computed) {
+						return createVector2(computed.x, computed.y);
+					}
 					const rect = element.getBoundingClientRect();
 					return createVector2(
 						(rect.left - offsetX) / scaleX,
@@ -440,6 +476,9 @@ export function useHostLayout(host: LayoutHostName, props: PreviewDomProps) {
 					);
 				}
 				case "AbsoluteSize": {
+					if (computed) {
+						return createVector2(computed.width, computed.height);
+					}
 					const rect = element.getBoundingClientRect();
 					return createVector2(rect.width / scaleX, rect.height / scaleY);
 				}
@@ -447,15 +486,15 @@ export function useHostLayout(host: LayoutHostName, props: PreviewDomProps) {
 					if (host === "scrollingframe") {
 						return createVector2(element.scrollWidth, element.scrollHeight);
 					}
+					if (computed) {
+						return createVector2(computed.width, computed.height);
+					}
 
 					const rect = element.getBoundingClientRect();
 					return createVector2(rect.width / scaleX, rect.height / scaleY);
 				}
 				case "AbsoluteWindowSize": {
-					return createVector2(
-						(containerRect?.width ?? globalThis.innerWidth ?? 0) / scaleX,
-						(containerRect?.height ?? globalThis.innerHeight ?? 0) / scaleY,
-					);
+					return createVector2(viewport?.width ?? 0, viewport?.height ?? 0);
 				}
 				case "CanvasPosition": {
 					if (host === "scrollingframe") {
@@ -467,7 +506,7 @@ export function useHostLayout(host: LayoutHostName, props: PreviewDomProps) {
 				case "CanvasSize":
 					return (
 						currentProps.CanvasSize ??
-						getHostPropertyFallback(property, isRootNode)
+						getHostPropertyFallback(property, isRootNode, viewport)
 					);
 				case "Name":
 					return (
@@ -477,27 +516,28 @@ export function useHostLayout(host: LayoutHostName, props: PreviewDomProps) {
 							: undefined) ??
 						element.getAttribute("data-preview-node-id") ??
 						element.getAttribute("aria-label") ??
-						getHostPropertyFallback(property, isRootNode)
+						getHostPropertyFallback(property, isRootNode, viewport)
 					);
 				case "Parent":
 					return (
-						currentProps.Parent ?? getHostPropertyFallback(property, isRootNode)
+						currentProps.Parent ??
+						getHostPropertyFallback(property, isRootNode, viewport)
 					);
 				case "Text":
 					return (
 						(element instanceof HTMLInputElement ? element.value : undefined) ??
 						currentProps.Text ??
-						getHostPropertyFallback(property, isRootNode)
+						getHostPropertyFallback(property, isRootNode, viewport)
 					);
 				case "TextBounds":
 					return (
 						readTextBounds(element) ??
-						getHostPropertyFallback(property, isRootNode)
+						getHostPropertyFallback(property, isRootNode, viewport)
 					);
 				default:
 					return (
 						currentProps[property] ??
-						getHostPropertyFallback(property, isRootNode)
+						getHostPropertyFallback(property, isRootNode, viewport)
 					);
 			}
 		},
@@ -506,6 +546,7 @@ export function useHostLayout(host: LayoutHostName, props: PreviewDomProps) {
 			isRootNode,
 			layoutContext?.getContainerRect,
 			layoutContext?.viewport,
+			computed,
 		],
 	);
 
@@ -546,35 +587,14 @@ export function useHostLayout(host: LayoutHostName, props: PreviewDomProps) {
 		};
 	}, [host, nodeId]);
 
-	const intrinsicSize = useObservedIntrinsicSize(
-		elementRef,
-		normalizedNode.measurementEnabled,
-	);
-
-	const layoutNode = React.useMemo<PreviewLayoutNode>(
-		() => ({
-			debugLabel: normalizedNode.debugLabel,
-			hostMetadata: normalizedNode.hostMetadata,
-			id: normalizedNode.id,
-			intrinsicSize,
-			kind: normalizedNode.kind,
-			layout: normalizedNode.layout,
-			layoutModifiers: normalizedNode.layoutModifiers,
-			layoutOrder: normalizedNode.layoutOrder,
-			name: normalizedNode.name,
-			nodeType: normalizedNode.nodeType,
-			parentId: normalizedNode.parentId,
-			sourceOrder: normalizedNode.sourceOrder,
-			styleHints: normalizedNode.styleHints,
-			visible: normalizedNode.visible,
-		}),
-		[intrinsicSize, normalizedNode],
-	);
-
-	const computed = useRobloxLayout(layoutNode);
 	const diagnostics = useLayoutDebugState(nodeId) as LayoutDebugState;
 
-	const bridgedHostPropertySnapshot = (() => {
+	const previousBridgedHostPropertySnapshotRef = React.useRef<Record<
+		string,
+		unknown
+	> | null>(null);
+
+	React.useLayoutEffect(() => {
 		const element = elementRef.current;
 		const currentProps = basePropsRef.current as Record<string, unknown>;
 		const containerRect = layoutContext?.getContainerRect?.();
@@ -583,36 +603,46 @@ export function useHostLayout(host: LayoutHostName, props: PreviewDomProps) {
 		const offsetY = containerRect?.top ?? 0;
 		const viewport = layoutContext?.viewport;
 		const scaleX =
-			containerRect && viewport?.width
+			containerRect?.width && viewport?.width
 				? containerRect.width / viewport.width
 				: 1;
 		const scaleY =
-			containerRect && viewport?.height
+			containerRect?.height && viewport?.height
 				? containerRect.height / viewport.height
 				: 1;
 
-		return Object.fromEntries(
+		const currentSnapshot = Object.fromEntries(
 			bridgedPreviewHostProperties.map((property) => {
+				if (!element) {
+					return [
+						property,
+						currentProps[property] ??
+							getHostPropertyFallback(property, isRootNode, viewport),
+					];
+				}
+
 				switch (property) {
 					case "AbsolutePosition": {
-						const rect = element?.getBoundingClientRect();
+						if (computed) {
+							return [property, createVector2(computed.x, computed.y)];
+						}
+						const rect = element.getBoundingClientRect();
 						return [
 							property,
-							rect
-								? createVector2(
-										(rect.left - offsetX) / scaleX,
-										(rect.top - offsetY) / scaleY,
-									)
-								: createZeroVector2(),
+							createVector2(
+								(rect.left - offsetX) / scaleX,
+								(rect.top - offsetY) / scaleY,
+							),
 						];
 					}
 					case "AbsoluteSize": {
-						const rect = element?.getBoundingClientRect();
+						if (computed) {
+							return [property, createVector2(computed.width, computed.height)];
+						}
+						const rect = element.getBoundingClientRect();
 						return [
 							property,
-							rect
-								? createVector2(rect.width / scaleX, rect.height / scaleY)
-								: createZeroVector2(),
+							createVector2(rect.width / scaleX, rect.height / scaleY),
 						];
 					}
 					case "AbsoluteCanvasSize":
@@ -620,18 +650,17 @@ export function useHostLayout(host: LayoutHostName, props: PreviewDomProps) {
 							property,
 							host === "scrollingframe" && element
 								? createVector2(element.scrollWidth, element.scrollHeight)
-								: createVector2(
-										(element?.getBoundingClientRect().width ?? 0) / scaleX,
-										(element?.getBoundingClientRect().height ?? 0) / scaleY,
-									),
+								: computed
+									? createVector2(computed.width, computed.height)
+									: createVector2(
+											(element.getBoundingClientRect().width ?? 0) / scaleX,
+											(element.getBoundingClientRect().height ?? 0) / scaleY,
+										),
 						];
 					case "AbsoluteWindowSize":
 						return [
 							property,
-							createVector2(
-								(containerRect?.width ?? globalThis.innerWidth ?? 0) / scaleX,
-								(containerRect?.height ?? globalThis.innerHeight ?? 0) / scaleY,
-							),
+							createVector2(viewport?.width ?? 0, viewport?.height ?? 0),
 						];
 					case "CanvasPosition":
 						return [
@@ -644,7 +673,7 @@ export function useHostLayout(host: LayoutHostName, props: PreviewDomProps) {
 						return [
 							property,
 							currentProps.CanvasSize ??
-								getHostPropertyFallback(property, isRootNode),
+								getHostPropertyFallback(property, isRootNode, viewport),
 						];
 					case "Name":
 						return [
@@ -653,47 +682,42 @@ export function useHostLayout(host: LayoutHostName, props: PreviewDomProps) {
 							currentProps.Name.length > 0
 								? currentProps.Name
 								: undefined) ??
-								element?.getAttribute("data-preview-node-id") ??
-								element?.getAttribute("aria-label") ??
-								getHostPropertyFallback(property, isRootNode) ??
+								element.getAttribute("data-preview-node-id") ??
+								element.getAttribute("aria-label") ??
+								getHostPropertyFallback(property, isRootNode, viewport) ??
 								nodeId,
 						];
 					case "Parent":
 						return [
 							property,
 							currentProps.Parent ??
-								getHostPropertyFallback(property, isRootNode),
+								getHostPropertyFallback(property, isRootNode, viewport),
 						];
 					case "Text":
 						return [
 							property,
-							element instanceof HTMLInputElement
+							(element instanceof HTMLInputElement
 								? element.value
-								: (currentProps.Text ??
-									getHostPropertyFallback(property, isRootNode)),
+								: undefined) ??
+								currentProps.Text ??
+								getHostPropertyFallback(property, isRootNode, viewport),
 						];
 					case "TextBounds":
 						return [
 							property,
 							readTextBounds(element) ??
-								getHostPropertyFallback(property, isRootNode),
+								getHostPropertyFallback(property, isRootNode, viewport),
 						];
 					default:
 						return [
 							property,
 							currentProps[property] ??
-								getHostPropertyFallback(property, isRootNode),
+								getHostPropertyFallback(property, isRootNode, viewport),
 						];
 				}
 			}),
 		) as Record<string, unknown>;
-	})();
-	const previousBridgedHostPropertySnapshotRef = React.useRef<Record<
-		string,
-		unknown
-	> | null>(null);
 
-	React.useLayoutEffect(() => {
 		const previousSnapshot = previousBridgedHostPropertySnapshotRef.current;
 		if (previousSnapshot) {
 			for (const property of bridgedPreviewHostProperties) {
@@ -704,7 +728,7 @@ export function useHostLayout(host: LayoutHostName, props: PreviewDomProps) {
 				if (
 					!areBridgedValuesEqual(
 						previousSnapshot[property],
-						bridgedHostPropertySnapshot[property],
+						currentSnapshot[property],
 					)
 				) {
 					notifyPreviewHostPropertyChanged(nodeId, property);
@@ -712,9 +736,8 @@ export function useHostLayout(host: LayoutHostName, props: PreviewDomProps) {
 			}
 		}
 
-		previousBridgedHostPropertySnapshotRef.current =
-			bridgedHostPropertySnapshot;
-	}, [bridgedHostPropertySnapshot, nodeId]);
+		previousBridgedHostPropertySnapshotRef.current = currentSnapshot;
+	}, [computed, host, isRootNode, layoutContext, nodeId]);
 	const hostNode = React.useMemo(
 		() => ({
 			...normalizedNode,

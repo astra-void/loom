@@ -193,6 +193,21 @@ function createHostOverrideStore(): HostOverrideStore {
 			};
 			emit(nodeId);
 			emitProperty(nodeId, property);
+
+			const geometryAffectingProperties = [
+				"Position",
+				"Size",
+				"AnchorPoint",
+				"CanvasPosition",
+				"CanvasSize",
+				"ZIndex",
+			];
+			if (geometryAffectingProperties.includes(property)) {
+				emitProperty(nodeId, "AbsolutePosition");
+				emitProperty(nodeId, "AbsoluteSize");
+				emitProperty(nodeId, "AbsoluteCanvasSize");
+				emitProperty(nodeId, "AbsoluteWindowSize");
+			}
 		},
 		notifyPropertyChange(nodeId, property) {
 			emitProperty(nodeId, property);
