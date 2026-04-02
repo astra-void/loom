@@ -5,6 +5,7 @@ import {
 	PUBLIC_RELEASE_PACKAGES,
 } from "../../scripts/release/release-config.mjs";
 import {
+	getReleaseDistTag,
 	parseReleaseTag,
 	validateReleaseVersions,
 } from "../../scripts/release/validate-release.mjs";
@@ -30,6 +31,40 @@ describe("validate-release script", () => {
 		).toThrow(/does not match package version/u);
 	});
 
+	it("accepts a matching prerelease tag and monoversion release packages", () => {
+		expect(() =>
+			validateReleaseVersions(
+				"v0.1.0-alpha.1",
+				createReleasePackages({
+					"@loom-dev/compiler": "0.1.0-alpha.1",
+					"@loom-dev/layout-engine": "0.1.0-alpha.1",
+					"@loom-dev/preview-analysis": "0.1.0-alpha.1",
+					"@loom-dev/preview-engine": "0.1.0-alpha.1",
+					"@loom-dev/preview-runtime": "0.1.0-alpha.1",
+					"@loom-dev/preview": "0.1.0-alpha.1",
+					"loom-dev": "0.1.0-alpha.1",
+				}),
+			),
+		).not.toThrow();
+	});
+
+	it("rejects a prerelease tag that does not match the package version", () => {
+		expect(() =>
+			validateReleaseVersions(
+				"v0.1.0-alpha.1",
+				createReleasePackages({
+					"@loom-dev/compiler": "0.1.0-beta.1",
+					"@loom-dev/layout-engine": "0.1.0-beta.1",
+					"@loom-dev/preview-analysis": "0.1.0-beta.1",
+					"@loom-dev/preview-engine": "0.1.0-beta.1",
+					"@loom-dev/preview-runtime": "0.1.0-beta.1",
+					"@loom-dev/preview": "0.1.0-beta.1",
+					"loom-dev": "0.1.0-beta.1",
+				}),
+			),
+		).toThrow(/does not match package version/u);
+	});
+
 	it("rejects release packages that do not share one version", () => {
 		expect(() =>
 			validateReleaseVersions(
@@ -42,6 +77,15 @@ describe("validate-release script", () => {
 	});
 
 	it("rejects non-release tag formats", () => {
-		expect(() => parseReleaseTag("release-0.1.0")).toThrow(/must match vX.Y.Z/u);
+		expect(() => parseReleaseTag("release-0.1.0")).toThrow(
+			/must match vX.Y.Z or vX.Y.Z-prerelease/u,
+		);
+	});
+
+	it("extracts the expected dist-tag from prerelease tags", () => {
+		expect(getReleaseDistTag("v0.1.0-alpha.1")).toBe("alpha");
+		expect(getReleaseDistTag("v0.1.0-beta.2")).toBe("beta");
+		expect(getReleaseDistTag("v0.1.0-rc.0")).toBe("rc");
+		expect(getReleaseDistTag("v0.1.0")).toBeNull();
 	});
 });

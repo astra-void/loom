@@ -17,6 +17,13 @@ describe("geometry fidelity portals", () => {
 		const anchorRef = React.createRef<any>();
 		const portalContentRef = React.createRef<any>();
 
+		const layoutProviderSpy = vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+			if (this.hasAttribute("data-preview-layout-provider")) {
+				return { bottom: 400, height: 400, left: 100, right: 700, toJSON: () => ({}), top: 100, width: 600, x: 100, y: 100 } as DOMRect;
+			}
+			return { bottom: 0, height: 0, left: 0, right: 0, toJSON: () => ({}), top: 0, width: 0, x: 0, y: 0 } as DOMRect;
+		});
+		
 		const container = document.createElement("div");
 		// Mock container bounds
 		vi.spyOn(container, "getBoundingClientRect").mockReturnValue({
@@ -43,6 +50,12 @@ describe("geometry fidelity portals", () => {
 						<Portal>
 							<Frame 
 								ref={portalContentRef} 
+								Position={UDim2.fromOffset(20, 20)}
+								Event={{
+									Activated: (obj) => {
+										portalContentRef.current.eventObj = obj;
+									}
+								}}
 								Size={UDim2.fromOffset(200, 200)} 
 							/>
 						</Portal>
@@ -61,9 +74,38 @@ describe("geometry fidelity portals", () => {
 		await waitFor(() => {
 			expect(anchorRef.current.AbsolutePosition.X).toBe(50);
 			expect(anchorRef.current.AbsolutePosition.Y).toBe(50);
+			expect(portalContentRef.current.AbsolutePosition.X).toBe(20);
+			expect(portalContentRef.current.AbsolutePosition.Y).toBe(20);
 			expect(portalContentRef.current.AbsoluteWindowSize.X).toBe(600);
 			expect(portalContentRef.current.AbsoluteWindowSize.Y).toBe(400);
 		});
+
+		
+		const domElement = portalContentRef.current.querySelector ? portalContentRef.current : portalContentRef.current.parentElement;
+		
+		// Mock DOM rect for the element inside the portal
+		vi.spyOn(domElement, "getBoundingClientRect").mockReturnValue({
+			bottom: 320,
+			height: 200,
+			left: 120,
+			right: 320,
+			toJSON: () => ({}),
+			top: 120,
+			width: 200,
+			x: 120,
+			y: 120,
+		});
+		
+		domElement.click(); // Trigger Activated
+
+		await waitFor(() => {
+			expect(portalContentRef.current.eventObj).toBeDefined();
+		});
+
+		expect(portalContentRef.current.eventObj.AbsolutePosition.X).toBe(20);
+		expect(portalContentRef.current.eventObj.AbsolutePosition.Y).toBe(20);
+		expect(portalContentRef.current.eventObj.AbsoluteWindowSize.X).toBe(600);
+		expect(portalContentRef.current.eventObj.AbsoluteWindowSize.Y).toBe(400);
 
 		unmount();
 	});

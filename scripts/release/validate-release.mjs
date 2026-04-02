@@ -8,16 +8,30 @@ import {
 	RELEASE_TAG_PATTERN,
 } from "./release-config.mjs";
 
-export function parseReleaseTag(tagName) {
+export function parseReleaseTagParts(tagName) {
 	const match = RELEASE_TAG_PATTERN.exec(tagName);
 
 	if (!match?.groups?.version) {
 		throw new Error(
-			`Release tag must match vX.Y.Z. Received ${JSON.stringify(tagName)}.`,
+			`Release tag must match vX.Y.Z or vX.Y.Z-prerelease. Received ${JSON.stringify(tagName)}.`,
 		);
 	}
 
-	return match.groups.version;
+	const prerelease = match.groups.prerelease;
+
+	return {
+		distTag: prerelease?.split(".")[0] ?? null,
+		prerelease: prerelease ?? null,
+		version: match.groups.version + (prerelease ? `-${prerelease}` : ""),
+	};
+}
+
+export function parseReleaseTag(tagName) {
+	return parseReleaseTagParts(tagName).version;
+}
+
+export function getReleaseDistTag(tagName) {
+	return parseReleaseTagParts(tagName).distTag;
 }
 
 export function readReleasePackageManifests(workspaceRoot = process.cwd()) {

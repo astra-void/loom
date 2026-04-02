@@ -12,7 +12,6 @@ describe("layout coordinate normalizations", () => {
     it("reports AbsolutePosition relative to the layout container instead of the window", async () => {
         const getBoundingClientRectSpy = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
             if (this.hasAttribute("data-preview-layout-provider")) {
-                console.log("container rect requested");
                 return {
                     left: 200,
                     top: 150,
@@ -27,7 +26,6 @@ describe("layout coordinate normalizations", () => {
             }
 
             if (this.dataset.previewHost === "textbutton") {
-                console.log("button rect requested");
                 return {
                     left: 250, // 200 + 50
                     top: 200,  // 150 + 50

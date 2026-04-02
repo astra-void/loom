@@ -1,4 +1,5 @@
-export const RELEASE_TAG_PATTERN = /^v(?<version>\d+\.\d+\.\d+)$/u;
+export const RELEASE_TAG_PATTERN =
+	/^v(?<version>\d+\.\d+\.\d+)(?:-(?<prerelease>[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/u;
 
 export const PUBLIC_RELEASE_PACKAGES = [
 	{
