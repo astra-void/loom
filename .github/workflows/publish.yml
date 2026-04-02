@@ -23,6 +23,9 @@ jobs:
   preflight:
     name: Release preflight
     runs-on: ubuntu-latest
+    outputs:
+      npm_dist_tag: ${{ steps.release_metadata.outputs.npm_dist_tag }}
+      npm_publish_tag_args: ${{ steps.release_metadata.outputs.npm_publish_tag_args }}
 
     steps:
       - name: Checkout
@@ -93,6 +96,33 @@ jobs:
 
       - name: Validate release metadata
         run: pnpm release:validate
+
+      - name: Derive release metadata
+        id: release_metadata
+        run: |
+          node --input-type=module <<'EOF'
+          import { appendFileSync } from "node:fs";
+          import { getReleaseDistTag } from "./scripts/release/validate-release.mjs";
+          
+          const tagName = process.env.GITHUB_REF_NAME;
+          
+          if (!tagName) {
+          	throw new Error("GITHUB_REF_NAME is required to derive release metadata.");
+          }
+          
+          const distTag = getReleaseDistTag(tagName);
+          const outputPath = process.env.GITHUB_OUTPUT;
+          
+          if (!outputPath) {
+          	throw new Error("GITHUB_OUTPUT is required to derive release metadata.");
+          }
+          
+          appendFileSync(outputPath, `npm_dist_tag=${distTag ?? ""}\n`);
+          appendFileSync(
+          	outputPath,
+          	`npm_publish_tag_args=${distTag ? `--tag ${distTag}` : ""}\n`,
+          );
+          EOF
 
   build-compiler:
     name: Build compiler ${{ matrix.target }}
@@ -200,10 +230,13 @@ jobs:
 
   publish-compiler:
     name: Publish compiler packages
-    needs: build-compiler
+    needs:
+      - preflight
+      - build-compiler
     runs-on: ubuntu-latest
     env:
       LOOM_PUBLISH_CLIENT: npm
+      NPM_PUBLISH_TAG_ARGS: ${{ needs.preflight.outputs.npm_publish_tag_args }}
 
     steps:
       - name: Checkout
@@ -262,12 +295,16 @@ jobs:
           path: packages/compiler/artifacts
 
       - name: Publish compiler packages
-        run: pnpm --filter @loom-dev/compiler run publish:napi -- --access public
+        run: pnpm --filter @loom-dev/compiler run publish:napi -- --access public $NPM_PUBLISH_TAG_ARGS
 
   publish-packages:
     name: Publish workspace packages
-    needs: publish-compiler
+    needs:
+      - preflight
+      - publish-compiler
     runs-on: ubuntu-latest
+    env:
+      NPM_PUBLISH_TAG_ARGS: ${{ needs.preflight.outputs.npm_publish_tag_args }}
 
     steps:
       - name: Checkout
@@ -320,4 +357,4 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Publish workspace packages
-        run: pnpm publish:workspace-packages -- --access public
+        run: pnpm publish:workspace-packages -- --access public $NPM_PUBLISH_TAG_ARGS
