@@ -192,25 +192,121 @@ function toPreviewInputObject(
 	};
 }
 
+function isPreviewVector2(value: unknown): value is { X: number; Y: number } {
+	return (
+		typeof value === "object" &&
+		value !== null &&
+		typeof (value as { X?: unknown }).X === "number" &&
+		typeof (value as { Y?: unknown }).Y === "number" &&
+		Number.isFinite((value as { X: number }).X) &&
+		Number.isFinite((value as { Y: number }).Y)
+	);
+}
+
 function createPreviewGuiObject(element: HTMLElement, host: HostName) {
+	const bridgedAbsolutePosition = isPreviewVector2(
+		(element as HTMLElement & { AbsolutePosition?: unknown }).AbsolutePosition,
+	)
+		? (
+				element as HTMLElement & {
+					AbsolutePosition: { X: number; Y: number };
+				}
+			).AbsolutePosition
+		: undefined;
+	const bridgedAbsoluteSize = isPreviewVector2(
+		(element as HTMLElement & { AbsoluteSize?: unknown }).AbsoluteSize,
+	)
+		? (
+				element as HTMLElement & {
+					AbsoluteSize: { X: number; Y: number };
+				}
+			).AbsoluteSize
+		: undefined;
+	const bridgedAbsoluteWindowSize = isPreviewVector2(
+		(element as HTMLElement & { AbsoluteWindowSize?: unknown })
+			.AbsoluteWindowSize,
+	)
+		? (
+				element as HTMLElement & {
+					AbsoluteWindowSize: { X: number; Y: number };
+				}
+			).AbsoluteWindowSize
+		: undefined;
+
+	if (
+		bridgedAbsolutePosition &&
+		bridgedAbsoluteSize &&
+		bridgedAbsoluteWindowSize
+	) {
+		return {
+			AbsolutePosition: {
+				X: bridgedAbsolutePosition.X,
+				Y: bridgedAbsolutePosition.Y,
+			},
+			AbsoluteSize: {
+				X: bridgedAbsoluteSize.X,
+				Y: bridgedAbsoluteSize.Y,
+			},
+			AbsoluteWindowSize: {
+				X: bridgedAbsoluteWindowSize.X,
+				Y: bridgedAbsoluteWindowSize.Y,
+			},
+			AutoButtonColor: true,
+			IsA(name: string) {
+				switch (name) {
+					case "Instance":
+					case "GuiObject":
+						return true;
+					case "GuiButton":
+						return host === "textbutton" || host === "imagebutton";
+					case "TextBox":
+						return host === "textbox";
+					default:
+						return false;
+				}
+			},
+			Text:
+				element instanceof HTMLInputElement
+					? element.value
+					: (element.textContent ?? ""),
+		};
+	}
+
 	const rect = element.getBoundingClientRect();
+	const layoutContext = (element as any).__previewLayoutContext;
+	let containerRect = layoutContext?.getContainerRect?.() ?? null;
 	const container = element.closest("[data-preview-layout-provider]");
-	const containerRect = container?.getBoundingClientRect();
+
+	if (!containerRect && container) {
+		containerRect = container.getBoundingClientRect();
+	}
+
 	const offsetX = containerRect?.left ?? 0;
 	const offsetY = containerRect?.top ?? 0;
 
 	let scaleX = 1;
 	let scaleY = 1;
 
-	if (container instanceof HTMLElement && containerRect) {
-		const viewportWidth =
-			Number(container.getAttribute("data-preview-viewport-width")) ||
-			containerRect.width;
-		const viewportHeight =
-			Number(container.getAttribute("data-preview-viewport-height")) ||
-			containerRect.height;
-		scaleX = viewportWidth > 0 ? containerRect.width / viewportWidth : 1;
-		scaleY = viewportHeight > 0 ? containerRect.height / viewportHeight : 1;
+	const viewportWidth =
+		layoutContext?.viewport?.width ||
+		Number(container?.getAttribute("data-preview-viewport-width")) ||
+		containerRect?.width ||
+		0;
+	const viewportHeight =
+		layoutContext?.viewport?.height ||
+		Number(container?.getAttribute("data-preview-viewport-height")) ||
+		containerRect?.height ||
+		0;
+
+	if (containerRect) {
+		scaleX =
+			viewportWidth > 0 && containerRect.width > 0
+				? containerRect.width / viewportWidth
+				: 1;
+		scaleY =
+			viewportHeight > 0 && containerRect.height > 0
+				? containerRect.height / viewportHeight
+				: 1;
 	}
 
 	return {
@@ -221,6 +317,10 @@ function createPreviewGuiObject(element: HTMLElement, host: HostName) {
 		AbsoluteSize: {
 			X: rect.width / scaleX,
 			Y: rect.height / scaleY,
+		},
+		AbsoluteWindowSize: {
+			X: viewportWidth,
+			Y: viewportHeight,
 		},
 		AutoButtonColor: true,
 		IsA(name: string) {

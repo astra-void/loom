@@ -565,9 +565,10 @@ export function useHostLayout(host: LayoutHostName, props: PreviewDomProps) {
 					nodeId,
 					resolveBridgedHostProperty,
 				);
+				(element as any).__previewLayoutContext = layoutContext;
 			}
 		},
-		[nodeId, resolveBridgedHostProperty],
+		[nodeId, resolveBridgedHostProperty, layoutContext],
 	);
 
 	React.useLayoutEffect(() => {

@@ -232,8 +232,8 @@ export const Slot = React.forwardRef<HTMLElement, SlotProps>(
 			(childProps.Change as PreviewChangeTable | undefined) ?? undefined;
 
 		const mergedProps: PreviewDomProps = {
-			...slotProps,
 			...childProps,
+			...slotProps,
 		};
 
 		mergedProps.children = childProps.children;
@@ -247,17 +247,22 @@ export const Slot = React.forwardRef<HTMLElement, SlotProps>(
 			nodeId: `slot:${slotNodeId}`,
 		});
 
+		const isHostElement = typeof slotRenderType === "string";
+
 		const clonedProps: Record<string, unknown> = {
-			...normalized.domProps,
+			...mergedProps,
+			...(isHostElement ? normalized.domProps : {}),
 			ref: mergedRef,
-			children: React.Children.toArray([
-				normalized.text ? (
-					<span key="preview-slot-text" className="preview-host-text">
-						{normalized.text}
-					</span>
-				) : null,
-				normalized.children,
-			]),
+			children: isHostElement
+				? React.Children.toArray([
+						normalized.text ? (
+							<span key="preview-slot-text" className="preview-host-text">
+								{normalized.text}
+							</span>
+						) : null,
+						normalized.children,
+					])
+				: normalized.children,
 		};
 		clonedProps.Change = mergedProps.Change;
 		clonedProps.Event = mergedProps.Event;

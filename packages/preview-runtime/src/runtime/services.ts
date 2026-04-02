@@ -479,6 +479,17 @@ function getPreviewGuiObjectClassName(host: string) {
 	return previewGuiObjectClassNames.get(host) ?? host;
 }
 
+function isPreviewVector2(value: unknown): value is { X: number; Y: number } {
+	return (
+		typeof value === "object" &&
+		value !== null &&
+		typeof (value as { X?: unknown }).X === "number" &&
+		typeof (value as { Y?: unknown }).Y === "number" &&
+		Number.isFinite((value as { X: number }).X) &&
+		Number.isFinite((value as { Y: number }).Y)
+	);
+}
+
 function createPreviewGuiObjectHandle(
 	element: HTMLElement,
 	host: string,
@@ -489,6 +500,34 @@ function createPreviewGuiObjectHandle(
 		element.getAttribute("aria-label") ??
 		className;
 	const rect = element.getBoundingClientRect();
+	const bridgedAbsolutePosition = isPreviewVector2(
+		(element as HTMLElement & { AbsolutePosition?: unknown }).AbsolutePosition,
+	)
+		? (
+				element as HTMLElement & {
+					AbsolutePosition: { X: number; Y: number };
+				}
+			).AbsolutePosition
+		: undefined;
+	const bridgedAbsoluteSize = isPreviewVector2(
+		(element as HTMLElement & { AbsoluteSize?: unknown }).AbsoluteSize,
+	)
+		? (
+				element as HTMLElement & {
+					AbsoluteSize: { X: number; Y: number };
+				}
+			).AbsoluteSize
+		: undefined;
+	const bridgedAbsoluteWindowSize = isPreviewVector2(
+		(element as HTMLElement & { AbsoluteWindowSize?: unknown })
+			.AbsoluteWindowSize,
+	)
+		? (
+				element as HTMLElement & {
+					AbsoluteWindowSize: { X: number; Y: number };
+				}
+			).AbsoluteWindowSize
+		: undefined;
 	const handle = {
 		ClassName: className,
 		Name: name,
@@ -535,19 +574,28 @@ function createPreviewGuiObjectHandle(
 		AbsolutePosition: {
 			configurable: false,
 			enumerable: false,
-			value: createMockVector2(rect.left, rect.top),
+			value: createMockVector2(
+				bridgedAbsolutePosition?.X ?? rect.left,
+				bridgedAbsolutePosition?.Y ?? rect.top,
+			),
 			writable: false,
 		},
 		AbsoluteSize: {
 			configurable: false,
 			enumerable: false,
-			value: createMockVector2(rect.width, rect.height),
+			value: createMockVector2(
+				bridgedAbsoluteSize?.X ?? rect.width,
+				bridgedAbsoluteSize?.Y ?? rect.height,
+			),
 			writable: false,
 		},
 		AbsoluteWindowSize: {
 			configurable: false,
 			enumerable: false,
-			value: createMockVector2(0, 0),
+			value: createMockVector2(
+				bridgedAbsoluteWindowSize?.X ?? 0,
+				bridgedAbsoluteWindowSize?.Y ?? 0,
+			),
 			writable: false,
 		},
 		CanvasSize: {

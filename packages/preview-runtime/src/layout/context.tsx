@@ -490,10 +490,9 @@ export function LayoutProvider(props: LayoutProviderProps) {
 		[controller],
 	);
 
-	const getContainerRect = React.useCallback(
-		() => containerRef.current?.getBoundingClientRect() ?? null,
-		[],
-	);
+	const getContainerRect = React.useCallback(() => {
+		return containerRef.current?.getBoundingClientRect() ?? null;
+	}, []);
 
 	const contextValue = React.useMemo<LayoutContextValue>(
 		() => ({
