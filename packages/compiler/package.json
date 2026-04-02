@@ -6,6 +6,9 @@
 	"main": "wrapper.js",
 	"types": "wrapper.d.ts",
 	"module": "wrapper.mjs",
+	"publishConfig": {
+		"access": "public"
+	},
 	"files": [
 		"wrapper.js",
 		"wrapper.d.ts",

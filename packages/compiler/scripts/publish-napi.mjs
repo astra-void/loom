@@ -287,6 +287,10 @@ async function validateStage() {
 }
 
 async function detectPublishClient() {
+	if (process.env.LOOM_PUBLISH_CLIENT) {
+		return process.env.LOOM_PUBLISH_CLIENT;
+	}
+
 	if (process.env.npm_config_user_agent?.startsWith("pnpm/")) {
 		return "pnpm";
 	}
