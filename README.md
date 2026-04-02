@@ -44,9 +44,43 @@ After building the workspace packages, the packaged CLI entrypoints are:
 - `@loom-dev/compiler`
 - `loom-dev`
 - `@loom-dev/layout-engine`
+- `@loom-dev/preview-analysis`
 - `@loom-dev/preview-runtime`
 - `@loom-dev/preview-engine`
 - `@loom-dev/preview`
+
+## Release
+
+Package publishing runs from `.github/workflows/publish.yml` when a `vX.Y.Z` tag is pushed.
+All public packages are versioned together, and the tag version must exactly match every public package version.
+The release validation step also requires the tagged commit to be contained in `main`.
+
+Before the first release, configure npm trusted publishing for each public package in this repository:
+
+- `@loom-dev/compiler`
+- `@loom-dev/compiler-darwin-arm64`
+- `@loom-dev/compiler-darwin-x64`
+- `@loom-dev/compiler-linux-arm64-gnu`
+- `@loom-dev/compiler-linux-arm64-musl`
+- `@loom-dev/compiler-linux-x64-gnu`
+- `@loom-dev/compiler-linux-x64-musl`
+- `@loom-dev/compiler-win32-arm64-msvc`
+- `@loom-dev/compiler-win32-x64-msvc`
+- `@loom-dev/layout-engine`
+- `@loom-dev/preview-analysis`
+- `@loom-dev/preview-runtime`
+- `@loom-dev/preview-engine`
+- `@loom-dev/preview`
+- `loom-dev`
+
+Release flow:
+
+- update the public package versions in the repo
+- merge the release commit into `main`
+- push a matching tag such as `v0.1.0`
+
+The publish workflow runs a full preflight (`lint`, `typecheck`, `test`, release metadata validation), builds the eight `@loom-dev/compiler` native target artifacts in a matrix, publishes the staged compiler packages, and then publishes the remaining workspace packages from `pnpm pack` tarballs.
+For local verification, use `pnpm release:validate`, `pnpm --filter @loom-dev/compiler run publish:napi -- --dry-run`, and `pnpm publish:workspace-packages -- --dry-run`.
 
 The preview harness loads static targets from:
 
