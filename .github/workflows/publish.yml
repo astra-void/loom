@@ -1,0 +1,323 @@
+name: Publish
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  NODE_VERSION: 24
+  WASM_PACK_VERSION: 0.14.0
+  TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
+  TURBO_TEAM: ${{ vars.TURBO_TEAM }}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    name: Release preflight
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch main branch
+        run: git fetch origin main:refs/remotes/origin/main
+
+      - name: Enable pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install ripgrep
+        run: sudo apt-get install -y ripgrep
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache Rust artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cargo/bin
+            packages/compiler/target
+            packages/layout-engine/target
+            packages/preview-analysis/target
+          key: ${{ runner.os }}-publish-preflight-rust-${{ hashFiles('packages/compiler/Cargo.lock', 'packages/compiler/Cargo.toml', 'packages/layout-engine/Cargo.lock', 'packages/layout-engine/Cargo.toml', 'packages/preview-analysis/Cargo.lock', 'packages/preview-analysis/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-publish-preflight-rust-
+
+      - name: Install wasm-pack
+        run: |
+          if command -v wasm-pack >/dev/null 2>&1; then
+            current_version="$(wasm-pack --version | awk '{print $2}')"
+          else
+            current_version=""
+          fi
+
+          if [ "$current_version" = "$WASM_PACK_VERSION" ]; then
+            echo "Using cached wasm-pack ${current_version}"
+          else
+            rm -f "$HOME/.cargo/bin/wasm-pack"
+            cargo install wasm-pack --version "$WASM_PACK_VERSION" --locked
+          fi
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Test
+        run: pnpm test
+
+      - name: Validate release metadata
+        run: pnpm release:validate
+
+  build-compiler:
+    name: Build compiler ${{ matrix.target }}
+    needs: preflight
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-apple-darwin
+            runner: macos-14
+            platform_arch_abi: darwin-x64
+          - target: aarch64-apple-darwin
+            runner: macos-14
+            platform_arch_abi: darwin-arm64
+          - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-latest
+            platform_arch_abi: linux-x64-gnu
+          - target: x86_64-unknown-linux-musl
+            runner: ubuntu-latest
+            platform_arch_abi: linux-x64-musl
+          - target: aarch64-unknown-linux-gnu
+            runner: ubuntu-latest
+            platform_arch_abi: linux-arm64-gnu
+          - target: aarch64-unknown-linux-musl
+            runner: ubuntu-latest
+            platform_arch_abi: linux-arm64-musl
+          - target: x86_64-pc-windows-msvc
+            runner: ubuntu-latest
+            platform_arch_abi: win32-x64-msvc
+          - target: aarch64-pc-windows-msvc
+            runner: ubuntu-latest
+            platform_arch_abi: win32-arm64-msvc
+
+    env:
+      XWIN_ACCEPT_LICENSE: "1"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Enable pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown,${{ matrix.target }}
+
+      - name: Cache Rust artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cargo/bin
+            packages/compiler/target
+          key: ${{ runner.os }}-${{ matrix.target }}-publish-rust-${{ hashFiles('packages/compiler/Cargo.lock', 'packages/compiler/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.target }}-publish-rust-
+
+      - name: Install Zig
+        if: runner.os == 'Linux'
+        uses: goto-bus-stop/setup-zig@v2
+        with:
+          version: 0.14.0
+
+      - name: Install cross-compilation tools
+        if: runner.os == 'Linux'
+        run: cargo install cargo-zigbuild cargo-xwin --locked
+
+      - name: Install wasm-pack
+        run: |
+          if command -v wasm-pack >/dev/null 2>&1; then
+            current_version="$(wasm-pack --version | awk '{print $2}')"
+          else
+            current_version=""
+          fi
+
+          if [ "$current_version" = "$WASM_PACK_VERSION" ]; then
+            echo "Using cached wasm-pack ${current_version}"
+          else
+            rm -f "$HOME/.cargo/bin/wasm-pack"
+            cargo install wasm-pack --version "$WASM_PACK_VERSION" --locked
+          fi
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build release compiler target
+        run: pnpm --filter @loom-dev/compiler run build:release -- --target ${{ matrix.target }}
+
+      - name: Upload compiler artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: compiler-artifact-${{ matrix.platform_arch_abi }}
+          path: packages/compiler/loom_compiler.${{ matrix.platform_arch_abi }}.node
+          if-no-files-found: error
+
+  publish-compiler:
+    name: Publish compiler packages
+    needs: build-compiler
+    runs-on: ubuntu-latest
+    env:
+      LOOM_PUBLISH_CLIENT: npm
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Enable pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache Rust artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cargo/bin
+            packages/compiler/target
+          key: ${{ runner.os }}-publish-compiler-rust-${{ hashFiles('packages/compiler/Cargo.lock', 'packages/compiler/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-publish-compiler-rust-
+
+      - name: Install wasm-pack
+        run: |
+          if command -v wasm-pack >/dev/null 2>&1; then
+            current_version="$(wasm-pack --version | awk '{print $2}')"
+          else
+            current_version=""
+          fi
+
+          if [ "$current_version" = "$WASM_PACK_VERSION" ]; then
+            echo "Using cached wasm-pack ${current_version}"
+          else
+            rm -f "$HOME/.cargo/bin/wasm-pack"
+            cargo install wasm-pack --version "$WASM_PACK_VERSION" --locked
+          fi
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Download compiler artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: compiler-artifact-*
+          merge-multiple: true
+          path: packages/compiler/artifacts
+
+      - name: Publish compiler packages
+        run: pnpm --filter @loom-dev/compiler run publish:napi -- --access public
+
+  publish-packages:
+    name: Publish workspace packages
+    needs: publish-compiler
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Enable pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache Rust artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cargo/bin
+            packages/layout-engine/target
+            packages/preview-analysis/target
+          key: ${{ runner.os }}-publish-packages-rust-${{ hashFiles('packages/layout-engine/Cargo.lock', 'packages/layout-engine/Cargo.toml', 'packages/preview-analysis/Cargo.lock', 'packages/preview-analysis/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-publish-packages-rust-
+
+      - name: Install wasm-pack
+        run: |
+          if command -v wasm-pack >/dev/null 2>&1; then
+            current_version="$(wasm-pack --version | awk '{print $2}')"
+          else
+            current_version=""
+          fi
+
+          if [ "$current_version" = "$WASM_PACK_VERSION" ]; then
+            echo "Using cached wasm-pack ${current_version}"
+          else
+            rm -f "$HOME/.cargo/bin/wasm-pack"
+            cargo install wasm-pack --version "$WASM_PACK_VERSION" --locked
+          fi
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Publish workspace packages
+        run: pnpm publish:workspace-packages -- --access public
