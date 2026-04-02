@@ -5,6 +5,9 @@
 	"description": "Loom source-first preview build, server, and runtime package.",
 	"main": "dist/index.mjs",
 	"types": "dist/index.d.ts",
+	"publishConfig": {
+		"access": "public"
+	},
 	"files": [
 		"dist",
 		"README.md"
