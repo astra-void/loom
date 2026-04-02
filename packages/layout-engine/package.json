@@ -5,6 +5,9 @@
 	"description": "WASM layout engine for Loom previews.",
 	"main": "pkg/layout_engine.js",
 	"types": "pkg/layout_engine.d.ts",
+	"publishConfig": {
+		"access": "public"
+	},
 	"files": [
 		"pkg/layout_engine.d.ts",
 		"pkg/layout_engine.js",
