@@ -82,6 +82,7 @@ const PREVIEW_ONLY_PROP_NAMES = new Set([
 	"ParentId",
 	"PlaceholderText",
 	"Position",
+	"Rotation",
 	"Scale",
 	"ScrollBarThickness",
 	"ScrollingDirection",
@@ -193,15 +194,33 @@ function toPreviewInputObject(
 
 function createPreviewGuiObject(element: HTMLElement, host: HostName) {
 	const rect = element.getBoundingClientRect();
+	const container = element.closest("[data-preview-layout-provider]");
+	const containerRect = container?.getBoundingClientRect();
+	const offsetX = containerRect?.left ?? 0;
+	const offsetY = containerRect?.top ?? 0;
+
+	let scaleX = 1;
+	let scaleY = 1;
+
+	if (container instanceof HTMLElement && containerRect) {
+		const viewportWidth =
+			Number(container.getAttribute("data-preview-viewport-width")) ||
+			containerRect.width;
+		const viewportHeight =
+			Number(container.getAttribute("data-preview-viewport-height")) ||
+			containerRect.height;
+		scaleX = viewportWidth > 0 ? containerRect.width / viewportWidth : 1;
+		scaleY = viewportHeight > 0 ? containerRect.height / viewportHeight : 1;
+	}
 
 	return {
 		AbsolutePosition: {
-			X: rect.left,
-			Y: rect.top,
+			X: (rect.left - offsetX) / scaleX,
+			Y: (rect.top - offsetY) / scaleY,
 		},
 		AbsoluteSize: {
-			X: rect.width,
-			Y: rect.height,
+			X: rect.width / scaleX,
+			Y: rect.height / scaleY,
 		},
 		AutoButtonColor: true,
 		IsA(name: string) {
@@ -236,6 +255,8 @@ export type ResolvedPreviewDomProps = {
 	disabled: boolean;
 	domProps: ForwardedDomProps & Record<string, unknown>;
 	image: unknown;
+	imageColor3: unknown;
+	imageTransparency: number | undefined;
 	text: string | undefined;
 };
 
@@ -315,7 +336,6 @@ export function applyComputedLayoutStyle(
 	delete style.top;
 	delete style.width;
 	delete style.height;
-	delete style.transform;
 	delete style.translate;
 
 	style.position = "absolute";
@@ -360,6 +380,7 @@ export function resolvePreviewDomProps(
 		ParentId,
 		PlaceholderText,
 		Position,
+		Rotation,
 		Scale,
 		Selectable,
 		AutomaticSize,
@@ -402,8 +423,6 @@ export function resolvePreviewDomProps(
 	void CornerRadius;
 	void Font;
 	void Id;
-	void ImageColor3;
-	void ImageTransparency;
 	void Modal;
 	void Name;
 	void ParentId;
@@ -413,7 +432,6 @@ export function resolvePreviewDomProps(
 	void ClipsDescendants;
 	void SizeConstraint;
 	void TextScaled;
-	void TextTransparency;
 	void Thickness;
 	void Transparency;
 
@@ -454,8 +472,15 @@ export function resolvePreviewDomProps(
 		computedStyle.backgroundColor = "transparent";
 	}
 
-	if (TextColor3) {
-		computedStyle.color = toCssColor(TextColor3);
+	if (TextColor3 || TextTransparency !== undefined) {
+		computedStyle.color = toCssColor(
+			TextColor3 ?? { R: 0, G: 0, B: 0 },
+			TextTransparency,
+		);
+	}
+
+	if (Rotation !== undefined && Rotation !== 0) {
+		computedStyle.transform = `rotate(${Rotation}deg)`;
 	}
 
 	const fontStyle = mapRobloxFont(Font);
@@ -652,6 +677,8 @@ export function resolvePreviewDomProps(
 				Selectable === false ? -1 : (forwarded.tabIndex as number | undefined),
 		},
 		image: Image,
+		imageColor3: ImageColor3,
+		imageTransparency: ImageTransparency,
 		text: coerceTextValue(Text),
 	};
 }

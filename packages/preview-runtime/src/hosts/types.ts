@@ -104,6 +104,7 @@ export type PreviewDomProps = {
 	ParentId?: string;
 	PlaceholderText?: string;
 	Position?: UDim2Like;
+	Rotation?: number;
 	ScrollBarThickness?: number;
 	ScrollingDirection?: string;
 	Scale?: number;

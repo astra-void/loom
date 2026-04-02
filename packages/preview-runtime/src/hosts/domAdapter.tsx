@@ -78,6 +78,8 @@ export type PreviewHostNode = PreviewLayoutNode & {
 		disabled: boolean;
 		domProps: ResolvedPreviewDomProps["domProps"];
 		image: unknown;
+		imageColor3: unknown;
+		imageTransparency: number | undefined;
 		text: string | undefined;
 	};
 	renderChildren: React.ReactNode;
@@ -208,10 +210,32 @@ function renderHostText(text: string | undefined) {
 	);
 }
 
-function renderHostImage(image: unknown) {
+function renderHostImage(
+	image: unknown,
+	imageTransparency?: number,
+	imageColor3?: unknown,
+) {
 	if (typeof image !== "string" || image.length === 0) {
 		return undefined;
 	}
+
+	const style: React.CSSProperties = {
+		display: "block",
+		height: "100%",
+		objectFit: "cover",
+		pointerEvents: "none",
+		width: "100%",
+	};
+
+	if (imageTransparency !== undefined) {
+		style.opacity = 1 - imageTransparency;
+	}
+
+	// We cannot trivially tint an image using ImageColor3 without SVG filters,
+	// but we can map it to CSS filter if it's very simple. For now, we'll leave
+	// it unsupported/partially supported but ensure it's structurally valid to be
+	// tweened.
+	void imageColor3;
 
 	return (
 		<img
@@ -219,13 +243,7 @@ function renderHostImage(image: unknown) {
 			aria-hidden="true"
 			className="preview-host-image"
 			src={image}
-			style={{
-				display: "block",
-				height: "100%",
-				objectFit: "cover",
-				pointerEvents: "none",
-				width: "100%",
-			}}
+			style={style}
 		/>
 	);
 }
@@ -503,6 +521,8 @@ function createHostNode(source: SourceHostDescriptor): PreviewHostNode {
 			disabled: resolved.disabled,
 			domProps: resolved.domProps,
 			image: resolved.image,
+			imageColor3: resolved.imageColor3,
+			imageTransparency: resolved.imageTransparency,
 			text: resolved.text,
 		},
 		sourceProps: source.props,
@@ -538,6 +558,16 @@ export const domPresentationAdapter: PresentationAdapter = {
 	render(node, children, ref) {
 		const rendered = createRenderedDomProps(node);
 
+		if (
+			node.host === "imagelabel" &&
+			node.presentationHints.imageTransparency !== undefined
+		) {
+			rendered.style = {
+				...rendered.style,
+				opacity: 1 - node.presentationHints.imageTransparency,
+			};
+		}
+
 		switch (node.host) {
 			case "textbutton":
 				return (
@@ -559,7 +589,11 @@ export const domPresentationAdapter: PresentationAdapter = {
 						ref={ref as React.Ref<HTMLButtonElement>}
 						type="button"
 					>
-						{renderHostImage(node.presentationHints.image)}
+						{renderHostImage(
+							node.presentationHints.image,
+							node.presentationHints.imageTransparency,
+							node.presentationHints.imageColor3,
+						)}
 						{children}
 					</button>
 				);

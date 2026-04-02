@@ -52,6 +52,7 @@ export type PreviewLayoutProbeSnapshot = {
 
 type LayoutContextValue = {
 	error: string | null;
+	getContainerRect: () => DOMRect | null;
 	getDebugNode: (nodeId: string) => PreviewLayoutDebugNode | null;
 	getRect: (nodeId: string) => ComputedRect | null;
 	isReady: boolean;
@@ -189,7 +190,7 @@ function getSharedLayoutContexts(): LayoutContexts {
 }
 
 const sharedLayoutContexts = getSharedLayoutContexts();
-const LayoutContext = sharedLayoutContexts.layout;
+export const LayoutContext = sharedLayoutContexts.layout;
 const ParentNodeContext = sharedLayoutContexts.parentNode;
 const ParentRectContext = sharedLayoutContexts.parentRect;
 const ParentRenderRectContext = sharedLayoutContexts.parentRenderRect;
@@ -489,9 +490,15 @@ export function LayoutProvider(props: LayoutProviderProps) {
 		[controller],
 	);
 
+	const getContainerRect = React.useCallback(
+		() => containerRef.current?.getBoundingClientRect() ?? null,
+		[],
+	);
+
 	const contextValue = React.useMemo<LayoutContextValue>(
 		() => ({
 			error,
+			getContainerRect,
 			getDebugNode,
 			getRect,
 			isReady,
@@ -502,6 +509,7 @@ export function LayoutProvider(props: LayoutProviderProps) {
 		}),
 		[
 			error,
+			getContainerRect,
 			getDebugNode,
 			getRect,
 			isReady,

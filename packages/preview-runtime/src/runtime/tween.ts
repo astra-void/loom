@@ -575,10 +575,8 @@ class PreviewTweenControllerImpl implements PreviewTweenController {
 	private finishFiniteZeroDurationRun() {
 		if (this.options.tweenInfo.RepeatCount < 0) {
 			this.applyTerminalState(1);
-			this.state = this.options.playbackStates.Completed;
-			this.preparedRun = false;
-			this.releaseReservations();
-			this.options.onCompleted(this.options.playbackStates.Completed);
+			this.state = this.options.playbackStates.Playing;
+			this.stopFrameLoop();
 			return;
 		}
 
