@@ -12,6 +12,8 @@ Source-first preview config, build, server, and headless utilities for Loom work
 pnpm add @loom-dev/preview
 ```
 
+For CLI-only usage, install `loom-dev` and use `loom preview`, `loom build`, `loom config`, `loom snapshot`, or `loom check`.
+
 ## Workspace Development
 
 Within this repository, use:
@@ -52,7 +54,9 @@ export default defineConfig({
 
 ## Programmatic Surface
 
-The main exports are:
+`@loom-dev/preview` is the official library package for programmatic Loom usage.
+
+Root exports:
 
 - `defineConfig`
 - `loadPreviewConfig`
@@ -64,11 +68,96 @@ The main exports are:
 - `createStaticTargetsDiscovery`
 - `createWorkspaceTargetsDiscovery`
 
+Vite plugin export:
+
+- `@loom-dev/preview/vite`
+  - `createPreviewVitePlugin`
+  - `createScopedPreviewPlugins`
+
 `createPreviewHeadlessSession()` now creates a lazy headless session. Call `session.run()` to execute all or selected preview entries, and read `session.getSnapshot()` for the current engine payload plus the `execution` field with per-entry render status, runtime/layout issues, layout debug, degraded-host warnings, and viewport metadata.
 
 `buildPreviewModules` is the raw target-array, module-only wrapper and continues to reject `design-time`.
 
 `buildPreviewArtifacts` is the config-aware surface. It reuses `loadPreviewConfig()` / target discovery and can build metadata sidecars in `design-time`. Relative filesystem paths passed to `cwd`, `configFile`, and `outDir` resolve from the resolved preview working directory.
+
+## Node API Example
+
+```ts
+import {
+  buildPreviewArtifacts,
+  createPreviewHeadlessSession,
+  loadPreviewConfig,
+  startPreviewServer,
+} from "@loom-dev/preview";
+
+const resolvedConfig = await loadPreviewConfig({
+  cwd: process.cwd(),
+});
+
+await buildPreviewArtifacts({
+  cwd: process.cwd(),
+  outDir: "./generated-preview",
+});
+
+const session = await createPreviewHeadlessSession({
+  cwd: process.cwd(),
+});
+
+try {
+  const snapshot = await session.run();
+  console.log(snapshot.execution.summary);
+} finally {
+  session.dispose();
+}
+
+const server = await startPreviewServer({
+  ...resolvedConfig,
+  server: {
+    ...resolvedConfig.server,
+    open: false,
+    port: 0,
+  },
+});
+
+await server.close();
+```
+
+## Vite Plugin Example
+
+Use `createPreviewVitePlugin()` for Loom's own preview virtual modules and source transforms.
+Use `createScopedPreviewPlugins()` when third-party Vite plugins should only run for preview-scoped files instead of the whole app.
+
+```ts
+import react from "@vitejs/plugin-react";
+import { defineConfig } from "vite";
+import { loadPreviewConfig } from "@loom-dev/preview";
+import {
+  createPreviewVitePlugin,
+  createScopedPreviewPlugins,
+} from "@loom-dev/preview/vite";
+import topLevelAwait from "vite-plugin-top-level-await";
+import wasm from "vite-plugin-wasm";
+
+const resolvedConfig = await loadPreviewConfig({
+  cwd: process.cwd(),
+});
+
+export default defineConfig({
+  plugins: [
+    ...createScopedPreviewPlugins([react(), wasm(), topLevelAwait()], resolvedConfig),
+    ...createPreviewVitePlugin({
+      projectName: resolvedConfig.projectName,
+      reactAliases: resolvedConfig.reactAliases,
+      reactRobloxAliases: resolvedConfig.reactRobloxAliases,
+      runtimeModule: resolvedConfig.runtimeModule,
+      runtimeAliases: resolvedConfig.runtimeAliases,
+      targets: resolvedConfig.targets,
+      transformMode: resolvedConfig.transformMode,
+      workspaceRoot: resolvedConfig.workspaceRoot,
+    }),
+  ],
+});
+```
 
 ```ts
 import { buildPreviewArtifacts } from "@loom-dev/preview";
@@ -89,5 +178,3 @@ await buildPreviewArtifacts({
   transformMode: "design-time",
 });
 ```
-
-For the packaged CLI, install `loom-dev` and use `loom preview`, `loom build`, `loom config`, `loom snapshot`, or `loom check`.

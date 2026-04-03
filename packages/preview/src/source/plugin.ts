@@ -27,6 +27,11 @@ import {
 	stripFileIdDecorations,
 } from "./pathUtils";
 import {
+	resolvePreviewPackageEntry,
+	resolvePreviewRuntimeRootEntry,
+	resolvePreviewShellRoot,
+} from "./previewPackagePaths";
+import {
 	type PreviewProgressScope,
 	type PreviewProgressWriter,
 	writePreviewTiming,
@@ -80,15 +85,6 @@ function logPreviewTiming(
 
 function createRbxStyleImport(runtimeModulePath: string) {
 	return `import { ${RBX_STYLE_HELPER_NAME} } from ${JSON.stringify(runtimeModulePath)};\n`;
-}
-
-function resolvePreviewPackageEntry(candidates: string[], label: string) {
-	const matchedPath = candidates.find((candidate) => fs.existsSync(candidate));
-	if (!matchedPath) {
-		throw new Error(`Unable to resolve ${label} entry.`);
-	}
-
-	return matchedPath.split(path.sep).join("/");
 }
 
 type TransformPreviewSourceInvocationOptions = TransformPreviewSourceOptions & {
@@ -155,7 +151,9 @@ function resolveBrowserReactShimEntry(fileName: string) {
 			),
 		],
 		`react shim ${fileName}`,
-	);
+	)
+		.split(path.sep)
+		.join("/");
 }
 
 function resolveBrowserReactRobloxShimEntry() {
@@ -168,32 +166,13 @@ function resolveBrowserReactRobloxShimEntry() {
 			),
 		],
 		"react-roblox shim",
-	);
-}
-
-function resolveRuntimeEntryPath() {
-	const candidates = [
-		path.resolve(__dirname, "../../../preview-runtime/src/index.ts"),
-		path.resolve(__dirname, "../../../preview-runtime/dist/index.js"),
-	];
-	const candidate = candidates.find((filePath) => fs.existsSync(filePath));
-	if (!candidate) {
-		throw new Error("Unable to resolve @loom-dev/preview-runtime entry.");
-	}
-
-	return candidate.split(path.sep).join("/");
-}
-
-function resolvePreviewShellRoot() {
-	return resolvePreviewPackageEntry(
-		[
-			path.resolve(__dirname, "../shell"),
-			path.resolve(__dirname, "../../src/shell"),
-		],
-		"preview shell root",
 	)
 		.split(path.sep)
 		.join("/");
+}
+
+function resolveRuntimeEntryPath() {
+	return resolvePreviewRuntimeRootEntry().split(path.sep).join("/");
 }
 
 function resolveMockEntryPath() {
@@ -425,7 +404,9 @@ function createRuntimeDependencyResolvePlugin(
 			path.resolve(__dirname, "../../src/source/react-shims/browser"),
 		],
 		"react shims root",
-	);
+	)
+		.split(path.sep)
+		.join("/");
 	const shimEntries = createReactShimSpecifierMap({
 		mode: "browser",
 		reactAliases: options.reactAliases,

@@ -21,6 +21,11 @@ import { createAutoMockPropsPlugin } from "./autoMockPlugin";
 import { isFilePathUnderRoot, resolveRealFilePath } from "./pathUtils";
 import { createPreviewVitePlugin } from "./plugin";
 import {
+	resolvePreviewPackageEntry,
+	resolvePreviewRuntimeRootEntry,
+	resolvePreviewShellRoot,
+} from "./previewPackagePaths";
+import {
 	type PreviewProgressWriter,
 	writePreviewProgress,
 	writePreviewTiming,
@@ -127,34 +132,7 @@ function createPreviewViteLogger(vite: ViteModule): import("vite").Logger {
 	return previewLogger;
 }
 
-function resolvePreviewPackageEntry(candidates: string[], label: string) {
-	const matchedPath = candidates.find((candidate) => fs.existsSync(candidate));
-	if (!matchedPath) {
-		throw new Error(`Unable to resolve ${label} entry.`);
-	}
-
-	return matchedPath;
-}
-
-function resolveShellRoot() {
-	return resolvePreviewPackageEntry(
-		[
-			path.resolve(__dirname, "../shell"),
-			path.resolve(__dirname, "../../src/shell"),
-		],
-		"preview shell root",
-	);
-}
-
-export function resolvePreviewRuntimeRootEntry() {
-	return resolvePreviewPackageEntry(
-		[
-			path.resolve(__dirname, "../../../preview-runtime/src/index.ts"),
-			path.resolve(__dirname, "../../../preview-runtime/dist/index.js"),
-		],
-		"preview runtime root",
-	).replace(/\\/g, "/");
-}
+export { resolvePreviewRuntimeRootEntry } from "./previewPackagePaths";
 
 function resolveReactShimEntry(fileName: string, mode: "browser" | "node") {
 	const shimsRoot = mode === "browser" ? "react-shims/browser" : "react-shims";
@@ -652,7 +630,7 @@ export async function createPreviewViteServer(
 		)) as unknown as ViteTopLevelAwaitPluginModule
 	).default;
 
-	const shellRoot = resolveShellRoot();
+	const shellRoot = resolvePreviewShellRoot();
 	const previewRuntimeRootEntry = (
 		resolvedConfig.runtimeModule ?? resolvePreviewRuntimeRootEntry()
 	).replace(/\\/g, "/");
