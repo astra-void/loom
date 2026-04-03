@@ -32,6 +32,10 @@ const localPackages = [
 		name: "@loom-dev/preview-runtime",
 	},
 	{
+		directory: path.join(workspaceRoot, "packages", "preview-analysis"),
+		name: "@loom-dev/preview-analysis",
+	},
+	{
 		directory: path.join(workspaceRoot, "packages", "preview-engine"),
 		name: "@loom-dev/preview-engine",
 	},
@@ -157,15 +161,36 @@ function packageInstallPath(nodeModulesRoot, packageName) {
 }
 
 function resolveInstalledPackagePath(packageName) {
-	try {
-		return path.dirname(
-			require.resolve(`${packageName}/package.json`, {
+	const resolveCandidates = [`${packageName}/package.json`, packageName];
+
+	for (const candidate of resolveCandidates) {
+		try {
+			const resolvedPath = require.resolve(candidate, {
 				paths: packageResolutionRoots,
-			}),
-		);
-	} catch {
-		return null;
+			});
+			const initialDirectory =
+				candidate === packageName
+					? path.dirname(resolvedPath)
+					: path.dirname(resolvedPath);
+			let currentDirectory = initialDirectory;
+
+			while (true) {
+				const packageJsonPath = path.join(currentDirectory, "package.json");
+				if (existsSync(packageJsonPath)) {
+					return currentDirectory;
+				}
+
+				const parentDirectory = path.dirname(currentDirectory);
+				if (parentDirectory === currentDirectory) {
+					break;
+				}
+
+				currentDirectory = parentDirectory;
+			}
+		} catch {}
 	}
+
+	return null;
 }
 
 function ensureDirectoryPackageLink(packageName, nodeModulesRoot) {
@@ -202,13 +227,87 @@ function writeConsumerFixture(consumerRoot) {
 		"utf8",
 	);
 	writeFileSync(
-		path.join(consumerRoot, "smoke-import.mjs"),
+		path.join(consumerRoot, "loom.config.ts"),
 		[
-			'import * as preview from "@loom-dev/preview";',
-			'if (!preview || typeof preview.loadPreviewConfig !== "function") {',
-			'\tthrow new Error("@loom-dev/preview did not expose loadPreviewConfig in the packed artifact.");',
+			'import { createStaticTargetsDiscovery, defineConfig } from "@loom-dev/preview";',
+			"",
+			"export default defineConfig({",
+			'\tprojectName: "Packed Consumer Preview",',
+			"\ttargetDiscovery: createStaticTargetsDiscovery([",
+			"\t\t{",
+			'\t\t\tname: "packed-consumer-preview",',
+			'\t\t\tpackageName: "@fixtures/packed-consumer-preview",',
+			'\t\t\tpackageRoot: ".",',
+			'\t\t\tsourceRoot: "./src",',
+			"\t\t},",
+			"\t]),",
+			"});",
+		].join("\n"),
+		"utf8",
+	);
+	writeFileSync(
+		path.join(consumerRoot, "verify-preview-api.mjs"),
+		[
+			'import assert from "node:assert/strict";',
+			'import fs from "node:fs";',
+			'import path from "node:path";',
+			'import { fileURLToPath } from "node:url";',
+			"import {",
+			"\tbuildPreviewArtifacts,",
+			"\tcreatePreviewHeadlessSession,",
+			"\tloadPreviewConfig,",
+			"\tstartPreviewServer,",
+			'} from "@loom-dev/preview";',
+			'import { createPreviewVitePlugin } from "@loom-dev/preview/vite";',
+			"",
+			"const cwd = path.dirname(fileURLToPath(import.meta.url));",
+			'assert.equal(typeof buildPreviewArtifacts, "function", "Expected buildPreviewArtifacts from @loom-dev/preview.");',
+			'assert.equal(typeof createPreviewHeadlessSession, "function", "Expected createPreviewHeadlessSession from @loom-dev/preview.");',
+			'assert.equal(typeof loadPreviewConfig, "function", "Expected loadPreviewConfig from @loom-dev/preview.");',
+			'assert.equal(typeof startPreviewServer, "function", "Expected startPreviewServer from @loom-dev/preview.");',
+			'assert.equal(typeof createPreviewVitePlugin, "function", "Expected createPreviewVitePlugin from @loom-dev/preview/vite.");',
+			"",
+			"const resolvedConfig = await loadPreviewConfig({ cwd });",
+			'assert.equal(resolvedConfig.projectName, "Packed Consumer Preview", "Expected loadPreviewConfig to honor loom.config.ts.");',
+			'assert.equal(resolvedConfig.targets.length, 1, "Expected one packed consumer preview target.");',
+			"",
+			'const generatedPreviewRoot = path.resolve(cwd, "..", "generated-preview");',
+			"const buildResult = await buildPreviewArtifacts({",
+			"\tcwd,",
+			"\toutDir: generatedPreviewRoot,",
+			"});",
+			'const generatedEntryPath = path.join(generatedPreviewRoot, "packed-consumer-preview", "Button.tsx");',
+			'assert.ok(fs.existsSync(generatedEntryPath), "Expected buildPreviewArtifacts to emit the packed consumer entry.");',
+			'assert.ok(buildResult.writtenFiles.includes(generatedEntryPath), "Expected buildPreviewArtifacts to report the emitted packed consumer entry.");',
+			"",
+			"const session = await createPreviewHeadlessSession({ cwd });",
+			"try {",
+			"\tconst snapshot = await session.run();",
+			'\tassert.equal(snapshot.workspaceIndex.entries.length, 1, "Expected one preview entry in the headless snapshot.");',
+			'\tassert.equal(snapshot.execution.summary.total, 1, "Expected headless execution summary to include one entry.");',
+			"\tassert.ok(",
+			"\t\tsnapshot.execution.summary.pass + snapshot.execution.summary.warning + snapshot.execution.summary.error >= 1,",
+			'\t\t"Expected headless execution to classify the packed consumer entry.",',
+			"\t);",
+			"} finally {",
+			"\tsession.dispose();",
 			"}",
-			'console.log("preview-import-ok", Object.keys(preview).length);',
+			"",
+			"const server = await startPreviewServer({",
+			"\t...resolvedConfig,",
+			"\tserver: {",
+			"\t\t...resolvedConfig.server,",
+			"\t\topen: false,",
+			"\t\tport: 0,",
+			"\t},",
+			"});",
+			"try {",
+			'\tassert.ok(server.config.root, "Expected the packed preview server to resolve a Vite root.");',
+			"} finally {",
+			"\tawait server.close();",
+			"}",
+			"",
+			'console.log("preview-package-e2e-ok");',
 		].join("\n"),
 		"utf8",
 	);
@@ -231,22 +330,61 @@ function writeConsumerFixture(consumerRoot) {
 		"utf8",
 	);
 	writeFileSync(
+		path.join(consumerRoot, "src", "Button.tsx"),
+		[
+			"export function ButtonPreview() {",
+			'\treturn <frame Id="packed-consumer-button"><textlabel Text="Packed Consumer" /></frame>;',
+			"}",
+			"",
+			"export const preview = {",
+			"\tentry: ButtonPreview,",
+			"};",
+		].join("\n"),
+		"utf8",
+	);
+	writeFileSync(
 		path.join(consumerRoot, "src", "main.js"),
 		[
-			'import * as preview from "@loom-dev/preview";',
+			'import { previewWorkspaceIndex } from "virtual:loom-preview-workspace-index";',
 			'const app = document.querySelector("#app");',
 			"if (!app) {",
 			'\tthrow new Error("Missing app root for preview smoke build.");',
 			"}",
-			'app.textContent = "preview exports: " + Object.keys(preview).length;',
+			'app.textContent = previewWorkspaceIndex.projectName + ":" + previewWorkspaceIndex.entries.length;',
 		].join("\n"),
 		"utf8",
 	);
 	writeFileSync(
 		path.join(consumerRoot, "vite.config.mjs"),
 		[
+			'import react from "@vitejs/plugin-react";',
 			'import { defineConfig } from "vite";',
-			"export default defineConfig({});",
+			'import { loadPreviewConfig } from "@loom-dev/preview";',
+			'import { createPreviewVitePlugin } from "@loom-dev/preview/vite";',
+			'import topLevelAwait from "vite-plugin-top-level-await";',
+			'import wasm from "vite-plugin-wasm";',
+			"",
+			"const resolvedConfig = await loadPreviewConfig({",
+			"\tcwd: process.cwd(),",
+			"});",
+			"",
+			"export default defineConfig({",
+			"\tplugins: [",
+			"\t\t...createPreviewVitePlugin({",
+			"\t\t\tprojectName: resolvedConfig.projectName,",
+			"\t\t\treactAliases: resolvedConfig.reactAliases,",
+			"\t\t\treactRobloxAliases: resolvedConfig.reactRobloxAliases,",
+			"\t\t\truntimeModule: resolvedConfig.runtimeModule,",
+			"\t\t\truntimeAliases: resolvedConfig.runtimeAliases,",
+			"\t\t\ttargets: resolvedConfig.targets,",
+			"\t\t\ttransformMode: resolvedConfig.transformMode,",
+			"\t\t\tworkspaceRoot: resolvedConfig.workspaceRoot,",
+			"\t\t}),",
+			"\t\treact(),",
+			"\t\twasm(),",
+			"\t\ttopLevelAwait(),",
+			"\t],",
+			"});",
 		].join("\n"),
 		"utf8",
 	);
@@ -257,6 +395,7 @@ function main() {
 	try {
 		runPackageManager(["run", "build:native"]);
 		runPackageManager(["--filter", "@loom-dev/preview-runtime", "build"]);
+		runPackageManager(["--filter", "@loom-dev/preview-analysis", "build"]);
 		runPackageManager(["--filter", "@loom-dev/preview-engine", "build"]);
 		runPackageManager(["--filter", "@loom-dev/preview", "build"]);
 
@@ -280,7 +419,7 @@ function main() {
 
 		writeConsumerFixture(consumerRoot);
 
-		run(process.execPath, [path.join(consumerRoot, "smoke-import.mjs")], {
+		run(process.execPath, [path.join(consumerRoot, "verify-preview-api.mjs")], {
 			cwd: consumerRoot,
 		});
 		const vitePackagePath = resolveInstalledPackagePath("vite");

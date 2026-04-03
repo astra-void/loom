@@ -11,6 +11,7 @@ import {
 import { render, waitFor } from "@testing-library/react";
 import React from "react";
 import { describe, expect, it, vi } from "vitest";
+import { getLocalPlayerGui } from "../../apps/preview-harness/src/test-utils";
 
 describe("geometry fidelity portals", () => {
 	it("resolves portal anchor AbsolutePosition in the same coordinate space as the viewport", async () => {
@@ -108,5 +109,176 @@ describe("geometry fidelity portals", () => {
 		expect(portalContentRef.current.eventObj.AbsoluteWindowSize.Y).toBe(400);
 
 		unmount();
+	});
+
+	it("uses the preview viewport for ScreenGui roots portaled into LocalPlayer.PlayerGui", async () => {
+		const playerGui = getLocalPlayerGui();
+		const portalScreenRef = React.createRef<any>();
+		const viewportHost = document.createElement("div");
+		document.body.appendChild(viewportHost);
+		vi.spyOn(viewportHost, "getBoundingClientRect").mockReturnValue({
+			bottom: 840,
+			height: 840,
+			left: 0,
+			right: 912,
+			toJSON: () => ({}),
+			top: 0,
+			width: 912,
+			x: 0,
+			y: 0,
+		} as DOMRect);
+
+		render(
+			<LayoutProvider debounceMs={0} viewportHeight={840} viewportWidth={912}>
+				<PortalProvider container={playerGui}>
+					<ScreenGui Id="stage-screen">
+						<Frame
+							Id="source-panel"
+							Position={UDim2.fromOffset(12, 108)}
+							Size={UDim2.fromOffset(900, 220)}
+						>
+							<Portal>
+								<ScreenGui Id="playergui-portal-screen" ref={portalScreenRef}>
+									<Frame
+										Id="playergui-portal-content"
+										Position={UDim2.fromOffset(0, 0)}
+										Size={UDim2.fromOffset(320, 128)}
+									/>
+								</ScreenGui>
+							</Portal>
+						</Frame>
+					</ScreenGui>
+				</PortalProvider>
+			</LayoutProvider>,
+			{ container: viewportHost },
+		);
+
+		await waitFor(() => {
+			expect(portalScreenRef.current).toBeDefined();
+		});
+
+		await waitFor(() => {
+			const portalScreenElement = document.querySelector(
+				'[data-preview-node-id="playergui-portal-screen"]',
+			) as HTMLElement | null;
+			expect(portalScreenElement).toBeTruthy();
+			expect(portalScreenRef.current.AbsoluteWindowSize.X).toBe(912);
+			expect(portalScreenRef.current.AbsoluteWindowSize.Y).toBe(840);
+			expect(portalScreenElement?.getAttribute("data-layout-parent-width")).toBe(
+				"912",
+			);
+			expect(
+				portalScreenElement?.getAttribute("data-layout-parent-height"),
+			).toBe("840");
+			expect(portalScreenElement?.style.left).toBe("0px");
+			expect(portalScreenElement?.style.top).toBe("0px");
+			expect(portalScreenElement?.style.width).toBe("912px");
+			expect(portalScreenElement?.style.height).toBe("840px");
+		});
+	});
+
+	it("keeps portaled popover content aligned with its trigger under LocalPlayer.PlayerGui", async () => {
+		const playerGui = getLocalPlayerGui();
+		const contentRef = React.createRef<any>();
+		const viewportHost = document.createElement("div");
+		document.body.appendChild(viewportHost);
+		vi.spyOn(viewportHost, "getBoundingClientRect").mockReturnValue({
+			bottom: 840,
+			height: 840,
+			left: 0,
+			right: 912,
+			toJSON: () => ({}),
+			top: 0,
+			width: 912,
+			x: 0,
+			y: 0,
+		} as DOMRect);
+
+		function PopoverPortalRegression() {
+			const [trigger, setTrigger] = React.useState<any>(null);
+			const [anchor, setAnchor] = React.useState<{ x: number; y: number } | null>(
+				null,
+			);
+
+			React.useLayoutEffect(() => {
+				if (!trigger) {
+					return;
+				}
+
+				setAnchor({
+					x: trigger.AbsolutePosition.X,
+					y: trigger.AbsolutePosition.Y,
+				});
+			}, [trigger]);
+
+			return (
+				<PortalProvider container={playerGui}>
+					<ScreenGui Id="popover-stage-screen">
+						<Frame
+							Id="popover-source-panel"
+							Position={UDim2.fromOffset(12, 108)}
+							Size={UDim2.fromOffset(900, 220)}
+						>
+							<Frame
+								Id="popover-trigger"
+								ref={setTrigger}
+								Position={UDim2.fromOffset(40, 50)}
+								Size={UDim2.fromOffset(320, 40)}
+							/>
+							{anchor ? (
+								<Portal>
+									<ScreenGui Id="popover-portal-screen">
+										<Frame
+											Id="popover-portal-content"
+											ref={contentRef}
+											Position={UDim2.fromOffset(anchor.x, anchor.y)}
+											Size={UDim2.fromOffset(320, 128)}
+										/>
+									</ScreenGui>
+								</Portal>
+							) : null}
+						</Frame>
+					</ScreenGui>
+				</PortalProvider>
+			);
+		}
+
+		render(
+			<LayoutProvider debounceMs={0} viewportHeight={840} viewportWidth={912}>
+				<PopoverPortalRegression />
+			</LayoutProvider>,
+			{ container: viewportHost },
+		);
+
+		await waitFor(() => {
+			const triggerElement = document.querySelector(
+				'[data-preview-node-id="popover-trigger"]',
+			) as HTMLElement | null;
+			const portalScreenElement = document.querySelector(
+				'[data-preview-node-id="popover-portal-screen"]',
+			) as HTMLElement | null;
+			expect(triggerElement).toBeTruthy();
+			expect(contentRef.current).toBeDefined();
+			expect(portalScreenElement).toBeTruthy();
+		});
+
+		await waitFor(() => {
+			const triggerElement = document.querySelector(
+				'[data-preview-node-id="popover-trigger"]',
+			) as HTMLElement | null;
+			const portalScreenElement = document.querySelector(
+				'[data-preview-node-id="popover-portal-screen"]',
+			) as HTMLElement | null;
+			expect(contentRef.current.AbsolutePosition.X).toBe(52);
+			expect(contentRef.current.AbsolutePosition.Y).toBe(158);
+			expect(contentRef.current.AbsolutePosition.X).toBe(
+				(triggerElement as any).AbsolutePosition.X,
+			);
+			expect(contentRef.current.AbsolutePosition.Y).toBe(
+				(triggerElement as any).AbsolutePosition.Y,
+			);
+			expect(portalScreenElement?.style.left).toBe("0px");
+			expect(portalScreenElement?.style.top).toBe("0px");
+		});
 	});
 });
