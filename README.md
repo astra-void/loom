@@ -39,6 +39,11 @@ After building the workspace packages, the packaged CLI entrypoints are:
 - `pnpm --filter loom-dev exec loom config --cwd packages/preview`
 - `pnpm --filter loom-dev exec loom snapshot --cwd packages/preview --output ./preview-snapshot.json`
 
+## Library
+
+For direct package consumption, install `@loom-dev/preview`.
+Use root imports for config/build/server/headless APIs, and use `@loom-dev/preview/vite` for the Vite plugin entrypoint.
+
 ## Workspace Packages
 
 - `@loom-dev/compiler`
@@ -79,8 +84,8 @@ Release flow:
 - merge the release commit into `main`
 - push a matching tag such as `v0.1.0`
 
-The publish workflow runs a full preflight (`lint`, `typecheck`, `test`, release metadata validation), builds the eight `@loom-dev/compiler` native target artifacts in a matrix, publishes the staged compiler packages, and then publishes the remaining workspace packages from `pnpm pack` tarballs.
-For local verification, use `pnpm release:validate`, `pnpm --filter @loom-dev/compiler run publish:napi -- --dry-run`, and `pnpm publish:workspace-packages -- --dry-run`.
+The publish workflow runs a full preflight (`lint`, `typecheck`, `test`, release metadata validation, preview package consumer verification), builds the eight `@loom-dev/compiler` native target artifacts in a matrix, publishes the staged compiler packages, and then publishes the remaining workspace packages from `pnpm pack` tarballs.
+For local verification, use `pnpm release:validate`, `pnpm verify:preview-package`, `pnpm --filter @loom-dev/compiler run publish:napi -- --dry-run`, and `pnpm publish:workspace-packages -- --dry-run`.
 
 The preview harness loads static targets from:
 
