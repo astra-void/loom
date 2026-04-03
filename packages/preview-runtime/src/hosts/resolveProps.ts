@@ -273,7 +273,14 @@ function createPreviewGuiObject(element: HTMLElement, host: HostName) {
 	}
 
 	const rect = element.getBoundingClientRect();
-	const layoutContext = (element as any).__previewLayoutContext;
+	const layoutContext = (
+		element as HTMLElement & {
+			__previewLayoutContext?: {
+				getContainerRect?: () => DOMRect | null;
+				viewport?: { width: number; height: number };
+			};
+		}
+	).__previewLayoutContext;
 	let containerRect = layoutContext?.getContainerRect?.() ?? null;
 	const container = element.closest("[data-preview-layout-provider]");
 

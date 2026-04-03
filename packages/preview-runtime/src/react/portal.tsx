@@ -1,5 +1,6 @@
 import * as React from "react";
 import { createPortal } from "react-dom";
+import { LayoutViewportPortalBoundary } from "../layout/context";
 
 type PortalContextValue = {
 	container?: HTMLElement | null;
@@ -48,9 +49,24 @@ export function Portal(props: PortalProps) {
 		return null;
 	}
 
-	return createPortal(props.children, container);
+	const children = isViewportScopedPortalContainer(container) ? (
+		<LayoutViewportPortalBoundary>
+			{props.children}
+		</LayoutViewportPortalBoundary>
+	) : (
+		props.children
+	);
+
+	return createPortal(children, container);
 }
 
 export function usePortalContext() {
 	return React.useContext(PortalContext);
+}
+
+function isViewportScopedPortalContainer(container: HTMLElement) {
+	return (
+		container.dataset.previewPlayerGui === "true" ||
+		container.closest('[data-preview-player-gui="true"]') !== null
+	);
 }

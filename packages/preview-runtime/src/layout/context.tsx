@@ -75,6 +75,7 @@ type LayoutContexts = {
 	parentNode: React.Context<string | undefined>;
 	parentRect: React.Context<ComputedRect | null>;
 	parentRenderRect: React.Context<ComputedRect | null>;
+	portalRoot: React.Context<boolean>;
 };
 
 type PreviewLayoutProbeListener = (
@@ -183,7 +184,13 @@ function getSharedLayoutContexts(): LayoutContexts {
 			parentNode: React.createContext<string | undefined>(undefined),
 			parentRect: React.createContext<ComputedRect | null>(null),
 			parentRenderRect: React.createContext<ComputedRect | null>(null),
+			portalRoot: React.createContext<boolean>(false),
 		};
+	}
+
+	if (!globalRecord[LAYOUT_CONTEXTS_GLOBAL_KEY].portalRoot) {
+		globalRecord[LAYOUT_CONTEXTS_GLOBAL_KEY].portalRoot =
+			React.createContext<boolean>(false);
 	}
 
 	return globalRecord[LAYOUT_CONTEXTS_GLOBAL_KEY];
@@ -194,6 +201,7 @@ export const LayoutContext = sharedLayoutContexts.layout;
 const ParentNodeContext = sharedLayoutContexts.parentNode;
 const ParentRectContext = sharedLayoutContexts.parentRect;
 const ParentRenderRectContext = sharedLayoutContexts.parentRenderRect;
+export const PortalRootContext = sharedLayoutContexts.portalRoot;
 
 function toErrorMessage(error: unknown): string {
 	if (error instanceof Error) {
@@ -573,7 +581,33 @@ export function LayoutNodeParentProvider(props: {
 				value={props.renderRect ?? props.contentRect}
 			>
 				<ParentNodeContext.Provider value={props.nodeId}>
-					{props.children}
+					<PortalRootContext.Provider value={false}>
+						{props.children}
+					</PortalRootContext.Provider>
+				</ParentNodeContext.Provider>
+			</ParentRenderRectContext.Provider>
+		</ParentRectContext.Provider>
+	);
+}
+
+export function LayoutViewportPortalBoundary(props: {
+	children: React.ReactNode;
+}) {
+	const context = React.useContext(LayoutContext);
+	const viewport = context?.viewport ?? ZERO_VIEWPORT;
+	const viewportRect = React.useMemo(() => {
+		return hasPositiveViewport(viewport)
+			? createViewportRect(viewport.width, viewport.height)
+			: null;
+	}, [viewport.height, viewport.width, viewport]);
+
+	return (
+		<ParentRectContext.Provider value={viewportRect}>
+			<ParentRenderRectContext.Provider value={viewportRect}>
+				<ParentNodeContext.Provider value={undefined}>
+					<PortalRootContext.Provider value={true}>
+						{props.children}
+					</PortalRootContext.Provider>
 				</ParentNodeContext.Provider>
 			</ParentRenderRectContext.Provider>
 		</ParentRectContext.Provider>

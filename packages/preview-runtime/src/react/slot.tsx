@@ -250,8 +250,7 @@ export const Slot = React.forwardRef<HTMLElement, SlotProps>(
 		const isHostElement = typeof slotRenderType === "string";
 
 		const clonedProps: Record<string, unknown> = {
-			...mergedProps,
-			...(isHostElement ? normalized.domProps : {}),
+			...(isHostElement ? normalized.domProps : mergedProps),
 			ref: mergedRef,
 			children: isHostElement
 				? React.Children.toArray([
@@ -264,12 +263,15 @@ export const Slot = React.forwardRef<HTMLElement, SlotProps>(
 					])
 				: normalized.children,
 		};
-		clonedProps.Change = mergedProps.Change;
-		clonedProps.Event = mergedProps.Event;
-		clonedProps.__previewReactChangeText = mergedProps.Change?.Text;
-		clonedProps.__previewReactEventActivated = mergedProps.Event?.Activated;
-		clonedProps.__previewReactEventFocusLost = mergedProps.Event?.FocusLost;
-		clonedProps.__previewReactEventInputBegan = mergedProps.Event?.InputBegan;
+
+		if (!isHostElement) {
+			clonedProps.Change = mergedProps.Change;
+			clonedProps.Event = mergedProps.Event;
+			clonedProps.__previewReactChangeText = mergedProps.Change?.Text;
+			clonedProps.__previewReactEventActivated = mergedProps.Event?.Activated;
+			clonedProps.__previewReactEventFocusLost = mergedProps.Event?.FocusLost;
+			clonedProps.__previewReactEventInputBegan = mergedProps.Event?.InputBegan;
+		}
 
 		if (slotRenderType !== child.type) {
 			return React.createElement(

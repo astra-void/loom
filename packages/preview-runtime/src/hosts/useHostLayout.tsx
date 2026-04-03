@@ -3,6 +3,7 @@ import { normalizePreviewNodeId } from "../internal/robloxValues";
 import {
 	LayoutContext,
 	LayoutNodeParentProvider,
+	PortalRootContext,
 	useLayoutDebugState,
 	useRobloxLayout,
 } from "../layout/context";
@@ -393,9 +394,13 @@ export function useHostLayout(host: LayoutHostName, props: PreviewDomProps) {
 					} as PreviewDomProps),
 		[overrides, props],
 	);
+	const isPortalRoot = React.useContext(PortalRootContext);
 	const normalizedParentId = React.useMemo(
-		() => normalizePreviewNodeId(getLayoutParentId(props)),
-		[props],
+		() =>
+			isPortalRoot
+				? undefined
+				: normalizePreviewNodeId(getLayoutParentId(props)),
+		[isPortalRoot, props],
 	);
 	const sourceOrder = useSourceOrder();
 
@@ -565,7 +570,9 @@ export function useHostLayout(host: LayoutHostName, props: PreviewDomProps) {
 					nodeId,
 					resolveBridgedHostProperty,
 				);
-				(element as any).__previewLayoutContext = layoutContext;
+				(
+					element as HTMLElement & { __previewLayoutContext?: unknown }
+				).__previewLayoutContext = layoutContext;
 			}
 		},
 		[nodeId, resolveBridgedHostProperty, layoutContext],
