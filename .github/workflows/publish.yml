@@ -4,6 +4,17 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Release tag to publish, for example v0.4.4 or v0.4.4-alpha.1
+        required: true
+        type: string
+      dry_run:
+        description: Run a dry-run publish instead of publishing to npm
+        required: false
+        default: true
+        type: boolean
 
 permissions:
   contents: read
