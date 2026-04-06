@@ -213,7 +213,7 @@ jobs:
 
       - name: Install cross-compilation tools
         if: runner.os == 'Linux'
-        run: cargo install cargo-zigbuild cargo-xwin --locked
+        run: cargo install cargo-zigbuild cargo-xwin --locked --force
 
       - name: Install wasm-pack
         run: |
@@ -238,6 +238,9 @@ jobs:
 
       - name: Prepare compiler npm dirs
         run: pnpm --filter @loom-dev/compiler run create-npm-dirs
+
+      - name: Prepare compiler artifacts dir
+        run: mkdir -p packages/compiler/artifacts
 
       - name: Collect compiler artifacts
         run: pnpm --filter @loom-dev/compiler run artifacts
