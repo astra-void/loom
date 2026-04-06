@@ -45,9 +45,19 @@ async function prepareStage() {
 	runNapi(["artifacts", "--output-dir", "./artifacts", "--npm-dir", "./npm"], {
 		cwd: STAGE_ROOT,
 	});
-	runNapi(["pre-publish", "--npm-dir", "./npm", "--skip-optional-publish"], {
-		cwd: STAGE_ROOT,
-	});
+	runNapi(
+		[
+			"pre-publish",
+			"--npm-dir",
+			"./npm",
+			"--skip-optional-publish",
+			"--tag-style",
+			"npm",
+		],
+		{
+			cwd: STAGE_ROOT,
+		},
+	);
 
 	await validateStage();
 }
