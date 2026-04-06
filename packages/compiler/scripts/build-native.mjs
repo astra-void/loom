@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { copyFile, mkdir, readdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
+import { getNativeTarget } from "../../../scripts/native-target.mjs";
 import { buildWrapperTypes } from "./build-wrapper-types.mjs";
 import { getPassthroughArgs, runNapi } from "./napi-cli.mjs";
 
@@ -19,15 +20,24 @@ async function main() {
 	await mkdir(TEMP_OUTPUT_DIR, { recursive: true });
 	await mkdir(LOCAL_BINARIES_DIR, { recursive: true });
 
+	const passthroughArgs = getPassthroughArgs();
+	const target = getTargetTriple(passthroughArgs);
+	const buildArgs = [
+		"build",
+		"--platform",
+		"--release",
+		"--output-dir",
+		TEMP_OUTPUT_DIR,
+	];
+
+	if (target && target !== getNativeTarget()) {
+		buildArgs.push("--cross-compile");
+	}
+
+	buildArgs.push(...passthroughArgs);
+
 	const result = runNapi(
-		[
-			"build",
-			"--platform",
-			"--release",
-			"--output-dir",
-			TEMP_OUTPUT_DIR,
-			...getPassthroughArgs(),
-		],
+		buildArgs,
 		{
 			check: false,
 			cwd: PACKAGE_DIR,
@@ -50,6 +60,18 @@ async function main() {
 	await writeManifest(localBinaryPath);
 	await pruneStaleLocalBinaries(binaryFileName);
 	await rm(TEMP_OUTPUT_DIR, { force: true, recursive: true });
+}
+
+function getTargetTriple(args) {
+	for (let index = 0; index < args.length; index += 1) {
+		const arg = args[index];
+
+		if (arg === "--target" || arg === "-t") {
+			return args[index + 1] ?? null;
+		}
+	}
+
+	return null;
 }
 
 async function getSingleBinaryFileName(directoryPath) {
