@@ -36,13 +36,10 @@ async function main() {
 
 	buildArgs.push(...passthroughArgs);
 
-	const result = runNapi(
-		buildArgs,
-		{
-			check: false,
-			cwd: PACKAGE_DIR,
-		},
-	);
+	const result = runNapi(buildArgs, {
+		check: false,
+		cwd: PACKAGE_DIR,
+	});
 
 	if (result.status !== 0) {
 		process.exit(result.status ?? 1);
