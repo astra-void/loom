@@ -233,23 +233,14 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build release compiler target
-        run: pnpm --filter @loom-dev/compiler run build:release -- --target ${{ matrix.target }}
-
-      - name: Prepare compiler npm dirs
-        run: pnpm --filter @loom-dev/compiler run create-npm-dirs
-
-      - name: Prepare compiler artifacts dir
-        run: mkdir -p packages/compiler/artifacts
-
-      - name: Collect compiler artifacts
-        run: pnpm --filter @loom-dev/compiler run artifacts
+      - name: Build compiler target
+        run: pnpm --filter @loom-dev/compiler run build:native -- --target ${{ matrix.target }}
 
       - name: Upload compiler artifact
         uses: actions/upload-artifact@v4
         with:
           name: compiler-artifact-${{ matrix.platform_arch_abi }}
-          path: packages/compiler/artifacts/loom_compiler.${{ matrix.platform_arch_abi }}.node
+          path: packages/compiler/loom_compiler.${{ matrix.platform_arch_abi }}.node
           if-no-files-found: error
 
   publish-compiler:
