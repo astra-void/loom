@@ -9,6 +9,10 @@
 		"dist",
 		"README.md"
 	],
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/astra-void/loom"
+	},
 	"bin": {
 		"loom": "dist/index.js"
 	},
