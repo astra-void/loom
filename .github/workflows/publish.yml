@@ -25,6 +25,7 @@ env:
   WASM_PACK_VERSION: 0.14.0
   TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
   TURBO_TEAM: ${{ vars.TURBO_TEAM }}
+  RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -118,10 +119,10 @@ jobs:
           import { appendFileSync } from "node:fs";
           import { getReleaseDistTag } from "./scripts/release/validate-release.mjs";
           
-          const tagName = process.env.GITHUB_REF_NAME;
+          const tagName = process.env.RELEASE_TAG;
           
           if (!tagName) {
-          	throw new Error("GITHUB_REF_NAME is required to derive release metadata.");
+          	throw new Error("RELEASE_TAG is required to derive release metadata.");
           }
           
           const distTag = getReleaseDistTag(tagName);
