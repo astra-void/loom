@@ -254,6 +254,7 @@ jobs:
     env:
       LOOM_PUBLISH_CLIENT: npm
       NPM_PUBLISH_TAG_ARGS: ${{ needs.preflight.outputs.npm_publish_tag_args }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     steps:
       - name: Checkout
