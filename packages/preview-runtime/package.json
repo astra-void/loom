@@ -1,6 +1,6 @@
 {
 	"name": "@loom-dev/preview-runtime",
-	"version": "0.1.0",
+	"version": "0.1.0-alpha.1",
 	"private": false,
 	"description": "Shared browser runtime for Loom previews, including Roblox globals and DOM host rendering.",
 	"main": "dist/index.js",
