@@ -57,7 +57,7 @@
 		]
 	},
 	"scripts": {
-		"artifacts": "napi artifacts --output-dir ./artifacts --npm-dir ./npm",
+		"artifacts": "node ./scripts/build-artifacts.mjs",
 		"build:native": "node ./scripts/build-native.mjs",
 		"build:wasm": "node ./scripts/build-wasm.mjs",
 		"build": "pnpm run build:native && pnpm run build:wasm",
