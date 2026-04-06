@@ -116,7 +116,8 @@ export function ensureCommitIsOnMain(
 }
 
 function main() {
-	const tagName = process.env.GITHUB_REF_NAME ?? process.argv[2];
+	const tagName =
+		process.env.RELEASE_TAG ?? process.env.GITHUB_REF_NAME ?? process.argv[2];
 
 	if (!tagName) {
 		throw new Error(
