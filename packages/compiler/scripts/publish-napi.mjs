@@ -19,14 +19,28 @@ const PUBLISH_CACHE_DIR = join(PACKAGE_DIR, ".npm", "cache");
 const STAGE_ROOT = join(PACKAGE_DIR, ".npm", "publish");
 
 const options = parseArgs(getPassthroughArgs());
+const lifecycleEvent = process.env.npm_lifecycle_event;
 const packageJsonPath = join(PACKAGE_DIR, "package.json");
 const { binaryName, packageJson, packageName, targets } =
 	await readNapiConfig(packageJsonPath);
 
-await buildRootMetaPackage();
-await prepareStage();
+// npm runs `prepublish:napi` before `publish:napi`; keep the staging pass separate
+// so a rerun does not recreate GitHub release assets before the publish step.
+const shouldPrepareStage =
+	options.prepareOnly ||
+	lifecycleEvent === "prepublish:napi" ||
+	!lifecycleEvent;
 
-if (!options.prepareOnly) {
+const shouldPublishStage =
+	!options.prepareOnly &&
+	(lifecycleEvent === "publish:napi" || !lifecycleEvent);
+
+if (shouldPrepareStage) {
+	await buildRootMetaPackage();
+	await prepareStage();
+}
+
+if (shouldPublishStage) {
 	await publishStage();
 }
 
@@ -53,6 +67,7 @@ async function prepareStage() {
 			"--skip-optional-publish",
 			"--tag-style",
 			"npm",
+			"--no-gh-release",
 		],
 		{
 			cwd: STAGE_ROOT,
@@ -66,6 +81,24 @@ async function publishStage() {
 	const publishClient = await detectPublishClient();
 	const publishArgs = buildPublishArgs(publishClient);
 	const publishEnv = await createPublishEnv();
+	const ghReleaseId = process.env.NAPI_GH_RELEASE_ID?.trim();
+	const prePublishArgs = [
+		"pre-publish",
+		"--npm-dir",
+		"./npm",
+		"--skip-optional-publish",
+		"--tag-style",
+		"npm",
+	];
+
+	if (ghReleaseId) {
+		prePublishArgs.push("--gh-release-id", ghReleaseId);
+	}
+
+	runNapi(prePublishArgs, {
+		cwd: STAGE_ROOT,
+		env: publishEnv,
+	});
 
 	for (const target of targets) {
 		runPackageManager(publishClient, publishArgs, {
