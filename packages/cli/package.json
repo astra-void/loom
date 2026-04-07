@@ -1,6 +1,6 @@
 {
 	"name": "loom-dev",
-	"version": "0.1.0-alpha.2",
+	"version": "0.1.0-alpha.3",
 	"private": false,
 	"description": "CLI for the Loom preview and build toolchain.",
 	"main": "dist/index.js",
