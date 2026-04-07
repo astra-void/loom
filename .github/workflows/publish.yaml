@@ -367,6 +367,9 @@ jobs:
       - preflight
       - publish-compiler
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
     env:
       NPM_PUBLISH_TAG_ARGS: ${{ needs.preflight.outputs.npm_publish_tag_args }}
 
