@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { readFile, readdir, writeFile } from "node:fs/promises";
+import { readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 export async function stampRepositoryIntoNpmManifests({
@@ -34,9 +34,7 @@ export async function stampRepositoryIntoNpmManifests({
 					return;
 				}
 
-				const packageJson = JSON.parse(
-					await readFile(packageJsonPath, "utf8"),
-				);
+				const packageJson = JSON.parse(await readFile(packageJsonPath, "utf8"));
 
 				packageJson.repository = repository;
 
