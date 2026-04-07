@@ -10,8 +10,8 @@ import {
 	runCommand,
 	runNapi,
 	runPnpm,
-} from "./napi-cli.mjs";
-import { stampRepositoryIntoNpmManifests } from "./stamp-repository.mjs";
+} from "./napi-cli.ts";
+import { stampRepositoryIntoNpmManifests } from "./stamp-repository.ts";
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const PACKAGE_DIR = resolve(SCRIPT_DIR, "..");

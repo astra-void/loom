@@ -2,8 +2,8 @@ import { existsSync } from "node:fs";
 import { copyFile, mkdir, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { buildWrapperTypes } from "./build-wrapper-types.mjs";
-import { getPassthroughArgs, runNapi } from "./napi-cli.mjs";
+import { buildWrapperTypes } from "./build-wrapper-types.ts";
+import { getPassthroughArgs, runNapi } from "./napi-cli.ts";
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const PACKAGE_DIR = dirname(SCRIPT_DIR);

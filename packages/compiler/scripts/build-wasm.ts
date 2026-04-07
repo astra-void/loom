@@ -2,7 +2,7 @@ import { rm } from "node:fs/promises";
 import os from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { runCommand } from "./napi-cli.mjs";
+import { runCommand } from "./napi-cli.ts";
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const PACKAGE_DIR = dirname(SCRIPT_DIR);

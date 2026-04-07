@@ -2,10 +2,10 @@ import { existsSync } from "node:fs";
 import { copyFile, mkdir, readdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
-import { getNativeTarget } from "../../../scripts/native-target.mjs";
-import { buildWrapperTypes } from "./build-wrapper-types.mjs";
-import { getPassthroughArgs, runNapi } from "./napi-cli.mjs";
-import { stampRepositoryIntoNpmManifests } from "./stamp-repository.mjs";
+import { getNativeTarget } from "../../../scripts/native-target.ts";
+import { buildWrapperTypes } from "./build-wrapper-types.ts";
+import { getPassthroughArgs, runNapi } from "./napi-cli.ts";
+import { stampRepositoryIntoNpmManifests } from "./stamp-repository.ts";
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const PACKAGE_DIR = dirname(SCRIPT_DIR);

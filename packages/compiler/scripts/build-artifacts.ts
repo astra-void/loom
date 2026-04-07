@@ -1,8 +1,8 @@
 import { mkdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { runNapi } from "./napi-cli.mjs";
-import { stampRepositoryIntoNpmManifests } from "./stamp-repository.mjs";
+import { runNapi } from "./napi-cli.ts";
+import { stampRepositoryIntoNpmManifests } from "./stamp-repository.ts";
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const PACKAGE_DIR = dirname(SCRIPT_DIR);

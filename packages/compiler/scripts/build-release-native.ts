@@ -1,8 +1,8 @@
 ﻿import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { buildWrapperTypes } from "./build-wrapper-types.mjs";
-import { getPassthroughArgs, runNapi } from "./napi-cli.mjs";
-import { stampRepositoryIntoNpmManifests } from "./stamp-repository.mjs";
+import { buildWrapperTypes } from "./build-wrapper-types.ts";
+import { getPassthroughArgs, runNapi } from "./napi-cli.ts";
+import { stampRepositoryIntoNpmManifests } from "./stamp-repository.ts";
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const PACKAGE_DIR = dirname(SCRIPT_DIR);
