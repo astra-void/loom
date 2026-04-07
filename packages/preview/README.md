@@ -72,6 +72,7 @@ Subpaths:
 
 - `@loom-dev/preview/config`
 - `@loom-dev/preview/build`
+- `@loom-dev/preview/client`
 - `@loom-dev/preview/headless`
 - `@loom-dev/preview/server`
 - `@loom-dev/preview/progress`
@@ -86,6 +87,8 @@ Subpaths:
 `writePreviewProgress` and `writePreviewTiming` live in `@loom-dev/preview/progress`.
 
 `createPreviewVitePlugin` and `createScopedPreviewPlugins` live in `@loom-dev/preview/vite`.
+
+`@loom-dev/preview/client` is the browser-safe surface for already-loaded preview entries. Keep using the root package for config loading, build, headless, and server APIs; use the `client` subpath when you need CSR, hydration, or build-time prerender helpers without pulling in Node-only preview entrypoints.
 
 ## Node API Example
 
@@ -185,3 +188,44 @@ await buildPreviewArtifacts({
   transformMode: "design-time",
 });
 ```
+
+## Client API
+
+Use `@loom-dev/preview/client` when you already have a loaded preview entry payload and module and want to render it in a React app.
+
+This subpath is intended for:
+
+- CSR with `mountPreview()`
+- hydration with `hydratePreview()`
+- build-time prerender with `renderPreviewToString()` / `renderPreviewToStaticMarkup()`
+- low-level composition with `createPreviewElement()`
+
+The `client` subpath does not perform target discovery, preview builds, or Vite module loading. Those remain on the root `@loom-dev/preview` package.
+
+### CSR Example
+
+```ts
+import { mountPreview } from "@loom-dev/preview/client";
+
+const handle = mountPreview({
+  container: document.getElementById("root")!,
+  entry: previewEntryPayload.descriptor,
+  module: loadedPreviewModule,
+});
+
+// Later:
+handle.dispose();
+```
+
+### SSG Example
+
+```ts
+import { renderPreviewToString } from "@loom-dev/preview/client";
+
+const html = renderPreviewToString({
+  entry: previewEntryPayload.descriptor,
+  module: loadedPreviewModule,
+});
+```
+
+`renderPreviewToString()` and `renderPreviewToStaticMarkup()` are meant for build-time prerender of initial markup. They do not guarantee final Wasm layout convergence on the server; the client runtime still owns layout initialization and hydration-time stabilization.

@@ -1,6 +1,6 @@
 {
 	"name": "@loom-dev/preview",
-	"version": "0.1.0-alpha.4",
+	"version": "0.1.0-alpha.5",
 	"private": false,
 	"description": "Loom source-first preview build, server, and runtime package.",
 	"main": "dist/index.mjs",
@@ -18,8 +18,8 @@
 	],
 	"scripts": {
 		"build": "tsc -p tsconfig.json",
-		"postbuild": "node ./scripts/copy-assets.mjs",
-		"prebuild": "node ./scripts/clean-dist.mjs",
+		"postbuild": "tsx ./scripts/copy-assets.ts",
+		"prebuild": "tsx ./scripts/clean-dist.ts",
 		"format": "pnpm exec biome format --write .",
 		"lint": "pnpm exec biome check .",
 		"lint:fix": "pnpm exec biome check --write --unsafe .",
@@ -55,6 +55,11 @@
 			"types": "./dist/build.d.ts",
 			"import": "./dist/build.js",
 			"default": "./dist/build.js"
+		},
+		"./client": {
+			"types": "./dist/client.d.ts",
+			"import": "./dist/client.js",
+			"default": "./dist/client.js"
 		},
 		"./config": {
 			"types": "./dist/config.d.ts",
