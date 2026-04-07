@@ -68,6 +68,7 @@
 		"build:release:wasm": "node ./scripts/build-release-wasm.mjs",
 		"build:release": "node ./scripts/build-release.mjs",
 		"build:release:native": "node ./scripts/build-release-native.mjs",
+		"clean": "node ./scripts/clean.mjs",
 		"format": "pnpm exec biome format --write .",
 		"create-npm-dirs": "napi create-npm-dirs --npm-dir ./npm",
 		"lint": "pnpm exec biome check .",
