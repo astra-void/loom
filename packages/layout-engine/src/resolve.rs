@@ -2,7 +2,7 @@ use std::cmp::Ordering;
 
 use crate::model::{
     default_placeholder_behavior, default_position_mode, full_size, zero_size, zero_vector,
-    ComputedRect, LayoutAxis, LayoutAxisConstraints, LayoutSize, MeasuredNodeSize,
+    ComputedRect, LayoutAxis, LayoutAxisConstraints, LayoutSize,
     PreviewHostMetadata, PreviewLayoutNode, PreviewLayoutSizeResolution, PreviewNodeLayout,
     RobloxNode, Viewport,
 };
@@ -91,19 +91,6 @@ fn clamp_axis(value: f32, constraints: Option<&LayoutAxisConstraints>) -> f32 {
         constraints.and_then(|axis| axis.min),
         constraints.and_then(|axis| axis.max),
     )
-}
-
-fn create_measured_size_layout(measured_size: MeasuredNodeSize) -> LayoutSize {
-    LayoutSize {
-        x: LayoutAxis {
-            offset: measured_size.width.max(0.0),
-            scale: 0.0,
-        },
-        y: LayoutAxis {
-            offset: measured_size.height.max(0.0),
-            scale: 0.0,
-        },
-    }
 }
 
 pub(crate) fn normalize_root_node(node: &PreviewLayoutNode) -> PreviewLayoutNode {

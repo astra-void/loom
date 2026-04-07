@@ -24,6 +24,7 @@
 		"build": "node ../../scripts/run-wasm-pack.mjs build --target web --out-dir pkg",
 		"build:release": "node ../../scripts/run-wasm-pack.mjs build --release --target web --out-dir pkg",
 		"build:rust": "cargo build",
+		"clean": "node ./scripts/clean.mjs",
 		"format": "pnpm exec biome format --write .",
 		"lint": "pnpm exec biome check .",
 		"lint:fix": "pnpm exec biome check --write --unsafe .",
