@@ -12,7 +12,7 @@ const PATHS_TO_REMOVE = [
 	join(PACKAGE_DIR, "index.js"),
 	join(PACKAGE_DIR, "index.d.ts"),
 	join(PACKAGE_DIR, "wasm"),
-	join(PACKAGE_DIR, "target")
+	join(PACKAGE_DIR, "target"),
 ];
 
 async function main() {
