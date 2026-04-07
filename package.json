@@ -1,6 +1,6 @@
 {
 	"name": "loom-monorepo",
-	"version": "0.1.0-alpha.2",
+	"version": "0.1.0-alpha.3",
 	"private": true,
 	"description": "Loom preview workspace.",
 	"scripts": {
@@ -18,8 +18,8 @@
 		"lint": "pnpm exec biome check package.json turbo.json biome.json tsconfig.base.json README.md scripts && turbo run lint --filter=@loom-dev/layout-engine --filter=@loom-dev/compiler --filter=@loom-dev/preview-runtime --filter=@loom-dev/preview-engine --filter=@loom-dev/preview-analysis --filter=@loom-dev/preview --filter=loom-dev --filter=@loom-dev/preview-harness --filter=@loom-dev/compiler-harness",
 		"lint:fix": "pnpm exec biome check --write --unsafe package.json turbo.json biome.json tsconfig.base.json README.md scripts && turbo run lint:fix --filter=@loom-dev/layout-engine --filter=@loom-dev/compiler --filter=@loom-dev/preview-runtime --filter=@loom-dev/preview-engine --filter=@loom-dev/preview-analysis --filter=@loom-dev/preview --filter=loom-dev --filter=@loom-dev/preview-harness --filter=@loom-dev/compiler-harness",
 		"changeset:add": "changeset",
-    "changeset:version": "changeset version",
-    "changeset:status": "changeset status --verbose",
+		"changeset:version": "changeset version",
+		"changeset:status": "changeset status --verbose",
 		"release:validate": "node ./scripts/release/validate-release.mjs",
 		"publish:workspace-packages": "node ./scripts/release/publish-workspace-packages.mjs",
 		"verify:dts": "pnpm run build:native && pnpm run build:packages && node ./scripts/verify-generated-dts.mjs",
