@@ -419,6 +419,13 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+        
+      - name: Download compiler artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: compiler-artifact-*
+          merge-multiple: true
+          path: packages/compiler/artifacts
 
       - name: Publish workspace packages
         run: pnpm publish:workspace-packages -- --access public $NPM_PUBLISH_TAG_ARGS
