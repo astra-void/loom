@@ -1,0 +1,17 @@
+{
+	"$schema": "https://unpkg.com/@changesets/config@3.1.3/schema.json",
+	"access": "public",
+	"baseBranch": "main",
+	"changelog": ["@changesets/cli", null],
+	"fixed": [
+		[
+			"@loom-dev/compiler",
+			"@loom-dev/layout-engine",
+			"@loom-dev/preview-analysis",
+			"@loom-dev/preview-engine",
+			"@loom-dev/preview-runtime",
+			"@loom-dev/preview",
+			"loom-dev"
+		]
+	]
+}

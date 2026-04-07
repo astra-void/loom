@@ -1,0 +1,14 @@
+{
+	"mode": "pre",
+	"tag": "alpha",
+	"initialVersions": {
+		"@loom-dev/compiler": "0.1.0-alpha.3",
+		"@loom-dev/layout-engine": "0.1.0-alpha.3",
+		"@loom-dev/preview-analysis": "0.1.0-alpha.3",
+		"@loom-dev/preview-engine": "0.1.0-alpha.3",
+		"@loom-dev/preview-runtime": "0.1.0-alpha.3",
+		"@loom-dev/preview": "0.1.0-alpha.3",
+		"loom-dev": "0.1.0-alpha.3"
+	},
+	"changesets": []
+}
