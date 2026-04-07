@@ -1,6 +1,6 @@
 {
 	"name": "@loom-dev/preview-runtime",
-	"version": "0.1.0-alpha.4",
+	"version": "0.1.0-alpha.5",
 	"private": false,
 	"description": "Shared browser runtime for Loom previews, including Roblox globals and DOM host rendering.",
 	"main": "dist/index.js",
@@ -20,7 +20,7 @@
 	],
 	"scripts": {
 		"build": "tsc -p tsconfig.json",
-		"prebuild": "node ./scripts/clean-dist.mjs",
+		"prebuild": "tsx ./scripts/clean-dist.ts",
 		"format": "pnpm exec biome format --write .",
 		"lint": "pnpm exec biome check .",
 		"lint:fix": "pnpm exec biome check --write --unsafe .",
