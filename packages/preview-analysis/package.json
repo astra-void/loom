@@ -1,6 +1,6 @@
 {
 	"name": "@loom-dev/preview-analysis",
-	"version": "0.1.0-alpha.4",
+	"version": "0.1.0-alpha.5",
 	"private": false,
 	"description": "WASM-backed preview graph traversal and trace engine for Loom.",
 	"main": "pkg/preview_analysis.js",
@@ -21,15 +21,15 @@
 		"README.md"
 	],
 	"scripts": {
-		"build:native": "node ../../scripts/run-wasm-pack.mjs build --target nodejs --out-dir pkg",
-		"build": "node ../../scripts/run-wasm-pack.mjs build --target nodejs --out-dir pkg",
-		"build:release": "node ../../scripts/run-wasm-pack.mjs build --release --target nodejs --out-dir pkg",
+		"build:native": "tsx ../../scripts/run-wasm-pack.ts build --target nodejs --out-dir pkg",
+		"build": "tsx ../../scripts/run-wasm-pack.ts build --target nodejs --out-dir pkg",
+		"build:release": "tsx ../../scripts/run-wasm-pack.ts build --release --target nodejs --out-dir pkg",
 		"build:rust": "cargo build",
-		"clean": "node ./scripts/clean.mjs",
+		"clean": "tsx ./scripts/clean.ts",
 		"format": "cargo fmt --all",
 		"lint": "cargo fmt --all --check && cargo check",
 		"lint:fix": "cargo fmt --all",
-		"prepack": "node ../../scripts/run-wasm-pack.mjs build --release --target nodejs --out-dir pkg",
+		"prepack": "tsx ../../scripts/run-wasm-pack.ts build --release --target nodejs --out-dir pkg",
 		"test": "cargo test"
 	},
 	"exports": {
