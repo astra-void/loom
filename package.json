@@ -5,6 +5,7 @@
 	"description": "Loom preview workspace.",
 	"scripts": {
 		"build:native": "node ./scripts/run-turbo-native.mjs run build:native --log-order=grouped --output-logs=new-only --filter=@loom-dev/layout-engine --filter=@loom-dev/compiler",
+		"clean:native": "pnpm --filter @loom-dev/compiler run clean && pnpm --filter @loom-dev/layout-engine run clean && pnpm --filter @loom-dev/preview-analysis run clean",
 		"build:packages": "turbo run build --log-order=grouped --output-logs=new-only --filter=@loom-dev/preview-runtime --filter=@loom-dev/preview-engine --filter=@loom-dev/preview-analysis --filter=@loom-dev/preview --filter=loom-dev",
 		"build": "turbo run build --log-order=grouped --output-logs=new-only",
 		"dev": "pnpm run build:native && turbo run dev --filter=@loom-dev/preview-harness",
@@ -16,6 +17,9 @@
 		"format": "pnpm exec biome format --write package.json turbo.json biome.json tsconfig.base.json README.md scripts && turbo run format --filter=@loom-dev/layout-engine --filter=@loom-dev/compiler --filter=@loom-dev/preview-runtime --filter=@loom-dev/preview-engine --filter=@loom-dev/preview-analysis --filter=@loom-dev/preview --filter=loom-dev --filter=@loom-dev/preview-harness --filter=@loom-dev/compiler-harness",
 		"lint": "pnpm exec biome check package.json turbo.json biome.json tsconfig.base.json README.md scripts && turbo run lint --filter=@loom-dev/layout-engine --filter=@loom-dev/compiler --filter=@loom-dev/preview-runtime --filter=@loom-dev/preview-engine --filter=@loom-dev/preview-analysis --filter=@loom-dev/preview --filter=loom-dev --filter=@loom-dev/preview-harness --filter=@loom-dev/compiler-harness",
 		"lint:fix": "pnpm exec biome check --write --unsafe package.json turbo.json biome.json tsconfig.base.json README.md scripts && turbo run lint:fix --filter=@loom-dev/layout-engine --filter=@loom-dev/compiler --filter=@loom-dev/preview-runtime --filter=@loom-dev/preview-engine --filter=@loom-dev/preview-analysis --filter=@loom-dev/preview --filter=loom-dev --filter=@loom-dev/preview-harness --filter=@loom-dev/compiler-harness",
+		"changeset:add": "changeset",
+    "changeset:version": "changeset version",
+    "changeset:status": "changeset status --verbose",
 		"release:validate": "node ./scripts/release/validate-release.mjs",
 		"publish:workspace-packages": "node ./scripts/release/publish-workspace-packages.mjs",
 		"verify:dts": "pnpm run build:native && pnpm run build:packages && node ./scripts/verify-generated-dts.mjs",
@@ -24,6 +28,7 @@
 	"license": "MIT",
 	"devDependencies": {
 		"@biomejs/biome": "^2.4.10",
+		"@changesets/cli": "^2.30.0",
 		"@testing-library/react": "^16.3.2",
 		"@types/node": "^25.5.0",
 		"@types/react": "^19.2.14",
@@ -31,6 +36,7 @@
 		"jsdom": "^29.0.1",
 		"react": "^19.2.4",
 		"react-dom": "^19.2.4",
+		"tsx": "^4.21.0",
 		"turbo": "^2.9.4",
 		"typescript": "6.0.2",
 		"vite-plugin-top-level-await": "^1.6.0",
