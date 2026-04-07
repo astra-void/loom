@@ -68,17 +68,24 @@ Root exports:
 - `createStaticTargetsDiscovery`
 - `createWorkspaceTargetsDiscovery`
 
-Vite plugin export:
+Subpaths:
 
-- `@loom-dev/preview/vite`
-  - `createPreviewVitePlugin`
-  - `createScopedPreviewPlugins`
+- `@loom-dev/preview/config`
+- `@loom-dev/preview/build`
+- `@loom-dev/preview/headless`
+- `@loom-dev/preview/server`
+- `@loom-dev/preview/progress`
+- `@loom-dev/preview/vite` (`createPreviewVitePlugin`, `createScopedPreviewPlugins`)
 
 `createPreviewHeadlessSession()` now creates a lazy headless session. Call `session.run()` to execute all or selected preview entries, and read `session.getSnapshot()` for the current engine payload plus the `execution` field with per-entry render status, runtime/layout issues, layout debug, degraded-host warnings, and viewport metadata.
 
 `buildPreviewModules` is the raw target-array, module-only wrapper and continues to reject `design-time`.
 
 `buildPreviewArtifacts` is the config-aware surface. It reuses `loadPreviewConfig()` / target discovery and can build metadata sidecars in `design-time`. Relative filesystem paths passed to `cwd`, `configFile`, and `outDir` resolve from the resolved preview working directory.
+
+`writePreviewProgress` and `writePreviewTiming` live in `@loom-dev/preview/progress`.
+
+`createPreviewVitePlugin` and `createScopedPreviewPlugins` live in `@loom-dev/preview/vite`.
 
 ## Node API Example
 

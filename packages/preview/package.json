@@ -51,10 +51,30 @@
 			"import": "./dist/index.mjs",
 			"default": "./dist/index.mjs"
 		},
+		"./build": {
+			"types": "./dist/build.d.ts",
+			"import": "./dist/build.js",
+			"default": "./dist/build.js"
+		},
 		"./config": {
 			"types": "./dist/config.d.ts",
 			"import": "./dist/config.js",
 			"default": "./dist/config.js"
+		},
+		"./headless": {
+			"types": "./dist/headless.d.ts",
+			"import": "./dist/headless.js",
+			"default": "./dist/headless.js"
+		},
+		"./progress": {
+			"types": "./dist/progress.d.ts",
+			"import": "./dist/progress.js",
+			"default": "./dist/progress.js"
+		},
+		"./server": {
+			"types": "./dist/server.d.ts",
+			"import": "./dist/server.js",
+			"default": "./dist/server.js"
 		},
 		"./vite": {
 			"types": "./dist/vite.d.ts",
