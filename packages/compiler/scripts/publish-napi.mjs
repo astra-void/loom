@@ -11,6 +11,7 @@ import {
 	runNapi,
 	runPnpm,
 } from "./napi-cli.mjs";
+import { stampRepositoryIntoNpmManifests } from "./stamp-repository.mjs";
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const PACKAGE_DIR = resolve(SCRIPT_DIR, "..");
@@ -73,6 +74,7 @@ async function prepareStage() {
 			cwd: STAGE_ROOT,
 		},
 	);
+	await stampRepositoryIntoNpmManifests({ rootDir: STAGE_ROOT });
 
 	await validateStage();
 }
@@ -99,6 +101,7 @@ async function publishStage() {
 		cwd: STAGE_ROOT,
 		env: publishEnv,
 	});
+	await stampRepositoryIntoNpmManifests({ rootDir: STAGE_ROOT });
 
 	for (const target of targets) {
 		runPackageManager(publishClient, publishArgs, {

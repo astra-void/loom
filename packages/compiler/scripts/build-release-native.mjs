@@ -2,6 +2,7 @@
 import { fileURLToPath } from "node:url";
 import { buildWrapperTypes } from "./build-wrapper-types.mjs";
 import { getPassthroughArgs, runNapi } from "./napi-cli.mjs";
+import { stampRepositoryIntoNpmManifests } from "./stamp-repository.mjs";
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const PACKAGE_DIR = dirname(SCRIPT_DIR);
@@ -14,4 +15,5 @@ if (result.status !== 0) {
 	process.exit(result.status ?? 1);
 }
 
+await stampRepositoryIntoNpmManifests({ rootDir: PACKAGE_DIR });
 buildWrapperTypes();

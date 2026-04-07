@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { getNativeTarget } from "../../../scripts/native-target.mjs";
 import { buildWrapperTypes } from "./build-wrapper-types.mjs";
 import { getPassthroughArgs, runNapi } from "./napi-cli.mjs";
+import { stampRepositoryIntoNpmManifests } from "./stamp-repository.mjs";
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const PACKAGE_DIR = dirname(SCRIPT_DIR);
@@ -50,6 +51,7 @@ async function main() {
 	const localBinaryPath = join(LOCAL_BINARIES_DIR, binaryFileName);
 	const rootBinaryPath = join(PACKAGE_DIR, binaryFileName);
 
+	await stampRepositoryIntoNpmManifests({ rootDir: PACKAGE_DIR });
 	await copyFile(sourceBinaryPath, localBinaryPath);
 	await copyFile(sourceBinaryPath, rootBinaryPath);
 	await copyGeneratedBindings();
