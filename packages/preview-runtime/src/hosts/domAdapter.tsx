@@ -34,6 +34,13 @@ import {
 	type PreviewDomProps,
 } from "./types";
 
+export type PreviewDomRef<T> =
+	| ((instance: T | null) => void)
+	| {
+			current: T | null;
+	  }
+	| null;
+
 export type LayoutDebugState = {
 	debugNode: {
 		hostPolicy: PreviewLayoutHostPolicy;
@@ -92,10 +99,10 @@ export interface PresentationAdapter {
 		element: HTMLElement | null,
 	): { height: number; width: number } | null;
 	normalize(source: SourceHostDescriptor): PreviewHostNode;
-	render(
+	render<T extends HTMLElement>(
 		node: PreviewHostNode,
 		children: React.ReactNode,
-		ref: React.Ref<HTMLElement>,
+		ref: PreviewDomRef<T>,
 	): React.ReactElement;
 }
 
@@ -574,7 +581,7 @@ export const domPresentationAdapter: PresentationAdapter = {
 					<button
 						{...rendered}
 						disabled={node.presentationHints.disabled}
-						ref={ref as React.Ref<HTMLButtonElement>}
+						ref={ref as PreviewDomRef<HTMLButtonElement>}
 						type="button"
 					>
 						{renderHostText(node.presentationHints.text)}
@@ -586,7 +593,7 @@ export const domPresentationAdapter: PresentationAdapter = {
 					<button
 						{...rendered}
 						disabled={node.presentationHints.disabled}
-						ref={ref as React.Ref<HTMLButtonElement>}
+						ref={ref as PreviewDomRef<HTMLButtonElement>}
 						type="button"
 					>
 						{renderHostImage(
@@ -603,7 +610,7 @@ export const domPresentationAdapter: PresentationAdapter = {
 						{...rendered}
 						defaultValue={node.presentationHints.text}
 						disabled={node.presentationHints.disabled}
-						ref={ref as React.Ref<HTMLInputElement>}
+						ref={ref as PreviewDomRef<HTMLInputElement>}
 						type="text"
 					/>
 				);
@@ -612,7 +619,7 @@ export const domPresentationAdapter: PresentationAdapter = {
 					<img
 						{...rendered}
 						alt=""
-						ref={ref as React.Ref<HTMLImageElement>}
+						ref={ref as PreviewDomRef<HTMLImageElement>}
 						src={
 							typeof node.presentationHints.image === "string"
 								? node.presentationHints.image
@@ -622,7 +629,7 @@ export const domPresentationAdapter: PresentationAdapter = {
 				);
 			default: {
 				return (
-					<div {...rendered} ref={ref as React.Ref<HTMLDivElement>}>
+					<div {...rendered} ref={ref as PreviewDomRef<HTMLDivElement>}>
 						{renderDegradedHostLabel(node)}
 						{(node.host === "textlabel" || node.host === "frame") &&
 							renderHostText(node.presentationHints.text)}

@@ -168,7 +168,7 @@ function useMergedRefs<T>(...refs: Array<React.Ref<T> | undefined>) {
 		refsRef.current = refs;
 	});
 
-	return React.useCallback((value: T | null) => {
+	return React.useCallback((value: T | null): void => {
 		for (const ref of refsRef.current) {
 			if (!ref) {
 				continue;
