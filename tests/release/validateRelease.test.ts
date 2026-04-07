@@ -3,12 +3,12 @@
 import { describe, expect, it } from "vitest";
 import {
 	PUBLIC_RELEASE_PACKAGES,
-} from "../../scripts/release/release-config.mjs";
+} from "../../scripts/release/release-config";
 import {
 	getReleaseDistTag,
 	parseReleaseTag,
 	validateReleaseVersions,
-} from "../../scripts/release/validate-release.mjs";
+} from "../../scripts/release/validate-release";
 
 function createReleasePackages(versionByName: Record<string, string>) {
 	return PUBLIC_RELEASE_PACKAGES.map((releasePackage) => ({

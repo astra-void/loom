@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { getNativeTarget } from "./native-target.mjs";
+import { getNativeTarget } from "./native-target.ts";
 
 function createEnv() {
 	return {

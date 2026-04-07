@@ -3,12 +3,11 @@
 	"compilerOptions": {
 		"noEmit": true,
 		"rootDir": "../..",
-		"baseUrl": "../..",
 		"types": ["node", "react", "react-dom", "vitest/globals"],
 		"paths": {
-			"@loom-dev/compiler": ["packages/compiler/wrapper.d.ts"],
-			"@loom-dev/preview-engine": ["packages/preview-engine/src/index.ts"],
-			"@loom-dev/preview-runtime": ["packages/preview-runtime/src/index.ts"]
+			"@loom-dev/compiler": ["../../packages/compiler/wrapper.d.ts"],
+			"@loom-dev/preview-engine": ["../../packages/preview-engine/src/index.ts"],
+			"@loom-dev/preview-runtime": ["../../packages/preview-runtime/src/index.ts"]
 		}
 	},
 	"include": [

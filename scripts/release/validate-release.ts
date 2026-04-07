@@ -6,7 +6,7 @@ import { pathToFileURL } from "node:url";
 import {
 	PUBLIC_RELEASE_PACKAGES,
 	RELEASE_TAG_PATTERN,
-} from "./release-config.mjs";
+} from "./release-config.ts";
 
 export function parseReleaseTagParts(tagName) {
 	const match = RELEASE_TAG_PATTERN.exec(tagName);

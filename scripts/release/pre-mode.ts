@@ -39,7 +39,7 @@ function main() {
 	const action = process.argv[2];
 
 	if (action !== "enter" && action !== "exit") {
-		throw new Error("Usage: pre-mode.mjs <enter|exit>");
+		throw new Error("Usage: pre-mode.ts <enter|exit>");
 	}
 
 	const currentMode = readPreMode();

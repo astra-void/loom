@@ -60,10 +60,10 @@ describe("WasmTestApp", () => {
 		const fetchMock = vi.fn();
 		vi.stubGlobal("fetch", fetchMock);
 		const { WasmTestApp } = await import(
-			"../../packages/preview/src/shell/WasmTestApp"
+			"../../packages/preview/src/shell/WasmTestApp.js"
 		);
 		const { PreviewThemeProvider } = await import(
-			"../../packages/preview/src/shell/theme"
+			"../../packages/preview/src/shell/theme.js"
 		);
 
 		render(

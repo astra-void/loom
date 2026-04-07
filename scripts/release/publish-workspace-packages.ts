@@ -4,7 +4,7 @@ import os from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { WORKSPACE_PUBLISH_ORDER } from "./release-config.mjs";
+import { WORKSPACE_PUBLISH_ORDER } from "./release-config.ts";
 
 function runCommand(command, args, options = {}) {
 	const result = spawnSync(command, args, {
