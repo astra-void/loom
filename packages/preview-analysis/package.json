@@ -25,6 +25,7 @@
 		"build": "node ../../scripts/run-wasm-pack.mjs build --target nodejs --out-dir pkg",
 		"build:release": "node ../../scripts/run-wasm-pack.mjs build --release --target nodejs --out-dir pkg",
 		"build:rust": "cargo build",
+		"clean": "node ./scripts/clean.mjs",
 		"format": "cargo fmt --all",
 		"lint": "cargo fmt --all --check && cargo check",
 		"lint:fix": "cargo fmt --all",
