@@ -117,7 +117,7 @@ jobs:
         run: |
           node --input-type=module <<'EOF'
           import { appendFileSync } from "node:fs";
-          import { getReleaseDistTag } from "./scripts/release/validate-release.mjs";
+          import { getReleaseDistTag } from "./scripts/release/validate-release";
           
           const tagName = process.env.RELEASE_TAG;
           
