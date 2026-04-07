@@ -12,6 +12,7 @@ const layoutEngineWasmPath = path.resolve(
 export default defineConfig({
 	plugins: [wasm(), topLevelAwait()],
 	resolve: {
+		dedupe: ["react", "react-dom"],
 		alias: [
 			{
 				find: "virtual:loom-preview-workspace-index",
