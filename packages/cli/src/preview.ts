@@ -1,6 +1,9 @@
 import { promises as fs } from "node:fs";
 import * as path from "node:path";
-import { writePreviewProgress, writePreviewTiming } from "@loom-dev/preview";
+import {
+	writePreviewProgress,
+	writePreviewTiming,
+} from "@loom-dev/preview/progress";
 import { usageError } from "./core/errors";
 
 export type CliPreviewTransformMode = "strict-fidelity" | "compatibility";
