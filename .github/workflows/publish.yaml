@@ -115,9 +115,9 @@ jobs:
       - name: Derive release metadata
         id: release_metadata
         run: |
-          node --input-type=module <<'EOF'
+          pnpm exec tsx <<'EOF'
           import { appendFileSync } from "node:fs";
-          import { getReleaseDistTag } from "./scripts/release/validate-release";
+          import { getReleaseDistTag } from "./scripts/release/validate-release.ts";
           
           const tagName = process.env.RELEASE_TAG;
           
