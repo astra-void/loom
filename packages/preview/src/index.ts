@@ -45,3 +45,5 @@ export type {
 	StartPreviewServerOptions,
 } from "./server";
 export { startPreviewServer } from "./server";
+export type { PreviewSystemDensity } from "./shell/preview-targets/system";
+export { SystemProvider, useSystem } from "./shell/preview-targets/system";
