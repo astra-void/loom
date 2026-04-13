@@ -1,5 +1,9 @@
 import { normalizePreviewNodeId } from "../internal/robloxValues";
 import {
+	normalizePreviewRuntimeError,
+	publishPreviewRuntimeIssue,
+} from "../runtime/runtimeError";
+import {
 	areNodesEqual,
 	createEmptyLayoutResult,
 	type PreviewLayoutDebugNode,
@@ -45,6 +49,9 @@ const SUPPORTED_WASM_LAYOUT_CAPABILITIES = new Set<LayoutCapability>([
 	"text-size-constraint",
 ]);
 
+const MAX_FALLBACK_SUBTREE_RECOMPUTE_ITERATIONS = 16;
+const RECT_EPSILON = 0.000001;
+
 function compareIds(left: string, right: string) {
 	return left.localeCompare(right);
 }
@@ -72,6 +79,14 @@ function resolveAxisValue(
 		parentSize * ("scale" in axis ? axis.scale : axis.Scale) +
 		("offset" in axis ? axis.offset : axis.Offset)
 	);
+}
+
+function toErrorMessage(error: unknown): string {
+	if (error instanceof Error) {
+		return error.message;
+	}
+
+	return String(error);
 }
 
 function resolveSizeConstraintMode(
@@ -177,6 +192,86 @@ function resolveContentRect(
 		width: Math.max(0, rect.width - left - right),
 		x: rect.x + left,
 		y: rect.y + top,
+	};
+}
+
+function resolveAutomaticContentRect(
+	node: PreviewLayoutNode,
+	currentRect: { height: number; width: number; x: number; y: number },
+	contentRect: { height: number; width: number; x: number; y: number },
+	childIds: string[],
+	output: Record<
+		string,
+		{ height: number; width: number; x: number; y: number }
+	>,
+) {
+	const automaticSize = node.layout.automaticSize ?? "none";
+	if (automaticSize === "none" || childIds.length === 0) {
+		return null;
+	}
+
+	let minX = Number.POSITIVE_INFINITY;
+	let minY = Number.POSITIVE_INFINITY;
+	let maxX = Number.NEGATIVE_INFINITY;
+	let maxY = Number.NEGATIVE_INFINITY;
+	let found = false;
+
+	for (const childId of childIds) {
+		const childRect = output[childId];
+		if (!childRect) {
+			continue;
+		}
+
+		found = true;
+		minX = Math.min(minX, childRect.x - contentRect.x);
+		minY = Math.min(minY, childRect.y - contentRect.y);
+		maxX = Math.max(maxX, childRect.x + childRect.width - contentRect.x);
+		maxY = Math.max(maxY, childRect.y + childRect.height - contentRect.y);
+	}
+
+	if (!found) {
+		return null;
+	}
+
+	const padding = node.layoutModifiers?.padding;
+	const paddingLeft = resolvePaddingInset(padding?.left, currentRect.width);
+	const paddingRight = resolvePaddingInset(padding?.right, currentRect.width);
+	const paddingTop = resolvePaddingInset(padding?.top, currentRect.height);
+	const paddingBottom = resolvePaddingInset(
+		padding?.bottom,
+		currentRect.height,
+	);
+
+	const contentWidth = Math.max(0, maxX - minX);
+	const contentHeight = Math.max(0, maxY - minY);
+	let width = currentRect.width;
+	let height = currentRect.height;
+
+	if (automaticSize === "x" || automaticSize === "xy") {
+		width = contentWidth + paddingLeft + paddingRight;
+	}
+
+	if (automaticSize === "y" || automaticSize === "xy") {
+		height = contentHeight + paddingTop + paddingBottom;
+	}
+
+	if (
+		Math.abs(width - currentRect.width) < RECT_EPSILON &&
+		Math.abs(height - currentRect.height) < RECT_EPSILON
+	) {
+		return null;
+	}
+
+	const anchorOriginX =
+		currentRect.x + node.layout.anchorPoint.x * currentRect.width;
+	const anchorOriginY =
+		currentRect.y + node.layout.anchorPoint.y * currentRect.height;
+
+	return {
+		height,
+		width,
+		x: anchorOriginX - node.layout.anchorPoint.x * width,
+		y: anchorOriginY - node.layout.anchorPoint.y * height,
 	};
 }
 
@@ -446,6 +541,7 @@ export class LayoutController {
 	private debugNodesById = new Map<string, PreviewLayoutDebugNode>();
 	private pendingRemovedIds = new Set<string>();
 	private pendingUpsertIds = new Set<string>();
+	private lastWasmComputeFailureSummary: string | null = null;
 	private viewportDirty = false;
 	private sessionNeedsRebuild = false;
 	private result: PreviewLayoutResult = createEmptyLayoutResult({
@@ -463,16 +559,39 @@ export class LayoutController {
 
 	public compute(options?: { isReady?: boolean }): PreviewLayoutResult {
 		let nextResult: PreviewLayoutResult;
+		let wasmComputeError: unknown | null = null;
 		try {
 			if (options?.isReady !== false) {
 				nextResult = this.computeWithSession();
+				this.lastWasmComputeFailureSummary = null;
 			} else {
 				nextResult = this.computeFallback();
 			}
-		} catch {
+		} catch (error) {
 			this.sessionNeedsRebuild = true;
+			wasmComputeError = error;
 			nextResult = this.computeFallback();
 		}
+
+		if (wasmComputeError) {
+			const summary = toErrorMessage(wasmComputeError);
+			if (this.lastWasmComputeFailureSummary !== summary) {
+				this.lastWasmComputeFailureSummary = summary;
+				publishPreviewRuntimeIssue(
+					normalizePreviewRuntimeError(
+						{
+							code: "LAYOUT_WASM_COMPUTE_FAILED",
+							kind: "LayoutExecutionError",
+							phase: "layout",
+							summary: `Wasm layout failed: ${summary}`,
+							target: "@loom-dev/layout-engine",
+						},
+						wasmComputeError,
+					),
+				);
+			}
+		}
+
 		this.result = nextResult;
 		this.debugNodesById = buildDebugNodeMap(nextResult.debug.roots);
 		this.dirtyNodeIds.clear();
@@ -652,40 +771,59 @@ export class LayoutController {
 			return;
 		}
 
-		output[node.id] = rect;
+		let currentRect = rect;
 
-		if (node.visible === false) {
-			return;
+		for (
+			let iteration = 0;
+			iteration < MAX_FALLBACK_SUBTREE_RECOMPUTE_ITERATIONS;
+			iteration++
+		) {
+			output[node.id] = currentRect;
+
+			if (node.visible === false) {
+				return;
+			}
+
+			const childIds = (this.childIdsByParent.get(nodeId) ?? []).filter(
+				(childId) => this.nodes.get(childId)?.visible !== false,
+			);
+			if (childIds.length === 0) {
+				break;
+			}
+
+			const contentRect = resolveContentRect(currentRect, node);
+			const childNodes = sortNodesForParent(
+				node,
+				childIds
+					.map((childId) => this.nodes.get(childId))
+					.filter((child): child is PreviewLayoutNode => child !== undefined),
+			);
+
+			if (node.layoutModifiers?.grid) {
+				this.computeGridChildren(node, contentRect, childNodes, output);
+			} else if (node.layoutModifiers?.list) {
+				this.computeListChildren(node, contentRect, childNodes, output);
+			} else {
+				for (const childNode of childNodes) {
+					this.computeFallbackSubtree(childNode.id, contentRect, output);
+				}
+			}
+
+			const nextRect = resolveAutomaticContentRect(
+				node,
+				currentRect,
+				contentRect,
+				childIds,
+				output,
+			);
+			if (!nextRect) {
+				break;
+			}
+
+			currentRect = nextRect;
 		}
 
-		const childIds = (this.childIdsByParent.get(nodeId) ?? []).filter(
-			(childId) => this.nodes.get(childId)?.visible !== false,
-		);
-		if (childIds.length === 0) {
-			return;
-		}
-
-		const contentRect = resolveContentRect(rect, node);
-		const childNodes = sortNodesForParent(
-			node,
-			childIds
-				.map((childId) => this.nodes.get(childId))
-				.filter((child): child is PreviewLayoutNode => child !== undefined),
-		);
-
-		if (node.layoutModifiers?.grid) {
-			this.computeGridChildren(node, contentRect, childNodes, output);
-			return;
-		}
-
-		if (node.layoutModifiers?.list) {
-			this.computeListChildren(node, contentRect, childNodes, output);
-			return;
-		}
-
-		for (const childNode of childNodes) {
-			this.computeFallbackSubtree(childNode.id, contentRect, output);
-		}
+		output[node.id] = currentRect;
 	}
 
 	private computeGridChildren(
