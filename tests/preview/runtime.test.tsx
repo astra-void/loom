@@ -10,8 +10,8 @@ import {
 	FocusScope,
 	Frame,
 	game,
-	getPreviewLayoutProbeSnapshot,
 	getPreviewRuntimeIssues,
+	getPreviewLayoutProbeSnapshot,
 	ImageButton,
 	ImageLabel,
 	isPreviewElement,
@@ -43,6 +43,7 @@ import {
 	VideoFrame,
 	ViewportFrame,
 } from "@loom-dev/preview-runtime";
+import { LayoutController } from "../../packages/preview-runtime/src/layout/controller";
 import {
 	act,
 	cleanup,
@@ -394,7 +395,7 @@ describe("preview runtime Roblox globals", () => {
 });
 
 describe("preview runtime host mapping", () => {
-	it("uses bare preview ids and shows a debug fallback when Wasm output is missing", () => {
+	it("uses host-scoped preview ids and shows a debug fallback when Wasm output is missing", () => {
 		render(
 			<Frame
 				Position={UDim2.fromOffset(12, 18)}
@@ -407,8 +408,7 @@ describe("preview runtime host mapping", () => {
 		const frame = document.querySelector(
 			'[data-preview-host="frame"]',
 		) as HTMLElement;
-		expect(frame.dataset.previewNodeId).toMatch(/^preview-node-\d+$/);
-		expect(frame.dataset.previewNodeId).not.toContain("frame:");
+		expect(frame.dataset.previewNodeId).toMatch(/^frame:preview-node-\d+$/);
 		expect(frame.style.visibility).toBe("visible");
 		expect(frame.style.left).toBe("12px");
 		expect(frame.style.top).toBe("18px");
@@ -2511,11 +2511,11 @@ describe("preview runtime host mapping", () => {
 					nodeType: "ScreenGui",
 				});
 				expect(textNode).toBeTruthy();
-				expect(textNode?.id).toMatch(/^preview-node-\d+$/);
+				expect(textNode?.id).toMatch(/^textlabel:preview-node-\d+$/);
 				expect(textNode?.id).not.toBe("preview-node-2");
 				expect(textNode?.parentId).toBe("preview-node-2");
 
-				const textNodeId = textNode?.id ?? "preview-node-3";
+				const textNodeId = textNode?.id ?? "textlabel:preview-node-3";
 				return createSessionResult(
 					{
 						"preview-node-2": { height: 600, width: 800, x: 0, y: 0 },
@@ -2544,7 +2544,9 @@ describe("preview runtime host mapping", () => {
 
 		await waitFor(() => {
 			expect(screenGui.dataset.previewNodeId).toBe("preview-node-2");
-			expect(textLabel.dataset.previewNodeId).toMatch(/^preview-node-\d+$/);
+			expect(textLabel.dataset.previewNodeId).toMatch(
+				/^textlabel:preview-node-\d+$/,
+			);
 			expect(textLabel.dataset.previewNodeId).not.toBe("preview-node-2");
 			expect(textLabel.style.left).toBe("12px");
 			expect(textLabel.style.top).toBe("24px");
@@ -2558,6 +2560,214 @@ describe("preview runtime host mapping", () => {
 		).toBe(false);
 		expect(
 			issues.some(
+				(issue) => issue.summary?.includes("Maximum update depth") ?? false,
+			),
+		).toBe(false);
+	});
+
+	it("renders a playground-style auto-id ScreenGui and title TextLabel without root/host collisions", async () => {
+		layoutEngineMocks.computeDirty.mockImplementation(
+			(nodes, viewportWidth, viewportHeight) => {
+				const rootNode = nodes.find((node) => node.nodeType === "ScreenGui");
+				const titleNode = nodes.find((node) => node.nodeType === "TextLabel");
+
+				expect(rootNode).toBeTruthy();
+				expect(titleNode).toBeTruthy();
+				expect(rootNode?.id).toMatch(/^screengui:preview-node-\d+$/);
+				expect(titleNode?.id).toMatch(/^textlabel:preview-node-\d+$/);
+				expect(titleNode?.id).not.toBe(rootNode?.id);
+				expect(titleNode?.parentId).toBe(rootNode?.id);
+
+				const rootNodeId = rootNode?.id ?? "screengui:preview-node-1";
+				const titleNodeId = titleNode?.id ?? "textlabel:preview-node-2";
+
+				return createSessionResult(
+					{
+						[rootNodeId]: { height: 600, width: 800, x: 0, y: 0 },
+						[titleNodeId]: { height: 48, width: 220, x: 16, y: 20 },
+					},
+					viewportWidth,
+					viewportHeight,
+				);
+			},
+		);
+
+		render(
+			<LayoutProvider debounceMs={0} viewportHeight={600} viewportWidth={800}>
+				<ScreenGui>
+					<TextLabel Size={UDim2.fromOffset(220, 48)} Text="Scene Title" />
+				</ScreenGui>
+			</LayoutProvider>,
+		);
+
+		const screenGui = document.querySelector(
+			'[data-preview-host="screengui"]',
+		) as HTMLElement;
+		const textLabel = document.querySelector(
+			'[data-preview-host="textlabel"]',
+		) as HTMLElement;
+
+		await waitFor(() => {
+			expect(screenGui.dataset.previewNodeId).toMatch(
+				/^screengui:preview-node-\d+$/,
+			);
+			expect(textLabel.dataset.previewNodeId).toMatch(
+				/^textlabel:preview-node-\d+$/,
+			);
+			expect(textLabel.dataset.previewNodeId).not.toBe(
+				screenGui.dataset.previewNodeId,
+			);
+		});
+
+		expect(
+			getPreviewRuntimeIssues().some(
+				(issue) => issue.code === "LAYOUT_VALIDATION_ERROR",
+			),
+		).toBe(false);
+	});
+
+	it("keeps auto-generated root/title ids stable during layout-effect re-registration", async () => {
+		const observedRootIds = new Set<string>();
+		const observedTitleIds = new Set<string>();
+		const upsertSpy = vi.spyOn(LayoutController.prototype, "upsertNode");
+
+		layoutEngineMocks.computeDirty.mockImplementation(
+			(nodes, viewportWidth, viewportHeight) => {
+				const rootNode = nodes.find((node) => node.nodeType === "ScreenGui");
+				const titleNode = nodes.find((node) => node.nodeType === "TextLabel");
+
+				const rootNodeId = rootNode?.id ?? "screengui:preview-node-1";
+				const titleNodeId = titleNode?.id ?? "textlabel:preview-node-2";
+
+				return createSessionResult(
+					{
+						[rootNodeId]: { height: 600, width: 800, x: 0, y: 0 },
+						[titleNodeId]: { height: 48, width: 220, x: 16, y: 20 },
+					},
+					viewportWidth,
+					viewportHeight,
+				);
+			},
+		);
+
+		function ReRegisteringTitleScene() {
+			const [tick, setTick] = React.useState(0);
+
+			React.useLayoutEffect(() => {
+				if (tick < 3) {
+					setTick((previous) => previous + 1);
+				}
+			}, [tick]);
+
+			return (
+				<ScreenGui>
+					<TextLabel Size={UDim2.fromOffset(220, 48)} Text={`Scene Title ${tick}`} />
+				</ScreenGui>
+			);
+		}
+
+		render(
+			<LayoutProvider debounceMs={0} viewportHeight={600} viewportWidth={800}>
+				<ReRegisteringTitleScene />
+			</LayoutProvider>,
+		);
+
+		await waitFor(() => {
+			expect(screen.getByText("Scene Title 3")).toBeTruthy();
+		});
+
+		for (const [node] of upsertSpy.mock.calls as Array<[LayoutNode]>) {
+			if (node.nodeType === "ScreenGui") {
+				observedRootIds.add(node.id);
+			}
+
+			if (node.nodeType === "TextLabel") {
+				observedTitleIds.add(node.id);
+			}
+		}
+
+		expect(observedRootIds.size).toBe(1);
+		expect(observedTitleIds.size).toBe(1);
+		expect([...observedRootIds][0]).not.toBe([...observedTitleIds][0]);
+		expect(
+			getPreviewRuntimeIssues().some(
+				(issue) => issue.code === "LAYOUT_VALIDATION_ERROR",
+			),
+		).toBe(false);
+	});
+
+	it("never reuses the same live id as both ScreenGui root and TextLabel host across remount cycles", async () => {
+		const observedKindsById = new Map<string, Set<string>>();
+		const upsertSpy = vi.spyOn(LayoutController.prototype, "upsertNode");
+
+		layoutEngineMocks.computeDirty.mockImplementation(
+			(nodes, viewportWidth, viewportHeight) => {
+				const rects = Object.fromEntries(
+					nodes.map((node) => [
+						node.id,
+						node.nodeType === "ScreenGui"
+							? { height: 600, width: 800, x: 0, y: 0 }
+							: { height: 48, width: 220, x: 16, y: 20 },
+					]),
+				) as Record<string, LayoutRect>;
+
+				return createSessionResult(
+					rects,
+					viewportWidth,
+					viewportHeight,
+					Object.keys(rects),
+				);
+			},
+		);
+
+		function RemountingTitleScene() {
+			const [phase, setPhase] = React.useState(0);
+			const showTitle = phase % 2 === 0;
+
+			React.useLayoutEffect(() => {
+				if (phase < 4) {
+					setPhase((previous) => previous + 1);
+				}
+			}, [phase]);
+
+			return (
+				<ScreenGui>
+					{showTitle ? (
+						<TextLabel Size={UDim2.fromOffset(220, 48)} Text={`Scene Title ${phase}`} />
+					) : null}
+				</ScreenGui>
+			);
+		}
+
+		render(
+			<LayoutProvider debounceMs={0} viewportHeight={600} viewportWidth={800}>
+				<RemountingTitleScene />
+			</LayoutProvider>,
+		);
+
+		await waitFor(() => {
+			expect(screen.getByText("Scene Title 4")).toBeTruthy();
+		});
+
+		for (const [node] of upsertSpy.mock.calls as Array<[LayoutNode]>) {
+			const observedKinds = observedKindsById.get(node.id) ?? new Set<string>();
+			observedKinds.add(`${node.kind}:${node.nodeType}`);
+			observedKindsById.set(node.id, observedKinds);
+		}
+
+		for (const observedKinds of observedKindsById.values()) {
+			expect(
+				observedKinds.has("root:ScreenGui") && observedKinds.has("host:TextLabel"),
+			).toBe(false);
+		}
+
+		expect(
+			getPreviewRuntimeIssues().some(
+				(issue) => issue.code === "LAYOUT_VALIDATION_ERROR",
+			),
+		).toBe(false);
+		expect(
+			getPreviewRuntimeIssues().some(
 				(issue) => issue.summary?.includes("Maximum update depth") ?? false,
 			),
 		).toBe(false);
