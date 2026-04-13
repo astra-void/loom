@@ -153,6 +153,36 @@ function getLayoutParentId(props: PreviewDomProps) {
 	return getStringValue(source.ParentId ?? source.parentId);
 }
 
+function getLayoutNodeId(props: PreviewDomProps) {
+	const source = props as Record<string, unknown>;
+	return getStringValue(source.Id ?? source.id);
+}
+
+type PreviewHostIdentityDiagnosticsGlobal = typeof globalThis & {
+	__loomPreviewHostIdentityDiagnostics?: boolean;
+};
+
+function shouldLogPreviewHostIdentityDiagnostics() {
+	return (
+		(globalThis as PreviewHostIdentityDiagnosticsGlobal)
+			.__loomPreviewHostIdentityDiagnostics === true
+	);
+}
+
+function logPreviewHostIdentityDiagnostics(input: {
+	host: LayoutHostName;
+	rawId?: string;
+	rawParentId?: string;
+	computedNodeId: string;
+	computedParentId?: string;
+}) {
+	if (!shouldLogPreviewHostIdentityDiagnostics()) {
+		return;
+	}
+
+	console.info("[preview-runtime][host-identity]", input);
+}
+
 function useGeneratedPreviewNodeId(): string {
 	const idRef = React.useRef<string | null>(null);
 	if (idRef.current === null) {
@@ -164,8 +194,7 @@ function useGeneratedPreviewNodeId(): string {
 }
 
 function resolveNodeId(generatedId: string, props: PreviewDomProps): string {
-	const source = props as Record<string, unknown>;
-	const explicitId = getStringValue(source.Id ?? source.id);
+	const explicitId = getLayoutNodeId(props);
 	return normalizePreviewNodeId(explicitId) ?? generatedId;
 }
 
@@ -379,6 +408,8 @@ export function useHostLayout(host: LayoutHostName, props: PreviewDomProps) {
 	const basePropsRef = React.useRef(props);
 	basePropsRef.current = props;
 	const generatedId = useGeneratedPreviewNodeId();
+	const rawNodeId = React.useMemo(() => getLayoutNodeId(props), [props]);
+	const rawParentId = React.useMemo(() => getLayoutParentId(props), [props]);
 	const nodeId = React.useMemo(
 		() => resolveNodeId(generatedId, props),
 		[generatedId, props],
@@ -415,6 +446,22 @@ export function useHostLayout(host: LayoutHostName, props: PreviewDomProps) {
 			}),
 		[host, mergedProps, nodeId, normalizedParentId, sourceOrder],
 	);
+
+	React.useLayoutEffect(() => {
+		logPreviewHostIdentityDiagnostics({
+			computedNodeId: normalizedNode.id,
+			computedParentId: normalizedNode.parentId,
+			host,
+			rawId: rawNodeId,
+			rawParentId: rawParentId,
+		});
+	}, [
+		host,
+		normalizedNode.id,
+		normalizedNode.parentId,
+		rawNodeId,
+		rawParentId,
+	]);
 
 	const isRootNode = normalizedNode.kind === "root";
 

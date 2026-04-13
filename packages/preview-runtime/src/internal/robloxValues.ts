@@ -56,7 +56,7 @@ export const ZERO_VECTOR2: SerializedVector2 = {
 	Y: 0,
 };
 
-const PREVIEW_NODE_ID_PATTERN = /(?:^|:)(preview-node-\d+)$/;
+const LEGACY_PREVIEW_NODE_RESULT_KEY_PATTERN = /(?:^|:)(preview-node-\d+)$/;
 
 export function toFiniteNumber(value: unknown, fallback = 0): number {
 	const parsed = Number(value);
@@ -70,7 +70,17 @@ export function normalizePreviewNodeId(
 		return undefined;
 	}
 
-	const match = PREVIEW_NODE_ID_PATTERN.exec(nodeId);
+	return nodeId;
+}
+
+export function normalizeLegacyPreviewResultNodeId(
+	nodeId: string | undefined,
+): string | undefined {
+	if (!nodeId) {
+		return undefined;
+	}
+
+	const match = LEGACY_PREVIEW_NODE_RESULT_KEY_PATTERN.exec(nodeId);
 	return match?.[1] ?? nodeId;
 }
 

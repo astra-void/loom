@@ -1,5 +1,5 @@
 import * as React from "react";
-import { normalizePreviewNodeId } from "../internal/robloxValues";
+import { normalizeLegacyPreviewResultNodeId } from "../internal/robloxValues";
 import {
 	normalizePreviewRuntimeError,
 	publishPreviewRuntimeIssue,
@@ -385,8 +385,24 @@ export function LayoutProvider(props: LayoutProviderProps) {
 
 	const registerNode = React.useCallback(
 		(node: ReturnType<typeof adaptRobloxNodeInput>) => {
-			if (controller.upsertNode(node)) {
-				setTreeVersion((previous) => previous + 1);
+			try {
+				if (controller.upsertNode(node)) {
+					setTreeVersion((previous) => previous + 1);
+				}
+			} catch (nextError) {
+				publishPreviewRuntimeIssue(
+					normalizePreviewRuntimeError(
+						{
+							code: "LAYOUT_VALIDATION_ERROR",
+							kind: "LayoutValidationError",
+							phase: "layout",
+							summary: `Layout registration failed: ${toErrorMessage(nextError)}`,
+							target: "@loom-dev/preview-runtime",
+						},
+						nextError,
+					),
+				);
+				setError(`Layout registration failed: ${toErrorMessage(nextError)}`);
 			}
 		},
 		[controller],
@@ -484,16 +500,34 @@ export function LayoutProvider(props: LayoutProviderProps) {
 
 	const getRect = React.useCallback(
 		(nodeId: string) => {
-			const normalizedNodeId = normalizePreviewNodeId(nodeId) ?? nodeId;
-			return layoutResult.rects[normalizedNodeId] ?? null;
+			const directRect = layoutResult.rects[nodeId];
+			if (directRect !== undefined) {
+				return directRect;
+			}
+
+			const legacyNodeId = normalizeLegacyPreviewResultNodeId(nodeId);
+			if (legacyNodeId && legacyNodeId !== nodeId) {
+				return layoutResult.rects[legacyNodeId] ?? null;
+			}
+
+			return null;
 		},
 		[layoutResult.rects],
 	);
 
 	const getDebugNode = React.useCallback(
 		(nodeId: string) => {
-			const normalizedNodeId = normalizePreviewNodeId(nodeId) ?? nodeId;
-			return controller.getDebugNode(normalizedNodeId);
+			const directNode = controller.getDebugNode(nodeId);
+			if (directNode) {
+				return directNode;
+			}
+
+			const legacyNodeId = normalizeLegacyPreviewResultNodeId(nodeId);
+			if (legacyNodeId && legacyNodeId !== nodeId) {
+				return controller.getDebugNode(legacyNodeId);
+			}
+
+			return null;
 		},
 		[controller],
 	);

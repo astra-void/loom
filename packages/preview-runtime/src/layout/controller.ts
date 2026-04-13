@@ -1,4 +1,4 @@
-import { normalizePreviewNodeId } from "../internal/robloxValues";
+import { normalizeLegacyPreviewResultNodeId } from "../internal/robloxValues";
 import {
 	normalizePreviewRuntimeError,
 	publishPreviewRuntimeIssue,
@@ -493,13 +493,49 @@ function advanceMainCursor(cursor: number, itemMain: number, gap: number) {
 	return cursor + itemMain + gap;
 }
 
-function buildDebugNodeMap(
+function collectDebugNodes(
 	nodes: PreviewLayoutDebugNode[],
-	map = new Map<string, PreviewLayoutDebugNode>(),
-): Map<string, PreviewLayoutDebugNode> {
+	collected: PreviewLayoutDebugNode[] = [],
+) {
 	for (const node of nodes) {
+		collected.push(node);
+		collectDebugNodes(node.children, collected);
+	}
+
+	return collected;
+}
+
+function buildDebugNodeMap(nodes: PreviewLayoutDebugNode[]) {
+	const map = new Map<string, PreviewLayoutDebugNode>();
+	const allNodes = collectDebugNodes(nodes);
+	const legacyAliasCounts = new Map<string, number>();
+
+	for (const node of allNodes) {
 		map.set(node.id, node);
-		buildDebugNodeMap(node.children, map);
+		const legacyNodeId = normalizeLegacyPreviewResultNodeId(node.id) ?? node.id;
+		if (legacyNodeId !== node.id) {
+			legacyAliasCounts.set(
+				legacyNodeId,
+				(legacyAliasCounts.get(legacyNodeId) ?? 0) + 1,
+			);
+		}
+	}
+
+	for (const node of allNodes) {
+		const legacyNodeId = normalizeLegacyPreviewResultNodeId(node.id) ?? node.id;
+		if (legacyNodeId === node.id) {
+			continue;
+		}
+
+		if ((legacyAliasCounts.get(legacyNodeId) ?? 0) !== 1) {
+			continue;
+		}
+
+		if (map.has(legacyNodeId)) {
+			continue;
+		}
+
+		map.set(legacyNodeId, node);
 	}
 
 	return map;
@@ -622,13 +658,31 @@ export class LayoutController {
 	}
 
 	public getDebugNode(nodeId: string): PreviewLayoutDebugNode | null {
-		const normalizedNodeId = normalizePreviewNodeId(nodeId) ?? nodeId;
-		return this.debugNodesById.get(normalizedNodeId) ?? null;
+		const directNode = this.debugNodesById.get(nodeId);
+		if (directNode) {
+			return directNode;
+		}
+
+		const legacyNodeId = normalizeLegacyPreviewResultNodeId(nodeId);
+		if (legacyNodeId && legacyNodeId !== nodeId) {
+			return this.debugNodesById.get(legacyNodeId) ?? null;
+		}
+
+		return null;
 	}
 
 	public getRect(nodeId: string) {
-		const normalizedNodeId = normalizePreviewNodeId(nodeId) ?? nodeId;
-		return this.result.rects[normalizedNodeId] ?? null;
+		const directRect = this.result.rects[nodeId];
+		if (directRect !== undefined) {
+			return directRect;
+		}
+
+		const legacyNodeId = normalizeLegacyPreviewResultNodeId(nodeId);
+		if (legacyNodeId && legacyNodeId !== nodeId) {
+			return this.result.rects[legacyNodeId] ?? null;
+		}
+
+		return null;
 	}
 
 	public hasNodes() {
@@ -636,14 +690,13 @@ export class LayoutController {
 	}
 
 	public removeNode(nodeId: string): boolean {
-		const normalizedNodeId = normalizePreviewNodeId(nodeId) ?? nodeId;
-		const existingNode = this.nodes.get(normalizedNodeId);
+		const existingNode = this.nodes.get(nodeId);
 		if (!existingNode) {
 			return false;
 		}
 
-		const affectedIds = this.collectSubtreeIds(normalizedNodeId);
-		this.markDirtyFromNode(normalizedNodeId);
+		const affectedIds = this.collectSubtreeIds(nodeId);
+		this.markDirtyFromNode(nodeId);
 		for (const affectedId of affectedIds) {
 			this.nodes.delete(affectedId);
 			this.dirtyNodeIds.add(affectedId);
@@ -676,6 +729,10 @@ export class LayoutController {
 
 	public upsertNode(node: PreviewLayoutNode): boolean {
 		const previousNode = this.nodes.get(node.id);
+		if (previousNode) {
+			this.assertCompatibleNodeIdentity(previousNode, node);
+		}
+
 		if (previousNode && areNodesEqual(previousNode, node)) {
 			return false;
 		}
@@ -693,6 +750,45 @@ export class LayoutController {
 		this.dirtyNodeIds.add(node.id);
 		this.pendingUpsertIds.add(node.id);
 		return true;
+	}
+
+	private assertCompatibleNodeIdentity(
+		previousNode: PreviewLayoutNode,
+		nextNode: PreviewLayoutNode,
+	) {
+		const mismatches: string[] = [];
+
+		if (previousNode.kind !== nextNode.kind) {
+			mismatches.push(
+				`kind ${JSON.stringify(previousNode.kind)} -> ${JSON.stringify(nextNode.kind)}`,
+			);
+		}
+
+		if (previousNode.nodeType !== nextNode.nodeType) {
+			mismatches.push(
+				`nodeType ${JSON.stringify(previousNode.nodeType)} -> ${JSON.stringify(nextNode.nodeType)}`,
+			);
+		}
+
+		if (previousNode.parentId !== nextNode.parentId) {
+			mismatches.push(
+				`parentId ${JSON.stringify(previousNode.parentId)} -> ${JSON.stringify(nextNode.parentId)}`,
+			);
+		}
+
+		if (previousNode.debugLabel !== nextNode.debugLabel) {
+			mismatches.push(
+				`debugLabel ${JSON.stringify(previousNode.debugLabel)} -> ${JSON.stringify(nextNode.debugLabel)}`,
+			);
+		}
+
+		if (mismatches.length === 0) {
+			return;
+		}
+
+		throw new Error(
+			`Unexpected layout node identity collision for ${JSON.stringify(nextNode.id)}: ${mismatches.join(", ")}`,
+		);
 	}
 
 	private buildDebugTree(

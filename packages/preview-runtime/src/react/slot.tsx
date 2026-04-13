@@ -69,6 +69,20 @@ function sanitizePreviewDomProps(
 	return sanitized as PreviewDomProps;
 }
 
+function omitPreviewIdentityProps(props: PreviewDomProps): PreviewDomProps {
+	const sanitized = {
+		...props,
+	} as Record<string, unknown>;
+
+	// Slot props should not overwrite host identity metadata on cloned children.
+	delete sanitized.Id;
+	delete sanitized.ParentId;
+	delete sanitized.id;
+	delete sanitized.parentId;
+
+	return sanitized as PreviewDomProps;
+}
+
 function getEventHandler(
 	eventTable: PreviewEventTable | undefined,
 	key: keyof PreviewEventTable,
@@ -217,6 +231,7 @@ export const Slot = React.forwardRef<HTMLElement, SlotProps>(
 		}
 
 		const slotProps = sanitizePreviewDomProps(props);
+		const slotPropsWithoutIdentity = omitPreviewIdentityProps(slotProps);
 		const childProps = sanitizePreviewDomProps(
 			(child.props ?? {}) as PreviewDomProps,
 		);
@@ -233,7 +248,7 @@ export const Slot = React.forwardRef<HTMLElement, SlotProps>(
 
 		const mergedProps: PreviewDomProps = {
 			...childProps,
-			...slotProps,
+			...slotPropsWithoutIdentity,
 		};
 
 		mergedProps.children = childProps.children;

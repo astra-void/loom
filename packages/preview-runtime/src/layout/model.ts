@@ -4,6 +4,7 @@ import {
 } from "../hosts/metadata";
 import {
 	FULL_SIZE_UDIM2,
+	normalizeLegacyPreviewResultNodeId,
 	normalizePreviewNodeId,
 	type SerializedUDim,
 	type SerializedUDim2,
@@ -1253,7 +1254,12 @@ export function normalizeLayoutMap(raw: unknown): Record<string, ComputedRect> {
 			? (Array.from(raw.entries()) as Array<[string, unknown]>)
 			: Object.entries(raw as Record<string, unknown>);
 
-	const next: Record<string, ComputedRect> = {};
+	const normalizedEntries: Array<{
+		legacyResultKey: string;
+		rawResultKey: string;
+		rect: ComputedRect;
+	}> = [];
+	const legacyAliasCounts = new Map<string, number>();
 	for (const [key, value] of entries) {
 		if (!value || typeof value !== "object") {
 			continue;
@@ -1267,8 +1273,40 @@ export function normalizeLayoutMap(raw: unknown): Record<string, ComputedRect> {
 			y: toFiniteNumber(record.y, 0),
 		};
 
-		const normalizedKey = normalizePreviewNodeId(key) ?? key;
-		next[normalizedKey] = rect;
+		const legacyResultKey = normalizeLegacyPreviewResultNodeId(key) ?? key;
+		normalizedEntries.push({
+			legacyResultKey,
+			rawResultKey: key,
+			rect,
+		});
+
+		if (legacyResultKey !== key) {
+			legacyAliasCounts.set(
+				legacyResultKey,
+				(legacyAliasCounts.get(legacyResultKey) ?? 0) + 1,
+			);
+		}
+	}
+
+	const next: Record<string, ComputedRect> = {};
+	for (const entry of normalizedEntries) {
+		next[entry.rawResultKey] = entry.rect;
+	}
+
+	for (const entry of normalizedEntries) {
+		if (entry.legacyResultKey === entry.rawResultKey) {
+			continue;
+		}
+
+		if ((legacyAliasCounts.get(entry.legacyResultKey) ?? 0) !== 1) {
+			continue;
+		}
+
+		if (Object.hasOwn(next, entry.legacyResultKey)) {
+			continue;
+		}
+
+		next[entry.legacyResultKey] = entry.rect;
 	}
 
 	return next;
@@ -1439,11 +1477,46 @@ export function normalizePreviewLayoutResult(
 	}
 
 	const record = raw as Record<string, unknown>;
-	const dirtyNodeIds = Array.isArray(record.dirtyNodeIds)
-		? record.dirtyNodeIds
-				.filter((value): value is string => typeof value === "string")
-				.map((value) => normalizePreviewNodeId(value) ?? value)
+	const dirtyNodeIdCandidates = Array.isArray(record.dirtyNodeIds)
+		? record.dirtyNodeIds.filter(
+				(value): value is string => typeof value === "string",
+			)
 		: [];
+	const legacyDirtyAliasCounts = new Map<string, number>();
+	for (const nodeId of dirtyNodeIdCandidates) {
+		const legacyNodeId = normalizeLegacyPreviewResultNodeId(nodeId) ?? nodeId;
+		if (legacyNodeId !== nodeId) {
+			legacyDirtyAliasCounts.set(
+				legacyNodeId,
+				(legacyDirtyAliasCounts.get(legacyNodeId) ?? 0) + 1,
+			);
+		}
+	}
+
+	const dirtyNodeIds: string[] = [];
+	const seenDirtyNodeIds = new Set<string>();
+	for (const nodeId of dirtyNodeIdCandidates) {
+		if (!seenDirtyNodeIds.has(nodeId)) {
+			seenDirtyNodeIds.add(nodeId);
+			dirtyNodeIds.push(nodeId);
+		}
+
+		const legacyNodeId = normalizeLegacyPreviewResultNodeId(nodeId) ?? nodeId;
+		if (legacyNodeId === nodeId) {
+			continue;
+		}
+
+		if ((legacyDirtyAliasCounts.get(legacyNodeId) ?? 0) !== 1) {
+			continue;
+		}
+
+		if (seenDirtyNodeIds.has(legacyNodeId)) {
+			continue;
+		}
+
+		seenDirtyNodeIds.add(legacyNodeId);
+		dirtyNodeIds.push(legacyNodeId);
+	}
 	const debugRecord =
 		record.debug && typeof record.debug === "object"
 			? (record.debug as Record<string, unknown>)
