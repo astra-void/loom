@@ -1098,6 +1098,46 @@ describe("preview runtime host mapping", () => {
 		expect(childRef.current).toBe(slotRef.current);
 	});
 
+	it("keeps cloned Slot identity props from colliding with host registration", async () => {
+		render(
+			<LayoutProvider debounceMs={0} viewportHeight={600} viewportWidth={800}>
+				<ScreenGui Id="preview-node-2">
+					<Frame Id="preview-node-1" Size={UDim2.fromOffset(940, 560)}>
+						<Slot Id="preview-node-2" ParentId="preview-node-1">
+							<TextLabel
+								Id="preview-node-3"
+								ParentId="preview-node-1"
+								Size={UDim2.fromOffset(180, 48)}
+								Text="Avatar Title"
+							/>
+						</Slot>
+					</Frame>
+				</ScreenGui>
+			</LayoutProvider>,
+		);
+
+		const screenGui = document.querySelector(
+			'[data-preview-host="screengui"]',
+		) as HTMLElement;
+		const textLabel = document.querySelector(
+			'[data-preview-host="textlabel"]',
+		) as HTMLElement;
+
+		await waitFor(() => {
+			expect(screenGui.dataset.previewNodeId).toBe("preview-node-2");
+			expect(textLabel.dataset.previewNodeId).toBe("preview-node-3");
+		});
+
+		expect(
+			getPreviewRuntimeIssues().some(
+				(issue) =>
+					issue.code === "LAYOUT_VALIDATION_ERROR" &&
+					(issue.summary?.includes("Unexpected layout node identity collision") ??
+						false),
+			),
+		).toBe(false);
+	});
+
 	it("supports rbxts-react event interop props on preview hosts", async () => {
 		const user = userEvent.setup();
 		const activated = vi.fn();
@@ -2251,26 +2291,26 @@ describe("preview runtime host mapping", () => {
 		).toBe(true);
 	});
 
-	it("normalizes nested registry ids and legacy Wasm result keys", async () => {
+	it("preserves runtime registry ids while still resolving legacy Wasm result keys", async () => {
 		layoutEngineMocks.computeDirty.mockImplementation(
 			(nodes, viewportWidth, viewportHeight) => {
 				expect(nodes).toHaveLength(2);
-				expect(findNode(nodes, "preview-node-100")?.id).toBe(
-					"preview-node-100",
+				expect(findNode(nodes, "screengui:preview-node-100")?.id).toBe(
+					"screengui:preview-node-100",
 				);
-				expect(findNode(nodes, "preview-node-200")?.parentId).toBe(
-					"preview-node-100",
+				expect(findNode(nodes, "frame:preview-node-200")?.parentId).toBe(
+					"screengui:preview-node-100",
 				);
 
 				return createSessionResult(
 					{
-						"screengui:preview-node-100": {
+						"preview-node-100": {
 							height: 240,
 							width: 320,
 							x: 0,
 							y: 0,
 						},
-						"frame:preview-node-200": { height: 32, width: 80, x: 11, y: 22 },
+						"preview-node-200": { height: 32, width: 80, x: 11, y: 22 },
 					},
 					viewportWidth,
 					viewportHeight,
@@ -2296,14 +2336,55 @@ describe("preview runtime host mapping", () => {
 			'[data-preview-host="frame"]',
 		) as HTMLElement;
 
-		expect(screenGui.dataset.previewNodeId).toBe("preview-node-100");
-		expect(frame.dataset.previewNodeId).toBe("preview-node-200");
+		expect(screenGui.dataset.previewNodeId).toBe("screengui:preview-node-100");
+		expect(frame.dataset.previewNodeId).toBe("frame:preview-node-200");
 
 		await waitFor(() => {
 			expect(frame.style.left).toBe("11px");
 			expect(frame.style.top).toBe("22px");
 			expect(frame.style.width).toBe("80px");
 			expect(frame.style.height).toBe("32px");
+		});
+	});
+
+	it("keeps child hosts out of root-default sizing when ids share a preview-node suffix", async () => {
+		layoutEngineMocks.init.mockRejectedValue(new Error("init failed"));
+
+		render(
+			<LayoutProvider viewportHeight={600} viewportWidth={800}>
+				<ScreenGui Id="screengui:preview-node-2">
+					<Frame
+						Id="frame:preview-node-9"
+						ParentId="screengui:preview-node-2"
+						Size={UDim2.fromOffset(940, 560)}
+					>
+						<TextLabel
+							Id="textlabel:preview-node-2"
+							ParentId="frame:preview-node-9"
+							Size={UDim2.fromOffset(180, 48)}
+							Text="Avatar Title"
+						/>
+					</Frame>
+				</ScreenGui>
+			</LayoutProvider>,
+		);
+
+		const screenGui = document.querySelector(
+			'[data-preview-host="screengui"]',
+		) as HTMLElement;
+		const textLabel = document.querySelector(
+			'[data-preview-host="textlabel"]',
+		) as HTMLElement;
+
+		await waitFor(() => {
+			expect(screenGui.dataset.previewNodeId).toBe("screengui:preview-node-2");
+			expect(textLabel.dataset.previewNodeId).toBe("textlabel:preview-node-2");
+			expect(textLabel.style.width).toBe("180px");
+			expect(textLabel.style.height).toBe("48px");
+			expect(textLabel.getAttribute("data-layout-layout-source")).toBe(
+				"explicit-size",
+			);
+			expect(textLabel.getAttribute("data-layout-parent-width")).toBe("940");
 		});
 	});
 

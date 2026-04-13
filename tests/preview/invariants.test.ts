@@ -252,4 +252,71 @@ ${isaChecks}
 			warningCodes: expect.any(Object),
 		});
 	});
+
+	it("keeps legacy Wasm result aliases only when node-id suffixes are collision-safe", () => {
+		const normalized = normalizePreviewLayoutResult(
+			{
+				debug: {
+					dirtyNodeIds: [
+						"screengui:preview-node-100",
+						"textlabel:preview-node-100",
+						"frame:preview-node-200",
+					],
+					roots: [],
+					viewport: {
+						height: 480,
+						width: 640,
+					},
+				},
+				dirtyNodeIds: [
+					"screengui:preview-node-100",
+					"textlabel:preview-node-100",
+					"frame:preview-node-200",
+				],
+				rects: {
+					"frame:preview-node-200": {
+						height: 48,
+						width: 120,
+						x: 12,
+						y: 18,
+					},
+					"screengui:preview-node-100": {
+						height: 480,
+						width: 640,
+						x: 0,
+						y: 0,
+					},
+					"textlabel:preview-node-100": {
+						height: 32,
+						width: 88,
+						x: 20,
+						y: 24,
+					},
+				},
+			},
+			{ height: 480, width: 640 },
+		);
+
+		expect(normalized.rects["preview-node-200"]).toEqual({
+			height: 48,
+			width: 120,
+			x: 12,
+			y: 18,
+		});
+		expect(normalized.rects["preview-node-100"]).toBeUndefined();
+		expect(normalized.rects["screengui:preview-node-100"]).toEqual({
+			height: 480,
+			width: 640,
+			x: 0,
+			y: 0,
+		});
+		expect(normalized.rects["textlabel:preview-node-100"]).toEqual({
+			height: 32,
+			width: 88,
+			x: 20,
+			y: 24,
+		});
+		expect(normalized.dirtyNodeIds).toContain("preview-node-200");
+		expect(normalized.dirtyNodeIds).not.toContain("preview-node-100");
+	});
 });
