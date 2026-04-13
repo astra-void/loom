@@ -1,5 +1,4 @@
 import * as React from "react";
-import { normalizePreviewNodeId } from "../internal/robloxValues";
 import {
 	LayoutContext,
 	LayoutNodeParentProvider,
@@ -195,7 +194,7 @@ function useGeneratedPreviewNodeId(): string {
 
 function resolveNodeId(generatedId: string, props: PreviewDomProps): string {
 	const explicitId = getLayoutNodeId(props);
-	return normalizePreviewNodeId(explicitId) ?? generatedId;
+	return explicitId ?? generatedId;
 }
 
 function resolvePaddingInset(
@@ -408,8 +407,6 @@ export function useHostLayout(host: LayoutHostName, props: PreviewDomProps) {
 	const basePropsRef = React.useRef(props);
 	basePropsRef.current = props;
 	const generatedId = useGeneratedPreviewNodeId();
-	const rawNodeId = React.useMemo(() => getLayoutNodeId(props), [props]);
-	const rawParentId = React.useMemo(() => getLayoutParentId(props), [props]);
 	const nodeId = React.useMemo(
 		() => resolveNodeId(generatedId, props),
 		[generatedId, props],
@@ -425,13 +422,18 @@ export function useHostLayout(host: LayoutHostName, props: PreviewDomProps) {
 					} as PreviewDomProps),
 		[overrides, props],
 	);
+	const rawNodeId = React.useMemo(
+		() => getLayoutNodeId(mergedProps),
+		[mergedProps],
+	);
+	const rawParentId = React.useMemo(
+		() => getLayoutParentId(mergedProps),
+		[mergedProps],
+	);
 	const isPortalRoot = React.useContext(PortalRootContext);
-	const normalizedParentId = React.useMemo(
-		() =>
-			isPortalRoot
-				? undefined
-				: normalizePreviewNodeId(getLayoutParentId(props)),
-		[isPortalRoot, props],
+	const resolvedParentId = React.useMemo(
+		() => (isPortalRoot ? undefined : getLayoutParentId(mergedProps)),
+		[isPortalRoot, mergedProps],
 	);
 	const sourceOrder = useSourceOrder();
 
@@ -440,11 +442,11 @@ export function useHostLayout(host: LayoutHostName, props: PreviewDomProps) {
 			domPresentationAdapter.normalize({
 				host,
 				nodeId,
-				parentId: normalizedParentId,
+				parentId: resolvedParentId,
 				props: mergedProps,
 				sourceOrder,
 			}),
-		[host, mergedProps, nodeId, normalizedParentId, sourceOrder],
+		[host, mergedProps, nodeId, resolvedParentId, sourceOrder],
 	);
 
 	React.useLayoutEffect(() => {
