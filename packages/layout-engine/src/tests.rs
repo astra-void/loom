@@ -1412,6 +1412,176 @@ fn applies_anchor_point_for_grid_layout_children() {
 }
 
 #[test]
+fn automatic_size_recomputes_parent_xy_from_anchor_point() {
+    let mut session = LayoutSession::new();
+    session.apply_preview_nodes(vec![
+        PreviewLayoutNode {
+            layout: PreviewNodeLayout {
+                automatic_size: None,
+                anchor_point: zero_vector(),
+                constraints: None,
+                position: zero_size(),
+                position_mode: default_position_mode(),
+                size_constraint_mode: default_size_constraint_mode(),
+                size: Some(full_size()),
+            },
+            source_order: Some(0),
+            ..node("screen", None, "root", "ScreenGui")
+        },
+        PreviewLayoutNode {
+            layout: PreviewNodeLayout {
+                automatic_size: Some("xy".to_owned()),
+                anchor_point: LayoutVector { x: 0.5, y: 0.5 },
+                constraints: None,
+                position: size(0.5, 0.0, 0.5, 0.0),
+                position_mode: default_position_mode(),
+                size_constraint_mode: default_size_constraint_mode(),
+                size: Some(size(0.0, 300.0, 0.0, 200.0)),
+            },
+            source_order: Some(0),
+            ..node("auto-parent", Some("screen"), "host", "Frame")
+        },
+        PreviewLayoutNode {
+            layout: PreviewNodeLayout {
+                automatic_size: None,
+                anchor_point: zero_vector(),
+                constraints: None,
+                position: zero_size(),
+                position_mode: default_position_mode(),
+                size_constraint_mode: default_size_constraint_mode(),
+                size: Some(size(0.0, 120.0, 0.0, 40.0)),
+            },
+            source_order: Some(0),
+            ..node("child", Some("auto-parent"), "host", "Frame")
+        },
+    ]);
+    session.set_viewport_internal(Viewport {
+        height: 300.0,
+        width: 400.0,
+    });
+
+    let result = session
+        .compute_dirty_internal()
+        .expect("layout should compute");
+
+    let parent = result.rects.get("auto-parent").expect("parent should exist");
+    let child = result.rects.get("child").expect("child should exist");
+
+    assert_close(parent.x, 140.0);
+    assert_close(parent.y, 130.0);
+    assert_close(parent.width, 120.0);
+    assert_close(parent.height, 40.0);
+
+    assert_close(child.x, 140.0);
+    assert_close(child.y, 130.0);
+    assert_close(child.width, 120.0);
+    assert_close(child.height, 40.0);
+}
+
+#[test]
+fn nested_automatic_size_converges_for_padding_feedback() {
+    let mut session = LayoutSession::new();
+    session.apply_preview_nodes(vec![
+        PreviewLayoutNode {
+            layout: PreviewNodeLayout {
+                automatic_size: None,
+                anchor_point: zero_vector(),
+                constraints: None,
+                position: zero_size(),
+                position_mode: default_position_mode(),
+                size_constraint_mode: default_size_constraint_mode(),
+                size: Some(full_size()),
+            },
+            source_order: Some(0),
+            ..node("screen", None, "root", "ScreenGui")
+        },
+        PreviewLayoutNode {
+            layout: PreviewNodeLayout {
+                automatic_size: Some("x".to_owned()),
+                anchor_point: zero_vector(),
+                constraints: None,
+                position: zero_size(),
+                position_mode: default_position_mode(),
+                size_constraint_mode: default_size_constraint_mode(),
+                size: Some(size(0.0, 100.0, 0.0, 40.0)),
+            },
+            layout_modifiers: Some(PreviewLayoutModifiers {
+                aspect_ratio_constraint: None,
+                flex_item: None,
+                grid: None,
+                list: None,
+                padding: Some(PreviewLayoutPaddingInsets {
+                    bottom: axis(0.0, 0.0),
+                    left: axis(0.1, 0.0),
+                    right: axis(0.1, 0.0),
+                    top: axis(0.0, 0.0),
+                }),
+                size_constraint: None,
+                text_size_constraint: None,
+            }),
+            source_order: Some(0),
+            ..node("outer", Some("screen"), "host", "Frame")
+        },
+        PreviewLayoutNode {
+            layout: PreviewNodeLayout {
+                automatic_size: Some("x".to_owned()),
+                anchor_point: zero_vector(),
+                constraints: None,
+                position: zero_size(),
+                position_mode: default_position_mode(),
+                size_constraint_mode: default_size_constraint_mode(),
+                size: Some(size(0.0, 100.0, 0.0, 20.0)),
+            },
+            layout_modifiers: Some(PreviewLayoutModifiers {
+                aspect_ratio_constraint: None,
+                flex_item: None,
+                grid: None,
+                list: None,
+                padding: Some(PreviewLayoutPaddingInsets {
+                    bottom: axis(0.0, 0.0),
+                    left: axis(0.1, 0.0),
+                    right: axis(0.1, 0.0),
+                    top: axis(0.0, 0.0),
+                }),
+                size_constraint: None,
+                text_size_constraint: None,
+            }),
+            source_order: Some(0),
+            ..node("inner", Some("outer"), "host", "Frame")
+        },
+        PreviewLayoutNode {
+            layout: PreviewNodeLayout {
+                automatic_size: None,
+                anchor_point: zero_vector(),
+                constraints: None,
+                position: zero_size(),
+                position_mode: default_position_mode(),
+                size_constraint_mode: default_size_constraint_mode(),
+                size: Some(size(0.0, 100.0, 0.0, 20.0)),
+            },
+            source_order: Some(0),
+            ..node("leaf", Some("inner"), "host", "Frame")
+        },
+    ]);
+    session.set_viewport_internal(Viewport {
+        height: 300.0,
+        width: 400.0,
+    });
+
+    let result = session
+        .compute_dirty_internal()
+        .expect("layout should compute");
+
+    let inner = result.rects.get("inner").expect("inner should exist");
+    let outer = result.rects.get("outer").expect("outer should exist");
+
+    assert_close(inner.width, 125.0);
+    assert_close(inner.height, 20.0);
+    assert_close(outer.width, 156.25);
+    assert_close(outer.height, 40.0);
+}
+
+#[test]
 fn legacy_compute_layout_preserves_size_constraint_mode_from_raw_tree() {
     let raw_tree: RobloxNode = serde_json::from_value(json!({
         "id": "screen",

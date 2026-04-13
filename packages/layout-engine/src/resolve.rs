@@ -152,6 +152,7 @@ fn resolve_node_size(node: &PreviewLayoutNode) -> ResolvedNodeSize {
         };
     }
 
+    let host_policy = resolve_host_policy(node);
     let automatic_size = node.layout.automatic_size.as_deref().unwrap_or("none");
     let automatic_x = automatic_size == "x" || automatic_size == "xy";
     let automatic_y = automatic_size == "y" || automatic_size == "xy";
@@ -168,11 +169,7 @@ fn resolve_node_size(node: &PreviewLayoutNode) -> ResolvedNodeSize {
             }
         } else if has_explicit_size {
             explicit_size.x
-        } else if node
-            .host_metadata
-            .as_ref()
-            .is_some_and(|metadata| metadata.full_size_default)
-        {
+        } else if host_policy.full_size_default {
             full_size.x
         } else if has_intrinsic_size {
             LayoutAxis {
@@ -189,11 +186,7 @@ fn resolve_node_size(node: &PreviewLayoutNode) -> ResolvedNodeSize {
             }
         } else if has_explicit_size {
             explicit_size.y
-        } else if node
-            .host_metadata
-            .as_ref()
-            .is_some_and(|metadata| metadata.full_size_default)
-        {
+        } else if host_policy.full_size_default {
             full_size.y
         } else if has_intrinsic_size {
             LayoutAxis {
@@ -213,12 +206,7 @@ fn resolve_node_size(node: &PreviewLayoutNode) -> ResolvedNodeSize {
         };
     }
 
-    if node
-        .host_metadata
-        .as_ref()
-        .is_some_and(|metadata| metadata.full_size_default)
-        && !has_explicit_size
-    {
+    if host_policy.full_size_default && !has_explicit_size {
         return ResolvedNodeSize {
             layout_source: "full-size-default",
             resolved_size,

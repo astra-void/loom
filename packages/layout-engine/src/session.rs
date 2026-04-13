@@ -18,6 +18,8 @@ pub(crate) fn to_js_error(message: String) -> JsValue {
     JsValue::from_str(&message)
 }
 
+const MAX_SUBTREE_RECOMPUTE_ITERATIONS: usize = 16;
+
 #[wasm_bindgen]
 pub struct LayoutSession {
     dirty_node_ids: HashSet<String>,
@@ -160,9 +162,12 @@ impl LayoutSession {
             return None;
         }
 
+        let anchor_origin_x = current_rect.x + node.layout.anchor_point.x * current_rect.width;
+        let anchor_origin_y = current_rect.y + node.layout.anchor_point.y * current_rect.height;
+
         Some(ComputedRect {
-            x: current_rect.x,
-            y: current_rect.y,
+            x: anchor_origin_x - node.layout.anchor_point.x * width,
+            y: anchor_origin_y - node.layout.anchor_point.y * height,
             width,
             height,
         })
@@ -199,7 +204,7 @@ impl LayoutSession {
 
         let mut current_rect = rect;
 
-        for _ in 0..2 {
+        for _ in 0..MAX_SUBTREE_RECOMPUTE_ITERATIONS {
             self.last_rects.insert(node.id.clone(), current_rect);
 
             if !node.visible {
@@ -250,14 +255,7 @@ impl LayoutSession {
                 break;
             };
 
-            if (next_rect.width - current_rect.width).abs() < f32::EPSILON
-                && (next_rect.height - current_rect.height).abs() < f32::EPSILON
-            {
-                break;
-            }
-
-            current_rect.width = next_rect.width;
-            current_rect.height = next_rect.height;
+            current_rect = next_rect;
         }
 
         self.last_rects.insert(node.id.clone(), current_rect);
