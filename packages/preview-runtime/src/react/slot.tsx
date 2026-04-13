@@ -83,6 +83,27 @@ function omitPreviewIdentityProps(props: PreviewDomProps): PreviewDomProps {
 	return sanitized as PreviewDomProps;
 }
 
+function mergeSlotPropsWithChildIdentity(
+	childProps: PreviewDomProps,
+	slotPropsWithoutIdentity: PreviewDomProps,
+): PreviewDomProps {
+	const merged = {
+		...childProps,
+		...slotPropsWithoutIdentity,
+	} as PreviewDomProps & Record<string, unknown>;
+
+	for (const key of ["Id", "ParentId", "id", "parentId"] as const) {
+		if (Object.hasOwn(childProps, key)) {
+			merged[key] = childProps[key];
+			continue;
+		}
+
+		delete merged[key];
+	}
+
+	return merged;
+}
+
 function getEventHandler(
 	eventTable: PreviewEventTable | undefined,
 	key: keyof PreviewEventTable,
@@ -246,10 +267,10 @@ export const Slot = React.forwardRef<HTMLElement, SlotProps>(
 		const childChange =
 			(childProps.Change as PreviewChangeTable | undefined) ?? undefined;
 
-		const mergedProps: PreviewDomProps = {
-			...childProps,
-			...slotPropsWithoutIdentity,
-		};
+		const mergedProps = mergeSlotPropsWithChildIdentity(
+			childProps,
+			slotPropsWithoutIdentity,
+		);
 
 		mergedProps.children = childProps.children;
 		mergedProps.Event = mergeEventTables(slotEvent, childEvent);
