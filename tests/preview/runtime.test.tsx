@@ -2347,6 +2347,73 @@ describe("preview runtime host mapping", () => {
 		});
 	});
 
+	it("keeps ScreenGui/TextLabel runtime ids distinct through useHostLayout registration", async () => {
+		layoutEngineMocks.computeDirty.mockImplementation(
+			(nodes, viewportWidth, viewportHeight) => {
+				expect(nodes).toHaveLength(2);
+				expect(findNode(nodes, "screengui:preview-node-2")).toMatchObject({
+					id: "screengui:preview-node-2",
+					kind: "root",
+					nodeType: "ScreenGui",
+				});
+				expect(findNode(nodes, "textlabel:preview-node-2")).toMatchObject({
+					id: "textlabel:preview-node-2",
+					kind: "host",
+					nodeType: "TextLabel",
+					parentId: "screengui:preview-node-2",
+				});
+
+				return createSessionResult(
+					{
+						"screengui:preview-node-2": { height: 600, width: 800, x: 0, y: 0 },
+						"textlabel:preview-node-2": { height: 48, width: 180, x: 12, y: 24 },
+					},
+					viewportWidth,
+					viewportHeight,
+				);
+			},
+		);
+
+		render(
+			<LayoutProvider debounceMs={0} viewportHeight={600} viewportWidth={800}>
+				<ScreenGui Id="screengui:preview-node-2">
+					<TextLabel
+						Id="textlabel:preview-node-2"
+						ParentId="screengui:preview-node-2"
+						Size={UDim2.fromOffset(180, 48)}
+						Text="Avatar Title"
+					/>
+				</ScreenGui>
+			</LayoutProvider>,
+		);
+
+		const screenGui = document.querySelector(
+			'[data-preview-host="screengui"]',
+		) as HTMLElement;
+		const textLabel = document.querySelector(
+			'[data-preview-host="textlabel"]',
+		) as HTMLElement;
+
+		await waitFor(() => {
+			expect(screenGui.dataset.previewNodeId).toBe("screengui:preview-node-2");
+			expect(textLabel.dataset.previewNodeId).toBe("textlabel:preview-node-2");
+			expect(textLabel.style.left).toBe("12px");
+			expect(textLabel.style.top).toBe("24px");
+			expect(textLabel.style.width).toBe("180px");
+			expect(textLabel.style.height).toBe("48px");
+		});
+
+		const issues = getPreviewRuntimeIssues();
+		expect(
+			issues.some((issue) => issue.code === "LAYOUT_VALIDATION_ERROR"),
+		).toBe(false);
+		expect(
+			issues.some(
+				(issue) => issue.summary?.includes("Maximum update depth") ?? false,
+			),
+		).toBe(false);
+	});
+
 	it("keeps child hosts out of root-default sizing when ids share a preview-node suffix", async () => {
 		layoutEngineMocks.init.mockRejectedValue(new Error("init failed"));
 
