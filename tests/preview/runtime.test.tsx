@@ -2499,6 +2499,70 @@ describe("preview runtime host mapping", () => {
 		).toBe(false);
 	});
 
+	it("keeps auto-generated TextLabel ids distinct when ScreenGui uses an explicit preview-node id", async () => {
+		layoutEngineMocks.computeDirty.mockImplementation(
+			(nodes, viewportWidth, viewportHeight) => {
+				const root = findNode(nodes, "preview-node-2");
+				const textNode = nodes.find((node) => node.nodeType === "TextLabel");
+
+				expect(root).toMatchObject({
+					id: "preview-node-2",
+					kind: "root",
+					nodeType: "ScreenGui",
+				});
+				expect(textNode).toBeTruthy();
+				expect(textNode?.id).toMatch(/^preview-node-\d+$/);
+				expect(textNode?.id).not.toBe("preview-node-2");
+				expect(textNode?.parentId).toBe("preview-node-2");
+
+				const textNodeId = textNode?.id ?? "preview-node-3";
+				return createSessionResult(
+					{
+						"preview-node-2": { height: 600, width: 800, x: 0, y: 0 },
+						[textNodeId]: { height: 48, width: 180, x: 12, y: 24 },
+					},
+					viewportWidth,
+					viewportHeight,
+				);
+			},
+		);
+
+		render(
+			<LayoutProvider debounceMs={0} viewportHeight={600} viewportWidth={800}>
+				<ScreenGui Id="preview-node-2">
+					<TextLabel Size={UDim2.fromOffset(180, 48)} Text="Avatar Title" />
+				</ScreenGui>
+			</LayoutProvider>,
+		);
+
+		const screenGui = document.querySelector(
+			'[data-preview-host="screengui"]',
+		) as HTMLElement;
+		const textLabel = document.querySelector(
+			'[data-preview-host="textlabel"]',
+		) as HTMLElement;
+
+		await waitFor(() => {
+			expect(screenGui.dataset.previewNodeId).toBe("preview-node-2");
+			expect(textLabel.dataset.previewNodeId).toMatch(/^preview-node-\d+$/);
+			expect(textLabel.dataset.previewNodeId).not.toBe("preview-node-2");
+			expect(textLabel.style.left).toBe("12px");
+			expect(textLabel.style.top).toBe("24px");
+			expect(textLabel.style.width).toBe("180px");
+			expect(textLabel.style.height).toBe("48px");
+		});
+
+		const issues = getPreviewRuntimeIssues();
+		expect(
+			issues.some((issue) => issue.code === "LAYOUT_VALIDATION_ERROR"),
+		).toBe(false);
+		expect(
+			issues.some(
+				(issue) => issue.summary?.includes("Maximum update depth") ?? false,
+			),
+		).toBe(false);
+	});
+
 	it("keeps child hosts out of root-default sizing when ids share a preview-node suffix", async () => {
 		layoutEngineMocks.init.mockRejectedValue(new Error("init failed"));
 
@@ -2701,6 +2765,39 @@ describe("preview runtime host mapping", () => {
 			},
 		]);
 		expect(snapshots[snapshots.length - 1]).toEqual(getPreviewRuntimeIssues());
+	});
+
+	it("dedupes repeated identical blocking runtime issues", () => {
+		const consoleErrorSpy = vi
+			.spyOn(console, "error")
+			.mockImplementation(() => {});
+		const snapshots: PreviewRuntimeIssue[][] = [];
+		const unsubscribe = subscribePreviewRuntimeIssues((issues) => {
+			snapshots.push(issues);
+		});
+
+		const repeatedIssue: PreviewRuntimeIssue = {
+			code: "LAYOUT_VALIDATION_ERROR",
+			entryId: "fixture:AvatarBasicScene.tsx",
+			file: "/virtual/AvatarBasicScene.tsx",
+			kind: "LayoutValidationError",
+			phase: "layout",
+			relativeFile: "src/AvatarBasicScene.tsx",
+			summary:
+				"Layout registration failed: Unexpected layout node identity collision for \"preview-node-2\"",
+			target: "@loom-dev/preview-runtime",
+		};
+
+		publishPreviewRuntimeIssue(repeatedIssue);
+		publishPreviewRuntimeIssue({
+			...repeatedIssue,
+		});
+
+		unsubscribe();
+
+		expect(getPreviewRuntimeIssues()).toEqual([repeatedIssue]);
+		expect(snapshots.map((snapshot) => snapshot.length)).toEqual([0, 1]);
+		expect(consoleErrorSpy).toHaveBeenCalledTimes(1);
 	});
 });
 

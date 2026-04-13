@@ -158,3 +158,45 @@ test("keeps suffix-overlap runtime ids distinct without alias collapse", () => {
 	// Ambiguous legacy aliases should not map to a random node.
 	expect(controller.getDebugNode("preview-node-2")).toBeNull();
 });
+
+test("does not apply legacy suffix normalization to live controller lookups", () => {
+	const controller = new LayoutController();
+
+	const rootNode = domPresentationAdapter.normalize({
+		host: "screengui",
+		nodeId: "screengui:preview-node-1",
+		props: { Id: "screengui:preview-node-1" },
+	});
+	const frameNode = domPresentationAdapter.normalize({
+		host: "frame",
+		nodeId: "frame:preview-node-9",
+		parentId: "screengui:preview-node-1",
+		props: {
+			Id: "frame:preview-node-9",
+			ParentId: "screengui:preview-node-1",
+			Size: { X: { Scale: 0, Offset: 940 }, Y: { Scale: 0, Offset: 560 } },
+		},
+	});
+	const textLabelNode = domPresentationAdapter.normalize({
+		host: "textlabel",
+		nodeId: "textlabel:preview-node-2",
+		parentId: "frame:preview-node-9",
+		props: {
+			Id: "textlabel:preview-node-2",
+			ParentId: "frame:preview-node-9",
+			Size: { X: { Scale: 0, Offset: 180 }, Y: { Scale: 0, Offset: 48 } },
+			Text: "Avatar Title",
+		},
+	});
+
+	controller.upsertNode(rootNode);
+	controller.upsertNode(frameNode);
+	controller.upsertNode(textLabelNode);
+	controller.setViewport({ width: 1000, height: 1000 });
+	controller.compute({ isReady: false });
+
+	// Live layout identity must be exact-id only.
+	expect(controller.getDebugNode("textlabel:preview-node-2")).toBeTruthy();
+	expect(controller.getDebugNode("preview-node-2")).toBeNull();
+	expect(controller.getRect("preview-node-2")).toBeNull();
+});
