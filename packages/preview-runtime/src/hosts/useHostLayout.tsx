@@ -32,12 +32,18 @@ import {
 import { isDegradedPreviewHost } from "./metadata";
 import type { LayoutHostName, PreviewDomProps } from "./types";
 
-let previewNodeIdCounter = 0;
 const PREVIEW_NODE_ID_SEQUENCE_PATTERN = /(?:^|:)(preview-node-(\d+))$/;
+const PREVIEW_NODE_ID_COUNTER_KEY = Symbol.for(
+	"loom-dev.preview-runtime.previewNodeIdCounter",
+);
 const LayoutChildOrderContext = React.createContext<{
 	nextOrder(): number;
 	passId: number;
 } | null>(null);
+
+type PreviewNodeCounterGlobal = typeof globalThis & {
+	[PREVIEW_NODE_ID_COUNTER_KEY]?: number;
+};
 
 function createZeroVector2() {
 	return { X: 0, Y: 0 };
@@ -183,11 +189,31 @@ function logPreviewHostIdentityDiagnostics(input: {
 	console.info("[preview-runtime][host-identity]", input);
 }
 
-function useGeneratedPreviewNodeId(): string {
+function getPreviewNodeCounter() {
+	const globalRecord = globalThis as PreviewNodeCounterGlobal;
+	const current = globalRecord[PREVIEW_NODE_ID_COUNTER_KEY];
+	if (typeof current !== "number" || !Number.isFinite(current)) {
+		return 0;
+	}
+
+	return current;
+}
+
+function setPreviewNodeCounter(value: number) {
+	const globalRecord = globalThis as PreviewNodeCounterGlobal;
+	globalRecord[PREVIEW_NODE_ID_COUNTER_KEY] = value;
+}
+
+function allocatePreviewNodeSequence() {
+	const nextSequence = getPreviewNodeCounter() + 1;
+	setPreviewNodeCounter(nextSequence);
+	return nextSequence;
+}
+
+function useGeneratedPreviewNodeId(host: LayoutHostName): string {
 	const idRef = React.useRef<string | null>(null);
 	if (idRef.current === null) {
-		previewNodeIdCounter += 1;
-		idRef.current = `preview-node-${previewNodeIdCounter}`;
+		idRef.current = `${host}:preview-node-${allocatePreviewNodeSequence()}`;
 	}
 
 	return idRef.current;
@@ -208,8 +234,8 @@ function syncPreviewNodeCounter(nodeId: string | undefined) {
 		return;
 	}
 
-	if (sequence > previewNodeIdCounter) {
-		previewNodeIdCounter = sequence;
+	if (sequence > getPreviewNodeCounter()) {
+		setPreviewNodeCounter(sequence);
 	}
 }
 
@@ -432,7 +458,7 @@ export function useHostLayout(host: LayoutHostName, props: PreviewDomProps) {
 	const elementRef = React.useRef<HTMLElement | null>(null);
 	const basePropsRef = React.useRef(props);
 	basePropsRef.current = props;
-	const generatedId = useGeneratedPreviewNodeId();
+	const generatedId = useGeneratedPreviewNodeId(host);
 	const nodeId = React.useMemo(
 		() => resolveNodeId(generatedId, props),
 		[generatedId, props],
