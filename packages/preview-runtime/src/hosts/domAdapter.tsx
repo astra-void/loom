@@ -294,6 +294,14 @@ function readMeasuredSize(element: HTMLElement | null) {
 	};
 }
 
+function finiteDiagnosticNumber(value: number | null | undefined) {
+	if (value === null || value === undefined) {
+		return undefined;
+	}
+
+	return Number.isFinite(value) ? value : undefined;
+}
+
 function withLayoutDiagnostics(
 	domProps: React.HTMLAttributes<HTMLElement> & Record<string, unknown>,
 	diagnostics: LayoutDebugState | undefined,
@@ -308,8 +316,12 @@ function withLayoutDiagnostics(
 
 	return {
 		...domProps,
-		"data-layout-computed-height": debugNode?.rect?.height ?? undefined,
-		"data-layout-computed-width": debugNode?.rect?.width ?? undefined,
+		"data-layout-computed-height": finiteDiagnosticNumber(
+			debugNode?.rect?.height,
+		),
+		"data-layout-computed-width": finiteDiagnosticNumber(
+			debugNode?.rect?.width,
+		),
 		"data-layout-context": diagnostics?.hasContext ? "true" : "false",
 		"data-layout-had-explicit-size": String(sizeResolution.hadExplicitSize),
 		"data-layout-host-degraded": String(hostPolicy.degraded),
@@ -318,23 +330,27 @@ function withLayoutDiagnostics(
 			sizeResolution.intrinsicSizeAvailable,
 		),
 		"data-layout-layout-source": layoutSource,
-		"data-layout-parent-height":
+		"data-layout-parent-height": finiteDiagnosticNumber(
 			debugNode?.parentConstraints?.height ??
-			diagnostics?.inheritedParentRect?.height ??
-			undefined,
-		"data-layout-parent-width":
+				diagnostics?.inheritedParentRect?.height,
+		),
+		"data-layout-parent-width": finiteDiagnosticNumber(
 			debugNode?.parentConstraints?.width ??
-			diagnostics?.inheritedParentRect?.width ??
-			undefined,
+				diagnostics?.inheritedParentRect?.width,
+		),
 		"data-layout-style-height":
 			debugNode?.styleHints?.height ?? node.styleHints?.height ?? undefined,
 		"data-layout-style-width":
 			debugNode?.styleHints?.width ?? node.styleHints?.width ?? undefined,
 		"data-layout-placeholder-behavior": hostPolicy.placeholderBehavior,
 		"data-layout-size-reason": sizeResolution.reason,
-		"data-layout-viewport-height": diagnostics?.viewport?.height ?? undefined,
+		"data-layout-viewport-height": finiteDiagnosticNumber(
+			diagnostics?.viewport?.height,
+		),
 		"data-layout-viewport-ready": diagnostics?.viewportReady ? "true" : "false",
-		"data-layout-viewport-width": diagnostics?.viewport?.width ?? undefined,
+		"data-layout-viewport-width": finiteDiagnosticNumber(
+			diagnostics?.viewport?.width,
+		),
 	};
 }
 
