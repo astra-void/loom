@@ -2,6 +2,7 @@
 
 import {
 	BillboardGui,
+	Box,
 	CanvasGroup,
 	Color3,
 	clearPreviewRuntimeIssues,
@@ -21,6 +22,7 @@ import {
 	ScreenGui,
 	Slot,
 	SurfaceGui,
+	Text,
 	subscribePreviewLayoutProbe,
 	subscribePreviewRuntimeIssues,
 	TextBox,
@@ -1128,6 +1130,89 @@ describe("preview runtime host mapping", () => {
 			expect(textLabel.dataset.previewNodeId).toBe("preview-node-3");
 		});
 
+		expect(
+			getPreviewRuntimeIssues().some(
+				(issue) =>
+					issue.code === "LAYOUT_VALIDATION_ERROR" &&
+					(issue.summary?.includes("Unexpected layout node identity collision") ??
+						false),
+			),
+		).toBe(false);
+	});
+
+	it("prevents parent Text primitive identity from leaking into nested Text child hosts", async () => {
+		render(
+			<LayoutProvider debounceMs={0} viewportHeight={600} viewportWidth={800}>
+				<ScreenGui Id="avatar-screen">
+					<Frame Id="avatar-card" ParentId="avatar-screen">
+						<Text asChild Id="avatar-card" ParentId="avatar-screen">
+							<Text Id="avatar-title" ParentId="avatar-card" Text="Avatar Title" />
+						</Text>
+					</Frame>
+				</ScreenGui>
+			</LayoutProvider>,
+		);
+
+		const textLabel = document.querySelector(
+			'[data-preview-host="textlabel"]',
+		) as HTMLElement;
+
+		await waitFor(() => {
+			expect(textLabel.dataset.previewNodeId).toBe("avatar-title");
+		});
+
+		expect(
+			document.querySelectorAll('[data-preview-node-id="avatar-card"]'),
+		).toHaveLength(1);
+		expect(
+			getPreviewRuntimeIssues().some(
+				(issue) =>
+					issue.code === "LAYOUT_VALIDATION_ERROR" &&
+					(issue.summary?.includes("Unexpected layout node identity collision") ??
+						false),
+			),
+		).toBe(false);
+	});
+
+	it("avoids Avatar-like TextLabel identity collisions through Box/Text Slot composition", async () => {
+		function AvatarBasicScene() {
+			return (
+				<ScreenGui Id="avatar-screen">
+					<Box Id="avatar-card" ParentId="avatar-screen">
+						<Text asChild Id="avatar-card" ParentId="avatar-screen">
+							<TextLabel
+								Id="avatar-title"
+								ParentId="avatar-card"
+								Size={UDim2.fromOffset(180, 48)}
+								Text="Avatar Title"
+							/>
+						</Text>
+					</Box>
+				</ScreenGui>
+			);
+		}
+
+		render(
+			<LayoutProvider debounceMs={0} viewportHeight={600} viewportWidth={800}>
+				<AvatarBasicScene />
+			</LayoutProvider>,
+		);
+
+		const frame = document.querySelector(
+			'[data-preview-host="frame"]',
+		) as HTMLElement;
+		const textLabel = document.querySelector(
+			'[data-preview-host="textlabel"]',
+		) as HTMLElement;
+
+		await waitFor(() => {
+			expect(frame.dataset.previewNodeId).toBe("avatar-card");
+			expect(textLabel.dataset.previewNodeId).toBe("avatar-title");
+		});
+
+		expect(
+			document.querySelectorAll('[data-preview-node-id="avatar-card"]'),
+		).toHaveLength(1);
 		expect(
 			getPreviewRuntimeIssues().some(
 				(issue) =>
