@@ -1,5 +1,4 @@
 import * as React from "react";
-import { normalizeLegacyPreviewResultNodeId } from "../internal/robloxValues";
 import {
 	normalizePreviewRuntimeError,
 	publishPreviewRuntimeIssue,
@@ -505,29 +504,14 @@ export function LayoutProvider(props: LayoutProviderProps) {
 				return directRect;
 			}
 
-			const legacyNodeId = normalizeLegacyPreviewResultNodeId(nodeId);
-			if (legacyNodeId && legacyNodeId !== nodeId) {
-				return layoutResult.rects[legacyNodeId] ?? null;
-			}
-
-			return null;
+			return controller.getRect(nodeId);
 		},
-		[layoutResult.rects],
+		[controller, layoutResult.rects],
 	);
 
 	const getDebugNode = React.useCallback(
 		(nodeId: string) => {
-			const directNode = controller.getDebugNode(nodeId);
-			if (directNode) {
-				return directNode;
-			}
-
-			const legacyNodeId = normalizeLegacyPreviewResultNodeId(nodeId);
-			if (legacyNodeId && legacyNodeId !== nodeId) {
-				return controller.getDebugNode(legacyNodeId);
-			}
-
-			return null;
+			return controller.getDebugNode(nodeId);
 		},
 		[controller],
 	);

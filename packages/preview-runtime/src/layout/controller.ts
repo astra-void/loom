@@ -508,34 +508,9 @@ function collectDebugNodes(
 function buildDebugNodeMap(nodes: PreviewLayoutDebugNode[]) {
 	const map = new Map<string, PreviewLayoutDebugNode>();
 	const allNodes = collectDebugNodes(nodes);
-	const legacyAliasCounts = new Map<string, number>();
 
 	for (const node of allNodes) {
 		map.set(node.id, node);
-		const legacyNodeId = normalizeLegacyPreviewResultNodeId(node.id) ?? node.id;
-		if (legacyNodeId !== node.id) {
-			legacyAliasCounts.set(
-				legacyNodeId,
-				(legacyAliasCounts.get(legacyNodeId) ?? 0) + 1,
-			);
-		}
-	}
-
-	for (const node of allNodes) {
-		const legacyNodeId = normalizeLegacyPreviewResultNodeId(node.id) ?? node.id;
-		if (legacyNodeId === node.id) {
-			continue;
-		}
-
-		if ((legacyAliasCounts.get(legacyNodeId) ?? 0) !== 1) {
-			continue;
-		}
-
-		if (map.has(legacyNodeId)) {
-			continue;
-		}
-
-		map.set(legacyNodeId, node);
 	}
 
 	return map;
@@ -658,17 +633,7 @@ export class LayoutController {
 	}
 
 	public getDebugNode(nodeId: string): PreviewLayoutDebugNode | null {
-		const directNode = this.debugNodesById.get(nodeId);
-		if (directNode) {
-			return directNode;
-		}
-
-		const legacyNodeId = normalizeLegacyPreviewResultNodeId(nodeId);
-		if (legacyNodeId && legacyNodeId !== nodeId) {
-			return this.debugNodesById.get(legacyNodeId) ?? null;
-		}
-
-		return null;
+		return this.debugNodesById.get(nodeId) ?? null;
 	}
 
 	public getRect(nodeId: string) {
@@ -677,12 +642,32 @@ export class LayoutController {
 			return directRect;
 		}
 
-		const legacyNodeId = normalizeLegacyPreviewResultNodeId(nodeId);
-		if (legacyNodeId && legacyNodeId !== nodeId) {
-			return this.result.rects[legacyNodeId] ?? null;
+		const legacyResultKey = normalizeLegacyPreviewResultNodeId(nodeId);
+		if (!legacyResultKey || legacyResultKey === nodeId) {
+			return null;
 		}
 
-		return null;
+		const legacyRect = this.result.rects[legacyResultKey];
+		if (legacyRect === undefined) {
+			return null;
+		}
+
+		let uniqueLiveMatch: string | null = null;
+		for (const liveNodeId of this.nodes.keys()) {
+			const liveLegacyResultKey =
+				normalizeLegacyPreviewResultNodeId(liveNodeId) ?? liveNodeId;
+			if (liveLegacyResultKey !== legacyResultKey) {
+				continue;
+			}
+
+			if (uniqueLiveMatch !== null && uniqueLiveMatch !== liveNodeId) {
+				return null;
+			}
+
+			uniqueLiveMatch = liveNodeId;
+		}
+
+		return uniqueLiveMatch === nodeId ? legacyRect : null;
 	}
 
 	public hasNodes() {

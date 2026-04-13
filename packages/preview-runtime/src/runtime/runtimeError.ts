@@ -111,6 +111,20 @@ function defaultBlockingForSeverity(severity: PreviewRuntimeIssueSeverity) {
 	return severity === "error";
 }
 
+function createBlockingIssueDedupeKey(issue: PreviewRuntimeIssue): string {
+	return [
+		issue.code,
+		issue.kind,
+		issue.phase,
+		issue.summary,
+		issue.target,
+		issue.entryId,
+		issue.file,
+		issue.relativeFile,
+		issue.symbol ?? "",
+	].join("\u0000");
+}
+
 function normalizeContext(context?: PreviewRuntimeIssueContext | null) {
 	return context ?? {};
 }
@@ -300,10 +314,12 @@ function createRuntimeError(
 class PreviewRuntimeReporterStore implements PreviewRuntimeReporter {
 	private context: PreviewRuntimeIssueContext | null = null;
 	private issues: PreviewRuntimeIssue[] = [];
+	private readonly publishedBlockingIssueKeys = new Set<string>();
 	private readonly listeners = new Set<PreviewRuntimeIssueListener>();
 
 	public clear() {
 		this.issues = [];
+		this.publishedBlockingIssueKeys.clear();
 		this.emit();
 	}
 
@@ -312,9 +328,18 @@ class PreviewRuntimeReporterStore implements PreviewRuntimeReporter {
 	}
 
 	public publish(issue: PreviewRuntimeIssue) {
+		const blocking = issue.blocking ?? issue.severity !== "warning";
+		if (blocking) {
+			const dedupeKey = createBlockingIssueDedupeKey(issue);
+			if (this.publishedBlockingIssueKeys.has(dedupeKey)) {
+				return;
+			}
+
+			this.publishedBlockingIssueKeys.add(dedupeKey);
+		}
+
 		this.issues = [...this.issues, issue];
 		this.emit();
-		const blocking = issue.blocking ?? issue.severity !== "warning";
 		if (!blocking && issue.severity === "info") {
 			console.info(`${PREFIX}:${issue.kind}`, issue);
 			return;

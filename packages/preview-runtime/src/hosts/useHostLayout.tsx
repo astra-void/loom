@@ -33,6 +33,7 @@ import { isDegradedPreviewHost } from "./metadata";
 import type { LayoutHostName, PreviewDomProps } from "./types";
 
 let previewNodeIdCounter = 0;
+const PREVIEW_NODE_ID_SEQUENCE_PATTERN = /(?:^|:)(preview-node-(\d+))$/;
 const LayoutChildOrderContext = React.createContext<{
 	nextOrder(): number;
 	passId: number;
@@ -192,9 +193,34 @@ function useGeneratedPreviewNodeId(): string {
 	return idRef.current;
 }
 
+function syncPreviewNodeCounter(nodeId: string | undefined) {
+	if (!nodeId) {
+		return;
+	}
+
+	const match = PREVIEW_NODE_ID_SEQUENCE_PATTERN.exec(nodeId);
+	if (!match) {
+		return;
+	}
+
+	const sequence = Number.parseInt(match[2] ?? "", 10);
+	if (!Number.isFinite(sequence)) {
+		return;
+	}
+
+	if (sequence > previewNodeIdCounter) {
+		previewNodeIdCounter = sequence;
+	}
+}
+
 function resolveNodeId(generatedId: string, props: PreviewDomProps): string {
 	const explicitId = getLayoutNodeId(props);
-	return explicitId ?? generatedId;
+	if (explicitId) {
+		syncPreviewNodeCounter(explicitId);
+		return explicitId;
+	}
+
+	return generatedId;
 }
 
 function resolvePaddingInset(
