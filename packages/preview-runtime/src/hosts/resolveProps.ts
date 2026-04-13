@@ -382,7 +382,14 @@ function mergeHandlers<T>(a?: (event: T) => void, b?: (event: T) => void) {
 	};
 }
 
-function toTextAlign(value: string | undefined): "center" | "left" | "right" {
+function toTextAlign(
+	value: string | undefined,
+	undefinedFallback: "center" | "left" | "right" = "left",
+): "center" | "left" | "right" {
+	if (value === undefined) {
+		return undefinedFallback;
+	}
+
 	switch (value) {
 		case "center":
 			return "center";
@@ -395,7 +402,12 @@ function toTextAlign(value: string | undefined): "center" | "left" | "right" {
 
 function toJustifyContent(
 	value: string | undefined,
+	undefinedFallback: "center" | "flex-end" | "flex-start" = "flex-start",
 ): "center" | "flex-end" | "flex-start" {
+	if (value === undefined) {
+		return undefinedFallback;
+	}
+
 	switch (value) {
 		case "center":
 			return "center";
@@ -629,8 +641,8 @@ export function resolvePreviewDomProps(
 	if (options.host === "textbutton" || options.host === "textlabel") {
 		computedStyle.display = computedStyle.display === "none" ? "none" : "flex";
 		computedStyle.flexDirection = "column";
-		computedStyle.justifyContent = toJustifyContent(TextYAlignment);
-		computedStyle.textAlign = toTextAlign(TextXAlignment);
+		computedStyle.justifyContent = toJustifyContent(TextYAlignment, "center");
+		computedStyle.textAlign = toTextAlign(TextXAlignment, "center");
 	}
 
 	if (options.host === "textbox") {
