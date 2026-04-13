@@ -90,15 +90,30 @@ function mergeSlotPropsWithChildIdentity(
 	const merged = {
 		...childProps,
 		...slotPropsWithoutIdentity,
-	} as PreviewDomProps & Record<string, unknown>;
+	} as PreviewDomProps;
 
-	for (const key of ["Id", "ParentId", "id", "parentId"] as const) {
-		if (Object.hasOwn(childProps, key)) {
-			merged[key] = childProps[key];
-			continue;
-		}
+	if (Object.hasOwn(childProps, "Id")) {
+		merged.Id = childProps.Id;
+	} else {
+		delete (merged as Record<string, unknown>).Id;
+	}
 
-		delete merged[key];
+	if (Object.hasOwn(childProps, "ParentId")) {
+		merged.ParentId = childProps.ParentId;
+	} else {
+		delete (merged as Record<string, unknown>).ParentId;
+	}
+
+	if (Object.hasOwn(childProps, "id")) {
+		merged.id = childProps.id;
+	} else {
+		delete (merged as Record<string, unknown>).id;
+	}
+
+	if (Object.hasOwn(childProps, "parentId")) {
+		(merged as Record<string, unknown>).parentId = childProps.parentId;
+	} else {
+		delete (merged as Record<string, unknown>).parentId;
 	}
 
 	return merged;

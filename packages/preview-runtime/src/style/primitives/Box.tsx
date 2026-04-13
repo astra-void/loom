@@ -21,12 +21,7 @@ function omitPreviewIdentityProps(props: PreviewDomProps): PreviewDomProps {
 }
 
 export const Box = React.forwardRef<HTMLElement, BoxProps>((props, ref) => {
-	const {
-		asChild = false,
-		Id,
-		ParentId,
-		...restProps
-	} = props;
+	const { asChild = false, Id, ParentId, ...restProps } = props;
 	const hostProps = restProps as PreviewDomProps;
 
 	if (asChild) {
