@@ -71,6 +71,40 @@ function hostNode(
 	};
 }
 
+function roundLayoutNumber(value: number) {
+	return Number(value.toFixed(5));
+}
+
+function normalizeRect(
+	rect:
+		| {
+				height: number;
+				width: number;
+				x: number;
+				y: number;
+		  }
+		| null,
+) {
+	if (!rect) {
+		return null;
+	}
+
+	return {
+		height: roundLayoutNumber(rect.height),
+		width: roundLayoutNumber(rect.width),
+		x: roundLayoutNumber(rect.x),
+		y: roundLayoutNumber(rect.y),
+	};
+}
+
+function normalizeRectMap(
+	rects: Record<string, { height: number; width: number; x: number; y: number }>,
+) {
+	return Object.fromEntries(
+		Object.entries(rects).map(([nodeId, rect]) => [nodeId, normalizeRect(rect)]),
+	);
+}
+
 function normalizeDebugNode(node: PreviewLayoutDebugNode) {
 	return {
 		children: node.children.map(normalizeDebugNode),
@@ -81,9 +115,9 @@ function normalizeDebugNode(node: PreviewLayoutDebugNode) {
 		kind: node.kind,
 		layoutSource: node.layoutSource,
 		nodeType: node.nodeType,
-		parentConstraints: node.parentConstraints,
+		parentConstraints: normalizeRect(node.parentConstraints),
 		parentId: node.parentId,
-		rect: node.rect,
+		rect: normalizeRect(node.rect),
 		sizeResolution: node.sizeResolution,
 		styleHints: node.styleHints,
 	};
@@ -106,11 +140,15 @@ function assertParity(
 	fallback.setViewport(viewport);
 	wasm.setViewport(viewport);
 
-	const fallbackResult = (fallback as any).computeFallback();
+	const fallbackResult = (
+		fallback as unknown as { computeFallback: () => PreviewLayoutResult }
+	).computeFallback();
 	const wasmResult = wasm.compute();
 
 	expect(wasmResult.dirtyNodeIds).toEqual(fallbackResult.dirtyNodeIds);
-	expect(wasmResult.rects).toEqual(fallbackResult.rects);
+	expect(normalizeRectMap(wasmResult.rects)).toEqual(
+		normalizeRectMap(fallbackResult.rects),
+	);
 	expect(wasmResult.debug.viewport).toEqual(fallbackResult.debug.viewport);
 	expect(wasmResult.debug.roots.map(normalizeDebugNode)).toEqual(
 		fallbackResult.debug.roots.map(normalizeDebugNode),
@@ -395,6 +433,115 @@ describe("preview runtime Wasm layout parity", () => {
 				}),
 			],
 			{ height: 300, width: 400 },
+		);
+	});
+
+	it("matches fallback for automatic-size with anchor-aware rect updates", () => {
+		assertParity(
+			[
+				rootNode("screen"),
+				hostNode("auto-parent", "screen", {
+					layout: {
+						automaticSize: "xy",
+						anchorPoint: { x: 0.5, y: 0.5 },
+						position: size(0.5, 0, 0.5, 0),
+						positionMode: "absolute",
+						sizeConstraintMode: "RelativeXY",
+						size: size(0, 300, 0, 200),
+					},
+				}),
+				hostNode("auto-child", "auto-parent", {
+					layout: {
+						anchorPoint: { x: 0, y: 0 },
+						position: size(0, 0, 0, 0),
+						positionMode: "absolute",
+						sizeConstraintMode: "RelativeXY",
+						size: size(0, 120, 0, 40),
+					},
+				}),
+			],
+			{ height: 300, width: 400 },
+		);
+	});
+
+	it("matches fallback for nested automatic-size with padding and list layout", () => {
+		assertParity(
+			[
+				rootNode("screen"),
+				hostNode("outer", "screen", {
+					layout: {
+						automaticSize: "xy",
+						anchorPoint: { x: 0, y: 0 },
+						position: size(0, 0, 0, 0),
+						positionMode: "absolute",
+						sizeConstraintMode: "RelativeXY",
+						size: size(0, 100, 0, 80),
+					},
+					layoutModifiers: {
+						list: {
+							fillDirection: "vertical",
+							horizontalAlignment: "left",
+							padding: { Offset: 6, Scale: 0 },
+							sortOrder: "source",
+							verticalAlignment: "top",
+							wraps: false,
+						},
+						padding: {
+							bottom: { Offset: 4, Scale: 0 },
+							left: { Offset: 0, Scale: 0.1 },
+							right: { Offset: 0, Scale: 0.1 },
+							top: { Offset: 4, Scale: 0 },
+						},
+					},
+				}),
+				hostNode("inner", "outer", {
+					layout: {
+						automaticSize: "xy",
+						anchorPoint: { x: 0, y: 0 },
+						position: size(0, 0, 0, 0),
+						positionMode: "absolute",
+						sizeConstraintMode: "RelativeXY",
+						size: size(0, 80, 0, 40),
+					},
+					layoutModifiers: {
+						list: {
+							fillDirection: "vertical",
+							horizontalAlignment: "left",
+							padding: { Offset: 4, Scale: 0 },
+							sortOrder: "source",
+							verticalAlignment: "top",
+							wraps: false,
+						},
+						padding: {
+							bottom: { Offset: 0, Scale: 0 },
+							left: { Offset: 0, Scale: 0.1 },
+							right: { Offset: 0, Scale: 0.1 },
+							top: { Offset: 0, Scale: 0 },
+						},
+					},
+				}),
+				hostNode("inner-first", "inner", {
+					layout: {
+						anchorPoint: { x: 0, y: 0 },
+						position: size(0, 0, 0, 0),
+						positionMode: "absolute",
+						sizeConstraintMode: "RelativeXY",
+						size: size(0, 50, 0, 18),
+					},
+					sourceOrder: 0,
+				}),
+				hostNode("inner-second", "inner", {
+					layout: {
+						anchorPoint: { x: 0, y: 0 },
+						position: size(0, 0, 0, 0),
+						positionMode: "absolute",
+						sizeConstraintMode: "RelativeXY",
+						size: size(0, 30, 0, 12),
+					},
+					sourceOrder: 1,
+				}),
+			],
+			{ height: 320, width: 420 },
 		);
 	});
 

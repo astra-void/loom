@@ -1594,6 +1594,43 @@ describe("preview runtime host mapping", () => {
 		});
 	});
 
+	it("surfaces Wasm compute failures while still rendering fallback rects", async () => {
+		layoutEngineMocks.computeDirty.mockImplementation(() => {
+			throw new Error("compute failed");
+		});
+
+		render(
+			<LayoutProvider debounceMs={0} viewportHeight={200} viewportWidth={300}>
+				<ScreenGui>
+					<Frame
+						Id="fallback-frame"
+						Position={UDim2.fromOffset(12, 18)}
+						Size={UDim2.fromOffset(120, 48)}
+					/>
+				</ScreenGui>
+			</LayoutProvider>,
+		);
+
+		const frame = document.querySelector(
+			'[data-preview-node-id="fallback-frame"]',
+		) as HTMLElement;
+
+		await waitFor(() => {
+			expect(frame.style.left).toBe("12px");
+			expect(frame.style.top).toBe("18px");
+			expect(frame.style.width).toBe("120px");
+			expect(frame.style.height).toBe("48px");
+		});
+
+		await waitFor(() => {
+			const issue = getPreviewRuntimeIssues().find(
+				(nextIssue) => nextIssue.code === "LAYOUT_WASM_COMPUTE_FAILED",
+			);
+			expect(issue?.phase).toBe("layout");
+			expect(issue?.summary).toContain("compute failed");
+		});
+	});
+
 	it("uses measurable host bounds in provider fallback layout when size is omitted", async () => {
 		layoutEngineMocks.init.mockRejectedValue(new Error("init failed"));
 
@@ -2813,4 +2850,3 @@ describe("Layout Engine Resilience", () => {
 		}).not.toThrow();
 	});
 });
-import { TweenService } from "@loom-dev/preview-runtime";
