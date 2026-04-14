@@ -1,1 +1,4 @@
-export declare function createErrorWithCause(message: string, cause: unknown): Error;
+export declare function createErrorWithCause(
+	message: string,
+	cause: unknown,
+): Error;

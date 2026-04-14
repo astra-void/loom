@@ -1,1 +1,4 @@
-export { installPreviewRuntimePolyfills as installPreviewRobloxPolyfills, installPreviewRuntimePolyfills as default, } from "@loom-dev/preview-runtime";
+export {
+	installPreviewRuntimePolyfills as installPreviewRobloxPolyfills,
+	installPreviewRuntimePolyfills as default,
+} from "@loom-dev/preview-runtime";
