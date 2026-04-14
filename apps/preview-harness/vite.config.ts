@@ -33,6 +33,9 @@ const transformMode = isPreviewExecutionMode(previewConfigRecord.transformMode)
 	: undefined;
 
 export default defineConfig({
+	build: {
+		target: "esnext",
+	},
 	resolve: {
 		alias: [
 			{
