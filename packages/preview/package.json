@@ -1,6 +1,6 @@
 {
 	"name": "@loom-dev/preview",
-	"version": "0.1.0-alpha.5",
+	"version": "0.1.0-alpha.6",
 	"private": false,
 	"description": "Loom source-first preview build, server, and runtime package.",
 	"main": "dist/index.mjs",
