@@ -555,6 +555,111 @@ fn applies_vertical_list_cursor_accumulates_child_height_and_padding() {
         Some(vec!["first", "second", "third"])
     );
 }
+
+#[test]
+fn automatic_vertical_list_keeps_accumulated_child_y_offsets() {
+    let mut session = LayoutSession::new();
+    session.apply_preview_nodes(vec![
+        PreviewLayoutNode {
+            layout: PreviewNodeLayout {
+                automatic_size: None,
+                anchor_point: zero_vector(),
+                constraints: None,
+                position: zero_size(),
+                position_mode: default_position_mode(),
+                size_constraint_mode: default_size_constraint_mode(),
+                size: Some(full_size()),
+            },
+            source_order: Some(0),
+            ..node("screen", None, "root", "ScreenGui")
+        },
+        PreviewLayoutNode {
+            layout: PreviewNodeLayout {
+                automatic_size: Some("y".to_owned()),
+                anchor_point: zero_vector(),
+                constraints: None,
+                position: zero_size(),
+                position_mode: default_position_mode(),
+                size_constraint_mode: default_size_constraint_mode(),
+                size: Some(size(0.0, 220.0, 0.0, 0.0)),
+            },
+            layout_modifiers: Some(PreviewLayoutModifiers {
+                aspect_ratio_constraint: None,
+                flex_item: None,
+                grid: None,
+                list: Some(PreviewLayoutListLayout {
+                    fill_direction: "vertical".to_owned(),
+                    horizontal_alignment: "left".to_owned(),
+                    horizontal_flex: None,
+                    item_line_alignment: None,
+                    padding: axis(0.0, 8.0),
+                    sort_order: "source".to_owned(),
+                    vertical_alignment: "top".to_owned(),
+                    vertical_flex: None,
+                    wraps: false,
+                }),
+                padding: Some(PreviewLayoutPaddingInsets {
+                    bottom: axis(0.0, 5.0),
+                    left: axis(0.0, 0.0),
+                    right: axis(0.0, 0.0),
+                    top: axis(0.0, 5.0),
+                }),
+                size_constraint: None,
+                text_size_constraint: None,
+            }),
+            source_order: Some(0),
+            ..node("accordion-item", Some("screen"), "host", "Frame")
+        },
+        PreviewLayoutNode {
+            source_order: Some(0),
+            layout: PreviewNodeLayout {
+                automatic_size: None,
+                anchor_point: zero_vector(),
+                constraints: None,
+                position: zero_size(),
+                position_mode: default_position_mode(),
+                size_constraint_mode: default_size_constraint_mode(),
+                size: Some(size(0.0, 220.0, 0.0, 32.0)),
+            },
+            ..node("header", Some("accordion-item"), "host", "TextButton")
+        },
+        PreviewLayoutNode {
+            source_order: Some(1),
+            layout: PreviewNodeLayout {
+                automatic_size: None,
+                anchor_point: zero_vector(),
+                constraints: None,
+                position: zero_size(),
+                position_mode: default_position_mode(),
+                size_constraint_mode: default_size_constraint_mode(),
+                size: Some(size(0.0, 220.0, 0.0, 24.0)),
+            },
+            ..node("body", Some("accordion-item"), "host", "TextLabel")
+        },
+    ]);
+    session.set_viewport_internal(Viewport {
+        height: 200.0,
+        width: 300.0,
+    });
+
+    let result = session
+        .compute_dirty_internal()
+        .expect("layout should compute");
+    let parent = result
+        .rects
+        .get("accordion-item")
+        .expect("accordion item should exist");
+    let header = result.rects.get("header").expect("header should exist");
+    let body = result.rects.get("body").expect("body should exist");
+
+    assert_close(parent.height, 74.0);
+    assert_close(header.x, 0.0);
+    assert_close(header.y, 5.0);
+    assert_close(body.x, 0.0);
+    assert_close(body.y, 45.0);
+    assert_close(body.y, header.y + header.height + 8.0);
+}
+
 #[test]
 fn applies_grid_layout_semantics() {
     let mut session = LayoutSession::new();

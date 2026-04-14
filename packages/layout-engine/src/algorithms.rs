@@ -396,12 +396,13 @@ pub(crate) fn compute_list_layout(
 
         let used_main = line.iter().map(|item| item.main).sum::<f32>()
             + (line.len().saturating_sub(1) as f32) * gap;
-        let mut main_cursor =
-            if horizontal {
-                content_rect.x
-            } else {
-                content_rect.y
-            } + align_start(main_axis_alignment, (main_axis_size - used_main).max(0.0));
+        let line_main_origin = if horizontal {
+            content_rect.x
+        } else {
+            content_rect.y
+        };
+        let mut main_offset =
+            align_start(main_axis_alignment, (main_axis_size - used_main).max(0.0));
 
         for item in line.iter() {
             let mut resolved_cross = item.cross;
@@ -446,15 +447,16 @@ pub(crate) fn compute_list_layout(
             } else {
                 item.main
             };
+            let main_position = line_main_origin + main_offset;
             let x = if horizontal {
-                main_cursor
+                main_position
             } else {
                 cross_cursor + cross_offset
             };
             let y = if horizontal {
                 cross_cursor + cross_offset
             } else {
-                main_cursor
+                main_position
             };
 
             placements.push(ChildPlacement {
@@ -469,7 +471,7 @@ pub(crate) fn compute_list_layout(
                 ),
             });
 
-            advance_main_cursor(&mut main_cursor, item.main, gap);
+            advance_main_cursor(&mut main_offset, item.main, gap);
         }
 
         cross_cursor += line_cross + gap;
