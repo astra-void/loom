@@ -7,9 +7,11 @@ import {
 	ScreenGui,
 	Slot,
 	Text,
+	TextLabel,
 	UDim2,
 } from "@loom-dev/preview-runtime";
 import { cleanup, render, waitFor } from "@testing-library/react";
+import * as React from "react";
 import { afterEach, expect, test } from "vitest";
 
 type DebugNode = {
@@ -45,6 +47,24 @@ function getDebugNodeById(targetId: string): DebugNode | null {
 	return findDebugNode(roots, targetId);
 }
 
+type AccordionContentProps = React.ComponentPropsWithoutRef<typeof Frame> & {
+	asChild?: boolean;
+};
+
+const AccordionContent = React.forwardRef<HTMLElement, AccordionContentProps>(
+	({ asChild = false, children, ...props }, ref) => {
+		const Component = asChild ? Slot : Frame;
+
+		return (
+			<Component ref={ref} {...props}>
+				{children}
+			</Component>
+		);
+	},
+);
+
+AccordionContent.displayName = "TestAccordionContent";
+
 afterEach(() => {
 	cleanup();
 });
@@ -73,6 +93,140 @@ test("preserves slot child Position and Size through Text host registration", as
 		expect(contentNode?.parentId).toBe("item");
 		expect(contentNode?.layoutSource).toBe("explicit-size");
 		expect(contentNode?.rect).toMatchObject({
+			height: 24,
+			width: 120,
+			x: 10,
+			y: 40,
+		});
+	});
+});
+
+test("accordion-style content asChild preserves Text child identity and placement", async () => {
+	render(
+		<LayoutProvider debounceMs={0} viewportHeight={240} viewportWidth={320}>
+			<ScreenGui Id="screen">
+				<Frame Id="accordion-item" Size={UDim2.fromOffset(220, 80)}>
+					<Frame Id="accordion-trigger" Size={UDim2.fromOffset(220, 32)} />
+					<AccordionContent
+						Id="accordion-content-slot"
+						Position={UDim2.fromOffset(10, 40)}
+						Size={UDim2.fromOffset(120, 24)}
+						asChild
+					>
+						<Text Id="accordion-body" Text="Accordion body" />
+					</AccordionContent>
+				</Frame>
+
+				<Frame
+					Id="wrapped-accordion-item"
+					Position={UDim2.fromOffset(0, 100)}
+					Size={UDim2.fromOffset(220, 80)}
+				>
+					<Frame
+						Id="wrapped-accordion-trigger"
+						Size={UDim2.fromOffset(220, 32)}
+					/>
+					<AccordionContent
+						Id="wrapped-accordion-content-slot"
+						Position={UDim2.fromOffset(10, 40)}
+						Size={UDim2.fromOffset(140, 28)}
+						asChild
+					>
+						<Frame Id="wrapped-accordion-body">
+							<Text
+								Id="wrapped-accordion-body-text"
+								Size={UDim2.fromOffset(140, 28)}
+								Text="Wrapped body"
+							/>
+						</Frame>
+					</AccordionContent>
+				</Frame>
+			</ScreenGui>
+		</LayoutProvider>,
+	);
+
+	await waitFor(() => {
+		const bodyElement = document.querySelector(
+			'[data-preview-host="textlabel"][data-preview-node-id="accordion-body"]',
+		);
+		const bodyNode = getDebugNodeById("accordion-body");
+		const slotNode = getDebugNodeById("accordion-content-slot");
+
+		expect(bodyElement).toBeTruthy();
+		expect(bodyNode).toBeTruthy();
+		expect(slotNode).toBeNull();
+		expect(bodyNode?.parentId).toBe("accordion-item");
+		expect(bodyNode?.rect).toMatchObject({
+			height: 24,
+			width: 120,
+			x: 10,
+			y: 40,
+		});
+	});
+
+	await waitFor(() => {
+		const wrapperElement = document.querySelector(
+			'[data-preview-host="frame"][data-preview-node-id="wrapped-accordion-body"]',
+		);
+		const textElement = document.querySelector(
+			'[data-preview-host="textlabel"][data-preview-node-id="wrapped-accordion-body-text"]',
+		);
+		const wrapperNode = getDebugNodeById("wrapped-accordion-body");
+		const textNode = getDebugNodeById("wrapped-accordion-body-text");
+		const slotNode = getDebugNodeById("wrapped-accordion-content-slot");
+
+		expect(wrapperElement).toBeTruthy();
+		expect(textElement).toBeTruthy();
+		expect(wrapperNode).toBeTruthy();
+		expect(textNode).toBeTruthy();
+		expect(slotNode).toBeNull();
+		expect(wrapperNode?.parentId).toBe("wrapped-accordion-item");
+		expect(textNode?.parentId).toBe("wrapped-accordion-body");
+		expect(wrapperNode?.rect).toMatchObject({
+			height: 28,
+			width: 140,
+			x: 10,
+			y: 140,
+		});
+		expect(textNode?.rect).toMatchObject({
+			height: 28,
+			width: 140,
+			x: 10,
+			y: 140,
+		});
+	});
+});
+
+test("Text asChild preserves child TextLabel identity through Slot", async () => {
+	render(
+		<LayoutProvider debounceMs={0} viewportHeight={240} viewportWidth={320}>
+			<ScreenGui Id="screen">
+				<Frame Id="item" Size={UDim2.fromOffset(220, 80)}>
+					<Text
+						Id="text-slot"
+						Position={UDim2.fromOffset(10, 40)}
+						Size={UDim2.fromOffset(120, 24)}
+						asChild
+					>
+						<TextLabel Id="text-as-child-body" Text="Text as child" />
+					</Text>
+				</Frame>
+			</ScreenGui>
+		</LayoutProvider>,
+	);
+
+	await waitFor(() => {
+		const bodyElement = document.querySelector(
+			'[data-preview-host="textlabel"][data-preview-node-id="text-as-child-body"]',
+		);
+		const bodyNode = getDebugNodeById("text-as-child-body");
+		const slotNode = getDebugNodeById("text-slot");
+
+		expect(bodyElement).toBeTruthy();
+		expect(bodyNode).toBeTruthy();
+		expect(slotNode).toBeNull();
+		expect(bodyNode?.parentId).toBe("item");
+		expect(bodyNode?.rect).toMatchObject({
 			height: 24,
 			width: 120,
 			x: 10,
