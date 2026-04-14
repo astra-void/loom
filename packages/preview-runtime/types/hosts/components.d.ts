@@ -1,0 +1,15 @@
+import * as React from "react";
+import type { PreviewDomProps } from "./types";
+export declare const Frame: React.ForwardRefExoticComponent<Omit<PreviewDomProps, "ref"> & React.RefAttributes<HTMLElement>>;
+export declare const TextButton: React.ForwardRefExoticComponent<Omit<PreviewDomProps, "ref"> & React.RefAttributes<HTMLElement>>;
+export declare const ImageButton: React.ForwardRefExoticComponent<Omit<PreviewDomProps, "ref"> & React.RefAttributes<HTMLElement>>;
+export declare const ScreenGui: React.ForwardRefExoticComponent<Omit<PreviewDomProps, "ref"> & React.RefAttributes<HTMLElement>>;
+export declare const SurfaceGui: React.ForwardRefExoticComponent<Omit<PreviewDomProps, "ref"> & React.RefAttributes<HTMLElement>>;
+export declare const BillboardGui: React.ForwardRefExoticComponent<Omit<PreviewDomProps, "ref"> & React.RefAttributes<HTMLElement>>;
+export declare const TextLabel: React.ForwardRefExoticComponent<Omit<PreviewDomProps, "ref"> & React.RefAttributes<HTMLElement>>;
+export declare const TextBox: React.ForwardRefExoticComponent<Omit<PreviewDomProps, "ref"> & React.RefAttributes<HTMLElement>>;
+export declare const ImageLabel: React.ForwardRefExoticComponent<Omit<PreviewDomProps, "ref"> & React.RefAttributes<HTMLElement>>;
+export declare const ScrollingFrame: React.ForwardRefExoticComponent<Omit<PreviewDomProps, "ref"> & React.RefAttributes<HTMLElement>>;
+export declare const CanvasGroup: React.ForwardRefExoticComponent<Omit<PreviewDomProps, "ref"> & React.RefAttributes<HTMLElement>>;
+export declare const ViewportFrame: React.ForwardRefExoticComponent<Omit<PreviewDomProps, "ref"> & React.RefAttributes<HTMLElement>>;
+export declare const VideoFrame: React.ForwardRefExoticComponent<Omit<PreviewDomProps, "ref"> & React.RefAttributes<HTMLElement>>;
