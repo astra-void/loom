@@ -10,10 +10,22 @@ import {
 } from "@loom-dev/preview-runtime";
 import { render, waitFor } from "@testing-library/react";
 import React from "react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getLocalPlayerGui } from "../../apps/preview-harness/src/test-utils";
+import {
+	installTestPreviewLayoutEngineLoader,
+	resetTestPreviewLayoutEngineLoader,
+} from "./testLayoutEngineLoader";
 
 describe("geometry fidelity portals", () => {
+	beforeEach(() => {
+		installTestPreviewLayoutEngineLoader();
+	});
+
+	afterEach(() => {
+		resetTestPreviewLayoutEngineLoader();
+	});
+
 	it("resolves portal anchor AbsolutePosition in the same coordinate space as the viewport", async () => {
 		const anchorRef = React.createRef<any>();
 		const portalContentRef = React.createRef<any>();
