@@ -11,8 +11,5 @@
     "loom-dev": "0.1.0-alpha.3",
     "@loom-dev/compiler-harness": "0.1.0-alpha.3",
     "@loom-dev/preview-harness": "0.1.0-alpha.3"
-  },
-  "changesets": [
-    "sparkly-lies-look"
-  ]
+  }
 }
