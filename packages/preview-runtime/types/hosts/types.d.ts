@@ -2,95 +2,131 @@ import type * as React from "react";
 import type { UDim2Like, Vector2Like } from "../internal/robloxValues";
 import type { Color3Value } from "../runtime/helpers";
 export type PreviewEventTable = {
-    Activated?: (...args: unknown[]) => void;
-    FocusLost?: (...args: unknown[]) => void;
-    InputBegan?: (...args: unknown[]) => void;
+	Activated?: (...args: unknown[]) => void;
+	FocusLost?: (...args: unknown[]) => void;
+	InputBegan?: (...args: unknown[]) => void;
 };
-export type ForwardedDomProps = React.HTMLAttributes<HTMLElement> & React.InputHTMLAttributes<HTMLInputElement> & React.ImgHTMLAttributes<HTMLImageElement>;
-export declare const hostModifierNames: readonly ["uicorner", "uiscale", "uistroke"];
+export type ForwardedDomProps = React.HTMLAttributes<HTMLElement> &
+	React.InputHTMLAttributes<HTMLInputElement> &
+	React.ImgHTMLAttributes<HTMLImageElement>;
+export declare const hostModifierNames: readonly [
+	"uicorner",
+	"uiscale",
+	"uistroke",
+];
 export type HostModifierName = (typeof hostModifierNames)[number];
-export declare const decoratorHostNames: readonly ["uicorner", "uipadding", "uilistlayout", "uigridlayout", "uistroke", "uiscale", "uigradient", "uipagelayout", "uitablelayout", "uisizeconstraint", "uitextsizeconstraint", "uiaspectratioconstraint", "uiflexitem"];
+export declare const decoratorHostNames: readonly [
+	"uicorner",
+	"uipadding",
+	"uilistlayout",
+	"uigridlayout",
+	"uistroke",
+	"uiscale",
+	"uigradient",
+	"uipagelayout",
+	"uitablelayout",
+	"uisizeconstraint",
+	"uitextsizeconstraint",
+	"uiaspectratioconstraint",
+	"uiflexitem",
+];
 export type DecoratorHostName = (typeof decoratorHostNames)[number];
 export declare const layoutHostNodeType: Readonly<Record<string, string>>;
-export type LayoutHostName = "frame" | "textbutton" | "imagebutton" | "screengui" | "surfacegui" | "billboardgui" | "textlabel" | "textbox" | "imagelabel" | "scrollingframe" | "canvasgroup" | "viewportframe" | "videoframe";
+export type LayoutHostName =
+	| "frame"
+	| "textbutton"
+	| "imagebutton"
+	| "screengui"
+	| "surfacegui"
+	| "billboardgui"
+	| "textlabel"
+	| "textbox"
+	| "imagelabel"
+	| "scrollingframe"
+	| "canvasgroup"
+	| "viewportframe"
+	| "videoframe";
 export type HostName = LayoutHostName | DecoratorHostName;
-export declare const buttonLikeHostNames: readonly ["textbutton", "imagebutton"];
+export declare const buttonLikeHostNames: readonly [
+	"textbutton",
+	"imagebutton",
+];
 export declare const fullSizeLayoutHostNames: readonly string[];
 export type PreviewDomProps = {
-    Active?: boolean;
-    AnchorPoint?: Vector2Like;
-    AutoButtonColor?: boolean;
-    AutomaticSize?: string;
-    AspectRatio?: number;
-    BackgroundColor3?: Color3Value;
-    BackgroundTransparency?: number;
-    BorderSizePixel?: number;
-    CellPadding?: UDim2Like;
-    CellSize?: UDim2Like;
-    CanvasSize?: UDim2Like;
-    Change?: {
-        Text?: (element: HTMLInputElement) => void;
-    };
-    Color?: Color3Value;
-    CornerRadius?: unknown;
-    DominantAxis?: string;
-    Event?: PreviewEventTable;
-    FillDirection?: string;
-    FillDirectionMaxCells?: number;
-    Font?: unknown;
-    FlexMode?: string;
-    GrowRatio?: number;
-    HorizontalAlignment?: string;
-    HorizontalFlex?: string;
-    Id?: string;
-    Image?: string;
-    ImageColor3?: Color3Value;
-    ImageTransparency?: number;
-    ItemLineAlignment?: string;
-    LayoutOrder?: number;
-    MaxSize?: Vector2Like;
-    MaxTextSize?: number;
-    MinSize?: Vector2Like;
-    MinTextSize?: number;
-    Modal?: boolean;
-    Name?: string;
-    PaddingBottom?: unknown;
-    PaddingBetweenItems?: unknown;
-    PaddingLeft?: unknown;
-    PaddingRight?: unknown;
-    PaddingTop?: unknown;
-    Padding?: unknown;
-    ParentId?: string;
-    PlaceholderText?: string;
-    Position?: UDim2Like;
-    Rotation?: number;
-    ScrollBarThickness?: number;
-    ScrollingDirection?: string;
-    Scale?: number;
-    Selectable?: boolean;
-    ShrinkRatio?: number;
-    Size?: UDim2Like;
-    SizeConstraint?: string;
-    SortOrder?: string;
-    StartCorner?: string;
-    Text?: unknown;
-    TextColor3?: Color3Value;
-    TextEditable?: boolean;
-    TextScaled?: boolean;
-    TextSize?: number;
-    TextTransparency?: number;
-    TextWrapped?: boolean;
-    TextXAlignment?: string;
-    TextYAlignment?: string;
-    Thickness?: number;
-    Transparency?: number;
-    VerticalAlignment?: string;
-    VerticalFlex?: string;
-    Visible?: boolean;
-    Wraps?: boolean;
-    ZIndex?: number;
-    children?: React.ReactNode;
-    className?: string;
-    style?: React.CSSProperties;
-    [key: string]: unknown;
+	Active?: boolean;
+	AnchorPoint?: Vector2Like;
+	AutoButtonColor?: boolean;
+	AutomaticSize?: string;
+	AspectRatio?: number;
+	BackgroundColor3?: Color3Value;
+	BackgroundTransparency?: number;
+	BorderSizePixel?: number;
+	CellPadding?: UDim2Like;
+	CellSize?: UDim2Like;
+	CanvasSize?: UDim2Like;
+	Change?: {
+		Text?: (element: HTMLInputElement) => void;
+	};
+	Color?: Color3Value;
+	CornerRadius?: unknown;
+	DominantAxis?: string;
+	Event?: PreviewEventTable;
+	FillDirection?: string;
+	FillDirectionMaxCells?: number;
+	Font?: unknown;
+	FlexMode?: string;
+	GrowRatio?: number;
+	HorizontalAlignment?: string;
+	HorizontalFlex?: string;
+	Id?: string;
+	Image?: string;
+	ImageColor3?: Color3Value;
+	ImageTransparency?: number;
+	ItemLineAlignment?: string;
+	LayoutOrder?: number;
+	MaxSize?: Vector2Like;
+	MaxTextSize?: number;
+	MinSize?: Vector2Like;
+	MinTextSize?: number;
+	Modal?: boolean;
+	Name?: string;
+	PaddingBottom?: unknown;
+	PaddingBetweenItems?: unknown;
+	PaddingLeft?: unknown;
+	PaddingRight?: unknown;
+	PaddingTop?: unknown;
+	Padding?: unknown;
+	ParentId?: string;
+	PlaceholderText?: string;
+	Position?: UDim2Like;
+	Rotation?: number;
+	ScrollBarThickness?: number;
+	ScrollingDirection?: string;
+	Scale?: number;
+	Selectable?: boolean;
+	ShrinkRatio?: number;
+	Size?: UDim2Like;
+	SizeConstraint?: string;
+	SortOrder?: string;
+	StartCorner?: string;
+	Text?: unknown;
+	TextColor3?: Color3Value;
+	TextEditable?: boolean;
+	TextScaled?: boolean;
+	TextSize?: number;
+	TextTransparency?: number;
+	TextWrapped?: boolean;
+	TextXAlignment?: string;
+	TextYAlignment?: string;
+	Thickness?: number;
+	Transparency?: number;
+	VerticalAlignment?: string;
+	VerticalFlex?: string;
+	Visible?: boolean;
+	Wraps?: boolean;
+	ZIndex?: number;
+	children?: React.ReactNode;
+	className?: string;
+	style?: React.CSSProperties;
+	[key: string]: unknown;
 } & ForwardedDomProps;

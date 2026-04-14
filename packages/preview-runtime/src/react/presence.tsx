@@ -17,7 +17,7 @@ type PresenceProps = {
 	onExitComplete?: () => void;
 };
 
-export function Presence(props: PresenceProps) {
+export function Presence(props: PresenceProps): React.ReactElement | undefined {
 	const [mounted, setMounted] = React.useState(props.present);
 	const [isPresent, setIsPresent] = React.useState(props.present);
 	const mountedRef = React.useRef(mounted);

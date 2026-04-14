@@ -4,7 +4,7 @@ import { error } from "../runtime/helpers";
 export function createStrictContext<T>(name: string) {
 	const Context = React.createContext<T | undefined>(undefined);
 
-	function useContextValue() {
+	function useContextValue(): Exclude<T, undefined> {
 		const value = React.useContext(Context);
 		if (value === undefined) {
 			error(
@@ -12,7 +12,7 @@ export function createStrictContext<T>(name: string) {
 			);
 		}
 
-		return value;
+		return value as Exclude<T, undefined>;
 	}
 
 	return [Context.Provider, useContextValue] as const;

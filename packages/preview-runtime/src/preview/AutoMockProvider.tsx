@@ -408,7 +408,10 @@ export function buildAutoMockProps<Props extends Record<string, unknown>>(
 
 export function withAutoMockedProps<Props extends Record<string, unknown>>(
 	component: PreviewAutoMockableComponent<Props>,
-) {
+): {
+	(props: Partial<Props>): React.ReactElement<Props>;
+	displayName: string;
+} {
 	function AutoMockedComponent(props: Partial<Props>) {
 		return React.createElement(component, buildAutoMockProps(component, props));
 	}
@@ -419,7 +422,7 @@ export function withAutoMockedProps<Props extends Record<string, unknown>>(
 
 export function AutoMockProvider<Props extends Record<string, unknown>>(
 	props: AutoMockProviderProps<Props>,
-) {
+): React.ReactElement<Props> {
 	return React.createElement(
 		props.component,
 		buildAutoMockProps(props.component, props.props),
