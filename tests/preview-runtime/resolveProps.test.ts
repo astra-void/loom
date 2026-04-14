@@ -20,6 +20,26 @@ function resolveTextHostStyle(
 	};
 }
 
+function resolveFrameHostStyle(props: PreviewDomProps) {
+	const resolved = resolvePreviewDomProps(props, {
+		computed: {
+			height: 200,
+			width: 100,
+			x: 10,
+			y: 20,
+		},
+		host: "frame",
+		nodeId: "frame:preview-node",
+	});
+
+	return resolved.domProps.style as {
+		height?: string;
+		left?: string;
+		top?: string;
+		width?: string;
+	};
+}
+
 test("textlabel defaults alignment to center when no alignment props are provided", () => {
 	const style = resolveTextHostStyle("textlabel", {
 		Text: "Preview label",
@@ -58,4 +78,22 @@ test("textbutton keeps explicit alignment mappings", () => {
 
 	expect(style.textAlign).toBe("right");
 	expect(style.justifyContent).toBe("flex-end");
+});
+
+test("frame applies position and size offsets on computed layout", () => {
+	const style = resolveFrameHostStyle({
+		Position: {
+			X: { Offset: 5, Scale: 0 },
+			Y: { Offset: 7, Scale: 0 },
+		},
+		Size: {
+			X: { Offset: 150, Scale: 0 },
+			Y: { Offset: 250, Scale: 0 },
+		},
+	});
+
+	expect(style.left).toBe("15px");
+	expect(style.top).toBe("27px");
+	expect(style.width).toBe("150px");
+	expect(style.height).toBe("250px");
 });

@@ -1,5 +1,6 @@
 import type * as React from "react";
 import { PREVIEW_HOST_DATA_ATTRIBUTE } from "../internal/previewAttributes";
+import { serializeUDim2 } from "../internal/robloxValues";
 import type { ComputedRect } from "../layout/model";
 import { toCssColor } from "../runtime/helpers";
 import { mapRobloxFont } from "../style/textStyles";
@@ -450,6 +451,10 @@ export function applyComputedLayoutStyle(
 	style: React.CSSProperties,
 	computed: ComputedRect | null,
 	parentRect?: ComputedRect | null,
+	posOffsetX: number = 0,
+	posOffsetY: number = 0,
+	sizeX?: number,
+	sizeY?: number,
 ): void {
 	delete style.left;
 	delete style.top;
@@ -467,10 +472,10 @@ export function applyComputedLayoutStyle(
 	style.visibility = "visible";
 	const originX = parentRect?.x ?? 0;
 	const originY = parentRect?.y ?? 0;
-	style.left = `${computed.x - originX}px`;
-	style.top = `${computed.y - originY}px`;
-	style.width = `${computed.width}px`;
-	style.height = `${computed.height}px`;
+	style.left = `${computed.x - originX + posOffsetX}px`;
+	style.top = `${computed.y - originY + posOffsetY}px`;
+	style.width = sizeX !== undefined ? `${sizeX}px` : `${computed.width}px`;
+	style.height = sizeY !== undefined ? `${sizeY}px` : `${computed.height}px`;
 }
 
 export function resolvePreviewDomProps(
@@ -534,6 +539,13 @@ export function resolvePreviewDomProps(
 		...rest
 	} = safeProps;
 
+	const normalizedPosition = serializeUDim2(Position);
+	const normalizedSize = serializeUDim2(Size);
+	const posOffsetX = normalizedPosition?.X.Offset ?? 0;
+	const posOffsetY = normalizedPosition?.Y.Offset ?? 0;
+	const sizeOffsetX = normalizedSize?.X.Offset;
+	const sizeOffsetY = normalizedSize?.Y.Offset;
+
 	void Active;
 	void AnchorPoint;
 	void AutoButtonColor;
@@ -545,9 +557,7 @@ export function resolvePreviewDomProps(
 	void Modal;
 	void Name;
 	void ParentId;
-	void Position;
 	void Scale;
-	void Size;
 	void ClipsDescendants;
 	void SizeConstraint;
 	void TextScaled;
@@ -560,7 +570,15 @@ export function resolvePreviewDomProps(
 	};
 
 	if (options.applyComputedLayout !== false) {
-		applyComputedLayoutStyle(computedStyle, options.computed);
+		applyComputedLayoutStyle(
+			computedStyle,
+			options.computed,
+			undefined,
+			posOffsetX,
+			posOffsetY,
+			sizeOffsetX,
+			sizeOffsetY,
+		);
 	}
 
 	computedStyle.boxSizing = computedStyle.boxSizing ?? "border-box";
