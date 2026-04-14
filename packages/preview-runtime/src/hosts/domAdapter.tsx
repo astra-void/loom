@@ -420,6 +420,7 @@ function createRenderedDomProps(node: PreviewHostNode) {
 	};
 
 	const layoutRect =
+		node.layoutDebug?.debugNode?.rect ??
 		node.computed ??
 		(node.layoutDebug?.inheritedParentRect
 			? computeNodeRect(node, node.layoutDebug.inheritedParentRect).rect
