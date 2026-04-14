@@ -51,6 +51,7 @@ export type PreviewLayoutProbeSnapshot = {
 
 type LayoutContextValue = {
 	error: string | null;
+	getContainerElement: () => HTMLDivElement | null;
 	getContainerRect: () => DOMRect | null;
 	getDebugNode: (nodeId: string) => PreviewLayoutDebugNode | null;
 	getRect: (nodeId: string) => ComputedRect | null;
@@ -520,9 +521,14 @@ export function LayoutProvider(props: LayoutProviderProps) {
 		return containerRef.current?.getBoundingClientRect() ?? null;
 	}, []);
 
+	const getContainerElement = React.useCallback(() => {
+		return containerRef.current;
+	}, []);
+
 	const contextValue = React.useMemo<LayoutContextValue>(
 		() => ({
 			error,
+			getContainerElement,
 			getContainerRect,
 			getDebugNode,
 			getRect,
@@ -534,6 +540,7 @@ export function LayoutProvider(props: LayoutProviderProps) {
 		}),
 		[
 			error,
+			getContainerElement,
 			getContainerRect,
 			getDebugNode,
 			getRect,
@@ -609,6 +616,7 @@ export function LayoutNodeParentProvider(props: {
 }
 
 export function LayoutViewportPortalBoundary(props: {
+	container?: HTMLElement | null;
 	children: React.ReactNode;
 }) {
 	const context = React.useContext(LayoutContext);
@@ -618,6 +626,26 @@ export function LayoutViewportPortalBoundary(props: {
 			? createViewportRect(viewport.width, viewport.height)
 			: null;
 	}, [viewport.height, viewport.width, viewport]);
+
+	React.useLayoutEffect(() => {
+		const portalContainer = props.container;
+		const layoutContainer = context?.getContainerElement();
+		if (!portalContainer || !layoutContainer) {
+			return;
+		}
+
+		if (portalContainer.parentElement !== layoutContainer) {
+			layoutContainer.appendChild(portalContainer);
+		}
+
+		portalContainer.style.position = "absolute";
+		portalContainer.style.inset = "0px";
+		portalContainer.style.left = "0px";
+		portalContainer.style.top = "0px";
+		portalContainer.style.width = "100%";
+		portalContainer.style.height = "100%";
+		portalContainer.style.overflow = "hidden";
+	}, [context, props.container]);
 
 	return (
 		<ParentRectContext.Provider value={viewportRect}>

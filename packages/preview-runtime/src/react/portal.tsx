@@ -50,7 +50,7 @@ export function Portal(props: PortalProps) {
 	}
 
 	const children = isViewportScopedPortalContainer(container) ? (
-		<LayoutViewportPortalBoundary>
+		<LayoutViewportPortalBoundary container={container}>
 			{props.children}
 		</LayoutViewportPortalBoundary>
 	) : (

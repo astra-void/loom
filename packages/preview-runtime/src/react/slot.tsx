@@ -22,6 +22,27 @@ type SlotProps = PreviewDomProps & {
 	children?: React.ReactNode;
 };
 
+const SLOT_HOST_CLONE_PROP_KEYS = [
+	"AnchorPoint",
+	"AutomaticSize",
+	"Id",
+	"LayoutOrder",
+	"Name",
+	"ParentId",
+	"Position",
+	"Size",
+	"Visible",
+	"anchorPoint",
+	"automaticSize",
+	"id",
+	"layoutOrder",
+	"name",
+	"parentId",
+	"position",
+	"size",
+	"visible",
+] as const;
+
 const EMPTY_EVENT_TABLE = Object.freeze({}) as PreviewEventTable;
 type PreviewChangeTable = NonNullable<PreviewDomProps["Change"]>;
 
@@ -246,6 +267,34 @@ function getSlotRenderType(
 		: childType;
 }
 
+function preserveSlotHostCloneProps(
+	target: Record<string, unknown>,
+	mergedProps: PreviewDomProps,
+) {
+	const source = mergedProps as Record<string, unknown>;
+
+	for (const key of SLOT_HOST_CLONE_PROP_KEYS) {
+		if (!Object.hasOwn(source, key)) {
+			continue;
+		}
+
+		target[key] = source[key];
+	}
+}
+
+function createSlotHostCloneProps(
+	normalizedDomProps: Record<string, unknown>,
+	mergedProps: PreviewDomProps,
+) {
+	const cloneProps = {
+		...normalizedDomProps,
+	};
+
+	preserveSlotHostCloneProps(cloneProps, mergedProps);
+
+	return cloneProps;
+}
+
 export const Slot = React.forwardRef<HTMLElement, SlotProps>(
 	(props, forwardedRef) => {
 		const slotNodeId = React.useId();
@@ -301,7 +350,12 @@ export const Slot = React.forwardRef<HTMLElement, SlotProps>(
 		const isHostElement = typeof slotRenderType === "string";
 
 		const clonedProps: Record<string, unknown> = {
-			...(isHostElement ? normalized.domProps : mergedProps),
+			...(isHostElement
+				? createSlotHostCloneProps(
+						normalized.domProps as Record<string, unknown>,
+						mergedProps,
+					)
+				: mergedProps),
 			ref: mergedRef,
 			children: isHostElement
 				? React.Children.toArray([
