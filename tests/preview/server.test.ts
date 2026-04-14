@@ -1343,13 +1343,20 @@ describe("createPreviewViteServer", () => {
 			expect(layoutEngineJsResponse.body).toContain("LayoutSession");
 			expect(layoutEngineJsResponse.body).not.toContain("403 Restricted");
 
-			const layoutEngineWasmUrl = readCapturedGroup(
-				layoutEngineJsResponse.body,
+			const layoutEngineWasmUrl = layoutEngineJsResponse.body.match(
 				/new URL\((?:'|")([^"']*layout_engine_bg\.wasm(?:\?[^"']*)?)(?:'|"),\s*import\.meta\.url\)/,
-			);
+			)?.[1];
+			const resolvedLayoutEngineWasmUrl =
+				layoutEngineWasmUrl ??
+				toFsUrl(
+					path.resolve(
+						process.cwd(),
+						"packages/layout-engine/pkg/layout_engine_bg.wasm",
+					),
+				);
 			const layoutEngineWasmResponse = await requestServerPath(
 				server,
-				layoutEngineWasmUrl,
+				resolvedLayoutEngineWasmUrl,
 			);
 			expect(layoutEngineWasmResponse.statusCode).toBe(200);
 		} finally {
