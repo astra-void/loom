@@ -2,8 +2,8 @@
 	"extends": "../../tsconfig.base.json",
 	"compilerOptions": {
 		"baseUrl": ".",
-		"module": "ESNext",
-		"moduleResolution": "Bundler",
+		"module": "esnext",
+		"moduleResolution": "bundler",
 		"jsx": "react-jsx",
 		"paths": {
 			"@loom-dev/compiler": ["../../packages/compiler/wrapper.d.ts"],
