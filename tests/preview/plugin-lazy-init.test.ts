@@ -38,9 +38,9 @@ const mocks = vi.hoisted(() => {
 });
 
 vi.mock("@loom-dev/preview-engine", async () => {
-	const actual = await vi.importActual<typeof import("@loom-dev/preview-engine")>(
-		"@loom-dev/preview-engine",
-	);
+	const actual = await vi.importActual<
+		typeof import("@loom-dev/preview-engine")
+	>("@loom-dev/preview-engine");
 	return {
 		...actual,
 		createPreviewEngine: mocks.createPreviewEngine,
@@ -155,7 +155,9 @@ describe("createPreviewVitePlugin lazy initialization", () => {
 		const load = previewPlugin.load as
 			| ((id: string) => Promise<string | undefined> | string | undefined)
 			| undefined;
-		const resolvedWorkspaceId = resolveId?.("virtual:loom-preview-workspace-index");
+		const resolvedWorkspaceId = resolveId?.(
+			"virtual:loom-preview-workspace-index",
+		);
 		const workspaceModuleCode = await load?.(
 			resolvedWorkspaceId ?? "virtual:loom-preview-workspace-index",
 		);

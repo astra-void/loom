@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
 import { transformPreviewSource } from "@loom-dev/compiler/wasm";
+import { describe, expect, it } from "vitest";
 
 describe("compiler wasm wrapper", () => {
 	it("keeps compatibility transforms executable without duplicating diagnostics", () => {

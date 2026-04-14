@@ -50,7 +50,9 @@ function rootNode(id: string): PreviewLayoutNode {
 function hostNode(
 	id: string,
 	parentId: string,
-	overrides: Omit<Partial<PreviewLayoutNode>, "layout"> & { layout?: Partial<PreviewLayoutNode["layout"]> } = {},
+	overrides: Omit<Partial<PreviewLayoutNode>, "layout"> & {
+		layout?: Partial<PreviewLayoutNode["layout"]>;
+	} = {},
 ): PreviewLayoutNode {
 	const { layout: layoutOverrides, ...rest } = overrides;
 	return {
@@ -76,14 +78,12 @@ function roundLayoutNumber(value: number) {
 }
 
 function normalizeRect(
-	rect:
-		| {
-				height: number;
-				width: number;
-				x: number;
-				y: number;
-		  }
-		| null,
+	rect: {
+		height: number;
+		width: number;
+		x: number;
+		y: number;
+	} | null,
 ) {
 	if (!rect) {
 		return null;
@@ -98,10 +98,16 @@ function normalizeRect(
 }
 
 function normalizeRectMap(
-	rects: Record<string, { height: number; width: number; x: number; y: number }>,
+	rects: Record<
+		string,
+		{ height: number; width: number; x: number; y: number }
+	>,
 ) {
 	return Object.fromEntries(
-		Object.entries(rects).map(([nodeId, rect]) => [nodeId, normalizeRect(rect)]),
+		Object.entries(rects).map(([nodeId, rect]) => [
+			nodeId,
+			normalizeRect(rect),
+		]),
 	);
 }
 
@@ -612,5 +618,3 @@ describe("preview runtime Wasm layout parity", () => {
 		);
 	});
 });
-
-

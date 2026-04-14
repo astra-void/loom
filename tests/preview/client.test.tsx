@@ -3,7 +3,6 @@
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { act } from "react";
 import { afterEach, describe, expect, it } from "vitest";
-import type { PreviewEntryDescriptor } from "../../packages/preview-engine/src/types";
 import {
 	createPreviewElement,
 	hydratePreview,
@@ -11,6 +10,7 @@ import {
 	renderPreviewToStaticMarkup,
 	renderPreviewToString,
 } from "../../packages/preview/src/client";
+import type { PreviewEntryDescriptor } from "../../packages/preview-engine/src/types";
 
 const baseEntry: PreviewEntryDescriptor = {
 	candidateExportNames: ["default"],
@@ -117,9 +117,7 @@ describe("@loom-dev/preview/client", () => {
 		const container = document.createElement("div");
 		document.body.append(container);
 
-		let handle:
-			| ReturnType<typeof mountPreview>
-			| undefined;
+		let handle: ReturnType<typeof mountPreview> | undefined;
 		await act(async () => {
 			handle = mountPreview({
 				container,
@@ -135,7 +133,9 @@ describe("@loom-dev/preview/client", () => {
 		await waitFor(() => {
 			expect(container.textContent).toContain("mounted preview");
 		});
-		expect((globalThis as typeof globalThis & { game?: unknown }).game).toBeDefined();
+		expect(
+			(globalThis as typeof globalThis & { game?: unknown }).game,
+		).toBeDefined();
 
 		await act(async () => {
 			handle?.dispose();
@@ -159,9 +159,7 @@ describe("@loom-dev/preview/client", () => {
 			},
 		});
 
-		let handle:
-			| ReturnType<typeof hydratePreview>
-			| undefined;
+		let handle: ReturnType<typeof hydratePreview> | undefined;
 		await act(async () => {
 			handle = hydratePreview({
 				container,

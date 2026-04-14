@@ -4,14 +4,14 @@ import path from "node:path";
 import { Writable } from "node:stream";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+	writePreviewProgress,
+	writePreviewTiming,
+} from "../../packages/preview/src/source/progress";
+import {
 	createPreviewViteServer,
 	normalizeViteLogErrorOptions,
 	resolvePreviewServerConfig,
 } from "../../packages/preview/src/source/server";
-import {
-	writePreviewProgress,
-	writePreviewTiming,
-} from "../../packages/preview/src/source/progress";
 import {
 	suppressExpectedConsoleMessages,
 	suppressExpectedStderrMessages,

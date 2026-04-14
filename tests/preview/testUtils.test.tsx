@@ -44,7 +44,9 @@ describe("preview harness test utils", () => {
 			await waitForEffects();
 
 			expect(findTextLabelByText(harness.container, "Label Text")).toBeTruthy();
-			expect(findTextButtonByText(harness.container, "Button Text")).toBeTruthy();
+			expect(
+				findTextButtonByText(harness.container, "Button Text"),
+			).toBeTruthy();
 		} finally {
 			harness.cleanup();
 		}

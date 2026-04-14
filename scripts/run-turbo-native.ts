@@ -1,7 +1,8 @@
+import type { SpawnSyncReturns } from "node:child_process";
 import { spawnSync } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { getNativeTarget } from "./native-target.ts";
+import { getNativeTarget } from "./native-target";
 
 function createEnv() {
 	return {
@@ -10,7 +11,12 @@ function createEnv() {
 	};
 }
 
-function runTurboFallback(args) {
+interface SpawnOptions {
+	env: NodeJS.ProcessEnv;
+	stdio: "inherit";
+}
+
+function runTurboFallback(args: string[]): SpawnSyncReturns<Buffer> {
 	const rootDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 	const turboCmd =
 		process.platform === "win32"
@@ -24,14 +30,14 @@ function runTurboFallback(args) {
 			{
 				env: createEnv(),
 				stdio: "inherit",
-			},
+			} as SpawnOptions,
 		);
 	}
 
 	return spawnSync(turboCmd, args, {
 		env: createEnv(),
 		stdio: "inherit",
-	});
+	} as SpawnOptions);
 }
 
 const turboArgs = ["exec", "turbo", ...process.argv.slice(2)];

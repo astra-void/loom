@@ -878,8 +878,9 @@ describe("preview shell", () => {
 
 		expect(details?.open).toBe(true);
 		expect(
-			screen.getAllByText((_, node) =>
-				node?.textContent?.includes("Error: runtime failure") ?? false,
+			screen.getAllByText(
+				(_, node) =>
+					node?.textContent?.includes("Error: runtime failure") ?? false,
 			).length,
 		).toBeGreaterThan(0);
 		expect(

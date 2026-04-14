@@ -18,9 +18,7 @@ type PreviewGlobalRecord = typeof globalThis & {
 		gsub: (
 			value: string,
 			pattern: string,
-			replacement:
-				| string
-				| ((match: string, ...captures: string[]) => unknown),
+			replacement: string | ((match: string, ...captures: string[]) => unknown),
 		) => readonly [string, number];
 		lower: (value: string) => string;
 		sub: (value: string, start?: number, finish?: number) => string;
@@ -47,7 +45,8 @@ const initialEnum = globalRecord.Enum;
 const initialGame = globalRecord.game;
 const initialMath = globalRecord.math;
 const initialNext = globalRecord.next;
-const initialPairs = (globalRecord as PreviewGlobalRecord & { pairs?: unknown }).pairs;
+const initialPairs = (globalRecord as PreviewGlobalRecord & { pairs?: unknown })
+	.pairs;
 const initialOs = globalRecord.os;
 const initialTweenInfo = globalRecord.TweenInfo;
 const initialVector3 = globalRecord.Vector3;

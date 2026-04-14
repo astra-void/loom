@@ -1,11 +1,11 @@
 // @vitest-environment node
 
+import { describe, expect, it } from "vitest";
 import compiler, {
 	compile_tsx,
 	normalizeTransformPreviewSourceResult,
 	transformPreviewSource,
 } from "../../packages/compiler/wasm.mjs";
-import { describe, expect, it } from "vitest";
 
 describe("@loom-dev/compiler wasm entry", () => {
 	it("exposes the wasm surface and compiles TSX", () => {
@@ -29,7 +29,7 @@ describe("@loom-dev/compiler wasm entry", () => {
 		expect(
 			normalizeTransformPreviewSourceResult(
 				{
-					code: "export const value = gamee.GetService(\"Players\");",
+					code: 'export const value = gamee.GetService("Players");',
 					errors: [
 						{
 							code: "UNRESOLVED_FREE_IDENTIFIER",
@@ -46,7 +46,7 @@ describe("@loom-dev/compiler wasm entry", () => {
 				"compatibility",
 			),
 		).toEqual({
-			code: "export const value = gamee.GetService(\"Players\");",
+			code: 'export const value = gamee.GetService("Players");',
 			diagnostics: [
 				expect.objectContaining({
 					blocking: false,
@@ -66,7 +66,8 @@ describe("@loom-dev/compiler wasm entry", () => {
 		const result = transformPreviewSource(
 			'import { helper } from "./helper"; export const value = helper;',
 			{
-				fileExists: (candidate) => candidate === "/virtual/project/src/helper.ts",
+				fileExists: (candidate) =>
+					candidate === "/virtual/project/src/helper.ts",
 				filePath: "/virtual/project/src/app.ts",
 				runtimeModule: "@loom-dev/preview-runtime",
 				target: "wasm",
@@ -83,7 +84,7 @@ describe("@loom-dev/compiler wasm entry", () => {
 
 	it("emits browser mock diagnostics in mocked mode", () => {
 		const result = transformPreviewSource(
-			"export const value = game.GetService(\"Players\");",
+			'export const value = game.GetService("Players");',
 			{
 				filePath: "/virtual/mocked-global.tsx",
 				mode: "mocked",

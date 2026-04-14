@@ -1,9 +1,7 @@
 // @vitest-environment node
 
 import { describe, expect, it } from "vitest";
-import {
-	PUBLIC_RELEASE_PACKAGES,
-} from "../../scripts/release/release-config";
+import { PUBLIC_RELEASE_PACKAGES } from "../../scripts/release/release-config";
 import {
 	getReleaseDistTag,
 	parseReleaseTag,

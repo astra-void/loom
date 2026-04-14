@@ -1970,9 +1970,7 @@ describe("createPreviewHeadlessSession", () => {
 				},
 				renderIssue: null,
 			});
-			expect(snapshot.entries[entryId]?.descriptor.status).toBe(
-				"ready",
-			);
+			expect(snapshot.entries[entryId]?.descriptor.status).toBe("ready");
 
 			const comboboxTrace = (
 				globalThis as typeof globalThis & {

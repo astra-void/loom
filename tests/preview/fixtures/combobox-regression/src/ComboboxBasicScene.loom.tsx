@@ -19,7 +19,7 @@ function log(step: string) {
 	getTrace().push(step);
 }
 
-function incrementRefCycleCount() {
+function _incrementRefCycleCount() {
 	const globalRecord = globalThis as ComboboxTraceGlobal;
 	globalRecord.__loomComboboxRefCycles =
 		(globalRecord.__loomComboboxRefCycles ?? 0) + 1;
@@ -91,17 +91,14 @@ function ComboboxPreviewTargetShell(props: { children: React.ReactNode }) {
 	const [portalContainer, setPortalContainer] =
 		React.useState<HTMLElement | null>(null);
 
-	const handleRootRef = React.useCallback(
-		(node: HTMLElement | null) => {
-			log(`target-shell:root-ref:${node ? "set" : "clear"}`);
-			if (node) {
-				setPortalContainer(node);
-			} else {
-				setPortalContainer(null);
-			}
-		},
-		[],
-	);
+	const handleRootRef = React.useCallback((node: HTMLElement | null) => {
+		log(`target-shell:root-ref:${node ? "set" : "clear"}`);
+		if (node) {
+			setPortalContainer(node);
+		} else {
+			setPortalContainer(null);
+		}
+	}, []);
 
 	React.useEffect(() => {
 		log(`target-shell:portal:${portalContainer ? "ready" : "waiting"}`);

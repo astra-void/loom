@@ -10,8 +10,8 @@ import {
 	FocusScope,
 	Frame,
 	game,
-	getPreviewRuntimeIssues,
 	getPreviewLayoutProbeSnapshot,
+	getPreviewRuntimeIssues,
 	ImageButton,
 	ImageLabel,
 	isPreviewElement,
@@ -22,9 +22,9 @@ import {
 	ScreenGui,
 	Slot,
 	SurfaceGui,
-	Text,
 	subscribePreviewLayoutProbe,
 	subscribePreviewRuntimeIssues,
+	Text,
 	TextBox,
 	TextButton,
 	TextLabel,
@@ -43,7 +43,6 @@ import {
 	VideoFrame,
 	ViewportFrame,
 } from "@loom-dev/preview-runtime";
-import { LayoutController } from "../../packages/preview-runtime/src/layout/controller";
 import {
 	act,
 	cleanup,
@@ -56,6 +55,7 @@ import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getLocalPlayerGui } from "../../apps/preview-harness/src/test-utils";
 import * as hostOverrides from "../../packages/preview-runtime/src/hosts/hostOverrides";
+import { LayoutController } from "../../packages/preview-runtime/src/layout/controller";
 import { suppressExpectedConsoleMessages } from "../testLogUtils";
 import userEvent from "../testUserEvent";
 
@@ -522,95 +522,116 @@ describe("preview runtime host mapping", () => {
 	});
 
 	it("tweens missing properties like ImageTransparency, TextTransparency, and Rotation", async () => {
-	rafController = new RafController();
+		rafController = new RafController();
 
-	render(
-		<>
-			<ImageLabel
-				Image="rbxassetid://123"
-				ImageTransparency={0}
-				Rotation={0}
-				Size={UDim2.fromOffset(100, 100)}
-			/>
-			<TextLabel
-				Text="Hello"
-				TextTransparency={0}
-				Size={UDim2.fromOffset(100, 100)}
-			/>
-		</>
-	);
+		render(
+			<>
+				<ImageLabel
+					Image="rbxassetid://123"
+					ImageTransparency={0}
+					Rotation={0}
+					Size={UDim2.fromOffset(100, 100)}
+				/>
+				<TextLabel
+					Text="Hello"
+					TextTransparency={0}
+					Size={UDim2.fromOffset(100, 100)}
+				/>
+			</>,
+		);
 
-	const imageLabel = document.querySelector('[data-preview-host="imagelabel"]') as HTMLElement & { ImageTransparency?: unknown; Rotation?: unknown; };
-	const textLabel = document.querySelector('[data-preview-host="textlabel"]') as HTMLElement & { TextTransparency?: unknown; };
+		const imageLabel = document.querySelector(
+			'[data-preview-host="imagelabel"]',
+		) as HTMLElement & { ImageTransparency?: unknown; Rotation?: unknown };
+		const textLabel = document.querySelector(
+			'[data-preview-host="textlabel"]',
+		) as HTMLElement & { TextTransparency?: unknown };
 
-	const tweenService = game.GetService("TweenService") as {
-		Create(
-			instance: unknown,
-			tweenInfo: TweenInfo,
-			goal: Record<string, unknown>,
-		): { Play(): void };
-	};
+		const tweenService = game.GetService("TweenService") as {
+			Create(
+				instance: unknown,
+				tweenInfo: TweenInfo,
+				goal: Record<string, unknown>,
+			): { Play(): void };
+		};
 
-	const previewEnum = Enum as { EasingStyle: { Linear: unknown }; EasingDirection: { In: unknown } };
-	const tweenInfo = new TweenInfo(0.1, previewEnum.EasingStyle.Linear, previewEnum.EasingDirection.In);
+		const previewEnum = Enum as {
+			EasingStyle: { Linear: unknown };
+			EasingDirection: { In: unknown };
+		};
+		const tweenInfo = new TweenInfo(
+			0.1,
+			previewEnum.EasingStyle.Linear,
+			previewEnum.EasingDirection.In,
+		);
 
-	const tween1 = tweenService.Create(imageLabel, tweenInfo, {
-		ImageTransparency: 1,
-		Rotation: 45,
-	});
+		const tween1 = tweenService.Create(imageLabel, tweenInfo, {
+			ImageTransparency: 1,
+			Rotation: 45,
+		});
 
-	const tween2 = tweenService.Create(textLabel, tweenInfo, {
-		TextTransparency: 0.5,
-	});
+		const tween2 = tweenService.Create(textLabel, tweenInfo, {
+			TextTransparency: 0.5,
+		});
 
-	tween1.Play();
-	tween2.Play();
+		tween1.Play();
+		tween2.Play();
 
-	await act(async () => {
-		await rafController?.step(50);
-	});
+		await act(async () => {
+			await rafController?.step(50);
+		});
 
-	await waitFor(() => {
-		expect(imageLabel.style.opacity).toBe("0.5");
-		expect(imageLabel.style.transform).toBe("rotate(22.5deg)");
-		expect(textLabel.style.color).toContain("0.75)");
-	});
+		await waitFor(() => {
+			expect(imageLabel.style.opacity).toBe("0.5");
+			expect(imageLabel.style.transform).toBe("rotate(22.5deg)");
+			expect(textLabel.style.color).toContain("0.75)");
+		});
 
-	await act(async () => {
-		await rafController?.step(50);
-	});
+		await act(async () => {
+			await rafController?.step(50);
+		});
 
-	await waitFor(() => {
-		expect(imageLabel.style.opacity).toBe("0");
-		expect(imageLabel.style.transform).toBe("rotate(45deg)");
-		expect(textLabel.style.color).toContain("0.5)");
-	});
+		await waitFor(() => {
+			expect(imageLabel.style.opacity).toBe("0");
+			expect(imageLabel.style.transform).toBe("rotate(45deg)");
+			expect(textLabel.style.color).toContain("0.5)");
+		});
 	});
 
 	it("keeps negative repeat zero-duration tweens in playing state perpetually", () => {
-	const target = { Value: 0 };
-	const tweenService = game.GetService("TweenService") as {
-		Create(
-			instance: unknown,
-			tweenInfo: TweenInfo,
-			goal: Record<string, unknown>,
-		): { Play(): void; PlaybackState: unknown; Cancel(): void };
-	};
+		const target = { Value: 0 };
+		const tweenService = game.GetService("TweenService") as {
+			Create(
+				instance: unknown,
+				tweenInfo: TweenInfo,
+				goal: Record<string, unknown>,
+			): { Play(): void; PlaybackState: unknown; Cancel(): void };
+		};
 
-	const previewEnum = Enum as { EasingStyle: { Linear: unknown }; EasingDirection: { In: unknown }, PlaybackState: { Playing: unknown; Cancelled: unknown } };
-	const tweenInfo = new TweenInfo(0, previewEnum.EasingStyle.Linear, previewEnum.EasingDirection.In, -1);
-	const tween = tweenService.Create(target, tweenInfo, { Value: 1 });
+		const previewEnum = Enum as {
+			EasingStyle: { Linear: unknown };
+			EasingDirection: { In: unknown };
+			PlaybackState: { Playing: unknown; Cancelled: unknown };
+		};
+		const tweenInfo = new TweenInfo(
+			0,
+			previewEnum.EasingStyle.Linear,
+			previewEnum.EasingDirection.In,
+			-1,
+		);
+		const tween = tweenService.Create(target, tweenInfo, { Value: 1 });
 
-	tween.Play();
+		tween.Play();
 
-	expect(tween.PlaybackState).toBe(previewEnum.PlaybackState.Playing);
-	expect(target.Value).toBe(1);
+		expect(tween.PlaybackState).toBe(previewEnum.PlaybackState.Playing);
+		expect(target.Value).toBe(1);
 
-	tween.Cancel();
-	expect(tween.PlaybackState).toBe(previewEnum.PlaybackState.Cancelled);
+		tween.Cancel();
+		expect(tween.PlaybackState).toBe(previewEnum.PlaybackState.Cancelled);
 	});
 
-	it("supports Roblox-style UDim2 construction and add chaining", () => {		const position = UDim2.fromScale(0.5, 0.5).add(UDim2.fromOffset(12, 18));
+	it("supports Roblox-style UDim2 construction and add chaining", () => {
+		const position = UDim2.fromScale(0.5, 0.5).add(UDim2.fromOffset(12, 18));
 		const size = new UDim2(0, 120, 0, 48);
 
 		expect(position).toBeInstanceOf(UDim2);
@@ -1134,7 +1155,9 @@ describe("preview runtime host mapping", () => {
 			getPreviewRuntimeIssues().some(
 				(issue) =>
 					issue.code === "LAYOUT_VALIDATION_ERROR" &&
-					(issue.summary?.includes("Unexpected layout node identity collision") ??
+					(issue.summary?.includes(
+						"Unexpected layout node identity collision",
+					) ??
 						false),
 			),
 		).toBe(false);
@@ -1146,7 +1169,11 @@ describe("preview runtime host mapping", () => {
 				<ScreenGui Id="avatar-screen">
 					<Frame Id="avatar-card" ParentId="avatar-screen">
 						<Text asChild Id="avatar-card" ParentId="avatar-screen">
-							<Text Id="avatar-title" ParentId="avatar-card" Text="Avatar Title" />
+							<Text
+								Id="avatar-title"
+								ParentId="avatar-card"
+								Text="Avatar Title"
+							/>
 						</Text>
 					</Frame>
 				</ScreenGui>
@@ -1168,7 +1195,9 @@ describe("preview runtime host mapping", () => {
 			getPreviewRuntimeIssues().some(
 				(issue) =>
 					issue.code === "LAYOUT_VALIDATION_ERROR" &&
-					(issue.summary?.includes("Unexpected layout node identity collision") ??
+					(issue.summary?.includes(
+						"Unexpected layout node identity collision",
+					) ??
 						false),
 			),
 		).toBe(false);
@@ -1217,10 +1246,310 @@ describe("preview runtime host mapping", () => {
 			getPreviewRuntimeIssues().some(
 				(issue) =>
 					issue.code === "LAYOUT_VALIDATION_ERROR" &&
-					(issue.summary?.includes("Unexpected layout node identity collision") ??
+					(issue.summary?.includes(
+						"Unexpected layout node identity collision",
+					) ??
 						false),
 			),
 		).toBe(false);
+	});
+
+	it("keeps lattice-style asChild Text composition positioned through Slot and host layout registration", async () => {
+		type CoreLikeSlotProps = Record<string, unknown> & {
+			children?: React.ReactNode;
+		};
+
+		function CoreLikeSlot(props: CoreLikeSlotProps) {
+			const { children, ...slotProps } = props;
+			if (!React.isValidElement(children)) {
+				return null;
+			}
+
+			return React.cloneElement(children, {
+				...(children.props as Record<string, unknown>),
+				...slotProps,
+			});
+		}
+
+		type LatticeLikeTextProps = Record<string, unknown> & {
+			asChild?: boolean;
+			children?: React.ReactNode;
+		};
+
+		function LatticeLikeText(props: LatticeLikeTextProps) {
+			const { asChild, children, ...restProps } = props;
+
+			if (asChild) {
+				if (!React.isValidElement(children)) {
+					throw new Error(
+						"[LatticeLikeText] `asChild` requires a single child element.",
+					);
+				}
+
+				return <CoreLikeSlot {...restProps}>{children}</CoreLikeSlot>;
+			}
+
+			return (
+				<TextLabel {...(restProps as React.ComponentProps<typeof TextLabel>)}>
+					{children}
+				</TextLabel>
+			);
+		}
+
+		function AccordionLikeContent(props: {
+			asChild?: boolean;
+			children?: React.ReactNode;
+			open: boolean;
+		}) {
+			const { asChild, children, open } = props;
+			if (asChild) {
+				if (!React.isValidElement(children)) {
+					throw new Error(
+						"[AccordionLikeContent] `asChild` requires a single child element.",
+					);
+				}
+
+				return <CoreLikeSlot Visible={open}>{children}</CoreLikeSlot>;
+			}
+
+			return <Frame Visible={open}>{children}</Frame>;
+		}
+
+		render(
+			<LayoutProvider debounceMs={0} viewportHeight={600} viewportWidth={800}>
+				<ScreenGui Id="accordion-screen">
+					<Frame
+						Id="item-1"
+						ParentId="accordion-screen"
+						Size={UDim2.fromOffset(860, 74)}
+					>
+						<AccordionLikeContent asChild open={true}>
+							<LatticeLikeText
+								Id="content-text"
+								ParentId="item-1"
+								Position={UDim2.fromOffset(10, 40)}
+								Size={UDim2.fromOffset(220, 24)}
+								Text="Accordion body"
+							/>
+						</AccordionLikeContent>
+					</Frame>
+				</ScreenGui>
+			</LayoutProvider>,
+		);
+
+		const contentText = document.querySelector(
+			'[data-preview-node-id="content-text"]',
+		) as HTMLElement;
+
+		await waitFor(() => {
+			expect(contentText).toBeTruthy();
+			expect(contentText.dataset.previewHost).toBe("textlabel");
+			expect(contentText.style.left).toBe("10px");
+			expect(contentText.style.top).toBe("40px");
+			expect(contentText.style.width).toBe("220px");
+			expect(contentText.style.height).toBe("24px");
+		});
+
+		expect(
+			getPreviewRuntimeIssues().some(
+				(issue) =>
+					issue.code === "LAYOUT_VALIDATION_ERROR" &&
+					(issue.summary?.includes(
+						"Unexpected layout node identity collision",
+					) ??
+						false),
+			),
+		).toBe(false);
+	});
+
+	it("keeps body placement stable when switching from bare Text to frame-wrapped Text in asChild content", async () => {
+		type CoreLikeSlotProps = Record<string, unknown> & {
+			children?: React.ReactNode;
+		};
+
+		function CoreLikeSlot(props: CoreLikeSlotProps) {
+			const { children, ...slotProps } = props;
+			if (!React.isValidElement(children)) {
+				return null;
+			}
+
+			return React.cloneElement(children, {
+				...(children.props as Record<string, unknown>),
+				...slotProps,
+			});
+		}
+
+		type LatticeLikeTextProps = Record<string, unknown> & {
+			asChild?: boolean;
+			children?: React.ReactNode;
+		};
+
+		function LatticeLikeText(props: LatticeLikeTextProps) {
+			const { asChild, children, ...restProps } = props;
+
+			if (asChild) {
+				if (!React.isValidElement(children)) {
+					throw new Error(
+						"[LatticeLikeText] `asChild` requires a single child element.",
+					);
+				}
+
+				return <CoreLikeSlot {...restProps}>{children}</CoreLikeSlot>;
+			}
+
+			return (
+				<TextLabel {...(restProps as React.ComponentProps<typeof TextLabel>)}>
+					{children}
+				</TextLabel>
+			);
+		}
+
+		function AccordionLikeContent(props: {
+			asChild?: boolean;
+			children?: React.ReactNode;
+			open: boolean;
+		}) {
+			const { asChild, children, open } = props;
+			if (asChild) {
+				if (!React.isValidElement(children)) {
+					throw new Error(
+						"[AccordionLikeContent] `asChild` requires a single child element.",
+					);
+				}
+
+				return <CoreLikeSlot Visible={open}>{children}</CoreLikeSlot>;
+			}
+
+			return <Frame Visible={open}>{children}</Frame>;
+		}
+
+		render(
+			<LayoutProvider debounceMs={0} viewportHeight={600} viewportWidth={800}>
+				<ScreenGui Id="accordion-screen">
+					<Frame
+						Id="item-bare"
+						ParentId="accordion-screen"
+						Size={UDim2.fromOffset(860, 74)}
+					>
+						<AccordionLikeContent asChild open={true}>
+							<LatticeLikeText
+								Id="body-bare"
+								ParentId="item-bare"
+								Position={UDim2.fromOffset(10, 40)}
+								Size={UDim2.fromOffset(220, 24)}
+								Text="Body bare"
+							/>
+						</AccordionLikeContent>
+					</Frame>
+					<Frame
+						Id="item-wrapped"
+						ParentId="accordion-screen"
+						Position={UDim2.fromOffset(0, 74)}
+						Size={UDim2.fromOffset(860, 74)}
+					>
+						<AccordionLikeContent asChild open={true}>
+							<Frame
+								Id="body-wrapper"
+								ParentId="item-wrapped"
+								Position={UDim2.fromOffset(10, 40)}
+								Size={UDim2.fromOffset(220, 24)}
+							>
+								<LatticeLikeText
+									Id="body-wrapped-text"
+									ParentId="body-wrapper"
+									Size={UDim2.fromOffset(220, 24)}
+									Text="Body wrapped"
+								/>
+							</Frame>
+						</AccordionLikeContent>
+					</Frame>
+				</ScreenGui>
+			</LayoutProvider>,
+		);
+
+		const bareBody = document.querySelector(
+			'[data-preview-node-id="body-bare"]',
+		) as HTMLElement;
+		const wrapper = document.querySelector(
+			'[data-preview-node-id="body-wrapper"]',
+		) as HTMLElement;
+		const wrappedBody = document.querySelector(
+			'[data-preview-node-id="body-wrapped-text"]',
+		) as HTMLElement;
+
+		await waitFor(() => {
+			expect(bareBody.style.left).toBe("10px");
+			expect(bareBody.style.top).toBe("40px");
+			expect(wrapper.style.left).toBe("10px");
+			expect(wrapper.style.top).toBe("40px");
+			expect(wrappedBody.style.left).toBe("0px");
+			expect(wrappedBody.style.top).toBe("0px");
+		});
+	});
+
+	it("retains fixed row heights in list layouts when accordion-like body content is visible", async () => {
+		layoutEngineMocks.computeDirty.mockImplementation(() => {
+			throw new Error("compute failed");
+		});
+
+		render(
+			<LayoutProvider debounceMs={0} viewportHeight={600} viewportWidth={800}>
+				<ScreenGui Id="accordion-screen">
+					<Frame
+						Id="accordion-list"
+						ParentId="accordion-screen"
+						Size={UDim2.fromOffset(860, 300)}
+					>
+						<UIListLayout FillDirection="vertical" SortOrder="layout-order" />
+						<Frame
+							Id="item-1"
+							ParentId="accordion-list"
+							Size={UDim2.fromOffset(860, 74)}
+						>
+							<TextLabel
+								Id="item-1-header"
+								ParentId="item-1"
+								Size={UDim2.fromOffset(840, 34)}
+								Text="Header"
+							/>
+							<TextLabel
+								Id="item-1-body"
+								ParentId="item-1"
+								Position={UDim2.fromOffset(10, 40)}
+								Size={UDim2.fromOffset(260, 24)}
+								Text="Body"
+								Visible={true}
+							/>
+						</Frame>
+						<Frame
+							Id="item-2"
+							ParentId="accordion-list"
+							Size={UDim2.fromOffset(860, 74)}
+						>
+							<TextLabel
+								Id="item-2-header"
+								ParentId="item-2"
+								Size={UDim2.fromOffset(840, 34)}
+								Text="Next Header"
+							/>
+						</Frame>
+					</Frame>
+				</ScreenGui>
+			</LayoutProvider>,
+		);
+
+		const firstItem = document.querySelector(
+			'[data-preview-node-id="item-1"]',
+		) as HTMLElement;
+		const secondItem = document.querySelector(
+			'[data-preview-node-id="item-2"]',
+		) as HTMLElement;
+
+		await waitFor(() => {
+			expect(firstItem.style.height).toBe("74px");
+			expect(secondItem.style.top).toBe("74px");
+			expect(secondItem.style.height).toBe("74px");
+		});
 	});
 
 	it("supports rbxts-react event interop props on preview hosts", async () => {
@@ -1575,8 +1904,16 @@ describe("preview runtime host mapping", () => {
 
 		globalThis.ResizeObserver = MockResizeObserver as typeof ResizeObserver;
 
-		const offsetWidthSpy = vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockImplementation(function (this: HTMLElement) { return this.getBoundingClientRect().width; });
-		const offsetHeightSpy = vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(function (this: HTMLElement) { return this.getBoundingClientRect().height; });
+		const offsetWidthSpy = vi
+			.spyOn(HTMLElement.prototype, "offsetWidth", "get")
+			.mockImplementation(function (this: HTMLElement) {
+				return this.getBoundingClientRect().width;
+			});
+		const offsetHeightSpy = vi
+			.spyOn(HTMLElement.prototype, "offsetHeight", "get")
+			.mockImplementation(function (this: HTMLElement) {
+				return this.getBoundingClientRect().height;
+			});
 		const getBoundingClientRectSpy = vi
 			.spyOn(HTMLElement.prototype, "getBoundingClientRect")
 			.mockImplementation(function getBoundingClientRect(this: HTMLElement) {
@@ -1759,8 +2096,16 @@ describe("preview runtime host mapping", () => {
 	it("uses measurable host bounds in provider fallback layout when size is omitted", async () => {
 		layoutEngineMocks.init.mockRejectedValue(new Error("init failed"));
 
-		const offsetWidthSpy = vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockImplementation(function (this: HTMLElement) { return this.getBoundingClientRect().width; });
-		const offsetHeightSpy = vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(function (this: HTMLElement) { return this.getBoundingClientRect().height; });
+		const offsetWidthSpy = vi
+			.spyOn(HTMLElement.prototype, "offsetWidth", "get")
+			.mockImplementation(function (this: HTMLElement) {
+				return this.getBoundingClientRect().width;
+			});
+		const offsetHeightSpy = vi
+			.spyOn(HTMLElement.prototype, "offsetHeight", "get")
+			.mockImplementation(function (this: HTMLElement) {
+				return this.getBoundingClientRect().height;
+			});
 		const getBoundingClientRectSpy = vi
 			.spyOn(HTMLElement.prototype, "getBoundingClientRect")
 			.mockImplementation(function getBoundingClientRect(this: HTMLElement) {
@@ -2451,7 +2796,12 @@ describe("preview runtime host mapping", () => {
 				return createSessionResult(
 					{
 						"screengui:preview-node-2": { height: 600, width: 800, x: 0, y: 0 },
-						"textlabel:preview-node-2": { height: 48, width: 180, x: 12, y: 24 },
+						"textlabel:preview-node-2": {
+							height: 48,
+							width: 180,
+							x: 12,
+							y: 24,
+						},
 					},
 					viewportWidth,
 					viewportHeight,
@@ -2661,7 +3011,10 @@ describe("preview runtime host mapping", () => {
 
 			return (
 				<ScreenGui>
-					<TextLabel Size={UDim2.fromOffset(220, 48)} Text={`Scene Title ${tick}`} />
+					<TextLabel
+						Size={UDim2.fromOffset(220, 48)}
+						Text={`Scene Title ${tick}`}
+					/>
 				</ScreenGui>
 			);
 		}
@@ -2733,7 +3086,10 @@ describe("preview runtime host mapping", () => {
 			return (
 				<ScreenGui>
 					{showTitle ? (
-						<TextLabel Size={UDim2.fromOffset(220, 48)} Text={`Scene Title ${phase}`} />
+						<TextLabel
+							Size={UDim2.fromOffset(220, 48)}
+							Text={`Scene Title ${phase}`}
+						/>
 					) : null}
 				</ScreenGui>
 			);
@@ -2757,7 +3113,8 @@ describe("preview runtime host mapping", () => {
 
 		for (const observedKinds of observedKindsById.values()) {
 			expect(
-				observedKinds.has("root:ScreenGui") && observedKinds.has("host:TextLabel"),
+				observedKinds.has("root:ScreenGui") &&
+					observedKinds.has("host:TextLabel"),
 			).toBe(false);
 		}
 
@@ -2937,7 +3294,9 @@ describe("preview runtime host mapping", () => {
 			relativeFile: "src/Broken.tsx",
 			severity: "error",
 			summary: "Unexpected layout session result type: string",
-			stack: expect.stringContaining("Unexpected layout session result type: string"),
+			stack: expect.stringContaining(
+				"Unexpected layout session result type: string",
+			),
 			symbol: undefined,
 			target: "fixture",
 		});
@@ -2994,7 +3353,7 @@ describe("preview runtime host mapping", () => {
 			phase: "layout",
 			relativeFile: "src/AvatarBasicScene.tsx",
 			summary:
-				"Layout registration failed: Unexpected layout node identity collision for \"preview-node-2\"",
+				'Layout registration failed: Unexpected layout node identity collision for "preview-node-2"',
 			target: "@loom-dev/preview-runtime",
 		};
 
@@ -3043,8 +3402,16 @@ describe("preview runtime fidelity gaps", () => {
 
 	it("measures automatic-size text hosts and exposes content-driven bounds", async () => {
 		let latestNodes: LayoutNode[] = [];
-		const offsetWidthSpy = vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockImplementation(function (this: HTMLElement) { return this.getBoundingClientRect().width; });
-		const offsetHeightSpy = vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(function (this: HTMLElement) { return this.getBoundingClientRect().height; });
+		const offsetWidthSpy = vi
+			.spyOn(HTMLElement.prototype, "offsetWidth", "get")
+			.mockImplementation(function (this: HTMLElement) {
+				return this.getBoundingClientRect().width;
+			});
+		const offsetHeightSpy = vi
+			.spyOn(HTMLElement.prototype, "offsetHeight", "get")
+			.mockImplementation(function (this: HTMLElement) {
+				return this.getBoundingClientRect().height;
+			});
 		const getBoundingClientRectSpy = vi
 			.spyOn(HTMLElement.prototype, "getBoundingClientRect")
 			.mockImplementation(function getBoundingClientRect(this: HTMLElement) {
@@ -3278,7 +3645,11 @@ describe("Layout Engine Resilience", () => {
 			return {
 				applyNodes: applyNodesSpy,
 				computeDirty: vi.fn(() => ({
-					debug: { dirtyNodeIds: [], roots: [], viewport: { height: 0, width: 0 } },
+					debug: {
+						dirtyNodeIds: [],
+						roots: [],
+						viewport: { height: 0, width: 0 },
+					},
 					dirtyNodeIds: [],
 					rects: {},
 				})),
@@ -3293,7 +3664,7 @@ describe("Layout Engine Resilience", () => {
 				<ScreenGui Id="screen">
 					<Frame Id="frame" />
 				</ScreenGui>
-			</LayoutProvider>
+			</LayoutProvider>,
 		);
 
 		// Before init is complete, Wasm session shouldn't be created or have applyNodes called
@@ -3312,7 +3683,11 @@ describe("Layout Engine Resilience", () => {
 			return {
 				applyNodes: applyNodesSpy,
 				computeDirty: vi.fn(() => ({
-					debug: { dirtyNodeIds: [], roots: [], viewport: { height: 0, width: 0 } },
+					debug: {
+						dirtyNodeIds: [],
+						roots: [],
+						viewport: { height: 0, width: 0 },
+					},
 					dirtyNodeIds: [],
 					rects: {},
 				})),
@@ -3324,14 +3699,18 @@ describe("Layout Engine Resilience", () => {
 
 		function ChurningComponent() {
 			const [count, setCount] = React.useState(0);
-			
+
 			React.useLayoutEffect(() => {
 				if (count < 5) {
-					setCount(c => c + 1);
+					setCount((c) => c + 1);
 				}
 			}, [count]);
 
-			return count % 2 === 0 ? <Frame Id={`frame-${count}`} /> : <TextLabel Id={`label-${count}`} />;
+			return count % 2 === 0 ? (
+				<Frame Id={`frame-${count}`} />
+			) : (
+				<TextLabel Id={`label-${count}`} />
+			);
 		}
 
 		render(
@@ -3339,7 +3718,7 @@ describe("Layout Engine Resilience", () => {
 				<ScreenGui Id="churn-screen">
 					<ChurningComponent />
 				</ScreenGui>
-			</LayoutProvider>
+			</LayoutProvider>,
 		);
 
 		await waitFor(() => {
@@ -3360,7 +3739,11 @@ describe("Layout Engine Resilience", () => {
 						throw new Error("Wasm aliasing error");
 					}
 					return {
-						debug: { dirtyNodeIds: [], roots: [], viewport: { height: 0, width: 0 } },
+						debug: {
+							dirtyNodeIds: [],
+							roots: [],
+							viewport: { height: 0, width: 0 },
+						},
 						dirtyNodeIds: [],
 						rects: {},
 					};
@@ -3369,7 +3752,9 @@ describe("Layout Engine Resilience", () => {
 					throw new Error("Poisoned dispose error");
 				}),
 				removeNodes: vi.fn(() => {
-					throw new Error("recursive use of an object detected which would lead to unsafe aliasing in rust");
+					throw new Error(
+						"recursive use of an object detected which would lead to unsafe aliasing in rust",
+					);
 				}),
 				setViewport: vi.fn(),
 			};
@@ -3380,10 +3765,10 @@ describe("Layout Engine Resilience", () => {
 				<ScreenGui Id="crash-screen">
 					<Frame Id="crash-frame" />
 				</ScreenGui>
-			</LayoutProvider>
+			</LayoutProvider>,
 		);
 
-		await new Promise(resolve => setTimeout(resolve, 50));
+		await new Promise((resolve) => setTimeout(resolve, 50));
 
 		expect(() => {
 			unmount();

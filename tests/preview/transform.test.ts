@@ -291,9 +291,11 @@ describe("preview source transform", () => {
 		const reactRobloxWrapperPath = path.join(root, "reactRoblox.ts");
 		fs.writeFileSync(
 			reactWrapperPath,
-			['import React = require("@rbxts/react");', "", "export default React;"].join(
-				"\n",
-			),
+			[
+				'import React = require("@rbxts/react");',
+				"",
+				"export default React;",
+			].join("\n"),
 			"utf8",
 		);
 		fs.writeFileSync(

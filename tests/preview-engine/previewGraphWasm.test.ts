@@ -17,7 +17,8 @@ describe("previewGraphWasm", () => {
 
 	it("keeps resolver paths intact across Windows and POSIX separators", () => {
 		const windowsResolver = vi.fn(
-			() => "C:\\workspace\\packages\\preview-analysis\\pkg\\preview_analysis.js",
+			() =>
+				"C:\\workspace\\packages\\preview-analysis\\pkg\\preview_analysis.js",
 		);
 		const posixResolver = vi.fn(
 			() => "/workspace/packages/preview-analysis/pkg/preview_analysis.js",

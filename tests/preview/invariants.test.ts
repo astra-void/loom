@@ -1,8 +1,8 @@
 import { transformPreviewSource } from "@loom-dev/compiler";
 import {
+	Vector3 as PreviewVector3,
 	math as previewMath,
 	previewRuntime,
-	Vector3 as PreviewVector3,
 	warn as previewWarn,
 } from "@loom-dev/preview-runtime";
 import { describe, expect, it } from "vitest";

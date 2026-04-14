@@ -376,9 +376,9 @@ describe("createPreviewEngine", () => {
 				}),
 			]),
 		});
-	expect(sharedTarget.sourceRoot).toBe(
-		path.join(workspace.workspaceRoot, "packages", "shared", "src"),
-	);
+		expect(sharedTarget.sourceRoot).toBe(
+			path.join(workspace.workspaceRoot, "packages", "shared", "src"),
+		);
 	});
 
 	it("maps workspace package declaration outputs under out back to source files", () => {
@@ -627,12 +627,18 @@ describe("createPreviewEngine", () => {
       `,
 		});
 
-		const engine = createEngineForPackage(packageRoot, sourceRoot, "compatibility");
+		const engine = createEngineForPackage(
+			packageRoot,
+			sourceRoot,
+			"compatibility",
+		);
 		engine.getWorkspaceIndex();
 		const runtimePath = path.join(sourceRoot, "support", "runtime.ts");
 		const update = engine.invalidateSourceFiles([runtimePath]);
 
-		expect(update.changedEntryIds).toEqual(["fixture:AccordionBasicScene.loom.tsx"]);
+		expect(update.changedEntryIds).toEqual([
+			"fixture:AccordionBasicScene.loom.tsx",
+		]);
 		expect(update.registryChangedEntryIds).toEqual([
 			"fixture:AccordionBasicScene.loom.tsx",
 		]);
@@ -980,14 +986,17 @@ describe("createPreviewEngine", () => {
 				phase: "runtime",
 				relativeFile: "src/Runtime.loom.tsx",
 				summary: "Preview module failed to load.",
-				stack: "Error: Preview module failed to load.\n    at Runtime.loom.tsx:1:1",
+				stack:
+					"Error: Preview module failed to load.\n    at Runtime.loom.tsx:1:1",
 				target: "fixture",
 			},
 		];
 
 		const update = engine.replaceRuntimeIssues(issues);
 
-		expect(update.executionChangedEntryIds).toEqual(["fixture:Runtime.loom.tsx"]);
+		expect(update.executionChangedEntryIds).toEqual([
+			"fixture:Runtime.loom.tsx",
+		]);
 		expect(update.registryChangedEntryIds).toEqual([]);
 		expect(update.workspaceChanged).toBe(false);
 		expect(engine.getEntryPayload("fixture:Runtime.loom.tsx")).toMatchObject({
@@ -1004,7 +1013,9 @@ describe("createPreviewEngine", () => {
 					code: "MODULE_LOAD_ERROR",
 					phase: "runtime",
 					severity: "error",
-					stack: expect.stringContaining("Error: Preview module failed to load."),
+					stack: expect.stringContaining(
+						"Error: Preview module failed to load.",
+					),
 				}),
 			],
 		});

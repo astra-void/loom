@@ -1,8 +1,7 @@
 // @vitest-environment jsdom
 import { expect, test } from "vitest";
-
-import { LayoutController } from "../../packages/preview-runtime/src/layout/controller";
 import { domPresentationAdapter } from "../../packages/preview-runtime/src/hosts/domAdapter";
+import { LayoutController } from "../../packages/preview-runtime/src/layout/controller";
 
 test("slot layout resolves correctly when child host inherits parent identity", () => {
 	const controller = new LayoutController();

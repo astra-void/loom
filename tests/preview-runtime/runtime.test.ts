@@ -1,27 +1,27 @@
 ﻿// @vitest-environment jsdom
 
 import {
+	buildAutoMockProps,
 	Color3,
 	Enum,
-	buildAutoMockProps,
 	game,
-	os as previewOs,
 	next,
+	normalizePreviewRuntimeError,
+	type PreviewAutoMockableComponent,
 	pairs,
+	os as previewOs,
+	string as previewString,
 	RunService,
 	robloxMock,
-	type PreviewAutoMockableComponent,
 	type SetupRobloxEnvironmentTarget,
 	setupRobloxEnvironment,
-	string as previewString,
-	typeIs,
-	withAutoMockedProps,
 	TweenInfo,
 	task,
+	typeIs,
 	UDim2,
 	Vector2,
+	withAutoMockedProps,
 	workspace,
-	normalizePreviewRuntimeError,
 } from "@loom-dev/preview-runtime";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -257,19 +257,19 @@ describe.sequential("@loom-dev/preview-runtime", () => {
 
 		setupRobloxEnvironment(target);
 
-			expect(target.Color3).toBe(existingColor3);
-			expect(target.Enum).toBe(Enum);
-			expect(target.RunService).toBe(RunService);
-			expect(target.next).toBe(next);
-			expect(target.pairs).toBe(pairs);
-			expect(target.string).toBe(previewString);
-			expect(target.os).toBe(previewOs);
-			expect(target.typeIs).toBe(typeIs);
-			expect(target.task).toBe(existingTask);
-			expect(target.game).toBe(game);
-			expect(target.TweenInfo).toBe(TweenInfo);
-			expect(target.workspace).toBe(workspace);
-		});
+		expect(target.Color3).toBe(existingColor3);
+		expect(target.Enum).toBe(Enum);
+		expect(target.RunService).toBe(RunService);
+		expect(target.next).toBe(next);
+		expect(target.pairs).toBe(pairs);
+		expect(target.string).toBe(previewString);
+		expect(target.os).toBe(previewOs);
+		expect(target.typeIs).toBe(typeIs);
+		expect(target.task).toBe(existingTask);
+		expect(target.game).toBe(game);
+		expect(target.TweenInfo).toBe(TweenInfo);
+		expect(target.workspace).toBe(workspace);
+	});
 
 	it("setupRobloxEnvironment installs Color3 on the global target", () => {
 		setupRobloxEnvironment();
@@ -361,7 +361,9 @@ describe.sequential("@loom-dev/preview-runtime", () => {
 		});
 		expect(guiService.SelectedObject?.IsA("GuiObject")).toBe(true);
 		expect(guiService.SelectedObject?.IsDescendantOf(playerGui)).toBe(true);
-		expect(guiService.SelectedObject?.IsDescendantOf(selectedObject)).toBe(true);
+		expect(guiService.SelectedObject?.IsDescendantOf(selectedObject)).toBe(
+			true,
+		);
 
 		const descriptor = Object.getOwnPropertyDescriptor(
 			guiService,
@@ -393,7 +395,10 @@ describe.sequential("@loom-dev/preview-runtime", () => {
 		const players = game.GetService("Players") as {
 			LocalPlayer: {
 				PlayerGui: HTMLElement & {
-					GetGuiObjectsAtPosition(x: number, y: number): Array<{
+					GetGuiObjectsAtPosition(
+						x: number,
+						y: number,
+					): Array<{
 						ClassName: string;
 						IsA(name: string): boolean;
 						FindFirstAncestorWhichIsA(name: string): unknown;
@@ -781,9 +786,8 @@ describe.sequential("@loom-dev/preview-runtime", () => {
 		};
 
 		const mockedProps = buildAutoMockProps(mockComponent);
-		const callableMember = (
-			mockedProps.mockedObject as Record<string, unknown>
-		).run as (...args: unknown[]) => unknown;
+		const callableMember = (mockedProps.mockedObject as Record<string, unknown>)
+			.run as (...args: unknown[]) => unknown;
 
 		expect(() => Reflect.ownKeys(robloxMock)).not.toThrow();
 		expect(Reflect.ownKeys(robloxMock)).toEqual(
@@ -796,10 +800,12 @@ describe.sequential("@loom-dev/preview-runtime", () => {
 	});
 
 	it("exposes string displayName labels on callable mocks", () => {
-		const proxyComponent = robloxMock.SomeComponent as unknown as PreviewAutoMockableComponent<Record<string, unknown>>;
-		const proxyDisplayName = (
-			proxyComponent as { displayName?: unknown }
-		).displayName;
+		const proxyComponent =
+			robloxMock.SomeComponent as unknown as PreviewAutoMockableComponent<
+				Record<string, unknown>
+			>;
+		const proxyDisplayName = (proxyComponent as { displayName?: unknown })
+			.displayName;
 
 		expect(typeof proxyDisplayName).toBe("string");
 		expect(proxyDisplayName).toBe("SomeComponent");
@@ -826,9 +832,8 @@ describe.sequential("@loom-dev/preview-runtime", () => {
 		};
 
 		const mockedProps = buildAutoMockProps(mockComponent);
-		const callableMember = (
-			mockedProps.mockedObject as Record<string, unknown>
-		).run as { displayName?: unknown };
+		const callableMember = (mockedProps.mockedObject as Record<string, unknown>)
+			.run as { displayName?: unknown };
 
 		expect(typeof callableMember.displayName).toBe("string");
 		expect(callableMember.displayName).toBe("mockedObject.run");

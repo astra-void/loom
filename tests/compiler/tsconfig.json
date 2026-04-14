@@ -2,15 +2,16 @@
 	"extends": "../../tsconfig.base.json",
 	"compilerOptions": {
 		"noEmit": true,
-		"baseUrl": "../..",
-		"module": "CommonJS",
-		"moduleResolution": "Node",
+		"module": "node16",
+		"moduleResolution": "node16",
 		"rootDir": "../..",
 		"target": "ES2021",
 		"types": ["node", "vitest/globals"],
 		"paths": {
-			"@loom-dev/compiler": ["packages/compiler/wrapper.d.ts"],
-			"@loom-dev/preview-runtime": ["packages/preview-runtime/dist/index.d.ts"]
+			"@loom-dev/compiler": ["../../packages/compiler/wrapper.d.ts"],
+			"@loom-dev/preview-runtime": [
+				"../../packages/preview-runtime/dist/index.d.ts"
+			]
 		}
 	},
 	"include": ["./**/*.ts", "./**/*.tsx"]

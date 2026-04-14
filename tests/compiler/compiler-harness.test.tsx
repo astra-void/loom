@@ -1,9 +1,9 @@
 ﻿// @vitest-environment jsdom
 
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
-import userEvent from "../testUserEvent";
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import userEvent from "../testUserEvent";
 
 const compilerMocks = vi.hoisted(() => ({
 	compileTsx: vi.fn<(code: string) => string>(),
@@ -83,4 +83,3 @@ describe("compiler harness", () => {
 		expect(screen.getByText(/Unexpected end of input/)).toBeTruthy();
 	});
 });
-

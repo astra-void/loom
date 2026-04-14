@@ -4,7 +4,10 @@ import { createPreviewVitePlugin } from "../../packages/preview/src/vite";
 
 describe("createPreviewVitePlugin", () => {
 	it("does not block compatibility transforms for non-blocking diagnostics", async () => {
-		const sourceRoot = path.resolve(process.cwd(), "tests/fixtures/preview-target");
+		const sourceRoot = path.resolve(
+			process.cwd(),
+			"tests/fixtures/preview-target",
+		);
 		const sourceFilePath = path.join(sourceRoot, "Example.ts");
 		const plugins = createPreviewVitePlugin({
 			previewEngine: {} as never,

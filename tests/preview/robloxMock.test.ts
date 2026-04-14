@@ -1,17 +1,17 @@
 ﻿// @vitest-environment node
 
-import { describe, expect, it, vi } from 'vitest';
-import { robloxMock } from '@loom-dev/preview-runtime';
+import { robloxMock } from "@loom-dev/preview-runtime";
+import { describe, expect, it, vi } from "vitest";
 
-describe('roblox mock instance', () => {
-	it('uses undefined for missing parents and ancestor misses', () => {
+describe("roblox mock instance", () => {
+	it("uses undefined for missing parents and ancestor misses", () => {
 		expect(robloxMock.Parent).toBeUndefined();
-		expect(robloxMock.FindFirstAncestorOfClass('ScreenGui')).toBeUndefined();
-		expect(robloxMock.FindFirstAncestorWhichIsA('ScreenGui')).toBeUndefined();
+		expect(robloxMock.FindFirstAncestorOfClass("ScreenGui")).toBeUndefined();
+		expect(robloxMock.FindFirstAncestorWhichIsA("ScreenGui")).toBeUndefined();
 	});
 
-	it('defers property-changed signal callbacks', async () => {
-		const signal = robloxMock.GetPropertyChangedSignal('Parent');
+	it("defers property-changed signal callbacks", async () => {
+		const signal = robloxMock.GetPropertyChangedSignal("Parent");
 		const callback = vi.fn();
 
 		const connection = signal.Connect(callback);

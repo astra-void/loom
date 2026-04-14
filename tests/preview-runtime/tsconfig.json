@@ -3,10 +3,11 @@
 	"compilerOptions": {
 		"noEmit": true,
 		"rootDir": "../..",
-		"baseUrl": "../..",
 		"types": ["node", "vitest/globals"],
 		"paths": {
-			"@loom-dev/preview-runtime": ["packages/preview-runtime/src/index.ts"]
+			"@loom-dev/preview-runtime": [
+				"../../packages/preview-runtime/src/index.ts"
+			]
 		}
 	},
 	"include": [

@@ -15,9 +15,9 @@ type TestLoadHook = (
 	id: string,
 ) => Promise<string | undefined> | string | undefined;
 type TestConfigureServerHook = (server: MockServer) => void;
-type TestHotUpdateHook = (
-	context: { file: string },
-) => Promise<[] | undefined> | [] | undefined;
+type TestHotUpdateHook = (context: {
+	file: string;
+}) => Promise<[] | undefined> | [] | undefined;
 type TestTransformHook = (
 	code: string,
 	id: string,
