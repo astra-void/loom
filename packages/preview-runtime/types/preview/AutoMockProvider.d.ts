@@ -1,4 +1,4 @@
-import React from "react";
+import type React from "react";
 import type { PreviewComponentPropsMetadata } from "./previewTypes";
 export type PreviewAutoMockableComponent<
 	Props extends Record<string, unknown> = Record<string, unknown>,
