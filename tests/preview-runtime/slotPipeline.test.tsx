@@ -4,6 +4,7 @@ import {
 	Frame,
 	getPreviewLayoutProbeSnapshot,
 	LayoutProvider,
+	Presence,
 	ScreenGui,
 	Slot,
 	Text,
@@ -49,17 +50,25 @@ function getDebugNodeById(targetId: string): DebugNode | null {
 
 type AccordionContentProps = React.ComponentPropsWithoutRef<typeof Frame> & {
 	asChild?: boolean;
+	forceMount?: boolean;
+	open?: boolean;
 };
 
 const AccordionContent = React.forwardRef<HTMLElement, AccordionContentProps>(
-	({ asChild = false, children, ...props }, ref) => {
+	({ asChild = false, children, forceMount = false, open = true, ...props }, ref) => {
 		const Component = asChild ? Slot : Frame;
-
-		return (
-			<Component ref={ref} {...props}>
+		const visible = open && props.Visible !== false;
+		const content = (
+			<Component ref={ref} {...props} Visible={visible}>
 				{children}
 			</Component>
 		);
+
+		if (forceMount) {
+			return content;
+		}
+
+		return <Presence present={open} render={() => content} />;
 	},
 );
 
@@ -101,7 +110,7 @@ test("preserves slot child Position and Size through Text host registration", as
 	});
 });
 
-test("accordion-style content asChild preserves Text child identity and placement", async () => {
+test("accordion-style content asChild preserves TextLabel and Frame host placement", async () => {
 	render(
 		<LayoutProvider debounceMs={0} viewportHeight={240} viewportWidth={320}>
 			<ScreenGui Id="screen">
@@ -109,11 +118,13 @@ test("accordion-style content asChild preserves Text child identity and placemen
 					<Frame Id="accordion-trigger" Size={UDim2.fromOffset(220, 32)} />
 					<AccordionContent
 						Id="accordion-content-slot"
+						forceMount
+						open
 						Position={UDim2.fromOffset(10, 40)}
 						Size={UDim2.fromOffset(120, 24)}
 						asChild
 					>
-						<Text Id="accordion-body" Text="Accordion body" />
+						<TextLabel Id="accordion-body" Text="Accordion body" />
 					</AccordionContent>
 				</Frame>
 
@@ -128,12 +139,14 @@ test("accordion-style content asChild preserves Text child identity and placemen
 					/>
 					<AccordionContent
 						Id="wrapped-accordion-content-slot"
+						forceMount
+						open
 						Position={UDim2.fromOffset(10, 40)}
 						Size={UDim2.fromOffset(140, 28)}
 						asChild
 					>
 						<Frame Id="wrapped-accordion-body">
-							<Text
+							<TextLabel
 								Id="wrapped-accordion-body-text"
 								Size={UDim2.fromOffset(140, 28)}
 								Text="Wrapped body"
