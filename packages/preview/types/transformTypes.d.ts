@@ -1,0 +1,7 @@
+import type { NormalizedTransformPreviewSourceResult as CompilerNormalizedTransformPreviewSourceResult, PreviewTransformDiagnostic as CompilerPreviewTransformDiagnostic, PreviewTransformMode as CompilerPreviewTransformMode, PreviewTransformOutcome as CompilerPreviewTransformOutcome, PreviewTransformSeverity as CompilerPreviewTransformSeverity, TransformPreviewSourceResult as CompilerTransformPreviewSourceResult } from "@loom-dev/compiler";
+export type PreviewTransformMode = CompilerPreviewTransformMode;
+export type PreviewTransformSeverity = CompilerPreviewTransformSeverity;
+export type PreviewTransformDiagnostic = CompilerPreviewTransformDiagnostic;
+export type PreviewTransformOutcome = CompilerPreviewTransformOutcome;
+export type TransformPreviewSourceResult = CompilerTransformPreviewSourceResult;
+export type NormalizedTransformPreviewSourceResult = CompilerNormalizedTransformPreviewSourceResult;
