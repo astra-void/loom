@@ -530,6 +530,9 @@ function createHostNode(source: SourceHostDescriptor): PreviewHostNode {
 				height: typeof style?.height === "string" ? style.height : undefined,
 				width: typeof style?.width === "string" ? style.width : undefined,
 			},
+			visible:
+				source.props.Visible ??
+				(rawProps.visible as PreviewDomProps["Visible"] | undefined),
 		},
 		parentId,
 	);
