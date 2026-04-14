@@ -49,7 +49,9 @@ export function Portal(props: PortalProps) {
 		return null;
 	}
 
-	const children = isViewportScopedPortalContainer(container) ? (
+	const viewportScope = resolveViewportScopedPortalContainer(container);
+
+	const children = viewportScope ? (
 		<LayoutViewportPortalBoundary container={container}>
 			{props.children}
 		</LayoutViewportPortalBoundary>
@@ -64,9 +66,10 @@ export function usePortalContext() {
 	return React.useContext(PortalContext);
 }
 
-function isViewportScopedPortalContainer(container: HTMLElement) {
+function resolveViewportScopedPortalContainer(container: HTMLElement) {
 	return (
 		container.dataset.previewPlayerGui === "true" ||
-		container.closest('[data-preview-player-gui="true"]') !== null
+		container.closest('[data-preview-player-gui="true"]') !== null ||
+		container.dataset.previewHost === "screengui"
 	);
 }
