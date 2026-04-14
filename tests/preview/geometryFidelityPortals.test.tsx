@@ -610,4 +610,310 @@ describe("geometry fidelity portals", () => {
 			expect(selectWrapperHandle.AbsolutePosition.Y).not.toBe(0);
 		});
 	});
+
+	it("keeps ScreenGui-shell portal poppers viewport-local for both anchor and content geometry", async () => {
+		const viewportHost = document.createElement("div");
+		document.body.appendChild(viewportHost);
+
+		vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(
+			function (this: HTMLElement) {
+				if (this.hasAttribute("data-preview-layout-provider")) {
+					return {
+						bottom: 500,
+						height: 360,
+						left: 240,
+						right: 880,
+						toJSON: () => ({}),
+						top: 140,
+						width: 640,
+						x: 240,
+						y: 140,
+					} as DOMRect;
+				}
+
+				if (this === viewportHost) {
+					return {
+						bottom: 500,
+						height: 360,
+						left: 240,
+						right: 880,
+						toJSON: () => ({}),
+						top: 140,
+						width: 640,
+						x: 240,
+						y: 140,
+					} as DOMRect;
+				}
+
+				return {
+					bottom: 0,
+					height: 0,
+					left: 0,
+					right: 0,
+					toJSON: () => ({}),
+					top: 0,
+					width: 0,
+					x: 0,
+					y: 0,
+				} as DOMRect;
+			},
+		);
+
+		type PopoverHandle = PreviewGuiObjectLike | null;
+
+		const triggerRef = React.createRef<PopoverHandle>();
+		const wrapperRef = React.createRef<PopoverHandle>();
+		const contentRef = React.createRef<PopoverHandle>();
+
+		function ShellPortalProvider(props: { children?: React.ReactNode }) {
+			const [container, setContainer] = React.useState<HTMLElement | null>(null);
+
+			return (
+				<ScreenGui Id="shell-screen" ref={setContainer}>
+					{container ? (
+						<PortalProvider container={container}>{props.children}</PortalProvider>
+					) : null}
+				</ScreenGui>
+			);
+		}
+
+		function ShellPopoverRegression() {
+			const [trigger, setTrigger] = React.useState<PreviewGuiObjectLike | null>(
+				null,
+			);
+			const [placement, setPlacement] = React.useState<{
+				x: number;
+				y: number;
+			} | null>(null);
+
+			React.useLayoutEffect(() => {
+				if (!trigger) {
+					return;
+				}
+
+				setPlacement(
+					resolveBottomPlacement({
+						anchorHeight: trigger.AbsoluteSize.Y,
+						anchorX: trigger.AbsolutePosition.X,
+						anchorY: trigger.AbsolutePosition.Y,
+						contentHeight: 120,
+						contentWidth: 220,
+						offsetX: 0,
+						offsetY: 8,
+						viewportHeight: trigger.AbsoluteWindowSize.Y,
+						viewportWidth: trigger.AbsoluteWindowSize.X,
+						withFlip: true,
+					}),
+				);
+			}, [trigger]);
+
+			return (
+				<Frame
+					Id="shell-scene"
+					Position={UDim2.fromOffset(12, 108)}
+					Size={UDim2.fromOffset(900, 220)}
+				>
+					<Frame
+						Id="shell-trigger"
+						ref={(value: PreviewGuiObjectLike | null) => {
+							setTrigger(value as PreviewGuiObjectLike | null);
+							triggerRef.current = value as PopoverHandle;
+						}}
+						Position={UDim2.fromOffset(40, 50)}
+						Size={UDim2.fromOffset(180, 36)}
+					/>
+					{placement ? (
+						<Portal>
+							<Frame
+								Id="shell-popper-wrapper"
+								ref={wrapperRef}
+								Position={UDim2.fromOffset(placement.x, placement.y)}
+								Size={UDim2.fromOffset(220, 120)}
+							>
+								<Frame
+									Id="shell-popper-content"
+									ref={contentRef}
+									Position={UDim2.fromOffset(0, 0)}
+									Size={UDim2.fromOffset(220, 120)}
+								/>
+							</Frame>
+						</Portal>
+					) : null}
+				</Frame>
+			);
+		}
+
+		render(
+			<LayoutProvider debounceMs={0} viewportHeight={360} viewportWidth={640}>
+				<ShellPortalProvider>
+					<ShellPopoverRegression />
+				</ShellPortalProvider>
+			</LayoutProvider>,
+			{ container: viewportHost },
+		);
+
+		await waitFor(() => {
+			expect(triggerRef.current).toBeDefined();
+			expect(wrapperRef.current).toBeDefined();
+			expect(contentRef.current).toBeDefined();
+		});
+
+		await waitFor(() => {
+			const trigger = triggerRef.current;
+			const wrapper = wrapperRef.current;
+			const content = contentRef.current;
+
+			expect(trigger).toBeTruthy();
+			expect(wrapper).toBeTruthy();
+			expect(content).toBeTruthy();
+
+			if (!trigger || !wrapper || !content) {
+				throw new Error("Expected shell popper handles to resolve.");
+			}
+
+			const expectedPlacement = resolveBottomPlacement({
+				anchorHeight: trigger.AbsoluteSize.Y,
+				anchorX: trigger.AbsolutePosition.X,
+				anchorY: trigger.AbsolutePosition.Y,
+				contentHeight: 120,
+				contentWidth: 220,
+				offsetX: 0,
+				offsetY: 8,
+				viewportHeight: trigger.AbsoluteWindowSize.Y,
+				viewportWidth: trigger.AbsoluteWindowSize.X,
+				withFlip: true,
+			});
+
+			expect(trigger.AbsolutePosition).toEqual({ X: 52, Y: 158 });
+			expect(wrapper.AbsolutePosition).toEqual({
+				X: expectedPlacement.x,
+				Y: expectedPlacement.y,
+			});
+			expect(content.AbsolutePosition).toEqual({
+				X: expectedPlacement.x,
+				Y: expectedPlacement.y,
+			});
+			expect(wrapper.AbsoluteWindowSize).toEqual({ X: 640, Y: 360 });
+			expect(content.AbsoluteWindowSize).toEqual({ X: 640, Y: 360 });
+			expect(wrapper.AbsolutePosition.X).not.toBe(0);
+			expect(wrapper.AbsolutePosition.Y).not.toBe(0);
+		});
+	});
+
+	it("keeps dialog-like shell portal overlays in viewport-local coordinates", async () => {
+		const viewportHost = document.createElement("div");
+		document.body.appendChild(viewportHost);
+
+		vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(
+			function (this: HTMLElement) {
+				if (this.hasAttribute("data-preview-layout-provider")) {
+					return {
+						bottom: 500,
+						height: 360,
+						left: 240,
+						right: 880,
+						toJSON: () => ({}),
+						top: 140,
+						width: 640,
+						x: 240,
+						y: 140,
+					} as DOMRect;
+				}
+
+				if (this === viewportHost) {
+					return {
+						bottom: 500,
+						height: 360,
+						left: 240,
+						right: 880,
+						toJSON: () => ({}),
+						top: 140,
+						width: 640,
+						x: 240,
+						y: 140,
+					} as DOMRect;
+				}
+
+				return {
+					bottom: 0,
+					height: 0,
+					left: 0,
+					right: 0,
+					toJSON: () => ({}),
+					top: 0,
+					width: 0,
+					x: 0,
+					y: 0,
+				} as DOMRect;
+			},
+		);
+
+		const overlayRef = React.createRef<PreviewGuiObjectLike>();
+		const contentRef = React.createRef<PreviewGuiObjectLike>();
+
+		function ShellPortalProvider(props: { children?: React.ReactNode }) {
+			const [container, setContainer] = React.useState<HTMLElement | null>(null);
+
+			return (
+				<ScreenGui Id="dialog-shell" ref={setContainer}>
+					{container ? (
+						<PortalProvider container={container}>{props.children}</PortalProvider>
+					) : null}
+				</ScreenGui>
+			);
+		}
+
+		render(
+			<LayoutProvider debounceMs={0} viewportHeight={360} viewportWidth={640}>
+				<ShellPortalProvider>
+					<Frame
+						Id="dialog-scene-root"
+						Position={UDim2.fromOffset(24, 72)}
+						Size={UDim2.fromOffset(520, 220)}
+					>
+						<Portal>
+							<Frame
+								Id="dialog-overlay"
+								ref={overlayRef}
+								Position={UDim2.fromOffset(0, 0)}
+								Size={UDim2.fromOffset(640, 360)}
+							>
+								<Frame
+									Id="dialog-content"
+									ref={contentRef}
+									Position={UDim2.fromOffset(160, 90)}
+									Size={UDim2.fromOffset(320, 180)}
+								/>
+							</Frame>
+						</Portal>
+					</Frame>
+				</ShellPortalProvider>
+			</LayoutProvider>,
+			{ container: viewportHost },
+		);
+
+		await waitFor(() => {
+			expect(overlayRef.current).toBeDefined();
+			expect(contentRef.current).toBeDefined();
+		});
+
+		await waitFor(() => {
+			const overlay = overlayRef.current;
+			const content = contentRef.current;
+
+			expect(overlay).toBeTruthy();
+			expect(content).toBeTruthy();
+
+			if (!overlay || !content) {
+				throw new Error("Expected dialog portal nodes to resolve.");
+			}
+
+			expect(overlay.AbsolutePosition).toEqual({ X: 0, Y: 0 });
+			expect(overlay.AbsoluteSize).toEqual({ X: 640, Y: 360 });
+			expect(content.AbsolutePosition).toEqual({ X: 160, Y: 90 });
+			expect(content.AbsoluteSize).toEqual({ X: 320, Y: 180 });
+			expect(overlay.AbsoluteWindowSize).toEqual({ X: 640, Y: 360 });
+			expect(content.AbsoluteWindowSize).toEqual({ X: 640, Y: 360 });
+		});
+	});
 });

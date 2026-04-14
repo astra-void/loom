@@ -323,3 +323,98 @@ test("fixed-height accordion rows stay expanded for both text and frame content"
 		expect(getDebugNodeById("item-frame")?.rect?.height).toBe(74);
 	});
 });
+
+test("presence-mounted accordion asChild bodies keep intended local Position and Size", async () => {
+	function AccordionPresenceHarness() {
+		const [open, setOpen] = React.useState(false);
+
+		React.useEffect(() => {
+			setOpen(true);
+		}, []);
+
+		return (
+			<ScreenGui Id="screen">
+				<Frame Id="presence-direct-item" Size={UDim2.fromOffset(220, 80)}>
+					<Frame Id="presence-direct-trigger" Size={UDim2.fromOffset(220, 32)} />
+					<AccordionContent
+						Id="presence-direct-slot"
+						open={open}
+						Position={UDim2.fromOffset(10, 40)}
+						Size={UDim2.fromOffset(120, 24)}
+						asChild
+					>
+						<TextLabel Id="presence-direct-body" Text="Presence direct body" />
+					</AccordionContent>
+				</Frame>
+
+				<Frame
+					Id="presence-wrapped-item"
+					Position={UDim2.fromOffset(0, 100)}
+					Size={UDim2.fromOffset(220, 80)}
+				>
+					<Frame Id="presence-wrapped-trigger" Size={UDim2.fromOffset(220, 32)} />
+					<AccordionContent
+						Id="presence-wrapped-slot"
+						open={open}
+						Position={UDim2.fromOffset(10, 40)}
+						Size={UDim2.fromOffset(140, 28)}
+						asChild
+					>
+						<Frame Id="presence-wrapped-body-wrapper">
+							<TextLabel
+								Id="presence-wrapped-body"
+								Size={UDim2.fromOffset(140, 28)}
+								Text="Presence wrapped body"
+							/>
+						</Frame>
+					</AccordionContent>
+				</Frame>
+			</ScreenGui>
+		);
+	}
+
+	render(
+		<LayoutProvider debounceMs={0} viewportHeight={240} viewportWidth={320}>
+			<AccordionPresenceHarness />
+		</LayoutProvider>,
+	);
+
+	await waitFor(() => {
+		const directBody = getDebugNodeById("presence-direct-body");
+		const directSlot = getDebugNodeById("presence-direct-slot");
+
+		expect(directBody).toBeTruthy();
+		expect(directSlot).toBeNull();
+		expect(directBody?.parentId).toBe("presence-direct-item");
+		expect(directBody?.rect).toMatchObject({
+			height: 24,
+			width: 120,
+			x: 10,
+			y: 40,
+		});
+	});
+
+	await waitFor(() => {
+		const wrapper = getDebugNodeById("presence-wrapped-body-wrapper");
+		const wrappedBody = getDebugNodeById("presence-wrapped-body");
+		const wrappedSlot = getDebugNodeById("presence-wrapped-slot");
+
+		expect(wrapper).toBeTruthy();
+		expect(wrappedBody).toBeTruthy();
+		expect(wrappedSlot).toBeNull();
+		expect(wrapper?.parentId).toBe("presence-wrapped-item");
+		expect(wrappedBody?.parentId).toBe("presence-wrapped-body-wrapper");
+		expect(wrapper?.rect).toMatchObject({
+			height: 28,
+			width: 140,
+			x: 10,
+			y: 140,
+		});
+		expect(wrappedBody?.rect).toMatchObject({
+			height: 28,
+			width: 140,
+			x: 10,
+			y: 140,
+		});
+	});
+});
