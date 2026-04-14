@@ -33,18 +33,18 @@
 		"@biomejs/biome": "^2.4.11",
 		"@changesets/cli": "^2.30.0",
 		"@testing-library/react": "^16.3.2",
-		"@types/node": "^25.5.0",
+		"@types/node": "^25.6.0",
 		"@types/react": "^19.2.14",
 		"@types/react-dom": "^19.2.3",
-		"jsdom": "^29.0.1",
-		"react": "^19.2.4",
-		"react-dom": "^19.2.4",
+		"jsdom": "^29.0.2",
+		"react": "^19.2.5",
+		"react-dom": "^19.2.5",
 		"tsx": "^4.21.0",
 		"turbo": "^2.9.6",
 		"typescript": "6.0.2",
 		"vite-plugin-top-level-await": "^1.6.0",
 		"vite-plugin-wasm": "^3.6.0",
-		"vitest": "^4.1.2"
+		"vitest": "^4.1.4"
 	},
 	"packageManager": "pnpm@10.33.0"
 }
