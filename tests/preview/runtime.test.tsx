@@ -416,6 +416,109 @@ describe("preview runtime host mapping", () => {
 		expect(frame.style.height).toBe("48px");
 	});
 
+	it("applies debug-tree rect coordinates when the rect map misses a child id", async () => {
+		layoutEngineMocks.computeDirty.mockImplementation(
+			(_nodes, viewportWidth, viewportHeight) => {
+				const viewportRect = {
+					height: viewportHeight,
+					width: viewportWidth,
+					x: 0,
+					y: 0,
+				};
+
+				return {
+					debug: {
+						dirtyNodeIds: ["screen", "stack-child"],
+						roots: [
+							{
+								children: [
+									{
+										children: [],
+										hostPolicy: {
+											degraded: false,
+											fullSizeDefault: true,
+											placeholderBehavior: "none",
+										},
+										id: "stack-child",
+										intrinsicSize: null,
+										kind: "host",
+										layoutSource: "explicit-size",
+										nodeType: "Frame",
+										parentConstraints: viewportRect,
+										parentId: "screen",
+										provenance: {
+											detail: "mocked runtime test",
+											source: "wasm",
+										},
+										rect: {
+											height: 20,
+											width: 80,
+											x: 15,
+											y: 25,
+										},
+										sizeResolution: {
+											hadExplicitSize: true,
+											intrinsicSizeAvailable: false,
+											reason: "explicit-size",
+										},
+									},
+								],
+								hostPolicy: {
+									degraded: false,
+									fullSizeDefault: true,
+									placeholderBehavior: "none",
+								},
+								id: "screen",
+								intrinsicSize: null,
+								kind: "root",
+								layoutSource: "root-default",
+								nodeType: "ScreenGui",
+								parentConstraints: null,
+								provenance: {
+									detail: "mocked runtime test",
+									source: "wasm",
+								},
+								rect: viewportRect,
+								sizeResolution: {
+									hadExplicitSize: true,
+									intrinsicSizeAvailable: false,
+									reason: "root-default",
+								},
+							},
+						],
+						viewport: {
+							height: viewportHeight,
+							width: viewportWidth,
+						},
+					},
+					dirtyNodeIds: ["screen", "stack-child"],
+					rects: {
+						screen: viewportRect,
+					},
+				};
+			},
+		);
+
+		render(
+			<LayoutProvider debounceMs={0} viewportHeight={200} viewportWidth={300}>
+				<ScreenGui Id="screen">
+					<Frame Id="stack-child" ParentId="screen" Size={UDim2.fromOffset(80, 20)} />
+				</ScreenGui>
+			</LayoutProvider>,
+		);
+
+		const child = document.querySelector(
+			'[data-preview-node-id="stack-child"]',
+		) as HTMLElement;
+
+		await waitFor(() => {
+			expect(child.style.left).toBe("15px");
+			expect(child.style.top).toBe("25px");
+			expect(child.style.width).toBe("80px");
+			expect(child.style.height).toBe("20px");
+		});
+	});
+
 	it("tweens bridged host properties through the preview render pipeline", async () => {
 		rafController = new RafController();
 
