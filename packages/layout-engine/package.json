@@ -1,6 +1,6 @@
 {
 	"name": "@loom-dev/layout-engine",
-	"version": "0.1.0-alpha.5",
+	"version": "0.1.0-alpha.6",
 	"private": false,
 	"description": "WASM layout engine for Loom previews.",
 	"main": "pkg/layout_engine.js",
