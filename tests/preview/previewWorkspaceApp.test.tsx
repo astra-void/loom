@@ -19,13 +19,18 @@ type MockWorkspaceSnapshot = {
 	importers: Record<string, MockImporter>;
 	workspaceIndex: PreviewWorkspaceIndex;
 };
+type MockLoadOptions = {
+	onRetry?: (retry: unknown) => void;
+};
 
 const previewAppMocks = vi.hoisted(() => ({
 	lastProps: undefined as
 		| {
 				entries: PreviewEntryDescriptor[];
+				debugEvents?: Array<{ label: string }>;
 				entryPayloads?: Record<string, PreviewEntryPayload>;
-				loadEntry: (id: string) => Promise<unknown>;
+				hotDebugState?: { updateSequence: number };
+				loadEntry: (id: string, options?: MockLoadOptions) => Promise<unknown>;
 				projectName: string;
 		  }
 		| undefined,
@@ -65,8 +70,10 @@ vi.mock("../../packages/preview/src/shell/workspaceSnapshot", () => ({
 vi.mock("../../packages/preview/src/shell/PreviewApp", () => ({
 	PreviewApp: (props: {
 		entries: PreviewEntryDescriptor[];
+		debugEvents?: Array<{ label: string }>;
 		entryPayloads?: Record<string, PreviewEntryPayload>;
-		loadEntry: (id: string) => Promise<unknown>;
+		hotDebugState?: { updateSequence: number };
+		loadEntry: (id: string, options?: MockLoadOptions) => Promise<unknown>;
 		projectName: string;
 	}) => {
 		previewAppMocks.lastProps = props;
@@ -245,29 +252,22 @@ function createRuntimeIssue(
 }
 
 function createHotContext() {
-	const listeners = new Map<
-		string,
-		Set<(payload: PreviewEngineUpdate) => void>
-	>();
+	const listeners = new Map<string, Set<(payload: unknown) => void>>();
 
 	return {
-		emit(event: string, payload: PreviewEngineUpdate) {
+		emit(event: string, payload: unknown) {
 			for (const listener of listeners.get(event) ?? []) {
 				listener(payload);
 			}
 		},
-		off: vi.fn(
-			(event: string, callback: (payload: PreviewEngineUpdate) => void) => {
-				listeners.get(event)?.delete(callback);
-			},
-		),
-		on: vi.fn(
-			(event: string, callback: (payload: PreviewEngineUpdate) => void) => {
-				const eventListeners = listeners.get(event) ?? new Set();
-				eventListeners.add(callback);
-				listeners.set(event, eventListeners);
-			},
-		),
+		off: vi.fn((event: string, callback: (payload: unknown) => void) => {
+			listeners.get(event)?.delete(callback);
+		}),
+		on: vi.fn((event: string, callback: (payload: unknown) => void) => {
+			const eventListeners = listeners.get(event) ?? new Set();
+			eventListeners.add(callback);
+			listeners.set(event, eventListeners);
+		}),
 		send: vi.fn(),
 	};
 }
@@ -285,7 +285,14 @@ beforeEach(() => {
 	previewAppMocks.lastProps = undefined;
 	moduleLoadMocks.loadPreviewModule.mockReset();
 	moduleLoadMocks.loadPreviewModule.mockImplementation(
-		(importer: MockImporter) => importer(),
+		async (importer: MockImporter) => ({
+			loadMetadata: {
+				outcome: "ready",
+				retried: false,
+				retry: null,
+			},
+			module: await importer(),
+		}),
 	);
 
 	runtimeMocks.listener = undefined;
@@ -380,7 +387,20 @@ describe("PreviewWorkspaceApp", () => {
 		});
 		expect(moduleLoadMocks.loadPreviewModule).toHaveBeenCalledWith(
 			reloadedSnapshot.importers[updatedAlphaEntry.id],
+			undefined,
 		);
+		await waitFor(() => {
+			expect(previewAppMocks.lastProps?.hotDebugState?.updateSequence).toBe(1);
+			expect(
+				previewAppMocks.lastProps?.debugEvents?.map((event) => event.label),
+			).toEqual(
+				expect.arrayContaining([
+					"Hot update received",
+					"Workspace snapshot reloaded",
+					"Entry payload applied",
+				]),
+			);
+		});
 	});
 
 	it("loads a newly added entry from the refreshed importer map", async () => {
@@ -428,6 +448,7 @@ describe("PreviewWorkspaceApp", () => {
 		});
 		expect(moduleLoadMocks.loadPreviewModule).toHaveBeenCalledWith(
 			reloadedSnapshot.importers[betaEntry.id],
+			undefined,
 		);
 	});
 

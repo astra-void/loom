@@ -4,7 +4,7 @@ import type {
 	PreviewEntryDescriptor,
 	PreviewEntryPayload,
 } from "@loom-dev/preview-engine";
-import { act, cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, render, screen, within } from "@testing-library/react";
 import type React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { loadPreviewModule } from "../../packages/preview/src/shell/loadPreviewModule";
@@ -153,9 +153,10 @@ describe("loadPreviewModule", () => {
 			<PreviewApp
 				entries={[entry]}
 				initialSelectedId={entry.id}
-				loadEntry={() =>
-					loadPreviewModule(importer).then((module) => ({
-						module,
+				loadEntry={(_id, options) =>
+					loadPreviewModule(importer, options).then((loadResult) => ({
+						loadMetadata: loadResult.loadMetadata,
+						module: loadResult.module,
 						payload,
 					}))
 				}
@@ -171,6 +172,18 @@ describe("loadPreviewModule", () => {
 			screen.getByRole("button", { name: "Recovered preview" }),
 		).toBeTruthy();
 		expect(importer).toHaveBeenCalledTimes(2);
+
+		await act(async () => {
+			screen.getByLabelText("Debug mode").click();
+		});
+		const hud = screen.getByLabelText("Preview debug HUD");
+		expect(within(hud).getByText(/module load/i)).toBeTruthy();
+		expect(within(hud).getByText(/outcome recovered/i)).toBeTruthy();
+		expect(within(hud).getByText(/^yes$/i)).toBeTruthy();
+		expect(
+			within(hud).getAllByText(/retryable-optimized-dependency/).length,
+		).toBeTruthy();
+		expect(within(hud).getByText("Module recovered")).toBeTruthy();
 	});
 
 	it("surfaces a load error after the retryable import failure persists", async () => {
@@ -189,9 +202,10 @@ describe("loadPreviewModule", () => {
 			<PreviewApp
 				entries={[entry]}
 				initialSelectedId={entry.id}
-				loadEntry={() =>
-					loadPreviewModule(importer).then((module) => ({
-						module,
+				loadEntry={(_id, options) =>
+					loadPreviewModule(importer, options).then((loadResult) => ({
+						loadMetadata: loadResult.loadMetadata,
+						module: loadResult.module,
 						payload: createPayload(entry),
 					}))
 				}
@@ -205,5 +219,17 @@ describe("loadPreviewModule", () => {
 
 		expect(screen.getByText("Preview module failed to load.")).toBeTruthy();
 		expect(importer).toHaveBeenCalledTimes(2);
+
+		await act(async () => {
+			screen.getByLabelText("Debug mode").click();
+		});
+		const hud = screen.getByLabelText("Preview debug HUD");
+		expect(within(hud).getByText(/outcome failed/i)).toBeTruthy();
+		expect(within(hud).getByText(/^yes$/i)).toBeTruthy();
+		expect(
+			within(hud).getAllByText(/retryable-optimized-dependency/).length,
+		).toBeTruthy();
+		expect(within(hud).getByText("Module failed")).toBeTruthy();
+		expect(within(hud).getByText("failed after retry")).toBeTruthy();
 	});
 });

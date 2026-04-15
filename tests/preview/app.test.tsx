@@ -5,7 +5,21 @@ import type {
 	PreviewEntryDescriptor,
 	PreviewEntryPayload,
 } from "@loom-dev/preview-engine";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import {
+	type PreviewRuntimeIssue,
+	publishPreviewRuntimeIssue,
+	ScreenGui,
+	setPreviewLayoutEngineLoader,
+	ViewportFrame,
+} from "@loom-dev/preview-runtime";
+import {
+	act,
+	cleanup,
+	render,
+	screen,
+	waitFor,
+	within,
+} from "@testing-library/react";
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PreviewApp } from "../../packages/preview/src/shell/PreviewApp";
@@ -28,7 +42,9 @@ beforeEach(() => {
 			"Intentional render failure.",
 			"Expected `LoadoutEditor` to be a component export",
 			"PreviewErrorBoundary",
+			"ViewportFrame rendered with degraded preview behavior.",
 		],
+		warn: ["@loom-dev/preview-runtime:RuntimeMockError"],
 	});
 	installTestPreviewLayoutEngineLoader();
 });
@@ -111,6 +127,24 @@ function createDiagnostic(
 		summary,
 		target: overrides.target ?? "fixture",
 		...rest,
+	};
+}
+
+function createRuntimeIssue(
+	overrides: Partial<PreviewRuntimeIssue> = {},
+): PreviewRuntimeIssue {
+	return {
+		blocking: false,
+		code: "RUNTIME_WARNING",
+		entryId: "fixture:entry",
+		file: "/virtual/fixture.tsx",
+		kind: "RuntimeMockError",
+		phase: "runtime",
+		relativeFile: "src/fixture.tsx",
+		severity: "warning",
+		summary: "Runtime warning",
+		target: "fixture",
+		...overrides,
 	};
 }
 
@@ -258,6 +292,7 @@ describe("preview shell", () => {
 		expect(screen.queryByText("Source analysis")).toBeNull();
 		expect(screen.queryByText("No diagnostics for this entry.")).toBeNull();
 		expect(screen.queryByText("Issues")).toBeNull();
+		expect(screen.queryByLabelText("Preview debug HUD")).toBeNull();
 	});
 
 	it("renders harness-based previews from the preview export contract", async () => {
@@ -283,6 +318,161 @@ describe("preview shell", () => {
 
 		expect(await screen.findByText("Dialog Preview")).toBeTruthy();
 		expect(screen.getByRole("button", { name: /close/i })).toBeTruthy();
+	});
+
+	it("shows hot update sequence and timeline entries in debug mode", async () => {
+		const user = userEvent.setup();
+
+		renderPreviewApp(
+			<PreviewApp
+				debugEvents={[
+					{
+						detail: "1 changed",
+						id: "workspace:1",
+						kind: "hot-update-received",
+						label: "Hot update received",
+						sequence: 1,
+						timestamp: 1,
+					},
+				]}
+				entries={[checkboxEntry]}
+				hotDebugState={{
+					available: true,
+					connection: "connected",
+					sendAvailable: true,
+					updateListener: "subscribed",
+					updateSequence: 3,
+				}}
+				initialSelectedId={checkboxEntry.id}
+				loadEntry={() =>
+					createLoadedEntry(checkboxEntry, {
+						CheckboxRoot: () => <button type="button">Unchecked</button>,
+					})
+				}
+				projectName="@loom-dev/preview-smoke"
+			/>,
+		);
+
+		expect(
+			await screen.findByRole("button", { name: /unchecked/i }),
+		).toBeTruthy();
+		await user.click(screen.getByLabelText("Debug mode"));
+		const hud = screen.getByLabelText("Preview debug HUD");
+		expect(within(hud).getByText(/^3$/)).toBeTruthy();
+		expect(within(hud).getByText("Hot update received")).toBeTruthy();
+		expect(within(hud).getByText("1 changed")).toBeTruthy();
+	});
+
+	it("updates the debug HUD runtime issue summary", async () => {
+		const user = userEvent.setup();
+
+		renderPreviewApp(
+			<PreviewApp
+				entries={[checkboxEntry]}
+				initialSelectedId={checkboxEntry.id}
+				loadEntry={() =>
+					createLoadedEntry(checkboxEntry, {
+						CheckboxRoot: () => <button type="button">Unchecked</button>,
+					})
+				}
+				projectName="@loom-dev/preview-smoke"
+			/>,
+		);
+
+		expect(
+			await screen.findByRole("button", { name: /unchecked/i }),
+		).toBeTruthy();
+		await user.click(screen.getByLabelText("Debug mode"));
+		const hud = screen.getByLabelText("Preview debug HUD");
+		expect(
+			within(hud).getAllByText("0 errors / 0 warnings").length,
+		).toBeGreaterThan(0);
+
+		act(() => {
+			publishPreviewRuntimeIssue(
+				createRuntimeIssue({
+					summary: "Runtime warning one",
+				}),
+			);
+		});
+
+		await waitFor(() => {
+			expect(
+				within(hud).getAllByText("0 errors / 1 warnings").length,
+			).toBeGreaterThan(0);
+		});
+
+		act(() => {
+			publishPreviewRuntimeIssue(
+				createRuntimeIssue({
+					blocking: true,
+					code: "RUNTIME_ERROR",
+					severity: "error",
+					summary: "Runtime error one",
+				}),
+			);
+		});
+
+		await waitFor(() => {
+			expect(
+				within(hud).getAllByText("1 errors / 1 warnings").length,
+			).toBeGreaterThan(0);
+		});
+		expect(
+			within(hud).getAllByText("Runtime issues updated").length,
+		).toBeGreaterThan(0);
+	});
+
+	it("shows layout provenance and degraded host details in debug mode", async () => {
+		resetTestPreviewLayoutEngineLoader();
+		setPreviewLayoutEngineLoader(() => {
+			throw new Error("layout wasm unavailable");
+		});
+		const user = userEvent.setup();
+		const { container } = renderPreviewApp(
+			<PreviewApp
+				entries={[checkboxEntry]}
+				initialSelectedId={checkboxEntry.id}
+				loadEntry={() =>
+					createLoadedEntry(checkboxEntry, {
+						CheckboxRoot: () => (
+							<ScreenGui>
+								<ViewportFrame Id="debug-viewport" />
+							</ScreenGui>
+						),
+					})
+				}
+				projectName="@loom-dev/preview-smoke"
+			/>,
+		);
+
+		await user.click(screen.getByLabelText("Debug mode"));
+		const hud = screen.getByLabelText("Preview debug HUD");
+
+		await waitFor(() => {
+			expect(within(hud).getByText(/(?:fallback|wasm) [1-9]/)).toBeTruthy();
+			expect(within(hud).getAllByText(/ViewportFrame/).length).toBeGreaterThan(
+				0,
+			);
+			expect(
+				within(hud).getAllByText(/full-size-default [1-9]/).length,
+			).toBeGreaterThan(0);
+		});
+
+		await waitFor(() => {
+			const viewportFrame = container.querySelector(
+				'[data-preview-node-id="debug-viewport"]',
+			);
+			expect(
+				viewportFrame?.getAttribute("data-preview-debug-badges"),
+			).toContain("degraded");
+			expect(
+				viewportFrame?.getAttribute("data-preview-debug-badges"),
+			).toContain("full-size-default");
+			expect(
+				viewportFrame?.getAttribute("data-preview-debug-badges"),
+			).toContain("placeholder");
+		});
 	});
 
 	it("does not restart ready entry loads when payload updates replace the descriptor", async () => {
@@ -776,7 +966,10 @@ describe("preview shell", () => {
 		).toBeTruthy();
 		await user.click(screen.getByRole("button", { name: /second/i }));
 		await waitFor(() => {
-			expect(loadEntry).toHaveBeenCalledWith(secondEntry.id);
+			expect(loadEntry).toHaveBeenCalledWith(
+				secondEntry.id,
+				expect.any(Object),
+			);
 		});
 		expect(screen.getByText("Preparing transformed source.")).toBeTruthy();
 		expect(screen.queryByRole("button", { name: "First preview" })).toBeNull();
