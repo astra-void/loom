@@ -60,6 +60,7 @@ const PREVIEW_ONLY_PROP_NAMES = new Set([
 	"Font",
 	"FlexMode",
 	"GrowRatio",
+	"GroupTransparency",
 	"HorizontalAlignment",
 	"HorizontalFlex",
 	"Id",
@@ -447,6 +448,10 @@ function coerceTextValue(value: unknown): string | undefined {
 	return String(value);
 }
 
+function toOpacity(transparency: number) {
+	return Math.max(0, Math.min(1, 1 - transparency));
+}
+
 export function applyComputedLayoutStyle(
 	style: React.CSSProperties,
 	computed: ComputedRect | null,
@@ -499,6 +504,7 @@ export function resolvePreviewDomProps(
 		Image,
 		ImageColor3,
 		ImageTransparency,
+		GroupTransparency,
 		Modal,
 		Name,
 		ParentId,
@@ -616,6 +622,10 @@ export function resolvePreviewDomProps(
 		);
 	} else if (BackgroundTransparency === 1) {
 		computedStyle.backgroundColor = "transparent";
+	}
+
+	if (options.host === "canvasgroup" && typeof GroupTransparency === "number") {
+		computedStyle.opacity = toOpacity(GroupTransparency);
 	}
 
 	if (TextColor3 || TextTransparency !== undefined) {

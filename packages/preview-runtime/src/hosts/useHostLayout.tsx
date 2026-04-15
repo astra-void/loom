@@ -7,6 +7,7 @@ import {
 	useRobloxLayout,
 } from "../layout/context";
 import type { ComputedRect, PreviewLayoutNode } from "../layout/model";
+import { Color3, UDim2, Vector2 } from "../runtime/helpers";
 import {
 	findMockAncestorOfClass,
 	findMockAncestorWhichIsA,
@@ -46,18 +47,19 @@ type PreviewNodeCounterGlobal = typeof globalThis & {
 };
 
 function createZeroVector2() {
-	return { X: 0, Y: 0 };
+	return new Vector2(0, 0);
 }
 
 function createVector2(x: number, y: number) {
-	return { X: x, Y: y };
+	return new Vector2(x, y);
 }
 
 function createZeroUDim2() {
-	return {
-		X: { Offset: 0, Scale: 0 },
-		Y: { Offset: 0, Scale: 0 },
-	};
+	return UDim2.fromOffset(0, 0);
+}
+
+function createDefaultBackgroundColor3() {
+	return new Color3(1, 1, 1);
 }
 
 function createMockSignal() {
@@ -118,12 +120,27 @@ function getHostPropertyFallback(
 				: createZeroVector2();
 		case "AbsoluteWindowSize":
 			return createVector2(viewport?.width ?? 0, viewport?.height ?? 0);
+		case "AnchorPoint":
+			return createZeroVector2();
 		case "CanvasSize":
 			return createZeroUDim2();
+		case "BackgroundColor3":
+		case "ImageColor3":
+			return createDefaultBackgroundColor3();
+		case "BackgroundTransparency":
+		case "GroupTransparency":
+		case "ImageTransparency":
+		case "Rotation":
+		case "TextTransparency":
+			return 0;
 		case "Parent":
 			return mockScreenGui;
+		case "Position":
+			return createZeroUDim2();
 		case "TextBounds":
 			return createZeroVector2();
+		case "Visible":
+			return true;
 		default:
 			return undefined;
 	}

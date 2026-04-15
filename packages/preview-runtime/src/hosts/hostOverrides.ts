@@ -31,6 +31,7 @@ export const bridgedPreviewHostProperties = [
 	"BackgroundTransparency",
 	"CanvasPosition",
 	"CanvasSize",
+	"GroupTransparency",
 	"ImageColor3",
 	"ImageTransparency",
 	"Name",

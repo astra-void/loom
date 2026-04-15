@@ -81,6 +81,7 @@ export type PreviewDomProps = {
 	Font?: unknown;
 	FlexMode?: string;
 	GrowRatio?: number;
+	GroupTransparency?: number;
 	HorizontalAlignment?: string;
 	HorizontalFlex?: string;
 	Id?: string;

@@ -109,7 +109,7 @@ function extractFontName(value: unknown): string | undefined {
 }
 
 function normalizeSize(
-	value: DOMRectReadOnly | ClientRect | undefined | null,
+	value: DOMRectReadOnly | DOMRect | undefined | null,
 ): ElementSize {
 	return {
 		height: Math.max(0, value?.height ?? 0),
@@ -135,7 +135,7 @@ function useObservedElementSize(
 			return;
 		}
 
-		const update = (nextRect?: DOMRectReadOnly | ClientRect | null) => {
+		const update = (nextRect?: DOMRectReadOnly | DOMRect | null) => {
 			const nextSize = normalizeSize(
 				nextRect ?? element.getBoundingClientRect(),
 			);
