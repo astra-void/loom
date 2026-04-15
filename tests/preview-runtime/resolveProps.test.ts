@@ -16,7 +16,9 @@ function resolveTextHostStyle(
 
 	return resolved.domProps.style as {
 		justifyContent?: string;
+		pointerEvents?: string;
 		textAlign?: string;
+		zIndex?: number | string;
 	};
 }
 
@@ -39,6 +41,7 @@ function resolveFrameHostStyle(props: PreviewDomProps) {
 		pointerEvents?: string;
 		top?: string;
 		width?: string;
+		zIndex?: number | string;
 	};
 }
 
@@ -106,6 +109,39 @@ test("frame becomes non-interactive when Active is false", () => {
 	});
 
 	expect(style.pointerEvents).toBe("none");
+});
+
+test("frame defaults to non-interactive unless Active is true", () => {
+	const inactiveStyle = resolveFrameHostStyle({});
+	const activeStyle = resolveFrameHostStyle({
+		Active: true,
+	});
+
+	expect(inactiveStyle.pointerEvents).toBe("none");
+	expect(activeStyle.pointerEvents).toBe("auto");
+});
+
+test("button-like hosts are pointer-interactive by default but respect Active false", () => {
+	const activeStyle = resolveTextHostStyle("textbutton", {
+		Text: "Preview button",
+	});
+	const disabledStyle = resolveTextHostStyle("textbutton", {
+		Active: false,
+		Text: "Preview button",
+	});
+
+	expect(activeStyle.pointerEvents).toBe("auto");
+	expect(disabledStyle.pointerEvents).toBe("none");
+});
+
+test("gui object hosts receive a Roblox-like default z-index", () => {
+	const frameStyle = resolveFrameHostStyle({});
+	const textButtonStyle = resolveTextHostStyle("textbutton", {
+		Text: "Preview button",
+	});
+
+	expect(frameStyle.zIndex).toBe(1);
+	expect(textButtonStyle.zIndex).toBe(1);
 });
 
 test("frame hides and disables input when Visible is false and Active is false", () => {

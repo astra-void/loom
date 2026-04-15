@@ -17,6 +17,8 @@ import {
 	isPreviewElement,
 	LayoutProvider,
 	normalizePreviewRuntimeError,
+	Portal,
+	PortalProvider,
 	type PreviewRuntimeIssue,
 	publishPreviewRuntimeIssue,
 	ScreenGui,
@@ -90,6 +92,7 @@ type LayoutNode = {
 	nodeType?: string;
 	parentId?: string;
 	sourceOrder?: number;
+	zIndex?: number;
 };
 type LayoutSessionResult = {
 	debug: LayoutDebugPayload;
@@ -798,6 +801,150 @@ describe("preview runtime host mapping", () => {
 			expect(button.BackgroundColor3?.G).toBeCloseTo(0.6568, 3);
 			expect(button.BackgroundColor3?.B).toBeCloseTo(0.8137, 3);
 			expect(button.style.backgroundColor).toContain("128, 168, 208");
+		});
+	});
+
+	it("exposes default ZIndex and non-blocking pointer defaults for Roblox-like hosts", () => {
+		render(
+			<ScreenGui Id="z-default-screen">
+				<Frame Id="z-default-frame">
+					<TextButton Id="z-default-button" Size={UDim2.fromOffset(120, 36)}>
+						Clickable
+					</TextButton>
+				</Frame>
+			</ScreenGui>,
+		);
+
+		const screen = document.querySelector(
+			'[data-preview-node-id="z-default-screen"]',
+		) as HTMLElement & { ZIndex?: unknown };
+		const frame = document.querySelector(
+			'[data-preview-node-id="z-default-frame"]',
+		) as HTMLElement & { ZIndex?: unknown };
+		const button = document.querySelector(
+			'[data-preview-node-id="z-default-button"]',
+		) as HTMLElement & { ZIndex?: unknown };
+
+		expect(screen.ZIndex).toBe(1);
+		expect(screen.style.zIndex).toBe("");
+		expect(screen.style.pointerEvents).toBe("none");
+		expect(frame.ZIndex).toBe(1);
+		expect(frame.style.zIndex).toBe("1");
+		expect(frame.style.pointerEvents).toBe("none");
+		expect(button.ZIndex).toBe(1);
+		expect(button.style.zIndex).toBe("1");
+		expect(button.style.pointerEvents).toBe("auto");
+	});
+
+	it("applies sibling ZIndex to DOM stacking and preserves it in the layout model", async () => {
+		let capturedNodes: LayoutNode[] = [];
+		layoutEngineMocks.computeDirty.mockImplementation(
+			(nodes, viewportWidth, viewportHeight) => {
+				capturedNodes = JSON.parse(JSON.stringify(nodes)) as LayoutNode[];
+				return createSessionResult(
+					{
+						"z-stack-screen": {
+							height: viewportHeight,
+							width: viewportWidth,
+							x: 0,
+							y: 0,
+						},
+						"z-stack-low": { height: 80, width: 160, x: 20, y: 20 },
+						"z-stack-high": { height: 80, width: 160, x: 20, y: 20 },
+					},
+					viewportWidth,
+					viewportHeight,
+				);
+			},
+		);
+
+		render(
+			<LayoutProvider debounceMs={0} viewportHeight={200} viewportWidth={300}>
+				<ScreenGui Id="z-stack-screen">
+					<TextButton
+						Id="z-stack-low"
+						Size={UDim2.fromOffset(160, 80)}
+						Text="Low"
+						ZIndex={2}
+					/>
+					<TextButton
+						Id="z-stack-high"
+						Size={UDim2.fromOffset(160, 80)}
+						Text="High"
+						ZIndex={9}
+					/>
+				</ScreenGui>
+			</LayoutProvider>,
+		);
+
+		const low = document.querySelector(
+			'[data-preview-node-id="z-stack-low"]',
+		) as HTMLElement;
+		const high = document.querySelector(
+			'[data-preview-node-id="z-stack-high"]',
+		) as HTMLElement;
+
+		await waitFor(() => {
+			expect(low.style.zIndex).toBe("2");
+			expect(high.style.zIndex).toBe("9");
+			expect(low.getAttribute("data-layout-z-index")).toBe("2");
+			expect(high.getAttribute("data-layout-z-index")).toBe("9");
+			expect(findNode(capturedNodes, "z-stack-low")?.zIndex).toBe(2);
+			expect(findNode(capturedNodes, "z-stack-high")?.zIndex).toBe(9);
+		});
+	});
+
+	it("keeps portal-mounted content in the viewport stack without masking higher non-portal ZIndex", async () => {
+		const playerGui = getLocalPlayerGui();
+
+		render(
+			<LayoutProvider debounceMs={0} viewportHeight={200} viewportWidth={300}>
+				<PortalProvider container={playerGui}>
+					<ScreenGui Id="portal-stack-screen">
+						<TextButton
+							Id="portal-stack-base"
+							Position={UDim2.fromOffset(0, 0)}
+							Size={UDim2.fromOffset(160, 80)}
+							Text="Base"
+							ZIndex={10}
+						/>
+						<Portal>
+							<ScreenGui Id="portal-stack-layer">
+								<TextButton
+									Id="portal-stack-content"
+									Position={UDim2.fromOffset(0, 0)}
+									Size={UDim2.fromOffset(160, 80)}
+									Text="Portal"
+									ZIndex={2}
+								/>
+							</ScreenGui>
+						</Portal>
+					</ScreenGui>
+				</PortalProvider>
+			</LayoutProvider>,
+		);
+
+		const base = document.querySelector(
+			'[data-preview-node-id="portal-stack-base"]',
+		) as HTMLElement;
+		const portalLayer = document.querySelector(
+			'[data-preview-node-id="portal-stack-layer"]',
+		) as HTMLElement;
+		const portalContent = document.querySelector(
+			'[data-preview-node-id="portal-stack-content"]',
+		) as HTMLElement;
+
+		await waitFor(() => {
+			expect(
+				playerGui.parentElement?.hasAttribute("data-preview-layout-provider"),
+			).toBe(true);
+			expect(playerGui.style.pointerEvents).toBe("none");
+			expect(playerGui.style.zIndex).toBe("");
+			expect(base.style.zIndex).toBe("10");
+			expect(portalLayer.style.zIndex).toBe("");
+			expect(portalLayer.style.pointerEvents).toBe("none");
+			expect(portalContent.style.zIndex).toBe("2");
+			expect(portalContent.style.pointerEvents).toBe("auto");
 		});
 	});
 

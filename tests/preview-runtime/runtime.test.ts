@@ -428,6 +428,7 @@ describe.sequential("@loom-dev/preview-runtime", () => {
 		const button = document.createElement("button");
 		button.dataset.previewHost = "textbutton";
 		button.dataset.previewNodeId = "hit-button";
+		button.style.pointerEvents = "auto";
 		playerGui.append(button);
 
 		const originalElementsFromPoint = document.elementsFromPoint;
@@ -451,6 +452,58 @@ describe.sequential("@loom-dev/preview-runtime", () => {
 			expect(hit.FindFirstAncestorWhichIsA("ScreenGui")).toMatchObject({
 				ClassName: "ScreenGui",
 			});
+		} finally {
+			Object.defineProperty(document, "elementsFromPoint", {
+				configurable: true,
+				value: originalElementsFromPoint,
+			});
+		}
+	});
+
+	it("keeps hit testing aligned with eligible top-most preview gui elements", () => {
+		setupRobloxEnvironment();
+
+		const players = game.GetService("Players") as {
+			LocalPlayer: {
+				PlayerGui: HTMLElement & {
+					GetGuiObjectsAtPosition(
+						x: number,
+						y: number,
+					): Array<{
+						Name: string;
+					}>;
+				};
+			};
+		};
+		const playerGui = players.LocalPlayer.PlayerGui;
+		const staleOverlay = document.createElement("div");
+		staleOverlay.dataset.previewHost = "frame";
+		staleOverlay.dataset.previewNodeId = "stale-overlay";
+		staleOverlay.style.pointerEvents = "none";
+		staleOverlay.style.zIndex = "10";
+		const hiddenOverlay = document.createElement("button");
+		hiddenOverlay.dataset.previewHost = "textbutton";
+		hiddenOverlay.dataset.previewNodeId = "hidden-overlay";
+		hiddenOverlay.style.display = "none";
+		hiddenOverlay.style.pointerEvents = "auto";
+		hiddenOverlay.style.zIndex = "9";
+		const button = document.createElement("button");
+		button.dataset.previewHost = "textbutton";
+		button.dataset.previewNodeId = "eligible-button";
+		button.style.pointerEvents = "auto";
+		button.style.zIndex = "2";
+		playerGui.append(staleOverlay, hiddenOverlay, button);
+
+		const originalElementsFromPoint = document.elementsFromPoint;
+		Object.defineProperty(document, "elementsFromPoint", {
+			configurable: true,
+			value: vi.fn(() => [staleOverlay, hiddenOverlay, button]),
+		});
+
+		try {
+			const hits = playerGui.GetGuiObjectsAtPosition(10, 20);
+
+			expect(hits.map((hit) => hit.Name)).toEqual(["eligible-button"]);
 		} finally {
 			Object.defineProperty(document, "elementsFromPoint", {
 				configurable: true,
