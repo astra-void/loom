@@ -47,7 +47,7 @@ export function PreviewTargetShell(props: PreviewTargetShellProps) {
 			viewportHeight={viewport.height}
 			viewportWidth={viewport.width}
 		>
-			<RuntimeScreenGui ref={handleRootRef}>
+			<RuntimeScreenGui Active={true} ref={handleRootRef}>
 				{portalContainer ? (
 					<PortalProvider container={portalContainer}>
 						{props.children}
