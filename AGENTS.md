@@ -1,4 +1,4 @@
-# Agent Instructions
+# AGENTS.md
 
 This repository is a `pnpm` monorepo for the Loom preview and build toolchain. These instructions apply to the whole repository.
 
