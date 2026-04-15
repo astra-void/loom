@@ -811,7 +811,11 @@ export function resolvePreviewDomProps(
 			placeholder: PlaceholderText,
 			style: computedStyle,
 			tabIndex:
-				Selectable === false ? -1 : (forwarded.tabIndex as number | undefined),
+				options.host === "textbutton" || options.host === "imagebutton"
+					? (forwarded.tabIndex as number | undefined)
+					: Selectable === false
+						? -1
+						: (forwarded.tabIndex as number | undefined),
 		},
 		image: Image,
 		imageColor3: ImageColor3,

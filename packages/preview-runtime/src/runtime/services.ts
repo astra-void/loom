@@ -799,10 +799,13 @@ function createPlayerGui(): PreviewPlayerGui {
 	element.style.position = "absolute";
 	element.style.inset = "0";
 	element.style.overflow = "hidden";
-	// Keep the PlayerGui container itself transparent to hit-testing so it does
-	// not block unrelated UI outside the preview surface. Interactive preview
-	// hosts still receive events through their own DOM nodes.
-	element.style.pointerEvents = "none";
+	element.style.pointerEvents = "auto";
+	requestAnimationFrame(() => {
+		const previewViewport = document.querySelector(".preview-stage-viewport");
+		if (previewViewport && !previewViewport.contains(element)) {
+			previewViewport.appendChild(element);
+		}
+	});
 	element.GetFullName = () => "Players.LocalPlayer.PlayerGui";
 	element.FindFirstAncestorOfClass = (
 		className: string,
