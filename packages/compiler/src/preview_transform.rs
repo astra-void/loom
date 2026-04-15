@@ -518,10 +518,7 @@ impl<'a> PreviewTransform<'a> {
         checker: &'a dyn RelativeModuleCandidateChecker,
     ) -> Self {
         Self {
-            react_aliases: merge_aliases(
-                DEFAULT_REACT_ALIASES,
-                options.react_aliases.as_deref(),
-            ),
+            react_aliases: merge_aliases(DEFAULT_REACT_ALIASES, options.react_aliases.as_deref()),
             runtime_aliases: merge_aliases(
                 DEFAULT_RUNTIME_ALIASES,
                 options.runtime_aliases.as_deref(),
@@ -1907,7 +1904,9 @@ const keypoint = ColorSequenceKeypoint;
             result.code
         );
         assert!(
-            result.code.contains(r#"__previewGlobal("ColorSequenceKeypoint")"#),
+            result
+                .code
+                .contains(r#"__previewGlobal("ColorSequenceKeypoint")"#),
             "expected ColorSequenceKeypoint to rewrite to preview global access, got: {}",
             result.code
         );
@@ -1924,7 +1923,9 @@ export const value = ScreenGui;
         let result = transform_preview_source(
             source.to_owned(),
             TransformPreviewSourceOptions {
-                file_path: "packages/preview-runtime/src/hosts/preview-targets/PreviewTargetShell.tsx".to_owned(),
+                file_path:
+                    "packages/preview-runtime/src/hosts/preview-targets/PreviewTargetShell.tsx"
+                        .to_owned(),
                 react_aliases: None,
                 react_roblox_aliases: None,
                 runtime_module: "@loom-dev/preview-runtime".to_owned(),
@@ -1949,7 +1950,9 @@ export const value = ScreenGui;
             "expected runtime import to skip existing ScreenGui binding, got: {first_line}"
         );
         assert!(
-            result.code.contains("import { ScreenGui } from \"../components\";"),
+            result
+                .code
+                .contains("import { ScreenGui } from \"../components\";"),
             "expected original local ScreenGui import to remain, got: {}",
             result.code
         );
@@ -2024,7 +2027,9 @@ function toTextBox(instance: Instance | undefined) {
                 .collect::<Vec<_>>()
         );
         assert!(
-            result.code.contains(r#"isPreviewElement(instance, "TextBox")"#),
+            result
+                .code
+                .contains(r#"isPreviewElement(instance, "TextBox")"#),
             "expected TextBox IsA check to rewrite to preview predicate, got: {}",
             result.code
         );
@@ -2067,7 +2072,9 @@ function findPadding(children: Instance[]) {
                 .collect::<Vec<_>>()
         );
         assert!(
-            result.code.contains(r#"isPreviewElement(child, "UIPadding")"#),
+            result
+                .code
+                .contains(r#"isPreviewElement(child, "UIPadding")"#),
             "expected UIPadding IsA check to rewrite to preview predicate, got: {}",
             result.code
         );
@@ -2112,4 +2119,3 @@ function isPart(instance: Instance) {
         );
     }
 }
-
