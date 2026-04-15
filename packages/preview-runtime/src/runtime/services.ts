@@ -418,6 +418,10 @@ const guiServiceState = {
 	selectedObject: undefined as PreviewGuiHitObject | undefined,
 };
 
+type PreviewInputDiagnosticsGlobal = typeof globalThis & {
+	__loomPreviewInputDiagnostics?: boolean;
+};
+
 function getDomElement(value: unknown): HTMLElement | undefined {
 	if (typeof HTMLElement !== "undefined" && value instanceof HTMLElement) {
 		return value;
@@ -457,6 +461,91 @@ function getPreviewGuiObjectFromElement(
 	}
 
 	return createPreviewGuiObjectHandle(element, host);
+}
+
+function shouldLogPreviewInputDiagnostics() {
+	return (
+		(globalThis as PreviewInputDiagnosticsGlobal)
+			.__loomPreviewInputDiagnostics === true
+	);
+}
+
+function describeInputElement(element: HTMLElement) {
+	return {
+		host: element.getAttribute(PREVIEW_HOST_DATA_ATTRIBUTE) ?? undefined,
+		nodeId: element.getAttribute("data-preview-node-id") ?? undefined,
+		pointerEvents: element.style.pointerEvents || undefined,
+		tagName: element.tagName,
+	};
+}
+
+function logPreviewInputDiagnostics(
+	scope: string,
+	input: Record<string, unknown>,
+) {
+	if (!shouldLogPreviewInputDiagnostics()) {
+		return;
+	}
+
+	console.info(`[preview-runtime][input][${scope}]`, input);
+}
+
+function describeEventTarget(target: EventTarget | null) {
+	return typeof HTMLElement !== "undefined" && target instanceof HTMLElement
+		? describeInputElement(target)
+		: undefined;
+}
+
+function readHitTestStyle(element: HTMLElement) {
+	const view = element.ownerDocument?.defaultView;
+	if (typeof view?.getComputedStyle === "function") {
+		return view.getComputedStyle(element);
+	}
+
+	if (typeof globalThis.getComputedStyle === "function") {
+		return globalThis.getComputedStyle(element);
+	}
+
+	return element.style;
+}
+
+function isPreviewGuiElementHitEligible(element: HTMLElement) {
+	if (
+		typeof HTMLButtonElement !== "undefined" &&
+		element instanceof HTMLButtonElement &&
+		element.disabled
+	) {
+		return false;
+	}
+
+	if (
+		typeof HTMLInputElement !== "undefined" &&
+		element instanceof HTMLInputElement &&
+		element.disabled
+	) {
+		return false;
+	}
+
+	const style = readHitTestStyle(element);
+	if (
+		style.display === "none" ||
+		style.visibility === "hidden" ||
+		style.pointerEvents === "none"
+	) {
+		return false;
+	}
+
+	let current = element.parentElement;
+	while (current) {
+		const parentStyle = readHitTestStyle(current);
+		if (parentStyle.display === "none" || parentStyle.visibility === "hidden") {
+			return false;
+		}
+
+		current = current.parentElement;
+	}
+
+	return true;
 }
 
 function normalizePreviewGuiObject(
@@ -691,6 +780,10 @@ function watchForPreviewViewport(element: HTMLElement) {
 	}
 
 	const observer = new MutationObserver(() => {
+		if (typeof document === "undefined") {
+			return;
+		}
+
 		const previewViewport = document.querySelector(".preview-stage-viewport");
 		if (
 			typeof HTMLElement === "undefined" ||
@@ -844,8 +937,25 @@ function createPlayerGui(): PreviewPlayerGui {
 				continue;
 			}
 
+			if (!isPreviewGuiElementHitEligible(hitElement)) {
+				continue;
+			}
+
 			guiObjects.push(createPreviewGuiObjectHandle(hitElement, host));
 		}
+
+		logPreviewInputDiagnostics("GetGuiObjectsAtPosition", {
+			hits: hitElements
+				.filter(
+					(hitElement): hitElement is HTMLElement =>
+						typeof HTMLElement !== "undefined" &&
+						hitElement instanceof HTMLElement,
+				)
+				.map(describeInputElement),
+			returned: guiObjects.map((guiObject) => guiObject.Name),
+			x,
+			y,
+		});
 
 		return guiObjects;
 	};
@@ -983,10 +1093,28 @@ function getSelectedGuiObjectFromEvent(event: Event) {
 		}
 
 		const host = entry.getAttribute(PREVIEW_HOST_DATA_ATTRIBUTE);
-		if (host && isPreviewGuiObjectHost(host)) {
-			return getPreviewGuiObjectFromElement(entry);
+		if (!host || !isPreviewGuiObjectHost(host)) {
+			continue;
 		}
+
+		if (!isPreviewGuiElementHitEligible(entry)) {
+			continue;
+		}
+
+		const selected = getPreviewGuiObjectFromElement(entry);
+		logPreviewInputDiagnostics("SelectedObject", {
+			eventType: event.type,
+			receiver: selected?.Name,
+			target: describeEventTarget(event.target),
+		});
+		return selected;
 	}
+
+	logPreviewInputDiagnostics("SelectedObject", {
+		eventType: event.type,
+		receiver: undefined,
+		target: describeEventTarget(event.target),
+	});
 
 	return undefined;
 }

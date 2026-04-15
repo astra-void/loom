@@ -141,6 +141,8 @@ function getHostPropertyFallback(
 			return createZeroVector2();
 		case "Visible":
 			return true;
+		case "ZIndex":
+			return 1;
 		default:
 			return undefined;
 	}
@@ -559,6 +561,7 @@ export function useHostLayout(host: LayoutHostName, props: PreviewDomProps) {
 			sourceOrder: normalizedNode.sourceOrder,
 			styleHints: normalizedNode.styleHints,
 			visible: normalizedNode.visible,
+			zIndex: normalizedNode.zIndex,
 		}),
 		[intrinsicSize, normalizedNode],
 	);

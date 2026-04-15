@@ -646,6 +646,22 @@ export function LayoutViewportPortalBoundary(props: {
 		portalContainer.style.height = "100%";
 		portalContainer.style.overflow = "hidden";
 		portalContainer.style.pointerEvents = "none";
+
+		if (
+			(
+				globalThis as typeof globalThis & {
+					__loomPreviewLayerDiagnostics?: boolean;
+				}
+			).__loomPreviewLayerDiagnostics === true
+		) {
+			console.info("[preview-runtime][portal-layer]", {
+				containerNodeId: portalContainer.getAttribute("data-preview-node-id"),
+				parentIsLayoutContainer:
+					portalContainer.parentElement === layoutContainer,
+				pointerEvents: portalContainer.style.pointerEvents,
+				zIndex: portalContainer.style.zIndex,
+			});
+		}
 	}, [context, props.container]);
 
 	return (

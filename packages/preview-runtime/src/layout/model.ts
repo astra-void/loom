@@ -182,6 +182,7 @@ export type PreviewLayoutNode = {
 	sourceOrder?: number;
 	styleHints?: PreviewLayoutStyleHints;
 	visible?: boolean;
+	zIndex?: number;
 };
 
 export type PreviewLayoutDebugNode = {
@@ -202,6 +203,7 @@ export type PreviewLayoutDebugNode = {
 	rect: ComputedRect | null;
 	sizeResolution: PreviewLayoutSizeResolution;
 	styleHints?: PreviewLayoutStyleHints;
+	zIndex?: number;
 };
 
 export type PreviewLayoutDebugPayload = {
@@ -246,6 +248,7 @@ export type RobloxLayoutRegistrationInput = RobloxLayoutNodeInput & {
 	name?: string;
 	sourceOrder?: number;
 	styleHints?: PreviewLayoutStyleHints;
+	zIndex?: number;
 };
 
 export const SYNTHETIC_ROOT_ID = "__loom_preview_root__";
@@ -349,6 +352,14 @@ function normalizeStyleHints(
 	}
 
 	return { height, width };
+}
+
+function normalizeOptionalInteger(value: unknown): number | undefined {
+	if (value === undefined || value === null) {
+		return undefined;
+	}
+
+	return Math.floor(toFiniteNumber(value, 0));
 }
 
 function normalizeLowerCaseString(value: unknown): string | undefined {
@@ -910,6 +921,7 @@ export function adaptRobloxNodeInput(
 		name?: unknown;
 		sourceOrder?: unknown;
 		visible?: unknown;
+		zIndex?: unknown;
 	};
 	const measuredSize = normalizeIntrinsicSize(
 		input.intrinsicSize ??
@@ -963,6 +975,7 @@ export function adaptRobloxNodeInput(
 					),
 		styleHints: normalizeStyleHints(input.styleHints),
 		visible: rawLayoutInput.visible !== false,
+		zIndex: normalizeOptionalInteger(rawLayoutInput.zIndex),
 	};
 
 	return normalizeRootScreenGuiNode(nextNode);
@@ -1095,7 +1108,8 @@ export function areNodesEqual(
 		a.parentId === b.parentId &&
 		a.sourceOrder === b.sourceOrder &&
 		a.styleHints?.height === b.styleHints?.height &&
-		a.styleHints?.width === b.styleHints?.width
+		a.styleHints?.width === b.styleHints?.width &&
+		a.zIndex === b.zIndex
 	);
 }
 
@@ -1465,6 +1479,7 @@ function normalizeDebugNode(raw: unknown): PreviewLayoutDebugNode | null {
 			record.styleHints && typeof record.styleHints === "object"
 				? normalizeStyleHints(record.styleHints as PreviewLayoutStyleHints)
 				: undefined,
+		zIndex: normalizeOptionalInteger(record.zIndex),
 	};
 }
 

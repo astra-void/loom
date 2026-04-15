@@ -111,8 +111,34 @@ type PreviewHostElement = HTMLElement & {
 	Name?: string;
 };
 
+type PreviewMotionDiagnosticsGlobal = typeof globalThis & {
+	__loomPreviewMotionDiagnostics?: boolean;
+};
+
 function hasOwn(value: object, property: PropertyKey) {
 	return Object.getOwnPropertyDescriptor(value, property) !== undefined;
+}
+
+function shouldLogPreviewMotionDiagnostics() {
+	return (
+		(globalThis as PreviewMotionDiagnosticsGlobal)
+			.__loomPreviewMotionDiagnostics === true
+	);
+}
+
+function logPreviewMotionReadDiagnostics(input: {
+	fallbackValue: unknown;
+	finalValue: unknown;
+	host?: string;
+	nodeId: string;
+	property: string;
+	overrideValue?: unknown;
+}) {
+	if (!shouldLogPreviewMotionDiagnostics()) {
+		return;
+	}
+
+	console.info("[preview-runtime][motion-read]", input);
 }
 
 function createHostOverrideStore(): HostOverrideStore {
@@ -273,10 +299,29 @@ function definePreviewHostBridgeProperty(
 		get() {
 			const entry = getHostOverrideStore().readValue(state.nodeId, property);
 			if (entry.hasValue) {
+				const fallbackValue = shouldLogPreviewMotionDiagnostics()
+					? state.getBaseValue(property)
+					: undefined;
+				logPreviewMotionReadDiagnostics({
+					fallbackValue,
+					finalValue: entry.value,
+					host: getPreviewHostJsxName(element),
+					nodeId: state.nodeId,
+					overrideValue: entry.value,
+					property,
+				});
 				return entry.value;
 			}
 
-			return state.getBaseValue(property);
+			const fallbackValue = state.getBaseValue(property);
+			logPreviewMotionReadDiagnostics({
+				fallbackValue,
+				finalValue: fallbackValue,
+				host: getPreviewHostJsxName(element),
+				nodeId: state.nodeId,
+				property,
+			});
+			return fallbackValue;
 		},
 		set(value: unknown) {
 			getHostOverrideStore().setValue(state.nodeId, property, value);

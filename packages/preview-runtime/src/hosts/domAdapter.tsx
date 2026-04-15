@@ -342,6 +342,7 @@ function withLayoutDiagnostics(
 			debugNode?.styleHints?.height ?? node.styleHints?.height ?? undefined,
 		"data-layout-style-width":
 			debugNode?.styleHints?.width ?? node.styleHints?.width ?? undefined,
+		"data-layout-z-index": node.zIndex,
 		"data-layout-placeholder-behavior": hostPolicy.placeholderBehavior,
 		"data-layout-size-reason": sizeResolution.reason,
 		"data-layout-viewport-height": finiteDiagnosticNumber(
@@ -534,6 +535,7 @@ function createHostNode(source: SourceHostDescriptor): PreviewHostNode {
 			visible:
 				source.props.Visible ??
 				(rawProps.visible as PreviewDomProps["Visible"] | undefined),
+			zIndex: source.props.ZIndex,
 		},
 		parentId,
 	);

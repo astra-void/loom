@@ -820,6 +820,7 @@ export class LayoutController {
 			rect,
 			sizeResolution: sizeResolution.sizeResolution,
 			styleHints: node.styleHints,
+			zIndex: node.zIndex,
 		};
 	}
 

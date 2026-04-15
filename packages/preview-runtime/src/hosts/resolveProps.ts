@@ -126,6 +126,43 @@ const PREVIEW_REACT_CHANGE_PROP_KEYS = {
 	Text: "__previewReactChangeText",
 } as const;
 
+const DEFAULT_GUI_OBJECT_Z_INDEX = 1;
+const layerCollectorHostNames = new Set<HostName>([
+	"billboardgui",
+	"screengui",
+	"surfacegui",
+]);
+const pointerInteractiveHostNames = new Set<HostName>([
+	"imagebutton",
+	"textbox",
+	"textbutton",
+]);
+
+type PreviewLayerDiagnosticsGlobal = typeof globalThis & {
+	__loomPreviewLayerDiagnostics?: boolean;
+};
+
+function shouldLogPreviewLayerDiagnostics() {
+	return (
+		(globalThis as PreviewLayerDiagnosticsGlobal)
+			.__loomPreviewLayerDiagnostics === true
+	);
+}
+
+function logPreviewLayerDiagnostics(input: {
+	domZIndex?: React.CSSProperties["zIndex"];
+	host: HostName;
+	nodeId: string;
+	pointerEvents?: React.CSSProperties["pointerEvents"];
+	propZIndex?: number;
+}) {
+	if (!shouldLogPreviewLayerDiagnostics()) {
+		return;
+	}
+
+	console.info("[preview-runtime][layer]", input);
+}
+
 function getEventHandler(
 	eventTable: PreviewEventTable | undefined,
 	key: keyof PreviewEventTable,
@@ -452,6 +489,44 @@ function toOpacity(transparency: number) {
 	return Math.max(0, Math.min(1, 1 - transparency));
 }
 
+function resolveHostPointerEvents(input: {
+	active?: boolean;
+	host: HostName;
+	textEditable?: boolean;
+}) {
+	if (input.active === false) {
+		return "none";
+	}
+
+	if (input.host === "textbox" && input.textEditable === false) {
+		return "none";
+	}
+
+	if (pointerInteractiveHostNames.has(input.host) || input.active === true) {
+		return "auto";
+	}
+
+	return "none";
+}
+
+function resolveHostZIndex(
+	host: HostName,
+	zIndex: number | undefined,
+	styleZIndex: React.CSSProperties["zIndex"],
+) {
+	if (typeof zIndex === "number" && Number.isFinite(zIndex)) {
+		return zIndex;
+	}
+
+	if (styleZIndex !== undefined) {
+		return styleZIndex;
+	}
+
+	return layerCollectorHostNames.has(host)
+		? undefined
+		: DEFAULT_GUI_OBJECT_Z_INDEX;
+}
+
 export function applyComputedLayoutStyle(
 	style: React.CSSProperties,
 	computed: ComputedRect | null,
@@ -598,22 +673,33 @@ export function resolvePreviewDomProps(
 		computedStyle.display = "none";
 	}
 
-	if (
-		Active === false &&
-		options.host !== "textbutton" &&
-		options.host !== "imagebutton" &&
-		options.host !== "textbox"
-	) {
-		computedStyle.pointerEvents = "none";
-	}
+	computedStyle.pointerEvents = resolveHostPointerEvents({
+		active: Active,
+		host: options.host,
+		textEditable: TextEditable,
+	});
 
 	if (ClipsDescendants === true && options.host !== "scrollingframe") {
 		computedStyle.overflow = "hidden";
 	}
 
-	if (ZIndex !== undefined) {
-		computedStyle.zIndex = ZIndex;
+	const resolvedZIndex = resolveHostZIndex(
+		options.host,
+		ZIndex,
+		computedStyle.zIndex,
+	);
+	if (resolvedZIndex !== undefined) {
+		computedStyle.zIndex = resolvedZIndex;
+	} else {
+		delete computedStyle.zIndex;
 	}
+	logPreviewLayerDiagnostics({
+		domZIndex: computedStyle.zIndex,
+		host: options.host,
+		nodeId: options.nodeId,
+		pointerEvents: computedStyle.pointerEvents,
+		propZIndex: ZIndex,
+	});
 
 	if (BackgroundColor3) {
 		computedStyle.backgroundColor = toCssColor(
