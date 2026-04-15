@@ -19,6 +19,7 @@ import {
 	normalizePreviewRuntimeError,
 	Portal,
 	PortalProvider,
+	PreviewTargetShell,
 	type PreviewRuntimeIssue,
 	publishPreviewRuntimeIssue,
 	ScreenGui,
@@ -834,6 +835,32 @@ describe("preview runtime host mapping", () => {
 		expect(button.ZIndex).toBe(1);
 		expect(button.style.zIndex).toBe("1");
 		expect(button.style.pointerEvents).toBe("auto");
+	});
+
+	it("keeps PreviewTargetShell children pointer-interactive outside the preview stage", async () => {
+		const user = userEvent.setup();
+		const onClick = vi.fn();
+
+		render(
+			<PreviewTargetShell>
+				<button onClick={onClick} type="button">
+					Shell action
+				</button>
+			</PreviewTargetShell>,
+		);
+
+		const button = await screen.findByRole("button", {
+			name: "Shell action",
+		});
+		const shellRoot = button.closest(
+			'[data-preview-host="screengui"]',
+		) as HTMLElement | null;
+
+		expect(shellRoot?.style.pointerEvents).toBe("auto");
+
+		await user.click(button);
+
+		expect(onClick).toHaveBeenCalledTimes(1);
 	});
 
 	it("applies sibling ZIndex to DOM stacking and preserves it in the layout model", async () => {
