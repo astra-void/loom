@@ -33,8 +33,10 @@ function resolveFrameHostStyle(props: PreviewDomProps) {
 	});
 
 	return resolved.domProps.style as {
+		display?: string;
 		height?: string;
 		left?: string;
+		pointerEvents?: string;
 		top?: string;
 		width?: string;
 	};
@@ -96,4 +98,22 @@ test("frame applies position and size offsets on computed layout", () => {
 	expect(style.top).toBe("27px");
 	expect(style.width).toBe("150px");
 	expect(style.height).toBe("250px");
+});
+
+test("frame becomes non-interactive when Active is false", () => {
+	const style = resolveFrameHostStyle({
+		Active: false,
+	});
+
+	expect(style.pointerEvents).toBe("none");
+});
+
+test("frame hides and disables input when Visible is false and Active is false", () => {
+	const style = resolveFrameHostStyle({
+		Active: false,
+		Visible: false,
+	});
+
+	expect(style.display).toBe("none");
+	expect(style.pointerEvents).toBe("none");
 });

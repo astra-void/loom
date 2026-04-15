@@ -53,11 +53,11 @@ import {
 } from "@testing-library/react";
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { getLocalPlayerGui } from "../../apps/preview-harness/src/test-utils";
 import * as hostOverrides from "../../packages/preview-runtime/src/hosts/hostOverrides";
 import { LayoutController } from "../../packages/preview-runtime/src/layout/controller";
 import { suppressExpectedConsoleMessages } from "../testLogUtils";
 import userEvent from "../testUserEvent";
+import { getLocalPlayerGui } from "../../apps/preview-harness/src/test-utils/playerGui";
 
 type LayoutRect = { height: number; width: number; x: number; y: number };
 type SerializedAxis = { offset: number; scale: number };
@@ -382,7 +382,7 @@ describe("preview runtime Roblox globals", () => {
 		expect(playerGui).toBeInstanceOf(HTMLElement);
 		expect(isPreviewElement(playerGui, "BasePlayerGui")).toBe(true);
 		expect(isPreviewElement(playerGui, "PlayerGui")).toBe(true);
-		expect(playerGui.style.pointerEvents).toBe("auto");
+		expect(playerGui.style.pointerEvents).toBe("none");
 		expect(players.LocalPlayer.PlayerGui.IsA("BasePlayerGui")).toBe(true);
 		expect(players.LocalPlayer.PlayerGui.IsA("PlayerGui")).toBe(true);
 		expect(players.LocalPlayer.PlayerGui.GetFullName()).toBe(
@@ -856,7 +856,7 @@ describe("preview runtime host mapping", () => {
 			return (
 				<TextBox
 					Change={{
-						Text: (textBox) => {
+						Text: (textBox: HTMLInputElement & { Text?: string; }) => {
 							const currentText = (
 								textBox as HTMLInputElement & { Text?: string }
 							).Text;
