@@ -1,6 +1,6 @@
 {
 	"name": "@loom-dev/compiler",
-	"version": "0.1.0-alpha.6",
+	"version": "0.1.0-alpha.7",
 	"private": false,
 	"description": "Custom TSX compiler bridge using Rust, SWC, and NAPI-RS.",
 	"main": "wrapper.js",
