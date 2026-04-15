@@ -12,6 +12,8 @@ import {
 	isViewportLargeEnough,
 	LayoutProvider,
 	measureElementViewport,
+	type PreviewLayoutDebugNode,
+	type PreviewLayoutProbeSnapshot,
 	type PreviewRuntimeIssue,
 	pickViewport,
 	setPreviewRuntimeIssueContext,
@@ -30,14 +32,32 @@ import {
 	type PreviewModule,
 	type PreviewReadyWarningState,
 } from "../execution/shared";
+import {
+	appendPreviewDebugEvent,
+	defaultPreviewHotDebugState,
+	type PreviewDebugEvent,
+	type PreviewDebugEventKind,
+	type PreviewHotDebugState,
+} from "./debugState";
+import {
+	getPreviewModuleLoadMetadata,
+	type PreviewModuleLoadMetadata,
+	type PreviewModuleLoadOptions,
+	type PreviewModuleLoadRetryInfo,
+} from "./loadPreviewModule";
 import { PreviewRenderShell } from "./PreviewRenderShell";
 import { PreviewThemeControl } from "./theme";
 
 type PreviewAppProps = {
+	debugEvents?: PreviewDebugEvent[];
 	entries: PreviewEntryDescriptor[];
 	entryPayloads?: Record<string, PreviewEntryPayload>;
+	hotDebugState?: PreviewHotDebugState;
 	initialSelectedId?: string;
-	loadEntry: (id: string) => Promise<LoadedPreviewEntry>;
+	loadEntry: (
+		id: string,
+		options?: PreviewModuleLoadOptions,
+	) => Promise<LoadedPreviewEntry>;
 	projectName: string;
 };
 
@@ -64,8 +84,18 @@ type PreviewErrorBoundaryState = {
 };
 
 type LoadedPreviewEntry = {
+	loadMetadata?: PreviewModuleLoadMetadata;
 	module: PreviewModule;
 	payload?: PreviewEntryPayload;
+};
+
+type ModuleLoadDebugState = {
+	entryId?: string;
+	message?: string;
+	outcome?: PreviewModuleLoadMetadata["outcome"];
+	retried: boolean;
+	retry: PreviewModuleLoadRetryInfo | null;
+	state: "failed" | "idle" | "loading" | "not-loadable" | "ready" | "retrying";
 };
 
 type RuntimeIssueRenderMeta = {
@@ -203,6 +233,332 @@ function createRuntimeIssueRenderMeta(issues: PreviewRuntimeIssue[]) {
 	}
 
 	return renderMeta;
+}
+
+const emptyModuleLoadDebugState: ModuleLoadDebugState = {
+	retried: false,
+	retry: null,
+	state: "idle",
+};
+
+function getErrorMessage(error: unknown) {
+	if (error instanceof Error) {
+		return error.message;
+	}
+
+	return String(error);
+}
+
+function summarizeRuntimeIssueCounts(issues: PreviewRuntimeIssue[]) {
+	const errors = issues.filter((issue) => isBlockingIssue(issue)).length;
+
+	return {
+		errors,
+		warnings: issues.length - errors,
+	};
+}
+
+function formatIssueCountSummary(counts: { errors: number; warnings: number }) {
+	return `${counts.errors} errors / ${counts.warnings} warnings`;
+}
+
+function createDebugEventDetailForRuntimeIssues(issues: PreviewRuntimeIssue[]) {
+	return formatIssueCountSummary(summarizeRuntimeIssueCounts(issues));
+}
+
+function describeStatusDetails(
+	statusDetails: PreviewEntryDescriptor["statusDetails"] | undefined,
+) {
+	if (!statusDetails) {
+		return "No status details.";
+	}
+
+	switch (statusDetails.kind) {
+		case "ready": {
+			const parts = [
+				statusDetails.fidelity ? `fidelity ${statusDetails.fidelity}` : null,
+				(statusDetails.warningCodes?.length ?? 0) > 0
+					? `warnings ${statusDetails.warningCodes?.join(", ")}`
+					: null,
+				(statusDetails.degradedTargets?.length ?? 0) > 0
+					? `degraded ${statusDetails.degradedTargets?.join(", ")}`
+					: null,
+			].filter(Boolean);
+
+			return parts.length > 0 ? parts.join("; ") : "ready";
+		}
+		case "needs_harness": {
+			const candidates = statusDetails.candidates?.join(", ");
+			return candidates
+				? `${statusDetails.reason}; candidates ${candidates}`
+				: statusDetails.reason;
+		}
+		case "ambiguous":
+			return `${statusDetails.reason}; candidates ${statusDetails.candidates.join(", ")}`;
+		case "blocked_by_transform":
+			return `${statusDetails.reason}; blocking ${statusDetails.blockingCodes.join(", ")}`;
+		case "blocked_by_runtime":
+		case "blocked_by_layout":
+			return `${statusDetails.reason}; issues ${statusDetails.issueCodes.join(", ")}`;
+	}
+}
+
+function collectLayoutDebugNodes(roots: PreviewLayoutDebugNode[]) {
+	const nodes: PreviewLayoutDebugNode[] = [];
+	const visit = (node: PreviewLayoutDebugNode) => {
+		nodes.push(node);
+		for (const child of node.children) {
+			visit(child);
+		}
+	};
+
+	for (const root of roots) {
+		visit(root);
+	}
+
+	return nodes;
+}
+
+function incrementCount(map: Map<string, number>, key: string) {
+	map.set(key, (map.get(key) ?? 0) + 1);
+}
+
+function formatDistribution(counts: Map<string, number>) {
+	const entries = [...counts.entries()].sort((left, right) =>
+		left[0].localeCompare(right[0]),
+	);
+
+	return entries.length > 0
+		? entries.map(([key, count]) => `${key} ${count}`).join(", ")
+		: "none";
+}
+
+function formatHostCount(count: number, names: string[]) {
+	if (count === 0) {
+		return "0";
+	}
+
+	const uniqueNames = [...new Set(names)].slice(0, 4);
+	const suffix = names.length > uniqueNames.length ? ", ..." : "";
+	return `${count} (${uniqueNames.join(", ")}${suffix})`;
+}
+
+function summarizeLayoutDebug(layoutProbe: PreviewLayoutProbeSnapshot) {
+	const nodes = collectLayoutDebugNodes(layoutProbe.debug.roots);
+	const provenanceCounts = new Map<string, number>();
+	const layoutSourceCounts = new Map<string, number>();
+	const degradedHosts: string[] = [];
+	const fullSizeDefaultHosts: string[] = [];
+	let placeholderHostCount = 0;
+
+	for (const node of nodes) {
+		incrementCount(provenanceCounts, node.provenance.source);
+		incrementCount(layoutSourceCounts, node.layoutSource);
+
+		if (node.hostPolicy.degraded) {
+			degradedHosts.push(node.nodeType);
+		}
+
+		if (node.hostPolicy.fullSizeDefault) {
+			fullSizeDefaultHosts.push(node.nodeType);
+		}
+
+		if (node.hostPolicy.placeholderBehavior !== "none") {
+			placeholderHostCount += 1;
+		}
+	}
+
+	return {
+		degradedHostCount: degradedHosts.length,
+		degradedHosts,
+		fullSizeDefaultHostCount: fullSizeDefaultHosts.length,
+		fullSizeDefaultHosts,
+		layoutSourceDistribution: formatDistribution(layoutSourceCounts),
+		nodeCount: nodes.length,
+		placeholderHostCount,
+		provenanceDistribution: formatDistribution(provenanceCounts),
+	};
+}
+
+function formatRetryReason(retry: PreviewModuleLoadRetryInfo | null) {
+	if (!retry) {
+		return "none";
+	}
+
+	return retry.code ? `${retry.reason} (${retry.code})` : retry.reason;
+}
+
+function mergeDebugEvents(
+	workspaceEvents: PreviewDebugEvent[],
+	localEvents: PreviewDebugEvent[],
+) {
+	return [...workspaceEvents, ...localEvents]
+		.sort((left, right) => {
+			const timestampDelta = left.timestamp - right.timestamp;
+			return timestampDelta === 0
+				? left.sequence - right.sequence
+				: timestampDelta;
+		})
+		.slice(-8);
+}
+
+function PreviewDebugHud(props: {
+	entry: PreviewEntryDescriptor;
+	events: PreviewDebugEvent[];
+	hotDebugState?: PreviewHotDebugState;
+	moduleLoadState: ModuleLoadDebugState;
+	runtimeIssues: PreviewRuntimeIssue[];
+}) {
+	const layoutProbe = usePreviewLayoutProbeSnapshot();
+	const layoutSummary = React.useMemo(
+		() => summarizeLayoutDebug(layoutProbe),
+		[layoutProbe],
+	);
+	const hotDebugState = props.hotDebugState ?? defaultPreviewHotDebugState;
+	const runtimeIssueCounts = summarizeRuntimeIssueCounts(props.runtimeIssues);
+	const moduleOutcome =
+		props.moduleLoadState.outcome ?? props.moduleLoadState.state;
+
+	return (
+		<aside aria-label="Preview debug HUD" className="preview-debug-hud">
+			<section className="preview-debug-section">
+				<h3>Entry</h3>
+				<dl className="preview-debug-list">
+					<div>
+						<dt>id</dt>
+						<dd>{props.entry.id}</dd>
+					</div>
+					<div>
+						<dt>path</dt>
+						<dd>{props.entry.relativePath}</dd>
+					</div>
+					<div>
+						<dt>status</dt>
+						<dd>
+							{getStatusLabel(props.entry.status)};{" "}
+							{describeStatusDetails(props.entry.statusDetails)}
+						</dd>
+					</div>
+					<div>
+						<dt>hmr</dt>
+						<dd>
+							{hotDebugState.available
+								? hotDebugState.connection
+								: "unavailable"}
+							; listener {hotDebugState.updateListener}; send{" "}
+							{hotDebugState.sendAvailable ? "available" : "unavailable"}
+						</dd>
+					</div>
+					<div>
+						<dt>hot sequence</dt>
+						<dd>{hotDebugState.updateSequence}</dd>
+					</div>
+					<div>
+						<dt>runtime issues</dt>
+						<dd>{formatIssueCountSummary(runtimeIssueCounts)}</dd>
+					</div>
+					<div>
+						<dt>module load</dt>
+						<dd>
+							{props.moduleLoadState.state}; outcome {moduleOutcome}
+						</dd>
+					</div>
+					<div>
+						<dt>retried</dt>
+						<dd>{props.moduleLoadState.retried ? "yes" : "no"}</dd>
+					</div>
+					<div>
+						<dt>retry reason</dt>
+						<dd>{formatRetryReason(props.moduleLoadState.retry)}</dd>
+					</div>
+					{props.moduleLoadState.retry?.message ? (
+						<div>
+							<dt>retry message</dt>
+							<dd>{props.moduleLoadState.retry.message}</dd>
+						</div>
+					) : undefined}
+					{props.moduleLoadState.message ? (
+						<div>
+							<dt>load message</dt>
+							<dd>{props.moduleLoadState.message}</dd>
+						</div>
+					) : undefined}
+				</dl>
+			</section>
+			<section className="preview-debug-section">
+				<h3>Layout</h3>
+				<dl className="preview-debug-list">
+					<div>
+						<dt>probe</dt>
+						<dd>
+							{layoutProbe.error
+								? `error: ${layoutProbe.error}`
+								: layoutProbe.isReady
+									? "ready"
+									: "warming"}
+							; revision {layoutProbe.revision}
+						</dd>
+					</div>
+					<div>
+						<dt>viewport</dt>
+						<dd>
+							{layoutProbe.viewportReady ? "ready" : "not ready"};{" "}
+							{layoutProbe.viewport.width}x{layoutProbe.viewport.height}
+						</dd>
+					</div>
+					<div>
+						<dt>provenance</dt>
+						<dd>{layoutSummary.provenanceDistribution}</dd>
+					</div>
+					<div>
+						<dt>degraded hosts</dt>
+						<dd>
+							{formatHostCount(
+								layoutSummary.degradedHostCount,
+								layoutSummary.degradedHosts,
+							)}
+						</dd>
+					</div>
+					<div>
+						<dt>full-size-default</dt>
+						<dd>
+							{formatHostCount(
+								layoutSummary.fullSizeDefaultHostCount,
+								layoutSummary.fullSizeDefaultHosts,
+							)}
+						</dd>
+					</div>
+					<div>
+						<dt>placeholders</dt>
+						<dd>{layoutSummary.placeholderHostCount}</dd>
+					</div>
+					<div>
+						<dt>layout sources</dt>
+						<dd>{layoutSummary.layoutSourceDistribution}</dd>
+					</div>
+					<div>
+						<dt>nodes</dt>
+						<dd>{layoutSummary.nodeCount}</dd>
+					</div>
+				</dl>
+			</section>
+			<section className="preview-debug-section">
+				<h3>Recent Events</h3>
+				{props.events.length > 0 ? (
+					<ol className="preview-debug-timeline">
+						{props.events.map((event) => (
+							<li key={event.id}>
+								<span>{event.label}</span>
+								{event.detail ? <small>{event.detail}</small> : undefined}
+							</li>
+						))}
+					</ol>
+				) : (
+					<p className="preview-debug-empty">No recent debug events.</p>
+				)}
+			</section>
+		</aside>
+	);
 }
 
 function _isRecord(value: unknown): value is Record<string, unknown> {
@@ -870,9 +1226,32 @@ export function PreviewApp(props: PreviewAppProps) {
 	const [runtimeIssues, setRuntimeIssues] = React.useState<
 		PreviewRuntimeIssue[]
 	>([]);
+	const [moduleLoadDebugState, setModuleLoadDebugState] =
+		React.useState<ModuleLoadDebugState>(emptyModuleLoadDebugState);
+	const [localDebugEvents, setLocalDebugEvents] = React.useState<
+		PreviewDebugEvent[]
+	>([]);
 	const issueDisclosureRef = React.useRef<HTMLDetailsElement | null>(null);
 	const selectedEntryRef = React.useRef<PreviewEntryDescriptor | undefined>(
 		undefined,
+	);
+	const debugEventSequenceRef = React.useRef(0);
+	const recordDebugEvent = React.useCallback(
+		(kind: PreviewDebugEventKind, label: string, detail?: string) => {
+			const sequence = debugEventSequenceRef.current + 1;
+			debugEventSequenceRef.current = sequence;
+			setLocalDebugEvents((previousEvents) =>
+				appendPreviewDebugEvent(previousEvents, {
+					...(detail ? { detail } : {}),
+					id: `app:${sequence}`,
+					kind,
+					label,
+					sequence,
+					timestamp: Date.now(),
+				}),
+			);
+		},
+		[],
 	);
 	const runtimeIssueRenderMeta = React.useMemo(
 		() => createRuntimeIssueRenderMeta(runtimeIssues),
@@ -986,11 +1365,16 @@ export function PreviewApp(props: PreviewAppProps) {
 	const selectedEntryTargetName = selectedEntry?.targetName;
 	const isPreviewCanvasTransitioning =
 		selectedEntry?.status === "ready" && isLoadingEntry;
+	const debugEvents = React.useMemo(
+		() => mergeDebugEvents(props.debugEvents ?? [], localDebugEvents),
+		[localDebugEvents, props.debugEvents],
+	);
 	const [collapsedFolderIds, setCollapsedFolderIds] = React.useState<
 		Set<string>
 	>(() => new Set());
-	const loadEntryEvent = React.useEffectEvent((entryId: string) =>
-		loadEntry(entryId),
+	const loadEntryEvent = React.useEffectEvent(
+		(entryId: string, options?: PreviewModuleLoadOptions) =>
+			loadEntry(entryId, options),
 	);
 	selectedEntryRef.current = selectedEntry;
 
@@ -1007,12 +1391,17 @@ export function PreviewApp(props: PreviewAppProps) {
 	React.useEffect(() => {
 		const unsubscribe = subscribePreviewRuntimeIssues((issues) => {
 			setRuntimeIssues(issues);
+			recordDebugEvent(
+				"runtime-issues-updated",
+				"Runtime issues updated",
+				createDebugEventDetailForRuntimeIssues(issues),
+			);
 		});
 
 		return () => {
 			unsubscribe();
 		};
-	}, []);
+	}, [recordDebugEvent]);
 
 	React.useEffect(() => {
 		clearPreviewRuntimeIssues();
@@ -1052,6 +1441,12 @@ export function PreviewApp(props: PreviewAppProps) {
 			setIsLoadingEntry(false);
 			setLoadIssue(null);
 			setRenderIssue(null);
+			setModuleLoadDebugState({
+				entryId: selectedEntryId,
+				retried: false,
+				retry: null,
+				state: selectedEntryId ? "not-loadable" : "idle",
+			});
 			return;
 		}
 
@@ -1059,28 +1454,91 @@ export function PreviewApp(props: PreviewAppProps) {
 		setIsLoadingEntry(true);
 		setLoadIssue(null);
 		setRenderIssue(null);
+		setModuleLoadDebugState({
+			entryId: selectedEntryId,
+			retried: false,
+			retry: null,
+			state: "loading",
+		});
 
-		loadEntryEvent(selectedEntryId)
+		loadEntryEvent(selectedEntryId, {
+			onRetry: (retry) => {
+				if (cancelled) {
+					return;
+				}
+
+				setModuleLoadDebugState({
+					entryId: selectedEntryId,
+					retried: true,
+					retry,
+					state: "retrying",
+				});
+				recordDebugEvent(
+					"module-retry-scheduled",
+					"Module retry scheduled",
+					retry.code ? `${retry.reason} (${retry.code})` : retry.reason,
+				);
+			},
+		})
 			.then((entryResult) => {
 				if (!cancelled) {
+					const loadMetadata: PreviewModuleLoadMetadata =
+						entryResult.loadMetadata ?? {
+							outcome: "ready",
+							retried: false,
+							retry: null,
+						};
 					setLoadedEntry(entryResult);
 					setIsLoadingEntry(false);
+					setModuleLoadDebugState({
+						entryId: selectedEntryId,
+						outcome: loadMetadata.outcome,
+						retried: loadMetadata.retried,
+						retry: loadMetadata.retry,
+						state: "ready",
+					});
+					if (loadMetadata.outcome === "recovered") {
+						recordDebugEvent(
+							"module-recovered",
+							"Module recovered",
+							selectedEntryId,
+						);
+					}
 				}
 			})
 			.catch((error: unknown) => {
 				if (!cancelled) {
+					const loadMetadata: PreviewModuleLoadMetadata =
+						getPreviewModuleLoadMetadata(error) ?? {
+							outcome: "failed",
+							retried: false,
+							retry: null,
+						};
 					const currentSelectedEntry = selectedEntryRef.current;
 					if (currentSelectedEntry) {
 						setLoadIssue(createPreviewLoadIssue(currentSelectedEntry, error));
 					}
 					setIsLoadingEntry(false);
+					setModuleLoadDebugState({
+						entryId: selectedEntryId,
+						message: getErrorMessage(error),
+						outcome: "failed",
+						retried: loadMetadata.retried,
+						retry: loadMetadata.retry,
+						state: "failed",
+					});
+					recordDebugEvent(
+						"module-failed",
+						"Module failed",
+						loadMetadata.retried ? "failed after retry" : "failed",
+					);
 				}
 			});
 
 		return () => {
 			cancelled = true;
 		};
-	}, [selectedEntryId, selectedEntryStatus]);
+	}, [recordDebugEvent, selectedEntryId, selectedEntryStatus]);
 
 	React.useEffect(() => {
 		setCollapsedFolderIds((previous) => {
@@ -1362,6 +1820,15 @@ export function PreviewApp(props: PreviewAppProps) {
 									</div>
 								)}
 							</div>
+							{isDebugMode ? (
+								<PreviewDebugHud
+									entry={selectedEntry}
+									events={debugEvents}
+									hotDebugState={props.hotDebugState}
+									moduleLoadState={moduleLoadDebugState}
+									runtimeIssues={runtimeIssues}
+								/>
+							) : undefined}
 							{hasIssueDisclosure ? (
 								<details
 									className="issue-disclosure"
