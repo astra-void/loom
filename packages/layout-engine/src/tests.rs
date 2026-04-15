@@ -1569,7 +1569,10 @@ fn automatic_size_recomputes_parent_xy_from_anchor_point() {
         .compute_dirty_internal()
         .expect("layout should compute");
 
-    let parent = result.rects.get("auto-parent").expect("parent should exist");
+    let parent = result
+        .rects
+        .get("auto-parent")
+        .expect("parent should exist");
     let child = result.rects.get("child").expect("child should exist");
 
     assert_close(parent.x, 140.0);

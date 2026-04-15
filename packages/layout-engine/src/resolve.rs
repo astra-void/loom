@@ -2,9 +2,8 @@ use std::cmp::Ordering;
 
 use crate::model::{
     default_placeholder_behavior, default_position_mode, full_size, zero_size, zero_vector,
-    ComputedRect, LayoutAxis, LayoutAxisConstraints, LayoutSize,
-    PreviewHostMetadata, PreviewLayoutNode, PreviewLayoutSizeResolution, PreviewNodeLayout,
-    RobloxNode, Viewport,
+    ComputedRect, LayoutAxis, LayoutAxisConstraints, LayoutSize, PreviewHostMetadata,
+    PreviewLayoutNode, PreviewLayoutSizeResolution, PreviewNodeLayout, RobloxNode, Viewport,
 };
 
 #[derive(Debug, Clone, Copy)]
