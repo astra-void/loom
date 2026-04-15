@@ -96,7 +96,9 @@ function RuntimePreviewTargetShell(props: PreviewTargetShellProps) {
 			viewportHeight={viewport.height}
 			viewportWidth={viewport.width}
 		>
-			<ScreenGui ref={setPortalContainer}>{shellChildren}</ScreenGui>
+			<ScreenGui Active={true} ref={setPortalContainer}>
+				{shellChildren}
+			</ScreenGui>
 		</LayoutProvider>
 	);
 }
