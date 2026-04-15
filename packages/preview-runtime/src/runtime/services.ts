@@ -20,6 +20,9 @@ import { createPreviewTweenController } from "./tween";
 
 const SERVICES_KEY = Symbol.for("loom-dev.preview-runtime.services");
 const PLAYER_GUI_KEY = Symbol.for("loom-dev.preview-runtime.playerGui");
+const PLAYER_GUI_VIEWPORT_OBSERVER_KEY = Symbol.for(
+	"loom-dev.preview-runtime.playerGuiViewportObserver",
+);
 const TWEEN_INFO_KEY = Symbol.for("loom-dev.preview-runtime.TweenInfo");
 const USER_INPUT_TRACKER_KEY = Symbol.for(
 	"loom-dev.preview-runtime.userInputTracker",
@@ -630,6 +633,86 @@ function createPreviewGuiObjectHandle(
 	return handle;
 }
 
+function mountPlayerGuiElement(element: HTMLElement) {
+	if (typeof document === "undefined") {
+		return;
+	}
+
+	const previewViewport = document.querySelector(".preview-stage-viewport");
+	if (
+		typeof HTMLElement !== "undefined" &&
+		previewViewport instanceof HTMLElement
+	) {
+		if (element.parentElement !== previewViewport) {
+			previewViewport.appendChild(element);
+		}
+		stopPlayerGuiViewportObserver();
+		return;
+	}
+
+	if (document.body && element.parentElement !== document.body) {
+		document.body.appendChild(element);
+	}
+
+	watchForPreviewViewport(element);
+}
+
+function stopPlayerGuiViewportObserver() {
+	const globalRecord = globalThis as typeof globalThis & {
+		[PLAYER_GUI_VIEWPORT_OBSERVER_KEY]?: MutationObserver;
+	};
+	const observer = globalRecord[PLAYER_GUI_VIEWPORT_OBSERVER_KEY];
+	if (!observer) {
+		return;
+	}
+
+	observer.disconnect();
+	delete globalRecord[PLAYER_GUI_VIEWPORT_OBSERVER_KEY];
+}
+
+function watchForPreviewViewport(element: HTMLElement) {
+	if (
+		typeof document === "undefined" ||
+		typeof MutationObserver === "undefined"
+	) {
+		return;
+	}
+
+	const globalRecord = globalThis as typeof globalThis & {
+		[PLAYER_GUI_VIEWPORT_OBSERVER_KEY]?: MutationObserver;
+	};
+	if (globalRecord[PLAYER_GUI_VIEWPORT_OBSERVER_KEY]) {
+		return;
+	}
+
+	const observerRoot = document.body ?? document.documentElement;
+	if (!observerRoot) {
+		return;
+	}
+
+	const observer = new MutationObserver(() => {
+		const previewViewport = document.querySelector(".preview-stage-viewport");
+		if (
+			typeof HTMLElement === "undefined" ||
+			!(previewViewport instanceof HTMLElement)
+		) {
+			return;
+		}
+
+		if (element.parentElement !== previewViewport) {
+			previewViewport.appendChild(element);
+		}
+
+		stopPlayerGuiViewportObserver();
+	});
+
+	observer.observe(observerRoot, {
+		childList: true,
+		subtree: true,
+	});
+	globalRecord[PLAYER_GUI_VIEWPORT_OBSERVER_KEY] = observer;
+}
+
 function createPlayerGui(): PreviewPlayerGui {
 	const globalRecord = globalThis as typeof globalThis & {
 		[PLAYER_GUI_KEY]?: PreviewPlayerGui;
@@ -637,13 +720,8 @@ function createPlayerGui(): PreviewPlayerGui {
 
 	if (globalRecord[PLAYER_GUI_KEY]) {
 		const existing = globalRecord[PLAYER_GUI_KEY];
-		if (
-			typeof document !== "undefined" &&
-			typeof document.body !== "undefined" &&
-			existing instanceof HTMLElement &&
-			!existing.isConnected
-		) {
-			document.body.appendChild(existing);
+		if (typeof HTMLElement !== "undefined" && existing instanceof HTMLElement) {
+			mountPlayerGuiElement(existing);
 		}
 
 		return existing;
@@ -747,7 +825,10 @@ function createPlayerGui(): PreviewPlayerGui {
 		const hitElements = document.elementsFromPoint(x, y);
 		const guiObjects: PreviewGuiHitObject[] = [];
 		for (const hitElement of hitElements) {
-			if (!(hitElement instanceof HTMLElement)) {
+			if (
+				typeof HTMLElement === "undefined" ||
+				!(hitElement instanceof HTMLElement)
+			) {
 				continue;
 			}
 
@@ -780,9 +861,7 @@ function createPlayerGui(): PreviewPlayerGui {
 
 	globalRecord[PLAYER_GUI_KEY] = element;
 	const domElement = element as unknown as HTMLElement;
-	if (document.body && !domElement.isConnected) {
-		document.body.appendChild(domElement);
-	}
+	mountPlayerGuiElement(domElement);
 
 	return element;
 }
@@ -1051,6 +1130,17 @@ function createGuiService(): PreviewGuiService {
 
 export function resetPreviewRuntimeServiceState() {
 	guiServiceState.selectedObject = undefined;
+
+	const globalRecord = globalThis as typeof globalThis & {
+		[PLAYER_GUI_KEY]?: PreviewPlayerGui;
+	};
+	const existingPlayerGui = globalRecord[PLAYER_GUI_KEY];
+	if (
+		typeof HTMLElement !== "undefined" &&
+		existingPlayerGui instanceof HTMLElement
+	) {
+		mountPlayerGuiElement(existingPlayerGui);
+	}
 }
 
 function createWorkspaceService(): PreviewWorkspace {

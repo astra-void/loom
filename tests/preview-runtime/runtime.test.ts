@@ -277,6 +277,21 @@ describe.sequential("@loom-dev/preview-runtime", () => {
 		expect((globalThis as { Color3?: typeof Color3 }).Color3).toBe(Color3);
 	});
 
+	it("mounts LocalPlayer.PlayerGui into preview-stage-viewport when available", () => {
+		const previewViewport = document.createElement("div");
+		previewViewport.className = "preview-stage-viewport";
+		document.body.append(previewViewport);
+
+		setupRobloxEnvironment();
+
+		const players = game.GetService("Players") as {
+			LocalPlayer: {
+				PlayerGui: HTMLElement;
+			};
+		};
+		expect(players.LocalPlayer.PlayerGui.parentElement).toBe(previewViewport);
+	});
+
 	it("provides focused GetService semantics for common preview services", () => {
 		setupRobloxEnvironment();
 
