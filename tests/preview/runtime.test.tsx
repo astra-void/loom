@@ -110,6 +110,17 @@ type BridgedHostHandle = HTMLElement & {
 	ClassName: string;
 	Name: string;
 };
+type UDim2PropertyValue = {
+	X: { Offset: number; Scale: number };
+	Y: { Offset: number; Scale: number };
+};
+type PreviewTweenServiceHandle = {
+	Create(
+		instance: unknown,
+		tweenInfo: TweenInfo,
+		goal: Record<string, unknown>,
+	): { Play(): void };
+};
 
 class RafController {
 	private readonly callbacks = new Map<number, FrameRequestCallback>();
@@ -578,7 +589,7 @@ describe("preview runtime host mapping", () => {
 		expect(frame.Position).toBeDefined();
 		expect(frame.Size).toBeDefined();
 		expect(frame.BackgroundColor3).toBeDefined();
-		expect(frame.Visible).toBeUndefined();
+		expect(frame.Visible).toBe(true);
 		expect(frame.ZIndex).toBe(1);
 
 		tween.Play();
@@ -621,6 +632,172 @@ describe("preview runtime host mapping", () => {
 			expect(frame.style.backgroundColor).toContain("255, 0, 0");
 			expect(frame.style.display).toBe("none");
 			expect(frame.style.zIndex).toBe("5");
+		});
+	});
+
+	it("tweens CanvasGroup Position and GroupTransparency from preview defaults", async () => {
+		rafController = new RafController();
+
+		render(
+			<CanvasGroup Id="canvas-reveal" Size={UDim2.fromOffset(120, 80)}>
+				Canvas reveal
+			</CanvasGroup>,
+		);
+
+		const canvasGroup = document.querySelector(
+			'[data-preview-node-id="canvas-reveal"]',
+		) as HTMLElement & {
+			GroupTransparency?: unknown;
+			Position?: UDim2PropertyValue;
+		};
+		const tweenService = game.GetService(
+			"TweenService",
+		) as PreviewTweenServiceHandle;
+
+		expect(canvasGroup.Position).toMatchObject({
+			X: { Offset: 0, Scale: 0 },
+			Y: { Offset: 0, Scale: 0 },
+		});
+		expect(canvasGroup.Position).toBeInstanceOf(UDim2);
+		expect(canvasGroup.GroupTransparency).toBe(0);
+
+		const tween = tweenService.Create(
+			canvasGroup,
+			new TweenInfo(0.1, Enum.EasingStyle.Linear, Enum.EasingDirection.In),
+			{
+				GroupTransparency: 1,
+				Position: UDim2.fromOffset(20, 30),
+			},
+		);
+
+		tween.Play();
+
+		await act(async () => {
+			await rafController?.step(50);
+		});
+
+		await waitFor(() => {
+			expect(canvasGroup.GroupTransparency).toBeCloseTo(0.5);
+			expect(canvasGroup.Position?.X.Offset).toBeCloseTo(10);
+			expect(canvasGroup.Position?.Y.Offset).toBeCloseTo(15);
+			expect(canvasGroup.style.left).toBe("10px");
+			expect(canvasGroup.style.top).toBe("15px");
+			expect(canvasGroup.style.opacity).toBe("0.5");
+		});
+	});
+
+	it("tweens TextLabel Position and BackgroundTransparency from implicit and explicit bases", async () => {
+		rafController = new RafController();
+
+		render(
+			<>
+				<TextLabel
+					Id="surface-reveal-implicit"
+					Size={UDim2.fromOffset(160, 32)}
+					Text="Implicit surface"
+				/>
+				<TextLabel
+					BackgroundTransparency={0.25}
+					Id="surface-reveal-explicit"
+					Position={UDim2.fromOffset(4, 6)}
+					Size={UDim2.fromOffset(160, 32)}
+					Text="Explicit surface"
+				/>
+			</>,
+		);
+
+		const implicitLabel = document.querySelector(
+			'[data-preview-node-id="surface-reveal-implicit"]',
+		) as HTMLElement & {
+			BackgroundTransparency?: unknown;
+			Position?: UDim2PropertyValue;
+		};
+		const explicitLabel = document.querySelector(
+			'[data-preview-node-id="surface-reveal-explicit"]',
+		) as HTMLElement & {
+			BackgroundTransparency?: unknown;
+			Position?: UDim2PropertyValue;
+		};
+		const tweenService = game.GetService(
+			"TweenService",
+		) as PreviewTweenServiceHandle;
+
+		expect(implicitLabel.Position).toMatchObject({
+			X: { Offset: 0, Scale: 0 },
+			Y: { Offset: 0, Scale: 0 },
+		});
+		expect(implicitLabel.Position).toBeInstanceOf(UDim2);
+		expect(implicitLabel.BackgroundTransparency).toBe(0);
+		expect(explicitLabel.Position).toMatchObject({
+			X: { Offset: 4, Scale: 0 },
+			Y: { Offset: 6, Scale: 0 },
+		});
+		expect(explicitLabel.BackgroundTransparency).toBe(0.25);
+
+		const tween = tweenService.Create(
+			implicitLabel,
+			new TweenInfo(0.1, Enum.EasingStyle.Linear, Enum.EasingDirection.In),
+			{
+				BackgroundTransparency: 1,
+				Position: UDim2.fromOffset(0, 12),
+			},
+		);
+
+		tween.Play();
+
+		await act(async () => {
+			await rafController?.step(50);
+		});
+
+		await waitFor(() => {
+			expect(implicitLabel.BackgroundTransparency).toBeCloseTo(0.5);
+			expect(implicitLabel.Position?.Y.Offset).toBeCloseTo(6);
+			expect(implicitLabel.style.top).toBe("6px");
+		});
+	});
+
+	it("tweens TextButton BackgroundColor3 from a concrete preview default", async () => {
+		rafController = new RafController();
+
+		render(
+			<TextButton Id="selection-button" Size={UDim2.fromOffset(140, 36)}>
+				Selection
+			</TextButton>,
+		);
+
+		const button = document.querySelector(
+			'[data-preview-node-id="selection-button"]',
+		) as HTMLElement & {
+			BackgroundColor3?: { B: number; G: number; R: number };
+		};
+		const tweenService = game.GetService(
+			"TweenService",
+		) as PreviewTweenServiceHandle;
+
+		expect(button.BackgroundColor3).toEqual(
+			expect.objectContaining({ B: 1, G: 1, R: 1 }),
+		);
+		expect(button.BackgroundColor3).toBeInstanceOf(Color3);
+
+		const tween = tweenService.Create(
+			button,
+			new TweenInfo(0.1, Enum.EasingStyle.Linear, Enum.EasingDirection.In),
+			{
+				BackgroundColor3: Color3.fromRGB(0, 80, 160),
+			},
+		);
+
+		tween.Play();
+
+		await act(async () => {
+			await rafController?.step(50);
+		});
+
+		await waitFor(() => {
+			expect(button.BackgroundColor3?.R).toBeCloseTo(0.5);
+			expect(button.BackgroundColor3?.G).toBeCloseTo(0.6568, 3);
+			expect(button.BackgroundColor3?.B).toBeCloseTo(0.8137, 3);
+			expect(button.style.backgroundColor).toContain("128, 168, 208");
 		});
 	});
 
