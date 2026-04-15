@@ -7,11 +7,11 @@ import {
 	adaptRobloxNodeInput,
 	type ComputedRect,
 	computeNodeRect,
+	type PreviewLayoutDebugNode,
 	type PreviewLayoutHostPolicy,
 	type PreviewLayoutModifiers,
 	type PreviewLayoutNode,
 	type PreviewLayoutPaddingInsets,
-	type PreviewLayoutSizeResolution,
 	resolveNodeSize,
 } from "../layout/model";
 import {
@@ -42,21 +42,7 @@ export type PreviewDomRef<T> =
 	| null;
 
 export type LayoutDebugState = {
-	debugNode: {
-		hostPolicy: PreviewLayoutHostPolicy;
-		layoutSource:
-			| "explicit-size"
-			| "full-size-default"
-			| "intrinsic-size"
-			| "root-default";
-		parentConstraints: ComputedRect | null;
-		rect: ComputedRect | null;
-		sizeResolution: PreviewLayoutSizeResolution;
-		styleHints?: {
-			height?: string;
-			width?: string;
-		};
-	} | null;
+	debugNode: PreviewLayoutDebugNode | null;
 	hasContext: boolean;
 	inheritedParentRect: ComputedRect | null;
 	viewport: {
@@ -313,6 +299,14 @@ function withLayoutDiagnostics(
 	const sizeResolution =
 		debugNode?.sizeResolution ?? resolvedNodeSize.sizeResolution;
 	const layoutSource = debugNode?.layoutSource ?? resolvedNodeSize.layoutSource;
+	const debugBadges = [
+		hostPolicy.degraded ? "degraded" : null,
+		debugNode?.provenance.source === "fallback" ? "fallback" : null,
+		hostPolicy.fullSizeDefault || sizeResolution.reason === "full-size-default"
+			? "full-size-default"
+			: null,
+		hostPolicy.placeholderBehavior !== "none" ? "placeholder" : null,
+	].filter(Boolean);
 
 	return {
 		...domProps,
@@ -330,6 +324,7 @@ function withLayoutDiagnostics(
 			sizeResolution.intrinsicSizeAvailable,
 		),
 		"data-layout-layout-source": layoutSource,
+		"data-layout-provenance-source": debugNode?.provenance.source,
 		"data-layout-parent-height": finiteDiagnosticNumber(
 			debugNode?.parentConstraints?.height ??
 				diagnostics?.inheritedParentRect?.height,
@@ -352,6 +347,8 @@ function withLayoutDiagnostics(
 		"data-layout-viewport-width": finiteDiagnosticNumber(
 			diagnostics?.viewport?.width,
 		),
+		"data-preview-debug-badges":
+			debugBadges.length > 0 ? debugBadges.join(" / ") : undefined,
 	};
 }
 
