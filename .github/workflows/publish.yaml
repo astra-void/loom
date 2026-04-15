@@ -206,7 +206,7 @@ jobs:
             ${{ runner.os }}-${{ matrix.target }}-publish-rust-
 
       - name: Install Zig
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' || matrix.target == 'x86_64-apple-darwin'
         uses: goto-bus-stop/setup-zig@v2
         with:
           version: 0.14.0
