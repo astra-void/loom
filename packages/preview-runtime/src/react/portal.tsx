@@ -45,6 +45,7 @@ export function Portal(props: PortalProps) {
 		props.container ??
 		portalContext.container ??
 		(typeof document !== "undefined" ? document.body : null);
+
 	if (!container) {
 		return null;
 	}

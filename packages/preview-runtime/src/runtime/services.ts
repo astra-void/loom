@@ -799,7 +799,7 @@ function createPlayerGui(): PreviewPlayerGui {
 	element.style.position = "absolute";
 	element.style.inset = "0";
 	element.style.overflow = "hidden";
-	element.style.pointerEvents = "auto";
+	element.style.pointerEvents = "none";
 	requestAnimationFrame(() => {
 		const previewViewport = document.querySelector(".preview-stage-viewport");
 		if (previewViewport && !previewViewport.contains(element)) {

@@ -592,6 +592,15 @@ export function resolvePreviewDomProps(
 		computedStyle.display = "none";
 	}
 
+	if (
+		Active === false &&
+		options.host !== "textbutton" &&
+		options.host !== "imagebutton" &&
+		options.host !== "textbox"
+	) {
+		computedStyle.pointerEvents = "none";
+	}
+
 	if (ClipsDescendants === true && options.host !== "scrollingframe") {
 		computedStyle.overflow = "hidden";
 	}

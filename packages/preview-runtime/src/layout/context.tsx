@@ -645,6 +645,7 @@ export function LayoutViewportPortalBoundary(props: {
 		portalContainer.style.width = "100%";
 		portalContainer.style.height = "100%";
 		portalContainer.style.overflow = "hidden";
+		portalContainer.style.pointerEvents = "none";
 	}, [context, props.container]);
 
 	return (
