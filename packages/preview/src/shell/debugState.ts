@@ -1,3 +1,8 @@
+import type {
+	PreviewModuleLoadMetadata,
+	PreviewModuleLoadRetryInfo,
+} from "./loadPreviewModule";
+
 export const PREVIEW_DEBUG_EVENT_LIMIT = 8;
 
 export type PreviewDebugEventKind =
@@ -39,6 +44,15 @@ export const defaultPreviewHotDebugState: PreviewHotDebugState = {
 	sendAvailable: false,
 	updateListener: "none",
 	updateSequence: 0,
+};
+
+export type PreviewModuleLoadDebugState = {
+	entryId?: string;
+	message?: string;
+	outcome?: PreviewModuleLoadMetadata["outcome"];
+	retried: boolean;
+	retry: PreviewModuleLoadRetryInfo | null;
+	state: "failed" | "idle" | "loading" | "not-loadable" | "ready" | "retrying";
 };
 
 export function appendPreviewDebugEvent(

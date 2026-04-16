@@ -9,11 +9,10 @@ import {
 	clearPreviewRuntimeIssues,
 	createViewportSize,
 	createWindowViewport,
+	getPreviewLayoutProbeSnapshot,
 	isViewportLargeEnough,
 	LayoutProvider,
 	measureElementViewport,
-	type PreviewLayoutDebugNode,
-	type PreviewLayoutProbeSnapshot,
 	type PreviewRuntimeIssue,
 	pickViewport,
 	setPreviewRuntimeIssueContext,
@@ -33,11 +32,20 @@ import {
 	type PreviewReadyWarningState,
 } from "../execution/shared";
 import {
+	createPreviewDebugSnapshot,
+	describeStatusDetails,
+	type PreviewDebugSnapshotInput,
+	type PreviewDebugSnapshotOptions,
+	stringifyPreviewDebugSnapshot,
+	summarizeLayoutDebug,
+} from "./debugSnapshot";
+import {
 	appendPreviewDebugEvent,
 	defaultPreviewHotDebugState,
 	type PreviewDebugEvent,
 	type PreviewDebugEventKind,
 	type PreviewHotDebugState,
+	type PreviewModuleLoadDebugState,
 } from "./debugState";
 import {
 	getPreviewModuleLoadMetadata,
@@ -87,15 +95,6 @@ type LoadedPreviewEntry = {
 	loadMetadata?: PreviewModuleLoadMetadata;
 	module: PreviewModule;
 	payload?: PreviewEntryPayload;
-};
-
-type ModuleLoadDebugState = {
-	entryId?: string;
-	message?: string;
-	outcome?: PreviewModuleLoadMetadata["outcome"];
-	retried: boolean;
-	retry: PreviewModuleLoadRetryInfo | null;
-	state: "failed" | "idle" | "loading" | "not-loadable" | "ready" | "retrying";
 };
 
 type RuntimeIssueRenderMeta = {
@@ -235,7 +234,7 @@ function createRuntimeIssueRenderMeta(issues: PreviewRuntimeIssue[]) {
 	return renderMeta;
 }
 
-const emptyModuleLoadDebugState: ModuleLoadDebugState = {
+const emptyModuleLoadDebugState: PreviewModuleLoadDebugState = {
 	retried: false,
 	retry: null,
 	state: "idle",
@@ -266,65 +265,8 @@ function createDebugEventDetailForRuntimeIssues(issues: PreviewRuntimeIssue[]) {
 	return formatIssueCountSummary(summarizeRuntimeIssueCounts(issues));
 }
 
-function describeStatusDetails(
-	statusDetails: PreviewEntryDescriptor["statusDetails"] | undefined,
-) {
-	if (!statusDetails) {
-		return "No status details.";
-	}
-
-	switch (statusDetails.kind) {
-		case "ready": {
-			const parts = [
-				statusDetails.fidelity ? `fidelity ${statusDetails.fidelity}` : null,
-				(statusDetails.warningCodes?.length ?? 0) > 0
-					? `warnings ${statusDetails.warningCodes?.join(", ")}`
-					: null,
-				(statusDetails.degradedTargets?.length ?? 0) > 0
-					? `degraded ${statusDetails.degradedTargets?.join(", ")}`
-					: null,
-			].filter(Boolean);
-
-			return parts.length > 0 ? parts.join("; ") : "ready";
-		}
-		case "needs_harness": {
-			const candidates = statusDetails.candidates?.join(", ");
-			return candidates
-				? `${statusDetails.reason}; candidates ${candidates}`
-				: statusDetails.reason;
-		}
-		case "ambiguous":
-			return `${statusDetails.reason}; candidates ${statusDetails.candidates.join(", ")}`;
-		case "blocked_by_transform":
-			return `${statusDetails.reason}; blocking ${statusDetails.blockingCodes.join(", ")}`;
-		case "blocked_by_runtime":
-		case "blocked_by_layout":
-			return `${statusDetails.reason}; issues ${statusDetails.issueCodes.join(", ")}`;
-	}
-}
-
-function collectLayoutDebugNodes(roots: PreviewLayoutDebugNode[]) {
-	const nodes: PreviewLayoutDebugNode[] = [];
-	const visit = (node: PreviewLayoutDebugNode) => {
-		nodes.push(node);
-		for (const child of node.children) {
-			visit(child);
-		}
-	};
-
-	for (const root of roots) {
-		visit(root);
-	}
-
-	return nodes;
-}
-
-function incrementCount(map: Map<string, number>, key: string) {
-	map.set(key, (map.get(key) ?? 0) + 1);
-}
-
-function formatDistribution(counts: Map<string, number>) {
-	const entries = [...counts.entries()].sort((left, right) =>
+function formatDistribution(counts: Record<string, number>) {
+	const entries = Object.entries(counts).sort((left, right) =>
 		left[0].localeCompare(right[0]),
 	);
 
@@ -333,51 +275,33 @@ function formatDistribution(counts: Map<string, number>) {
 		: "none";
 }
 
-function formatHostCount(count: number, names: string[]) {
+function formatHostTypeCounts(counts: Record<string, number>) {
+	const entries = Object.entries(counts).sort((left, right) => {
+		const countDelta = right[1] - left[1];
+		if (countDelta !== 0) {
+			return countDelta;
+		}
+
+		return left[0].localeCompare(right[0]);
+	});
+
+	if (entries.length === 0) {
+		return "none";
+	}
+
+	const topEntries = entries.slice(0, 4);
+	const suffix = entries.length > topEntries.length ? ", ..." : "";
+	return `${topEntries
+		.map(([typeName, value]) => `${typeName} ${value}`)
+		.join(", ")}${suffix}`;
+}
+
+function formatHostCount(count: number, typeCounts: Record<string, number>) {
 	if (count === 0) {
 		return "0";
 	}
 
-	const uniqueNames = [...new Set(names)].slice(0, 4);
-	const suffix = names.length > uniqueNames.length ? ", ..." : "";
-	return `${count} (${uniqueNames.join(", ")}${suffix})`;
-}
-
-function summarizeLayoutDebug(layoutProbe: PreviewLayoutProbeSnapshot) {
-	const nodes = collectLayoutDebugNodes(layoutProbe.debug.roots);
-	const provenanceCounts = new Map<string, number>();
-	const layoutSourceCounts = new Map<string, number>();
-	const degradedHosts: string[] = [];
-	const fullSizeDefaultHosts: string[] = [];
-	let placeholderHostCount = 0;
-
-	for (const node of nodes) {
-		incrementCount(provenanceCounts, node.provenance.source);
-		incrementCount(layoutSourceCounts, node.layoutSource);
-
-		if (node.hostPolicy.degraded) {
-			degradedHosts.push(node.nodeType);
-		}
-
-		if (node.hostPolicy.fullSizeDefault) {
-			fullSizeDefaultHosts.push(node.nodeType);
-		}
-
-		if (node.hostPolicy.placeholderBehavior !== "none") {
-			placeholderHostCount += 1;
-		}
-	}
-
-	return {
-		degradedHostCount: degradedHosts.length,
-		degradedHosts,
-		fullSizeDefaultHostCount: fullSizeDefaultHosts.length,
-		fullSizeDefaultHosts,
-		layoutSourceDistribution: formatDistribution(layoutSourceCounts),
-		nodeCount: nodes.length,
-		placeholderHostCount,
-		provenanceDistribution: formatDistribution(provenanceCounts),
-	};
+	return `${count} (${formatHostTypeCounts(typeCounts)})`;
 }
 
 function formatRetryReason(retry: PreviewModuleLoadRetryInfo | null) {
@@ -402,11 +326,78 @@ function mergeDebugEvents(
 		.slice(-8);
 }
 
+async function copyTextToClipboard(text: string) {
+	if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+		await navigator.clipboard.writeText(text);
+		return;
+	}
+
+	if (typeof document === "undefined" || !document.body) {
+		throw new Error("Clipboard is unavailable in this environment.");
+	}
+
+	const textarea = document.createElement("textarea");
+	textarea.value = text;
+	textarea.setAttribute("readonly", "");
+	textarea.style.position = "fixed";
+	textarea.style.top = "-1000px";
+	document.body.append(textarea);
+	textarea.select();
+
+	try {
+		if (!document.execCommand?.("copy")) {
+			throw new Error("Clipboard copy command failed.");
+		}
+	} finally {
+		textarea.remove();
+	}
+}
+
+function getDebugSnapshotFileName(entry: PreviewEntryDescriptor) {
+	const safeName = (entry.relativePath || entry.id)
+		.replace(/\.[^.]+$/u, "")
+		.replace(/[^a-z0-9]+/giu, "-")
+		.replace(/^-|-$/gu, "")
+		.toLowerCase();
+
+	return `loom-preview-debug-${safeName || "snapshot"}.json`;
+}
+
+function downloadTextFile(fileName: string, text: string) {
+	if (typeof document === "undefined" || !document.body) {
+		throw new Error("Downloads are unavailable in this environment.");
+	}
+
+	let href = `data:application/json;charset=utf-8,${encodeURIComponent(text)}`;
+	let revokeObjectUrl: (() => void) | undefined;
+
+	if (
+		typeof Blob !== "undefined" &&
+		typeof URL !== "undefined" &&
+		typeof URL.createObjectURL === "function"
+	) {
+		const objectUrl = URL.createObjectURL(
+			new Blob([text], { type: "application/json" }),
+		);
+		href = objectUrl;
+		revokeObjectUrl = () => URL.revokeObjectURL(objectUrl);
+	}
+
+	const anchor = document.createElement("a");
+	anchor.download = fileName;
+	anchor.href = href;
+	anchor.rel = "noopener";
+	document.body.append(anchor);
+	anchor.click();
+	anchor.remove();
+	revokeObjectUrl?.();
+}
+
 function PreviewDebugHud(props: {
 	entry: PreviewEntryDescriptor;
 	events: PreviewDebugEvent[];
 	hotDebugState?: PreviewHotDebugState;
-	moduleLoadState: ModuleLoadDebugState;
+	moduleLoadState: PreviewModuleLoadDebugState;
 	runtimeIssues: PreviewRuntimeIssue[];
 }) {
 	const layoutProbe = usePreviewLayoutProbeSnapshot();
@@ -418,9 +409,88 @@ function PreviewDebugHud(props: {
 	const runtimeIssueCounts = summarizeRuntimeIssueCounts(props.runtimeIssues);
 	const moduleOutcome =
 		props.moduleLoadState.outcome ?? props.moduleLoadState.state;
+	const [exportFeedback, setExportFeedback] = React.useState<string | null>(
+		null,
+	);
+	const createSnapshotJson = React.useCallback(
+		(options?: PreviewDebugSnapshotOptions) =>
+			stringifyPreviewDebugSnapshot(
+				createPreviewDebugSnapshot(
+					{
+						events: props.events,
+						hotDebugState,
+						layoutProbe,
+						moduleLoadState: props.moduleLoadState,
+						runtimeIssues: props.runtimeIssues,
+						selectedEntry: props.entry,
+					},
+					options,
+				),
+			),
+		[
+			hotDebugState,
+			layoutProbe,
+			props.entry,
+			props.events,
+			props.moduleLoadState,
+			props.runtimeIssues,
+		],
+	);
+
+	React.useEffect(() => {
+		if (!exportFeedback) {
+			return;
+		}
+
+		const timeout = window.setTimeout(() => {
+			setExportFeedback(null);
+		}, 1800);
+
+		return () => {
+			window.clearTimeout(timeout);
+		};
+	}, [exportFeedback]);
+
+	const handleCopyJson = React.useCallback(async () => {
+		try {
+			await copyTextToClipboard(createSnapshotJson());
+			setExportFeedback("Copied");
+		} catch {
+			setExportFeedback("Copy failed");
+		}
+	}, [createSnapshotJson]);
+
+	const handleDownloadJson = React.useCallback(() => {
+		try {
+			downloadTextFile(
+				getDebugSnapshotFileName(props.entry),
+				createSnapshotJson(),
+			);
+			setExportFeedback("Downloaded");
+		} catch {
+			setExportFeedback("Download failed");
+		}
+	}, [createSnapshotJson, props.entry]);
 
 	return (
 		<aside aria-label="Preview debug HUD" className="preview-debug-hud">
+			<div
+				aria-label="Preview debug export actions"
+				className="preview-debug-actions"
+			>
+				<span>Export snapshot</span>
+				<div className="preview-debug-action-buttons">
+					<button onClick={handleCopyJson} type="button">
+						Copy JSON
+					</button>
+					<button onClick={handleDownloadJson} type="button">
+						Download JSON
+					</button>
+				</div>
+				{exportFeedback ? (
+					<small aria-live="polite">{exportFeedback}</small>
+				) : undefined}
+			</div>
 			<section className="preview-debug-section">
 				<h3>Entry</h3>
 				<dl className="preview-debug-list">
@@ -508,14 +578,14 @@ function PreviewDebugHud(props: {
 					</div>
 					<div>
 						<dt>provenance</dt>
-						<dd>{layoutSummary.provenanceDistribution}</dd>
+						<dd>{formatDistribution(layoutSummary.provenanceCounts)}</dd>
 					</div>
 					<div>
 						<dt>degraded hosts</dt>
 						<dd>
 							{formatHostCount(
 								layoutSummary.degradedHostCount,
-								layoutSummary.degradedHosts,
+								layoutSummary.degradedHostTypes,
 							)}
 						</dd>
 					</div>
@@ -524,7 +594,7 @@ function PreviewDebugHud(props: {
 						<dd>
 							{formatHostCount(
 								layoutSummary.fullSizeDefaultHostCount,
-								layoutSummary.fullSizeDefaultHosts,
+								layoutSummary.fullSizeDefaultHostTypes,
 							)}
 						</dd>
 					</div>
@@ -534,7 +604,7 @@ function PreviewDebugHud(props: {
 					</div>
 					<div>
 						<dt>layout sources</dt>
-						<dd>{layoutSummary.layoutSourceDistribution}</dd>
+						<dd>{formatDistribution(layoutSummary.layoutSourceCounts)}</dd>
 					</div>
 					<div>
 						<dt>nodes</dt>
@@ -737,10 +807,6 @@ function renderIssueCard(
 			{renderIssueCodeFrame(issue)}
 		</article>
 	);
-}
-
-function _uniqueSorted(values: Iterable<string>) {
-	return [...new Set(values)].sort((left, right) => left.localeCompare(right));
 }
 
 function isBlockingIssue(
@@ -1227,7 +1293,7 @@ export function PreviewApp(props: PreviewAppProps) {
 		PreviewRuntimeIssue[]
 	>([]);
 	const [moduleLoadDebugState, setModuleLoadDebugState] =
-		React.useState<ModuleLoadDebugState>(emptyModuleLoadDebugState);
+		React.useState<PreviewModuleLoadDebugState>(emptyModuleLoadDebugState);
 	const [localDebugEvents, setLocalDebugEvents] = React.useState<
 		PreviewDebugEvent[]
 	>([]);
@@ -1235,6 +1301,13 @@ export function PreviewApp(props: PreviewAppProps) {
 	const selectedEntryRef = React.useRef<PreviewEntryDescriptor | undefined>(
 		undefined,
 	);
+	const debugSnapshotInputRef = React.useRef<
+		Omit<PreviewDebugSnapshotInput, "layoutProbe">
+	>({
+		events: [],
+		moduleLoadState: emptyModuleLoadDebugState,
+		runtimeIssues: [],
+	});
 	const debugEventSequenceRef = React.useRef(0);
 	const recordDebugEvent = React.useCallback(
 		(kind: PreviewDebugEventKind, label: string, detail?: string) => {
@@ -1377,6 +1450,48 @@ export function PreviewApp(props: PreviewAppProps) {
 			loadEntry(entryId, options),
 	);
 	selectedEntryRef.current = selectedEntry;
+	debugSnapshotInputRef.current = {
+		events: debugEvents,
+		...(props.hotDebugState ? { hotDebugState: props.hotDebugState } : {}),
+		moduleLoadState: moduleLoadDebugState,
+		runtimeIssues,
+		...(selectedEntry ? { selectedEntry } : {}),
+	};
+
+	React.useEffect(() => {
+		if (typeof window === "undefined") {
+			return;
+		}
+
+		const previousDebugGlobal = window.__loomPreviewDebug;
+		const exportSnapshot = (options?: PreviewDebugSnapshotOptions) =>
+			createPreviewDebugSnapshot(
+				{
+					...debugSnapshotInputRef.current,
+					layoutProbe: getPreviewLayoutProbeSnapshot(),
+				},
+				options,
+			);
+		const debugGlobal = {
+			exportSnapshot,
+			exportSnapshotJson: (options?: PreviewDebugSnapshotOptions) =>
+				stringifyPreviewDebugSnapshot(exportSnapshot(options)),
+		};
+
+		window.__loomPreviewDebug = debugGlobal;
+
+		return () => {
+			if (window.__loomPreviewDebug !== debugGlobal) {
+				return;
+			}
+
+			if (previousDebugGlobal) {
+				window.__loomPreviewDebug = previousDebugGlobal;
+			} else {
+				delete window.__loomPreviewDebug;
+			}
+		};
+	}, []);
 
 	React.useEffect(() => {
 		if (!selectedEntryId || typeof window === "undefined") {
