@@ -58,6 +58,7 @@ import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as hostOverrides from "../../packages/preview-runtime/src/hosts/hostOverrides";
 import { LayoutController } from "../../packages/preview-runtime/src/layout/controller";
+import { PreviewTargetShell as ClientPreviewTargetShell } from "../../packages/preview/src/client/PreviewTargetShell";
 import { suppressExpectedConsoleMessages } from "../testLogUtils";
 import userEvent from "../testUserEvent";
 import { getLocalPlayerGui } from "../../apps/preview-harness/src/test-utils/playerGui";
@@ -861,6 +862,139 @@ describe("preview runtime host mapping", () => {
 		await user.click(button);
 
 		expect(onClick).toHaveBeenCalledTimes(1);
+	});
+
+	it("injects an explicit ScreenGui size for the runtime PreviewTargetShell root", async () => {
+		const expectedViewportWidth = Math.max(
+			0,
+			Math.floor(window.innerWidth || 800),
+		);
+		const expectedViewportHeight = Math.max(
+			0,
+			Math.floor(window.innerHeight || 600),
+		);
+
+		render(
+			<PreviewTargetShell>
+				<Frame Id="runtime-shell-explicit-size-probe" Size={UDim2.fromOffset(12, 12)} />
+			</PreviewTargetShell>,
+		);
+
+		await waitFor(() => {
+			const rootScreenGui = document.querySelector(
+				'[data-preview-host="screengui"]',
+			) as (HTMLElement & { Size?: UDim2PropertyValue }) | null;
+			expect(rootScreenGui).toBeTruthy();
+			expect(rootScreenGui?.Size?.X.Scale).toBe(0);
+			expect(rootScreenGui?.Size?.Y.Scale).toBe(0);
+			expect(rootScreenGui?.Size?.X.Offset).toBe(expectedViewportWidth);
+			expect(rootScreenGui?.Size?.Y.Offset).toBe(expectedViewportHeight);
+		});
+	});
+
+	it("injects an explicit ScreenGui size for the client PreviewTargetShell root", async () => {
+		const expectedViewportWidth = Math.max(
+			0,
+			Math.floor(window.innerWidth || 800),
+		);
+		const expectedViewportHeight = Math.max(
+			0,
+			Math.floor(window.innerHeight || 600),
+		);
+
+		render(
+			<ClientPreviewTargetShell>
+				<Frame Id="client-shell-explicit-size-probe" Size={UDim2.fromOffset(12, 12)} />
+			</ClientPreviewTargetShell>,
+		);
+
+		await waitFor(() => {
+			const rootScreenGui = document.querySelector(
+				'[data-preview-host="screengui"]',
+			) as (HTMLElement & { Size?: UDim2PropertyValue }) | null;
+			expect(rootScreenGui).toBeTruthy();
+			expect(rootScreenGui?.Size?.X.Scale).toBe(0);
+			expect(rootScreenGui?.Size?.Y.Scale).toBe(0);
+			expect(rootScreenGui?.Size?.X.Offset).toBe(expectedViewportWidth);
+			expect(rootScreenGui?.Size?.Y.Offset).toBe(expectedViewportHeight);
+		});
+	});
+
+	it("classifies shell-style wrapper frames as explicit-size when fill-parent size is provided", async () => {
+		render(
+			<PreviewTargetShell>
+				<Frame
+					BackgroundTransparency={1}
+					Id="shell-wrapper-frame"
+					Size={UDim2.fromScale(1, 1)}
+				>
+					<TextLabel Text="Shell wrapper" />
+				</Frame>
+			</PreviewTargetShell>,
+		);
+
+		await waitFor(() => {
+			const wrapper = document.querySelector(
+				'[data-preview-node-id="shell-wrapper-frame"]',
+			) as HTMLElement | null;
+			expect(wrapper).toBeTruthy();
+			expect(wrapper?.getAttribute("data-layout-layout-source")).toBe(
+				"explicit-size",
+			);
+			expect(wrapper?.getAttribute("data-layout-size-reason")).toBe(
+				"explicit-size",
+			);
+		});
+	});
+
+	it("classifies portal runtime-host wrapper frames as explicit-size when fill-parent size is provided", async () => {
+		render(
+			<PreviewTargetShell>
+				<Portal>
+					<Frame
+						BackgroundTransparency={1}
+						Id="runtime-host-wrapper-frame"
+						Size={UDim2.fromScale(1, 1)}
+					>
+						<TextLabel Text="Runtime host wrapper" />
+					</Frame>
+				</Portal>
+			</PreviewTargetShell>,
+		);
+
+		await waitFor(() => {
+			const wrapper = document.querySelector(
+				'[data-preview-node-id="runtime-host-wrapper-frame"]',
+			) as HTMLElement | null;
+			expect(wrapper).toBeTruthy();
+			expect(wrapper?.getAttribute("data-layout-layout-source")).toBe(
+				"explicit-size",
+			);
+			expect(wrapper?.getAttribute("data-layout-size-reason")).toBe(
+				"explicit-size",
+			);
+		});
+	});
+
+	it("keeps metadata full-size-default fallback for unresolved degraded hosts in PreviewTargetShell", async () => {
+		render(
+			<PreviewTargetShell>
+				<ViewportFrame Id="shell-fallback-viewportframe" />
+			</PreviewTargetShell>,
+		);
+
+		await waitFor(() => {
+			const viewportFrame = document.querySelector(
+				'[data-preview-node-id="shell-fallback-viewportframe"]',
+			) as HTMLElement | null;
+			expect(viewportFrame).toBeTruthy();
+			expect(viewportFrame?.getAttribute("data-layout-size-reason")).toBe(
+				"full-size-default",
+			);
+			expect(viewportFrame?.getAttribute("data-layout-layout-source")).toBe(
+				"full-size-default",
+			);
+		});
 	});
 
 	it("applies sibling ZIndex to DOM stacking and preserves it in the layout model", async () => {
@@ -3045,7 +3179,7 @@ describe("preview runtime host mapping", () => {
 		});
 	});
 
-	it("forces top-level ScreenGui nodes to fill the viewport in the Wasm tree", async () => {
+	it("preserves explicit top-level ScreenGui size in the Wasm tree", async () => {
 		render(
 			<LayoutProvider debounceMs={0} viewportHeight={480} viewportWidth={640}>
 				<ScreenGui
@@ -3083,8 +3217,8 @@ describe("preview runtime host mapping", () => {
 						y: { offset: 0, scale: 0 },
 					},
 					size: {
-						x: { offset: 0, scale: 1 },
-						y: { offset: 0, scale: 1 },
+						x: { offset: 40, scale: 0 },
+						y: { offset: 50, scale: 0 },
 					},
 				},
 				nodeType: "ScreenGui",

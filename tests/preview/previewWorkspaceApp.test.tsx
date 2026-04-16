@@ -274,7 +274,7 @@ function createHotContext() {
 
 async function renderWorkspaceApp() {
 	const { PreviewWorkspaceApp } = await import(
-		"../../packages/preview/src/shell/PreviewWorkspaceApp"
+		"../../packages/preview/src/shell/PreviewWorkspaceApp.js"
 	);
 
 	return render(<PreviewWorkspaceApp />);
