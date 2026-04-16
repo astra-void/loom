@@ -4,6 +4,7 @@ import {
 	measureElementViewport,
 	PortalProvider,
 	ScreenGui,
+	UDim2,
 	type ViewportSize,
 } from "@loom-dev/preview-runtime";
 import * as React from "react";
@@ -42,7 +43,11 @@ function RuntimePreviewTargetShell(props: PreviewTargetShellProps) {
 		const updateViewport = (nextViewport?: ViewportSize | null) => {
 			const resolvedViewport =
 				nextViewport ?? measureElementViewport(portalContainer);
-			if (!resolvedViewport) {
+			if (
+				!resolvedViewport ||
+				resolvedViewport.width <= 0 ||
+				resolvedViewport.height <= 0
+			) {
 				return;
 			}
 
@@ -90,13 +95,17 @@ function RuntimePreviewTargetShell(props: PreviewTargetShellProps) {
 	) : (
 		props.children
 	);
+	const shellSize = React.useMemo(
+		() => UDim2.fromOffset(viewport.width, viewport.height),
+		[viewport.height, viewport.width],
+	);
 
 	return (
 		<LayoutProvider
 			viewportHeight={viewport.height}
 			viewportWidth={viewport.width}
 		>
-			<ScreenGui Active={true} ref={setPortalContainer}>
+			<ScreenGui Active={true} ref={setPortalContainer} Size={shellSize}>
 				{shellChildren}
 			</ScreenGui>
 		</LayoutProvider>
