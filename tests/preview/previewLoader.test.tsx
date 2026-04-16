@@ -7,6 +7,10 @@ import type {
 import { act, cleanup, render, screen, within } from "@testing-library/react";
 import type React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type {
+	PreviewDebugSnapshot,
+	PreviewDebugSnapshotOptions,
+} from "../../packages/preview/src/shell/debugSnapshot";
 import { loadPreviewModule } from "../../packages/preview/src/shell/loadPreviewModule";
 import { PreviewApp } from "../../packages/preview/src/shell/PreviewApp";
 import { PreviewThemeProvider } from "../../packages/preview/src/shell/theme";
@@ -111,6 +115,24 @@ function renderPreviewApp(app: React.ReactElement) {
 	return render(<PreviewThemeProvider>{app}</PreviewThemeProvider>);
 }
 
+function getPreviewDebugGlobal() {
+	const debugGlobal = (
+		window as Window & {
+			__loomPreviewDebug?: {
+				exportSnapshot: (
+					options?: PreviewDebugSnapshotOptions,
+				) => PreviewDebugSnapshot;
+			};
+		}
+	).__loomPreviewDebug;
+
+	if (!debugGlobal) {
+		throw new Error("Preview debug global was not installed.");
+	}
+
+	return debugGlobal;
+}
+
 function createRetryableOptimizerError() {
 	return Object.assign(
 		new Error(
@@ -184,6 +206,26 @@ describe("loadPreviewModule", () => {
 			within(hud).getAllByText(/retryable-optimized-dependency/).length,
 		).toBeTruthy();
 		expect(within(hud).getByText("Module recovered")).toBeTruthy();
+
+		const snapshot = getPreviewDebugGlobal().exportSnapshot({
+			generatedAt: "2026-04-16T00:00:00.000Z",
+		});
+		expect(snapshot.moduleLoad).toMatchObject({
+			entryId: entry.id,
+			outcome: "recovered",
+			retried: true,
+			state: "ready",
+		});
+		expect(snapshot.moduleLoad.retry).toMatchObject({
+			code: "ERR_OUTDATED_OPTIMIZED_DEP",
+			reason: "retryable-optimized-dependency",
+		});
+		expect(snapshot.moduleLoad.retry?.message).toContain(
+			"new version of the pre-bundle",
+		);
+		expect(snapshot.timeline.map((event) => event.label)).toEqual(
+			expect.arrayContaining(["Module retry scheduled", "Module recovered"]),
+		);
 	});
 
 	it("surfaces a load error after the retryable import failure persists", async () => {
@@ -231,5 +273,25 @@ describe("loadPreviewModule", () => {
 		).toBeTruthy();
 		expect(within(hud).getByText("Module failed")).toBeTruthy();
 		expect(within(hud).getByText("failed after retry")).toBeTruthy();
+
+		const snapshot = getPreviewDebugGlobal().exportSnapshot({
+			generatedAt: "2026-04-16T00:00:00.000Z",
+		});
+		expect(snapshot.moduleLoad).toMatchObject({
+			entryId: entry.id,
+			outcome: "failed",
+			retried: true,
+			state: "failed",
+		});
+		expect(snapshot.moduleLoad.message).toContain(
+			"new version of the pre-bundle",
+		);
+		expect(snapshot.moduleLoad.retry).toMatchObject({
+			code: "ERR_OUTDATED_OPTIMIZED_DEP",
+			reason: "retryable-optimized-dependency",
+		});
+		expect(snapshot.timeline.map((event) => event.label)).toEqual(
+			expect.arrayContaining(["Module retry scheduled", "Module failed"]),
+		);
 	});
 });

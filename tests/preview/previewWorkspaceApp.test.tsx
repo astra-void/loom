@@ -27,9 +27,9 @@ const previewAppMocks = vi.hoisted(() => ({
 	lastProps: undefined as
 		| {
 				entries: PreviewEntryDescriptor[];
-				debugEvents?: Array<{ label: string }>;
+				debugEvents?: Array<{ detail?: string; label: string }>;
 				entryPayloads?: Record<string, PreviewEntryPayload>;
-				hotDebugState?: { updateSequence: number };
+				hotDebugState?: { sendAvailable?: boolean; updateSequence: number };
 				loadEntry: (id: string, options?: MockLoadOptions) => Promise<unknown>;
 				projectName: string;
 		  }
@@ -70,9 +70,9 @@ vi.mock("../../packages/preview/src/shell/workspaceSnapshot", () => ({
 vi.mock("../../packages/preview/src/shell/PreviewApp", () => ({
 	PreviewApp: (props: {
 		entries: PreviewEntryDescriptor[];
-		debugEvents?: Array<{ label: string }>;
+		debugEvents?: Array<{ detail?: string; label: string }>;
 		entryPayloads?: Record<string, PreviewEntryPayload>;
-		hotDebugState?: { updateSequence: number };
+		hotDebugState?: { sendAvailable?: boolean; updateSequence: number };
 		loadEntry: (id: string, options?: MockLoadOptions) => Promise<unknown>;
 		projectName: string;
 	}) => {
@@ -391,6 +391,9 @@ describe("PreviewWorkspaceApp", () => {
 		);
 		await waitFor(() => {
 			expect(previewAppMocks.lastProps?.hotDebugState?.updateSequence).toBe(1);
+			expect(previewAppMocks.lastProps?.hotDebugState?.sendAvailable).toBe(
+				true,
+			);
 			expect(
 				previewAppMocks.lastProps?.debugEvents?.map((event) => event.label),
 			).toEqual(
@@ -400,6 +403,9 @@ describe("PreviewWorkspaceApp", () => {
 					"Entry payload applied",
 				]),
 			);
+			expect(
+				previewAppMocks.lastProps?.debugEvents?.map((event) => event.detail),
+			).toEqual(expect.arrayContaining(["1 changed, 0 removed"]));
 		});
 	});
 

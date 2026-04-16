@@ -22,6 +22,10 @@ import {
 } from "@testing-library/react";
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type {
+	PreviewDebugSnapshot,
+	PreviewDebugSnapshotOptions,
+} from "../../packages/preview/src/shell/debugSnapshot";
 import { PreviewApp } from "../../packages/preview/src/shell/PreviewApp";
 import { PreviewThemeProvider } from "../../packages/preview/src/shell/theme";
 import { PREVIEW_ENGINE_PROTOCOL_VERSION } from "../../packages/preview-engine/src/types";
@@ -253,6 +257,25 @@ function renderPreviewApp(app: React.ReactElement) {
 	return render(<PreviewThemeProvider>{app}</PreviewThemeProvider>);
 }
 
+function getPreviewDebugGlobal() {
+	const debugGlobal = (
+		window as Window & {
+			__loomPreviewDebug?: {
+				exportSnapshot: (
+					options?: PreviewDebugSnapshotOptions,
+				) => PreviewDebugSnapshot;
+				exportSnapshotJson: (options?: PreviewDebugSnapshotOptions) => string;
+			};
+		}
+	).__loomPreviewDebug;
+
+	if (!debugGlobal) {
+		throw new Error("Preview debug global was not installed.");
+	}
+
+	return debugGlobal;
+}
+
 function getIssueDisclosure() {
 	const title = screen.getByText("Issues");
 	const details = title.closest("details");
@@ -293,6 +316,54 @@ describe("preview shell", () => {
 		expect(screen.queryByText("No diagnostics for this entry.")).toBeNull();
 		expect(screen.queryByText("Issues")).toBeNull();
 		expect(screen.queryByLabelText("Preview debug HUD")).toBeNull();
+		expect(screen.queryByRole("button", { name: "Copy JSON" })).toBeNull();
+		expect(screen.queryByRole("button", { name: "Download JSON" })).toBeNull();
+
+		const debugGlobal = getPreviewDebugGlobal();
+		const snapshot = debugGlobal.exportSnapshot({
+			generatedAt: "2026-04-16T00:00:00.000Z",
+		});
+		expect(snapshot.metadata).toEqual({
+			schemaVersion: 1,
+			generatedAt: "2026-04-16T00:00:00.000Z",
+			mode: "summary",
+			options: {
+				includeLayoutTree: false,
+				hostSampleLimit: 6,
+				runtimeIssueItemLimit: 20,
+			},
+		});
+		expect("version" in snapshot).toBe(false);
+		expect("generatedAt" in snapshot).toBe(false);
+		expect(snapshot.selectedEntry?.id).toBe(checkboxEntry.id);
+		expect(snapshot.moduleLoad).toMatchObject({
+			outcome: "ready",
+			retried: false,
+			state: "ready",
+		});
+		expect(snapshot.runtimeIssues).toMatchObject({
+			errors: 0,
+			infos: 0,
+			omittedItemCount: 0,
+			truncated: false,
+			total: 0,
+			warnings: 0,
+		});
+		expect(snapshot.hot.updateSequence).toBe(0);
+
+		const snapshotJsonRaw = debugGlobal.exportSnapshotJson({
+			generatedAt: "2026-04-16T00:00:00.000Z",
+		});
+		expect(
+			debugGlobal.exportSnapshotJson({
+				generatedAt: "2026-04-16T00:00:00.000Z",
+			}),
+		).toBe(snapshotJsonRaw);
+
+		const snapshotJson = JSON.parse(
+			snapshotJsonRaw,
+		) as PreviewDebugSnapshot;
+		expect(Object.keys(snapshotJson)).toEqual(Object.keys(snapshot));
 	});
 
 	it("renders harness-based previews from the preview export contract", async () => {
@@ -358,9 +429,41 @@ describe("preview shell", () => {
 		).toBeTruthy();
 		await user.click(screen.getByLabelText("Debug mode"));
 		const hud = screen.getByLabelText("Preview debug HUD");
+		expect(within(hud).getByRole("button", { name: "Copy JSON" })).toBeTruthy();
+		expect(
+			within(hud).getByRole("button", { name: "Download JSON" }),
+		).toBeTruthy();
 		expect(within(hud).getByText(/^3$/)).toBeTruthy();
 		expect(within(hud).getByText("Hot update received")).toBeTruthy();
 		expect(within(hud).getByText("1 changed")).toBeTruthy();
+
+		const snapshot = getPreviewDebugGlobal().exportSnapshot({
+			generatedAt: "2026-04-16T00:00:00.000Z",
+		});
+		expect(snapshot.hot).toMatchObject({
+			available: true,
+			connection: "connected",
+			sendAvailable: true,
+			updateListener: "subscribed",
+			updateSequence: 3,
+		});
+		const hotUpdateEvent = snapshot.timeline.find(
+			(event) => event.kind === "hot-update-received",
+		);
+		expect(hotUpdateEvent).toMatchObject({
+			detail: "1 changed",
+			kind: "hot-update-received",
+			kindSequence: 1,
+			label: "Hot update received",
+			timestamp: "1970-01-01T00:00:00.001Z",
+		});
+		expect(hotUpdateEvent?.order).toBeGreaterThan(0);
+		expect(hotUpdateEvent ? "sequence" in hotUpdateEvent : false).toBe(false);
+		expect(snapshot.timeline.map((event) => event.order)).toEqual(
+			snapshot.timeline
+				.map((event) => event.order)
+				.sort((left, right) => left - right),
+		);
 	});
 
 	it("updates the debug HUD runtime issue summary", async () => {
@@ -421,6 +524,33 @@ describe("preview shell", () => {
 		expect(
 			within(hud).getAllByText("Runtime issues updated").length,
 		).toBeGreaterThan(0);
+
+		const snapshot = getPreviewDebugGlobal().exportSnapshot({
+			generatedAt: "2026-04-16T00:00:00.000Z",
+		});
+		expect(snapshot.runtimeIssues).toMatchObject({
+			errors: 1,
+			infos: 0,
+			omittedItemCount: 0,
+			truncated: false,
+			total: 2,
+			warnings: 1,
+		});
+		expect(snapshot.runtimeIssues.items.map((issue) => issue.summary)).toEqual([
+			"Runtime error one",
+			"Runtime warning one",
+		]);
+
+		const truncatedSnapshot = getPreviewDebugGlobal().exportSnapshot({
+			generatedAt: "2026-04-16T00:00:00.000Z",
+			runtimeIssueItemLimit: 1,
+		});
+		expect(truncatedSnapshot.runtimeIssues).toMatchObject({
+			itemLimit: 1,
+			omittedItemCount: 1,
+			truncated: true,
+		});
+		expect(truncatedSnapshot.runtimeIssues.items).toHaveLength(1);
 	});
 
 	it("shows layout provenance and degraded host details in debug mode", async () => {
@@ -473,6 +603,50 @@ describe("preview shell", () => {
 				viewportFrame?.getAttribute("data-preview-debug-badges"),
 			).toContain("placeholder");
 		});
+
+		const snapshot = getPreviewDebugGlobal().exportSnapshot({
+			generatedAt: "2026-04-16T00:00:00.000Z",
+		});
+		expect(snapshot.layout.nodeCount).toBeGreaterThan(0);
+		expect(snapshot.layout.degradedHostCount).toBeGreaterThan(0);
+		expect(snapshot.layout.fullSizeDefaultHostCount).toBeGreaterThan(0);
+		expect(
+			snapshot.layout.provenanceCounts.fallback +
+				snapshot.layout.provenanceCounts.wasm,
+		).toBeGreaterThan(0);
+		expect(
+			snapshot.layout.layoutSourceCounts["full-size-default"],
+		).toBeGreaterThan(0);
+		expect(snapshot.layout.degradedHostTypes.ViewportFrame).toBeGreaterThan(0);
+		expect(
+			snapshot.layout.fullSizeDefaultHostTypes.ViewportFrame,
+		).toBeGreaterThan(0);
+		expect(snapshot.layout.degradedSamples).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					nodeId: "debug-viewport",
+					nodeType: "ViewportFrame",
+				}),
+			]),
+		);
+		expect(snapshot.layout.fullSizeDefaultSamples).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					nodeId: "debug-viewport",
+					nodeType: "ViewportFrame",
+					reason: expect.stringMatching(/^full-size-default/),
+				}),
+			]),
+		);
+		expect("degradedHosts" in snapshot.layout).toBe(false);
+		expect("fullSizeDefaultHosts" in snapshot.layout).toBe(false);
+		expect("tree" in snapshot.layout).toBe(false);
+		expect(
+			getPreviewDebugGlobal().exportSnapshot({
+				generatedAt: "2026-04-16T00:00:00.000Z",
+				includeLayoutTree: true,
+			}).layout.tree,
+		).toBeTruthy();
 	});
 
 	it("does not restart ready entry loads when payload updates replace the descriptor", async () => {
