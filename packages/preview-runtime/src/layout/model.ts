@@ -874,6 +874,8 @@ export function normalizeRootScreenGuiNode(
 		return node;
 	}
 
+	const normalizedSize = node.layout.size ?? toLayoutSize(FULL_SIZE_UDIM2);
+
 	return {
 		...node,
 		kind: "root",
@@ -881,7 +883,7 @@ export function normalizeRootScreenGuiNode(
 			...node.layout,
 			anchorPoint: toLayoutVector(ZERO_VECTOR2),
 			position: toLayoutSize(ZERO_UDIM2),
-			size: toLayoutSize(FULL_SIZE_UDIM2),
+			size: normalizedSize,
 		},
 	};
 }

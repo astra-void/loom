@@ -5,6 +5,7 @@ import {
 	measureElementViewport,
 } from "../../layout/viewport";
 import { PortalProvider } from "../../react";
+import { UDim2 } from "../../runtime/helpers";
 import { ScreenGui as RuntimeScreenGui } from "../components";
 
 export type PreviewTargetShellProps = {
@@ -23,31 +24,49 @@ export function PreviewTargetShell(props: PreviewTargetShellProps) {
 	React.useEffect(() => {
 		if (!portalContainer) return;
 
+		const updateViewport = (nextViewport?: typeof viewport | null) => {
+			const resolvedViewport =
+				nextViewport ?? measureElementViewport(portalContainer);
+			if (
+				!resolvedViewport ||
+				resolvedViewport.width <= 0 ||
+				resolvedViewport.height <= 0
+			) {
+				return;
+			}
+
+			setViewport((previousViewport) =>
+				previousViewport.width === resolvedViewport.width &&
+				previousViewport.height === resolvedViewport.height
+					? previousViewport
+					: resolvedViewport,
+			);
+		};
+
 		if (typeof ResizeObserver !== "undefined") {
 			const observer = new ResizeObserver(() => {
-				const size = measureElementViewport(portalContainer);
-				if (size) {
-					setViewport(size);
-				}
+				updateViewport();
 			});
 
 			observer.observe(portalContainer);
 
-			const initialSize = measureElementViewport(portalContainer);
-			if (initialSize) {
-				setViewport(initialSize);
-			}
+			updateViewport();
 
 			return () => observer.disconnect();
 		}
 	}, [portalContainer]);
+
+	const shellSize = React.useMemo(
+		() => UDim2.fromOffset(viewport.width, viewport.height),
+		[viewport.height, viewport.width],
+	);
 
 	return (
 		<LayoutProvider
 			viewportHeight={viewport.height}
 			viewportWidth={viewport.width}
 		>
-			<RuntimeScreenGui Active={true} ref={handleRootRef}>
+			<RuntimeScreenGui Active={true} ref={handleRootRef} Size={shellSize}>
 				{portalContainer ? (
 					<PortalProvider container={portalContainer}>
 						{props.children}
