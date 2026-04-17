@@ -1,6 +1,6 @@
 {
 	"name": "@loom-dev/preview-analysis",
-	"version": "0.1.0-alpha.7",
+	"version": "0.1.0-alpha.8",
 	"private": false,
 	"description": "WASM-backed preview graph traversal and trace engine for Loom.",
 	"main": "pkg/preview_analysis.js",
