@@ -76,7 +76,7 @@ Subpaths:
 - `@loom-dev/preview/headless`
 - `@loom-dev/preview/server`
 - `@loom-dev/preview/progress`
-- `@loom-dev/preview/vite` (`createPreviewVitePlugin`, `createScopedPreviewPlugins`)
+- `@loom-dev/preview/vite` (`createPreviewViteConfig`, `createPreviewVitePlugin`, `createScopedPreviewPlugins`)
 
 `createPreviewHeadlessSession()` now creates a lazy headless session. Call `session.run()` to execute all or selected preview entries, and read `session.getSnapshot()` for the current engine payload plus the `execution` field with per-entry render status, runtime/layout issues, layout debug, degraded-host warnings, and viewport metadata.
 
@@ -86,7 +86,7 @@ Subpaths:
 
 `writePreviewProgress` and `writePreviewTiming` live in `@loom-dev/preview/progress`.
 
-`createPreviewVitePlugin` and `createScopedPreviewPlugins` live in `@loom-dev/preview/vite`.
+`createPreviewViteConfig`, `createPreviewVitePlugin`, and `createScopedPreviewPlugins` live in `@loom-dev/preview/vite`.
 
 `@loom-dev/preview/client` is the browser-safe surface for already-loaded preview entries. Keep using the root package for config loading, build, headless, and server APIs; use the `client` subpath when you need CSR, hydration, or build-time prerender helpers without pulling in Node-only preview entrypoints.
 
@@ -132,10 +132,39 @@ const server = await startPreviewServer({
 await server.close();
 ```
 
-## Vite Plugin Example
+## Vite Config Helper Example
 
-Use `createPreviewVitePlugin()` for Loom's own preview virtual modules and source transforms.
-Use `createScopedPreviewPlugins()` when third-party Vite plugins should only run for preview-scoped files instead of the whole app.
+Use `createPreviewViteConfig()` to assemble Loom's common Vite config defaults from a resolved preview config.
+
+- injects Loom preview plugins
+- aliases `@loom-dev/preview-runtime`
+- applies `optimizeDeps.exclude` for layout-engine runtime loading
+- includes `"**/*.wasm"` assets and forwards `server.fs.allow`
+- scopes `thirdPartyPlugins` to preview files by default
+
+```ts
+import react from "@vitejs/plugin-react";
+import { defineConfig } from "vite";
+import { loadPreviewConfig } from "@loom-dev/preview";
+import { createPreviewViteConfig } from "@loom-dev/preview/vite";
+import topLevelAwait from "vite-plugin-top-level-await";
+import wasm from "vite-plugin-wasm";
+
+const resolvedConfig = await loadPreviewConfig({
+  cwd: process.cwd(),
+});
+
+export default defineConfig(
+  createPreviewViteConfig(resolvedConfig, {
+    thirdPartyPlugins: [react(), wasm(), topLevelAwait()],
+  }),
+);
+```
+
+## Low-Level Vite Plugin Example
+
+Use `createPreviewVitePlugin()` for Loom's preview virtual modules and source transforms.
+Use `createScopedPreviewPlugins()` for fine-grained control over how third-party Vite plugins run against preview-scoped files.
 
 ```ts
 import react from "@vitejs/plugin-react";

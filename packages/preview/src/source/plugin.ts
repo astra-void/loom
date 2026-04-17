@@ -20,6 +20,7 @@ import {
 	createReactShimSpecifierMap,
 	isInternalPreviewPackageName,
 } from "./aliasConfig";
+import { createPackageSourceResolvePlugin } from "./packageSourceResolvePlugin";
 import {
 	isFilePathIncludedByTarget,
 	isFilePathUnderRoot,
@@ -719,6 +720,10 @@ export function createPreviewVitePlugin(
 			isBareModuleSpecifier,
 		),
 		createRuntimeDependencyResolvePlugin({
+			reactAliases: options.reactAliases,
+			reactRobloxAliases: options.reactRobloxAliases,
+		}),
+		createPackageSourceResolvePlugin({
 			reactAliases: options.reactAliases,
 			reactRobloxAliases: options.reactRobloxAliases,
 		}),

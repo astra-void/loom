@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import path from "node:path";
 import type { ResolvedPreviewConfig } from "../config";
 import {
@@ -35,6 +36,7 @@ type HookLike<THook extends (...args: never[]) => unknown> =
 	| ({ handler: THook } & Record<string, unknown>);
 
 type PreviewScopedPluginScope = {
+	dynamicRoots: Set<string>;
 	roots: string[];
 };
 
@@ -74,6 +76,63 @@ function normalizeId(id = "") {
 	return normalizedId;
 }
 
+function getResolvedId(result: unknown) {
+	if (typeof result === "string") {
+		return result;
+	}
+
+	if (typeof result === "object" && result !== null && "id" in result) {
+		const candidate = (result as { id?: unknown }).id;
+		return typeof candidate === "string" ? candidate : undefined;
+	}
+
+	return undefined;
+}
+
+function findNearestPackageRoot(filePath: string) {
+	let currentDir =
+		fs.existsSync(filePath) && fs.statSync(filePath).isDirectory()
+			? filePath
+			: path.dirname(filePath);
+
+	for (;;) {
+		const packageJsonPath = path.join(currentDir, "package.json");
+		if (fs.existsSync(packageJsonPath)) {
+			return currentDir;
+		}
+
+		const parentDir = path.dirname(currentDir);
+		if (parentDir === currentDir) {
+			return undefined;
+		}
+
+		currentDir = parentDir;
+	}
+}
+
+function readPackageSourceRoot(packageRoot: string) {
+	const packageJsonPath = path.join(packageRoot, "package.json");
+	try {
+		const packageJson = JSON.parse(
+			fs.readFileSync(packageJsonPath, "utf8"),
+		) as {
+			source?: unknown;
+		};
+		if (typeof packageJson.source !== "string") {
+			return undefined;
+		}
+
+		const sourcePath = resolveRealFilePath(
+			path.resolve(packageRoot, packageJson.source),
+		);
+		return fs.existsSync(sourcePath) && fs.statSync(sourcePath).isDirectory()
+			? sourcePath
+			: path.dirname(sourcePath);
+	} catch {
+		return undefined;
+	}
+}
+
 function isWithinRoot(filePath: string, rootPath: string) {
 	return filePath === rootPath || isFilePathUnderRoot(rootPath, filePath);
 }
@@ -99,6 +158,7 @@ function createPreviewScopedPluginScope(
 	resolvedConfig: ResolvedPreviewConfig,
 ): PreviewScopedPluginScope {
 	return {
+		dynamicRoots: new Set(),
 		roots: [
 			resolvedConfig.workspaceRoot,
 			...resolvedConfig.targets.map((target) => target.sourceRoot),
@@ -119,7 +179,36 @@ function isScopedPath(id: string, scope: PreviewScopedPluginScope) {
 		return isPreviewPackageRequest(normalizedId);
 	}
 
-	return scope.roots.some((rootPath) => isWithinRoot(normalizedId, rootPath));
+	return [...scope.roots, ...scope.dynamicRoots].some((rootPath) =>
+		isWithinRoot(normalizedId, rootPath),
+	);
+}
+
+function trackResolvedPackageSourceRoot(
+	result: unknown,
+	scope: PreviewScopedPluginScope,
+) {
+	const resolvedId = getResolvedId(result);
+	if (!resolvedId) {
+		return;
+	}
+
+	const normalizedId = normalizeId(resolvedId);
+	if (!path.isAbsolute(normalizedId)) {
+		return;
+	}
+
+	const packageRoot = findNearestPackageRoot(normalizedId);
+	if (!packageRoot) {
+		return;
+	}
+
+	const sourceRoot = readPackageSourceRoot(packageRoot);
+	if (!sourceRoot || !isWithinRoot(normalizedId, sourceRoot)) {
+		return;
+	}
+
+	scope.dynamicRoots.add(resolveRealFilePath(sourceRoot));
 }
 
 function shouldHandleResolve(
@@ -199,7 +288,16 @@ function wrapPlugin(
 				return null;
 			}
 
-			return resolveId.call(this, source, importer, options);
+			const result = resolveId.call(this, source, importer, options);
+			if (result && typeof (result as Promise<unknown>).then === "function") {
+				return Promise.resolve(result).then((resolvedResult) => {
+					trackResolvedPackageSourceRoot(resolvedResult, scope);
+					return resolvedResult;
+				});
+			}
+
+			trackResolvedPackageSourceRoot(result, scope);
+			return result;
 		};
 		wrappedPlugin.resolveId = wrapHook(
 			pluginRecord.resolveId as HookLike<ResolveHook>,
