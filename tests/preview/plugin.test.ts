@@ -4,13 +4,21 @@ import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createPreviewVitePlugin } from "../../packages/preview/src/source/plugin";
 import type { PreviewPlugin } from "../../packages/preview/src/source/viteTypes";
-import { getHookHandler, getHookResultCode } from "./hookTestUtils";
+import {
+	getHookHandler,
+	getHookResultCode,
+	getHookResultId,
+} from "./hookTestUtils";
 
 const WORKSPACE_INDEX_MODULE_ID = "virtual:loom-preview-workspace-index";
 const temporaryRoots: string[] = [];
 
 type MockServer = ReturnType<typeof createMockServer>;
-type TestResolveIdHook = (id: string) => string | undefined;
+type TestResolveIdHook = (
+	id: string,
+	importer?: string,
+	options?: { ssr?: boolean },
+) => unknown;
 type TestLoadHook = (
 	id: string,
 ) => Promise<string | undefined> | string | undefined;
@@ -111,6 +119,50 @@ function writeFakeRbxtsReactWithPropTypes(packageRoot: string) {
 	};
 }
 
+function writeFakeSourcePackage(options: {
+	dependency?: string;
+	fixtureRoot: string;
+	name: string;
+	sourceText: string;
+}) {
+	const packageRoot = path.join(
+		options.fixtureRoot,
+		"node_modules",
+		...options.name.split("/"),
+	);
+	const sourceRoot = path.join(packageRoot, "src");
+	const sourceFilePath = path.join(sourceRoot, "index.tsx");
+	fs.mkdirSync(path.join(packageRoot, "out"), { recursive: true });
+	fs.mkdirSync(sourceRoot, { recursive: true });
+	fs.writeFileSync(
+		path.join(packageRoot, "package.json"),
+		JSON.stringify(
+			{
+				name: options.name,
+				version: "0.0.0",
+				main: "out/init.luau",
+				types: "out/index.d.ts",
+				source: "src/index.tsx",
+				...(options.dependency
+					? { dependencies: { [options.dependency]: "0.0.0" } }
+					: {}),
+			},
+			null,
+			2,
+		),
+		"utf8",
+	);
+	fs.writeFileSync(path.join(packageRoot, "out/init.luau"), "return {}\n");
+	fs.writeFileSync(path.join(packageRoot, "out/index.d.ts"), "export {};\n");
+	fs.writeFileSync(sourceFilePath, options.sourceText, "utf8");
+
+	return {
+		packageRoot: fs.realpathSync(packageRoot),
+		sourceFilePath: fs.realpathSync(sourceFilePath),
+		sourceRoot: fs.realpathSync(sourceRoot),
+	};
+}
+
 function createPreviewPlugin(
 	fixtureRoot: string,
 	sourceRoot: string,
@@ -155,6 +207,25 @@ function createPreviewPlugins(
 			},
 		],
 	});
+}
+
+function findPreviewPlugin(
+	plugins: ReturnType<typeof createPreviewPlugins>,
+	name: string,
+): PreviewPlugin {
+	const plugin = plugins.find(
+		(candidate) =>
+			candidate &&
+			typeof candidate === "object" &&
+			!Array.isArray(candidate) &&
+			"name" in candidate &&
+			candidate.name === name,
+	);
+	if (!plugin || typeof plugin !== "object" || Array.isArray(plugin)) {
+		throw new Error(`Expected preview plugin ${name} to be present.`);
+	}
+
+	return plugin as PreviewPlugin;
 }
 
 function assertPreviewPlugins(
@@ -409,6 +480,86 @@ describe("createPreviewVitePlugin", () => {
 				),
 			),
 		).toBeUndefined();
+	});
+
+	it("resolves source-entry Roblox packages before unresolved package mocking", async () => {
+		const { fixtureRoot, sourceRoot } = createFixtureRoot();
+		const entryFile = path.join(sourceRoot, "Avatar.loom.tsx");
+		const avatarPackage = writeFakeSourcePackage({
+			dependency: "@fixtures/core",
+			fixtureRoot,
+			name: "@fixtures/avatar",
+			sourceText: [
+				'import { Slot } from "@fixtures/core";',
+				"export const Avatar = {",
+				"\tRoot: Slot,",
+				"};",
+			].join("\n"),
+		});
+		const corePackage = writeFakeSourcePackage({
+			fixtureRoot,
+			name: "@fixtures/core",
+			sourceText: [
+				"export function Slot() {",
+				'\treturn <frame Name="slot" />;',
+				"}",
+			].join("\n"),
+		});
+		fs.writeFileSync(
+			entryFile,
+			[
+				'import { Avatar } from "@fixtures/avatar";',
+				"export function AvatarPreview() {",
+				"\treturn <Avatar.Root />;",
+				"}",
+				"export const preview = { entry: AvatarPreview };",
+			].join("\n"),
+			"utf8",
+		);
+
+		const plugins = assertPreviewPlugins(
+			createPreviewPlugins(fixtureRoot, sourceRoot),
+		);
+		const packageSourcePlugin = findPreviewPlugin(
+			plugins,
+			"loom-preview-package-source-resolve",
+		);
+		const mockTransformPlugin = findPreviewPlugin(
+			plugins,
+			"loom-preview-unresolved-package-mock-transform",
+		);
+		const resolveId = getHookHandler<TestResolveIdHook>(
+			packageSourcePlugin.resolveId as TestResolveIdHook | undefined,
+		);
+		const transform = getHookHandler<TestTransformHook>(
+			mockTransformPlugin.transform as TestTransformHook | undefined,
+		);
+		if (!resolveId || !transform) {
+			throw new Error("Expected source resolve and mock transform hooks.");
+		}
+
+		expect(getHookResultId(resolveId("@fixtures/avatar", entryFile))).toBe(
+			avatarPackage.sourceFilePath,
+		);
+		expect(
+			getHookResultId(resolveId("@fixtures/core", avatarPackage.sourceFilePath)),
+		).toBe(corePackage.sourceFilePath);
+
+		const resolveFromSourcePlugin = (specifier: string, importer?: string) =>
+			resolveId(specifier, importer);
+		const entryMockTransform = await transform.call(
+			{ resolve: resolveFromSourcePlugin } as never,
+			fs.readFileSync(entryFile, "utf8"),
+			entryFile,
+		);
+		const avatarMockTransform = await transform.call(
+			{ resolve: resolveFromSourcePlugin } as never,
+			fs.readFileSync(avatarPackage.sourceFilePath, "utf8"),
+			avatarPackage.sourceFilePath,
+		);
+
+		expect(entryMockTransform).toBeUndefined();
+		expect(avatarMockTransform).toBeUndefined();
 	});
 
 	it("discovers .loom.tsx preview entries and transforms source files under the target root", async () => {

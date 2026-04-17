@@ -10,7 +10,11 @@ import {
 	createPreviewVitePlugin,
 	createScopedPreviewPlugins,
 } from "../../packages/preview/src/vite";
-import { getHookHandler, getHookResultId } from "./hookTestUtils";
+import {
+	getHookHandler,
+	getHookResultCode,
+	getHookResultId,
+} from "./hookTestUtils";
 
 const temporaryRoots: string[] = [];
 const WORKSPACE_INDEX_MODULE_ID = "virtual:loom-preview-workspace-index";
@@ -92,6 +96,50 @@ function createFixtureConfig(): ResolvedPreviewConfig & {
 		transformMode: "strict-fidelity",
 		workspaceFilePath,
 		workspaceRoot,
+	};
+}
+
+function writeFakeSourcePackage(options: {
+	fixtureRoot: string;
+	name: string;
+	sourceText?: string;
+}) {
+	const packageRoot = path.join(
+		options.fixtureRoot,
+		"node_modules",
+		...options.name.split("/"),
+	);
+	const sourceRoot = path.join(packageRoot, "src");
+	const sourceFilePath = path.join(sourceRoot, "index.tsx");
+	const siblingFilePath = path.join(sourceRoot, "Sibling.tsx");
+	fs.mkdirSync(sourceRoot, { recursive: true });
+	fs.writeFileSync(
+		path.join(packageRoot, "package.json"),
+		JSON.stringify(
+			{
+				name: options.name,
+				version: "0.0.0",
+				main: "out/init.luau",
+				source: "src/index.tsx",
+				types: "out/index.d.ts",
+			},
+			null,
+			2,
+		),
+		"utf8",
+	);
+	fs.writeFileSync(
+		sourceFilePath,
+		options.sourceText ?? 'export * from "./Sibling";\n',
+		"utf8",
+	);
+	fs.writeFileSync(siblingFilePath, "export const sibling = true;\n", "utf8");
+
+	return {
+		packageRoot: fs.realpathSync(packageRoot),
+		siblingFilePath: fs.realpathSync(siblingFilePath),
+		sourceFilePath: fs.realpathSync(sourceFilePath),
+		sourceRoot: fs.realpathSync(sourceRoot),
 	};
 }
 
@@ -212,6 +260,53 @@ describe("createScopedPreviewPlugins", () => {
 		expect(loadSpy).toHaveBeenCalledTimes(1);
 		expect(transformSpy).toHaveBeenCalledTimes(1);
 		expect(handleHotUpdateSpy).toHaveBeenCalledTimes(1);
+	});
+
+	it("tracks package source roots resolved from preview-scoped imports", () => {
+		const config = createFixtureConfig();
+		const packageSource = writeFakeSourcePackage({
+			fixtureRoot: config.workspaceRoot,
+			name: "@fixtures/source-package",
+		});
+		const scopedConfig = {
+			...config,
+			workspaceRoot: config.sourceRoot,
+		};
+		const resolveIdSpy = vi.fn(() => ({ id: packageSource.sourceFilePath }));
+		const transformSpy = vi.fn((code: string) => ({ code: `${code}:scoped` }));
+		const wrappedPlugin = getWrappedPlugin(
+			{
+				name: "dynamic-source-root",
+				resolveId: resolveIdSpy,
+				transform: transformSpy,
+			},
+			scopedConfig,
+		);
+		const resolveId = getHookHandler<ResolveIdHook>(wrappedPlugin.resolveId);
+		const transform = getHookHandler<TransformHook>(wrappedPlugin.transform);
+		if (!resolveId || !transform) {
+			throw new Error("Expected wrapped resolve and transform hooks.");
+		}
+
+		expect(transform("export const before = true;", packageSource.siblingFilePath))
+			.toBeNull();
+
+		expect(
+			getHookResultId(
+				resolveId(
+					"@fixtures/source-package",
+					path.join(config.sourceRoot, "Entry.tsx"),
+				),
+			),
+		).toBe(packageSource.sourceFilePath);
+		expect(
+			getHookResultCode(
+				transform("export const after = true;", packageSource.siblingFilePath),
+			),
+		).toBe("export const after = true;:scoped");
+
+		expect(resolveIdSpy).toHaveBeenCalledTimes(1);
+		expect(transformSpy).toHaveBeenCalledTimes(1);
 	});
 
 	it("wraps object-form hook handlers", () => {
