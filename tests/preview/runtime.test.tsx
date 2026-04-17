@@ -920,6 +920,71 @@ describe("preview runtime host mapping", () => {
 		});
 	});
 
+	it("keeps client PreviewTargetShell portal children shell-scoped without remount churn", async () => {
+		const onPortalMount = vi.fn();
+		const onPortalUnmount = vi.fn();
+
+		function PortalMountProbe() {
+			React.useEffect(() => {
+				onPortalMount();
+				return () => {
+					onPortalUnmount();
+				};
+			}, []);
+
+			return <TextLabel Id="client-shell-portal-mount-probe" Text="Portal probe" />;
+		}
+
+		render(
+			<ClientPreviewTargetShell>
+				<Portal>
+					<PortalMountProbe />
+				</Portal>
+			</ClientPreviewTargetShell>,
+		);
+
+		await waitFor(() => {
+			const portalProbe = document.querySelector(
+				'[data-preview-node-id="client-shell-portal-mount-probe"]',
+			) as HTMLElement | null;
+			const shellRoot = document.querySelector(
+				'[data-preview-host="screengui"]',
+			) as HTMLElement | null;
+			expect(portalProbe).toBeTruthy();
+			expect(shellRoot?.contains(portalProbe ?? null)).toBe(true);
+		});
+
+		expect(onPortalMount).toHaveBeenCalledTimes(1);
+		expect(onPortalUnmount).toHaveBeenCalledTimes(0);
+	});
+
+	it("classifies client shell-style wrapper frames as explicit-size when fill-parent size is provided", async () => {
+		render(
+			<ClientPreviewTargetShell>
+				<Frame
+					BackgroundTransparency={1}
+					Id="client-shell-wrapper-frame"
+					Size={UDim2.fromScale(1, 1)}
+				>
+					<TextLabel Text="Client shell wrapper" />
+				</Frame>
+			</ClientPreviewTargetShell>,
+		);
+
+		await waitFor(() => {
+			const wrapper = document.querySelector(
+				'[data-preview-node-id="client-shell-wrapper-frame"]',
+			) as HTMLElement | null;
+			expect(wrapper).toBeTruthy();
+			expect(wrapper?.getAttribute("data-layout-layout-source")).toBe(
+				"explicit-size",
+			);
+			expect(wrapper?.getAttribute("data-layout-size-reason")).toBe(
+				"explicit-size",
+			);
+		});
+	});
+
 	it("classifies shell-style wrapper frames as explicit-size when fill-parent size is provided", async () => {
 		render(
 			<PreviewTargetShell>

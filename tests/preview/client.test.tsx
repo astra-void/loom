@@ -181,7 +181,25 @@ describe("@loom-dev/preview/client", () => {
 		});
 	});
 
-	it("renderPreviewToString and renderPreviewToStaticMarkup prerender markup and restore globals", () => {
+	it("renderPreviewToString and renderPreviewToStaticMarkup preserve globals for shell-wrapped and unwrapped markup", () => {
+		const shellMarkup = renderPreviewToString({
+			entry: createComponentEntry(),
+			module: {
+				default: function StringPreview() {
+					return <div>string preview</div>;
+				},
+			},
+		});
+		const shellStaticMarkup = renderPreviewToStaticMarkup({
+			entry: createHarnessEntry(),
+			module: {
+				preview: {
+					render() {
+						return <div>static preview</div>;
+					},
+				},
+			},
+		});
 		const markup = renderPreviewToString({
 			entry: createComponentEntry(),
 			module: {
@@ -189,6 +207,7 @@ describe("@loom-dev/preview/client", () => {
 					return <div>string preview</div>;
 				},
 			},
+			wrapInShell: false,
 		});
 		const staticMarkup = renderPreviewToStaticMarkup({
 			entry: createHarnessEntry(),
@@ -199,8 +218,11 @@ describe("@loom-dev/preview/client", () => {
 					},
 				},
 			},
+			wrapInShell: false,
 		});
 
+		expect(shellMarkup).toContain("data-preview-layout-provider");
+		expect(shellStaticMarkup).toContain("data-preview-layout-provider");
 		expect(markup).toContain("string preview");
 		expect(staticMarkup).toContain("static preview");
 		expect(
