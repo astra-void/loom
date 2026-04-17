@@ -1,6 +1,6 @@
 {
 	"name": "loom-monorepo",
-	"version": "0.1.0-alpha.6",
+	"version": "0.1.0-alpha.8",
 	"private": true,
 	"description": "Loom preview workspace.",
 	"scripts": {
