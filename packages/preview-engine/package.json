@@ -1,6 +1,6 @@
 {
 	"name": "@loom-dev/preview-engine",
-	"version": "0.1.0-alpha.7",
+	"version": "0.1.0-alpha.8",
 	"private": false,
 	"description": "Core preview engine protocols, discovery, and invalidation for Loom.",
 	"main": "dist/index.js",
