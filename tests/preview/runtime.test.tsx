@@ -4231,6 +4231,37 @@ describe("preview runtime fidelity gaps", () => {
 		});
 	});
 
+	it("installs the host bridge before callback refs read IsA", async () => {
+		let callbackError: unknown;
+		let callbackIsImageLabel: boolean | undefined;
+
+		render(
+			<ImageLabel
+				Image="rbxasset://textures/ui/GuiImagePlaceholder.png"
+				ref={(instance) => {
+					if (!instance) {
+						return;
+					}
+
+					try {
+						callbackIsImageLabel = (
+							instance as HTMLElement & {
+								IsA(name: string): boolean;
+							}
+						)?.IsA("ImageLabel");
+					} catch (error) {
+						callbackError = error;
+					}
+				}}
+			/>,
+		);
+
+		await waitFor(() => {
+			expect(callbackIsImageLabel).toBe(true);
+		});
+		expect(callbackError).toBeUndefined();
+	});
+
 	it("bridges host subtree traversal through wrappers for focus scopes", async () => {
 		const ref = React.createRef<BridgedHostHandle>();
 
