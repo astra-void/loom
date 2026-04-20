@@ -54,8 +54,8 @@ function createSimpleHost(
 				props,
 			);
 			const mergedRef = useMergedRefs(
-				forwardedRef as React.Ref<HTMLElement>,
 				setElementRef as React.Ref<HTMLElement>,
+				forwardedRef as React.Ref<HTMLElement>,
 			);
 
 			return domPresentationAdapter.render(
@@ -146,8 +146,8 @@ function createTextHost(host: TextHostName, displayName: string) {
 			} = useHostLayout(host, props);
 			const innerRef = elementRef as React.RefObject<HTMLElement | null>;
 			const mergedRef = useMergedRefs(
-				forwardedRef as React.Ref<HTMLElement>,
 				setElementRef as React.Ref<HTMLElement>,
+				forwardedRef as React.Ref<HTMLElement>,
 			);
 			const textScaleStyle = useTextScaleStyle({
 				elementRef: innerRef,
@@ -235,8 +235,8 @@ export const ImageButton = React.forwardRef<HTMLElement, PreviewDomProps>(
 			props,
 		);
 		const mergedRef = useMergedRefs(
-			forwardedRef as React.Ref<HTMLButtonElement>,
 			setElementRef as React.Ref<HTMLButtonElement>,
+			forwardedRef as React.Ref<HTMLButtonElement>,
 		);
 
 		return domPresentationAdapter.render(
@@ -266,8 +266,8 @@ export const ImageLabel = React.forwardRef<HTMLElement, PreviewDomProps>(
 			props,
 		);
 		const mergedRef = useMergedRefs(
-			forwardedRef as React.Ref<HTMLImageElement>,
 			setElementRef as React.Ref<HTMLImageElement>,
+			forwardedRef as React.Ref<HTMLImageElement>,
 		);
 
 		return domPresentationAdapter.render(
