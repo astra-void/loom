@@ -22,3 +22,9 @@ packages/preview-runtime/src/**/*.d.ts
 .env.*
 
 .idea
+
+.claude
+
+digest.txt
+
+parity-out
