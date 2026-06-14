@@ -34,6 +34,52 @@ export class Vector2 {
 		this.X = x;
 		this.Y = y;
 	}
+
+	get Magnitude() {
+		return Math.sqrt(this.X * this.X + this.Y * this.Y);
+	}
+
+	get Unit() {
+		const magnitude = this.Magnitude;
+		return magnitude === 0
+			? new Vector2(0, 0)
+			: new Vector2(this.X / magnitude, this.Y / magnitude);
+	}
+
+	// roblox-ts compiles the Vector2 `+ - * /` operators down to these method
+	// calls, so consumer code (e.g. @lattice-ui/popper measuring a viewport)
+	// invokes them on the preview's Vector2. They read `.X`/`.Y` off the operand
+	// so a plain `{ X, Y }` mock works as an argument too.
+	add(other: { X: number; Y: number }) {
+		return new Vector2(this.X + other.X, this.Y + other.Y);
+	}
+
+	sub(other: { X: number; Y: number }) {
+		return new Vector2(this.X - other.X, this.Y - other.Y);
+	}
+
+	mul(other: number | { X: number; Y: number }) {
+		return typeof other === "number"
+			? new Vector2(this.X * other, this.Y * other)
+			: new Vector2(this.X * other.X, this.Y * other.Y);
+	}
+
+	div(other: number | { X: number; Y: number }) {
+		return typeof other === "number"
+			? new Vector2(this.X / other, this.Y / other)
+			: new Vector2(this.X / other.X, this.Y / other.Y);
+	}
+
+	Dot(other: { X: number; Y: number }) {
+		return this.X * other.X + this.Y * other.Y;
+	}
+
+	Lerp(goal: { X: number; Y: number }, alpha: number) {
+		return new Vector2(
+			this.X + (goal.X - this.X) * alpha,
+			this.Y + (goal.Y - this.Y) * alpha,
+		);
+	}
 }
 
 export class Vector3 {
@@ -45,6 +91,33 @@ export class Vector3 {
 		this.X = x;
 		this.Y = y;
 		this.Z = z;
+	}
+}
+
+export class Rect {
+	readonly Min: Vector2;
+	readonly Max: Vector2;
+	readonly Width: number;
+	readonly Height: number;
+
+	constructor(min: Vector2, max: Vector2);
+	constructor(minX: number, minY: number, maxX: number, maxY: number);
+	constructor(
+		minOrMinX: Vector2 | number,
+		maxOrMinY: Vector2 | number,
+		maxX?: number,
+		maxY?: number,
+	) {
+		if (typeof minOrMinX === "number") {
+			this.Min = new Vector2(minOrMinX, maxOrMinY as number);
+			this.Max = new Vector2(maxX ?? 0, maxY ?? 0);
+		} else {
+			this.Min = minOrMinX;
+			this.Max = maxOrMinY as Vector2;
+		}
+
+		this.Width = this.Max.X - this.Min.X;
+		this.Height = this.Max.Y - this.Min.Y;
 	}
 }
 
@@ -112,6 +185,73 @@ export class Color3 {
 
 	static fromRGB(r: number, g: number, b: number): Color3 {
 		return new Color3(r / 255, g / 255, b / 255);
+	}
+}
+
+function toFiniteValue(value: unknown, fallback = 0) {
+	const parsed = Number(value);
+	return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+export class ColorSequenceKeypoint {
+	readonly Time: number;
+	readonly Value: Color3;
+
+	constructor(time: number, value: Color3) {
+		this.Time = clampNormalizedChannel(time);
+		this.Value = value;
+	}
+}
+
+export class ColorSequence {
+	readonly Keypoints: readonly ColorSequenceKeypoint[];
+
+	constructor(
+		color: Color3 | readonly ColorSequenceKeypoint[],
+		finishColor?: Color3,
+	) {
+		if (Array.isArray(color)) {
+			this.Keypoints = [...color];
+			return;
+		}
+
+		const startColor = color as Color3;
+		this.Keypoints = [
+			new ColorSequenceKeypoint(0, startColor),
+			new ColorSequenceKeypoint(1, finishColor ?? startColor),
+		];
+	}
+}
+
+export class NumberSequenceKeypoint {
+	readonly Time: number;
+	readonly Value: number;
+	readonly Envelope: number;
+
+	constructor(time: number, value: number, envelope = 0) {
+		this.Time = clampNormalizedChannel(time);
+		this.Value = toFiniteValue(value);
+		this.Envelope = toFiniteValue(envelope);
+	}
+}
+
+export class NumberSequence {
+	readonly Keypoints: readonly NumberSequenceKeypoint[];
+
+	constructor(
+		value: number | readonly NumberSequenceKeypoint[],
+		finishValue?: number,
+	) {
+		if (Array.isArray(value)) {
+			this.Keypoints = [...value];
+			return;
+		}
+
+		const startValue = value as number;
+		this.Keypoints = [
+			new NumberSequenceKeypoint(0, startValue),
+			new NumberSequenceKeypoint(1, finishValue ?? startValue),
+		];
 	}
 }
 
@@ -527,6 +667,10 @@ export function warn(...args: unknown[]) {
 
 export const previewRuntimeBaseGlobals = Object.freeze({
 	Color3,
+	ColorSequence,
+	ColorSequenceKeypoint,
+	NumberSequence,
+	NumberSequenceKeypoint,
 	error,
 	math,
 	next,
@@ -537,6 +681,7 @@ export const previewRuntimeBaseGlobals = Object.freeze({
 	tostring,
 	typeIs,
 	warn,
+	Rect,
 	UDim,
 	UDim2,
 	Vector2,
@@ -620,4 +765,183 @@ export function toCssColor(
 			: 1 - backgroundTransparency,
 	);
 	return `rgba(${channels.red}, ${channels.green}, ${channels.blue}, ${alpha})`;
+}
+
+export function isColor3Value(value: unknown): value is Color3Value {
+	return (
+		typeof value === "object" &&
+		value !== null &&
+		typeof (value as Color3Value).R === "number" &&
+		typeof (value as Color3Value).G === "number" &&
+		typeof (value as Color3Value).B === "number"
+	);
+}
+
+function sortKeypoints<TKeypoint extends { Time: number }>(
+	keypoints: readonly TKeypoint[],
+): TKeypoint[] {
+	return [...keypoints].sort((left, right) => left.Time - right.Time);
+}
+
+function interpolate(from: number, to: number, alpha: number) {
+	return from + (to - from) * alpha;
+}
+
+function resolveColorKeypoints(value: unknown): ColorSequenceKeypoint[] {
+	if (
+		value &&
+		typeof value === "object" &&
+		Array.isArray((value as ColorSequence).Keypoints)
+	) {
+		return sortKeypoints((value as ColorSequence).Keypoints);
+	}
+
+	if (isColor3Value(value)) {
+		return [
+			new ColorSequenceKeypoint(0, value),
+			new ColorSequenceKeypoint(1, value),
+		];
+	}
+
+	return [];
+}
+
+function resolveNumberKeypoints(value: unknown): NumberSequenceKeypoint[] {
+	if (
+		value &&
+		typeof value === "object" &&
+		Array.isArray((value as NumberSequence).Keypoints)
+	) {
+		return sortKeypoints((value as NumberSequence).Keypoints);
+	}
+
+	if (typeof value === "number" && Number.isFinite(value)) {
+		return [
+			new NumberSequenceKeypoint(0, value),
+			new NumberSequenceKeypoint(1, value),
+		];
+	}
+
+	return [];
+}
+
+function sampleColorAt(
+	keypoints: readonly ColorSequenceKeypoint[],
+	time: number,
+): Color3 {
+	const first = keypoints[0];
+	if (!first || time <= first.Time) {
+		return first?.Value ?? new Color3(1, 1, 1);
+	}
+
+	const last = keypoints[keypoints.length - 1];
+	if (time >= last.Time) {
+		return last.Value;
+	}
+
+	for (let index = 0; index < keypoints.length - 1; index += 1) {
+		const current = keypoints[index];
+		const next = keypoints[index + 1];
+		if (time >= current.Time && time <= next.Time) {
+			const span = next.Time - current.Time;
+			const alpha = span === 0 ? 0 : (time - current.Time) / span;
+			return new Color3(
+				interpolate(current.Value.R, next.Value.R, alpha),
+				interpolate(current.Value.G, next.Value.G, alpha),
+				interpolate(current.Value.B, next.Value.B, alpha),
+			);
+		}
+	}
+
+	return last.Value;
+}
+
+function sampleNumberAt(
+	keypoints: readonly NumberSequenceKeypoint[],
+	time: number,
+): number {
+	const first = keypoints[0];
+	if (!first || time <= first.Time) {
+		return first?.Value ?? 0;
+	}
+
+	const last = keypoints[keypoints.length - 1];
+	if (time >= last.Time) {
+		return last.Value;
+	}
+
+	for (let index = 0; index < keypoints.length - 1; index += 1) {
+		const current = keypoints[index];
+		const next = keypoints[index + 1];
+		if (time >= current.Time && time <= next.Time) {
+			const span = next.Time - current.Time;
+			const alpha = span === 0 ? 0 : (time - current.Time) / span;
+			return interpolate(current.Value, next.Value, alpha);
+		}
+	}
+
+	return last.Value;
+}
+
+/**
+ * Converts a Roblox `UIGradient` (a `ColorSequence` plus optional
+ * `NumberSequence` transparency, rotation and offset) into a CSS
+ * `linear-gradient` value. Roblox measures rotation clockwise from the +X axis
+ * (0° points right), whereas CSS measures it clockwise from "up", so the CSS
+ * angle is the Roblox rotation plus 90°.
+ *
+ * `Offset` slides the gradient pattern relative to the parent's bounding box.
+ * We approximate it by projecting the offset vector onto the gradient axis and
+ * shifting every colour stop by that amount; CSS clamps stops that fall outside
+ * the 0–100% range, which matches Roblox extending the end colours.
+ */
+export function toCssGradient(
+	colorValue: unknown,
+	transparencyValue: unknown,
+	rotation: number,
+	offset?: { X: number; Y: number },
+): string | undefined {
+	const colorKeypoints = resolveColorKeypoints(colorValue);
+	if (colorKeypoints.length === 0) {
+		return undefined;
+	}
+
+	const transparencyKeypoints = resolveNumberKeypoints(transparencyValue);
+
+	const times = new Set<number>();
+	for (const keypoint of colorKeypoints) {
+		times.add(keypoint.Time);
+	}
+	for (const keypoint of transparencyKeypoints) {
+		times.add(keypoint.Time);
+	}
+	const sortedTimes = [...times].sort((left, right) => left - right);
+
+	const normalizedRotation = toFiniteValue(rotation);
+	const shift = offset ? projectGradientOffset(offset, normalizedRotation) : 0;
+
+	const stops = sortedTimes.map((time) => {
+		const channels = resolveColorChannels(sampleColorAt(colorKeypoints, time));
+		const alpha = clampAlpha(
+			transparencyKeypoints.length === 0
+				? 1
+				: 1 - sampleNumberAt(transparencyKeypoints, time),
+		);
+		const percent = Math.round((time + shift) * 1000) / 10;
+		return `rgba(${channels.red}, ${channels.green}, ${channels.blue}, ${alpha}) ${percent}%`;
+	});
+
+	const cssAngle = normalizedRotation + 90;
+	return `linear-gradient(${cssAngle}deg, ${stops.join(", ")})`;
+}
+
+function projectGradientOffset(
+	offset: { X: number; Y: number },
+	rotation: number,
+): number {
+	const radians = (rotation * Math.PI) / 180;
+	return (
+		toFiniteValue(offset.X) * Math.cos(radians) +
+		toFiniteValue(offset.Y) * Math.sin(radians)
+	);
 }

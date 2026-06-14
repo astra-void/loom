@@ -95,6 +95,23 @@ export type PreviewLayoutGridLayout = {
 	verticalAlignment: "bottom" | "center" | "top";
 };
 
+export type PreviewLayoutPageLayout = {
+	fillDirection: "horizontal" | "vertical";
+	horizontalAlignment: "center" | "left" | "right";
+	padding: SerializedUDim;
+	sortOrder: "layout-order" | "name" | "source";
+	verticalAlignment: "bottom" | "center" | "top";
+};
+
+export type PreviewLayoutTableLayout = {
+	fillEmptySpaceColumns: boolean;
+	fillEmptySpaceRows: boolean;
+	horizontalAlignment: "center" | "left" | "right";
+	padding: SerializedUDim2;
+	sortOrder: "layout-order" | "name" | "source";
+	verticalAlignment: "bottom" | "center" | "top";
+};
+
 export type PreviewLayoutSizeConstraint = {
 	maxSize?: SerializedVector2;
 	minSize?: SerializedVector2;
@@ -122,8 +139,10 @@ export type PreviewLayoutModifiers = {
 	flexItem?: PreviewLayoutFlexItem;
 	grid?: PreviewLayoutGridLayout;
 	list?: PreviewLayoutListLayout;
+	page?: PreviewLayoutPageLayout;
 	padding?: PreviewLayoutPaddingInsets;
 	sizeConstraint?: PreviewLayoutSizeConstraint;
+	table?: PreviewLayoutTableLayout;
 	textSizeConstraint?: PreviewLayoutTextSizeConstraint;
 };
 
@@ -586,6 +605,64 @@ function normalizeGridLayout(
 	};
 }
 
+function normalizePageLayout(
+	value: unknown,
+): PreviewLayoutPageLayout | undefined {
+	if (!value || typeof value !== "object") {
+		return undefined;
+	}
+
+	const record = value as {
+		fillDirection?: unknown;
+		horizontalAlignment?: unknown;
+		padding?: unknown;
+		sortOrder?: unknown;
+		verticalAlignment?: unknown;
+	};
+
+	return {
+		fillDirection: normalizeFillDirection(record.fillDirection),
+		horizontalAlignment: normalizeHorizontalAlignment(
+			record.horizontalAlignment,
+		),
+		padding: serializeUDim(record.padding, ZERO_UDIM),
+		sortOrder: normalizeSortOrder(record.sortOrder),
+		verticalAlignment: normalizeVerticalAlignment(record.verticalAlignment),
+	};
+}
+
+function normalizeTableLayout(
+	value: unknown,
+): PreviewLayoutTableLayout | undefined {
+	if (!value || typeof value !== "object") {
+		return undefined;
+	}
+
+	const record = value as {
+		fillEmptySpaceColumns?: unknown;
+		fillEmptySpaceRows?: unknown;
+		horizontalAlignment?: unknown;
+		padding?: unknown;
+		sortOrder?: unknown;
+		verticalAlignment?: unknown;
+	};
+	const padding = serializeUDim2(record.padding, ZERO_UDIM2);
+	if (!padding) {
+		return undefined;
+	}
+
+	return {
+		fillEmptySpaceColumns: record.fillEmptySpaceColumns === true,
+		fillEmptySpaceRows: record.fillEmptySpaceRows === true,
+		horizontalAlignment: normalizeHorizontalAlignment(
+			record.horizontalAlignment,
+		),
+		padding,
+		sortOrder: normalizeSortOrder(record.sortOrder),
+		verticalAlignment: normalizeVerticalAlignment(record.verticalAlignment),
+	};
+}
+
 function normalizeSizeConstraint(
 	value: unknown,
 ): PreviewLayoutSizeConstraint | undefined {
@@ -713,8 +790,10 @@ function normalizeLayoutModifiers(
 		flexItem?: unknown;
 		grid?: unknown;
 		list?: unknown;
+		page?: unknown;
 		padding?: unknown;
 		sizeConstraint?: unknown;
+		table?: unknown;
 		textSizeConstraint?: unknown;
 	};
 	const normalized: PreviewLayoutModifiers = {
@@ -724,8 +803,10 @@ function normalizeLayoutModifiers(
 		flexItem: normalizeFlexItem(record.flexItem),
 		grid: normalizeGridLayout(record.grid),
 		list: normalizeListLayout(record.list),
+		page: normalizePageLayout(record.page),
 		padding: normalizePaddingInsets(record.padding),
 		sizeConstraint: normalizeSizeConstraint(record.sizeConstraint),
+		table: normalizeTableLayout(record.table),
 		textSizeConstraint: normalizeTextSizeConstraint(record.textSizeConstraint),
 	};
 
@@ -733,8 +814,10 @@ function normalizeLayoutModifiers(
 		normalized.flexItem ||
 		normalized.grid ||
 		normalized.list ||
+		normalized.page ||
 		normalized.padding ||
 		normalized.sizeConstraint ||
+		normalized.table ||
 		normalized.textSizeConstraint
 		? normalized
 		: undefined;
@@ -1085,6 +1168,35 @@ export function areNodesEqual(
 			(b.layoutModifiers?.textSizeConstraint?.minTextSize ?? undefined) &&
 		(a.layoutModifiers?.textSizeConstraint?.maxTextSize ?? undefined) ===
 			(b.layoutModifiers?.textSizeConstraint?.maxTextSize ?? undefined) &&
+		a.layoutModifiers?.page?.fillDirection ===
+			b.layoutModifiers?.page?.fillDirection &&
+		a.layoutModifiers?.page?.horizontalAlignment ===
+			b.layoutModifiers?.page?.horizontalAlignment &&
+		a.layoutModifiers?.page?.verticalAlignment ===
+			b.layoutModifiers?.page?.verticalAlignment &&
+		a.layoutModifiers?.page?.sortOrder === b.layoutModifiers?.page?.sortOrder &&
+		(a.layoutModifiers?.page?.padding.Scale ?? 0) ===
+			(b.layoutModifiers?.page?.padding.Scale ?? 0) &&
+		(a.layoutModifiers?.page?.padding.Offset ?? 0) ===
+			(b.layoutModifiers?.page?.padding.Offset ?? 0) &&
+		a.layoutModifiers?.table?.fillEmptySpaceColumns ===
+			b.layoutModifiers?.table?.fillEmptySpaceColumns &&
+		a.layoutModifiers?.table?.fillEmptySpaceRows ===
+			b.layoutModifiers?.table?.fillEmptySpaceRows &&
+		a.layoutModifiers?.table?.horizontalAlignment ===
+			b.layoutModifiers?.table?.horizontalAlignment &&
+		a.layoutModifiers?.table?.verticalAlignment ===
+			b.layoutModifiers?.table?.verticalAlignment &&
+		a.layoutModifiers?.table?.sortOrder ===
+			b.layoutModifiers?.table?.sortOrder &&
+		(a.layoutModifiers?.table?.padding.X.Scale ?? 0) ===
+			(b.layoutModifiers?.table?.padding.X.Scale ?? 0) &&
+		(a.layoutModifiers?.table?.padding.X.Offset ?? 0) ===
+			(b.layoutModifiers?.table?.padding.X.Offset ?? 0) &&
+		(a.layoutModifiers?.table?.padding.Y.Scale ?? 0) ===
+			(b.layoutModifiers?.table?.padding.Y.Scale ?? 0) &&
+		(a.layoutModifiers?.table?.padding.Y.Offset ?? 0) ===
+			(b.layoutModifiers?.table?.padding.Y.Offset ?? 0) &&
 		a.layout.anchorPoint.x === b.layout.anchorPoint.x &&
 		a.layout.anchorPoint.y === b.layout.anchorPoint.y &&
 		(a.layout.constraints?.width?.min ?? undefined) ===

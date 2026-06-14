@@ -1,6 +1,7 @@
 import { runtimeOnlyTypeNames } from "../hosts/metadata";
 import { PREVIEW_HOST_DATA_ATTRIBUTE } from "../internal/previewAttributes";
 import { Enum } from "./Enum";
+import { Vector2 } from "./helpers";
 import {
 	findMockAncestorOfClass,
 	findMockAncestorWhichIsA,
@@ -31,7 +32,10 @@ const USER_INPUT_TRACKER_KEY = Symbol.for(
 const robloxMockRecord = robloxMock as unknown as Record<PropertyKey, unknown>;
 
 function createMockVector2(x: number, y: number) {
-	return { X: x, Y: y };
+	// Return a real Vector2 so consumer code that uses arithmetic operators
+	// (roblox-ts compiles `+ - * /` to `.add`/`.sub`/`.mul`/`.div`) works on
+	// mocked layout values such as GuiService insets and viewport sizes.
+	return new Vector2(x, y);
 }
 
 function createMockUDim(offset: number, scale: number) {
@@ -128,9 +132,19 @@ export interface PreviewGame {
 	IsA(name: string): boolean;
 }
 
+export interface PreviewCamera {
+	readonly ClassName: "Camera";
+	readonly Name: "Camera";
+	readonly ViewportSize: { X: number; Y: number };
+	GetFullName(): string;
+	GetPropertyChangedSignal(property: string): unknown;
+	IsA(name: string): boolean;
+}
+
 export interface PreviewWorkspace {
 	readonly ClassName: "Workspace";
 	readonly Name: "Workspace";
+	readonly CurrentCamera: PreviewCamera;
 	GetFullName(): string;
 	IsA(name: string): boolean;
 }
@@ -210,7 +224,7 @@ export interface PreviewGuiService {
 	SelectedObject: PreviewGuiHitObject | undefined;
 	readonly Name: "GuiService";
 	GetFullName(): string;
-	GetGuiInset(): readonly [{ X: 0; Y: 0 }, { X: 0; Y: 0 }];
+	GetGuiInset(): readonly [Vector2, Vector2];
 	IsA(name: string): boolean;
 	IsTenFootInterface(): false;
 }
@@ -1221,7 +1235,7 @@ function createUserInputService(): PreviewUserInputService {
 }
 
 function createGuiService(): PreviewGuiService {
-	const zeroVector = Object.freeze({ X: 0 as const, Y: 0 as const });
+	const zeroVector = createMockVector2(0, 0);
 
 	if (typeof globalThis.addEventListener === "function") {
 		const updateSelectedObject = (event: Event) => {
@@ -1274,10 +1288,50 @@ export function resetPreviewRuntimeServiceState() {
 	}
 }
 
+function getPreviewViewportSize() {
+	const width =
+		typeof globalThis !== "undefined" &&
+		typeof globalThis.innerWidth === "number" &&
+		globalThis.innerWidth > 0
+			? globalThis.innerWidth
+			: 1920;
+	const height =
+		typeof globalThis !== "undefined" &&
+		typeof globalThis.innerHeight === "number" &&
+		globalThis.innerHeight > 0
+			? globalThis.innerHeight
+			: 1080;
+	return createMockVector2(width, height);
+}
+
+function createPreviewCamera(): PreviewCamera {
+	return withRobloxFallback({
+		ClassName: "Camera" as const,
+		Name: "Camera" as const,
+		// Roblox exposes the rendered screen size here; the preview mirrors the
+		// browser viewport so popper-style positioning measures against the real
+		// visible area instead of falling back to a hardcoded resolution.
+		get ViewportSize() {
+			return getPreviewViewportSize();
+		},
+		GetFullName() {
+			return "Workspace.Camera";
+		},
+		GetPropertyChangedSignal() {
+			return createMockSignal();
+		},
+		IsA(typeName: string) {
+			return typeName === "Camera" || typeName === "Instance";
+		},
+	}) as PreviewCamera;
+}
+
 function createWorkspaceService(): PreviewWorkspace {
+	const currentCamera = createPreviewCamera();
 	return withRobloxFallback({
 		ClassName: "Workspace" as const,
 		Name: "Workspace" as const,
+		CurrentCamera: currentCamera,
 		GetFullName() {
 			return "Workspace";
 		},

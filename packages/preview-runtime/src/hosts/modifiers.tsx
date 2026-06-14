@@ -5,12 +5,13 @@ import {
 	toFiniteNumber,
 } from "../internal/robloxValues";
 import type { ComputedRect } from "../layout/model";
-import { toCssColor } from "../runtime/helpers";
-import type {
-	DecoratorHostName,
-	HostModifierName,
-	HostName,
-	PreviewDomProps,
+import { isColor3Value, toCssColor, toCssGradient } from "../runtime/helpers";
+import {
+	type DecoratorHostName,
+	type HostModifierName,
+	type HostName,
+	hostModifierNames,
+	type PreviewDomProps,
 } from "./types";
 
 const PREVIEW_DECORATOR_HOST_MARKER = Symbol.for("loom.preview.decoratorHost");
@@ -19,6 +20,7 @@ export type HoistedModifierState = {
 	cornerRadius?: unknown;
 	scale?: number;
 	strokeShadow?: string;
+	gradient?: string;
 };
 
 type ExtractedModifierState = {
@@ -78,12 +80,32 @@ function collectHoistedModifierState(
 			state.scale = toFiniteNumber(props.Scale, 1);
 			break;
 		case "uistroke": {
+			if (props.Enabled === false) {
+				break;
+			}
 			const thickness = Math.max(0, toFiniteNumber(props.Thickness, 1));
-			const color = props.Color
-				? toCssColor(props.Color, props.Transparency)
+			const transparency =
+				typeof props.Transparency === "number" ? props.Transparency : undefined;
+			const color = isColor3Value(props.Color)
+				? toCssColor(props.Color, transparency)
 				: undefined;
 			if (thickness > 0 && color) {
 				state.strokeShadow = `inset 0 0 0 ${thickness}px ${color}`;
+			}
+			break;
+		}
+		case "uigradient": {
+			if (props.Enabled === false) {
+				break;
+			}
+			const gradient = toCssGradient(
+				props.Color,
+				props.Transparency,
+				toFiniteNumber(props.Rotation, 0),
+				props.Offset ? serializeVector2(props.Offset) : undefined,
+			);
+			if (gradient) {
+				state.gradient = gradient;
 			}
 			break;
 		}
@@ -126,6 +148,25 @@ function mergeLayoutModifiers(
 				horizontalAlignment: props.HorizontalAlignment,
 				sortOrder: props.SortOrder,
 				startCorner: props.StartCorner,
+				verticalAlignment: props.VerticalAlignment,
+			};
+			break;
+		case "uipagelayout":
+			target.page = {
+				fillDirection: props.FillDirection,
+				horizontalAlignment: props.HorizontalAlignment,
+				padding: props.Padding,
+				sortOrder: props.SortOrder,
+				verticalAlignment: props.VerticalAlignment,
+			};
+			break;
+		case "uitablelayout":
+			target.table = {
+				fillEmptySpaceColumns: props.FillEmptySpaceColumns,
+				fillEmptySpaceRows: props.FillEmptySpaceRows,
+				horizontalAlignment: props.HorizontalAlignment,
+				padding: props.Padding,
+				sortOrder: props.SortOrder,
 				verticalAlignment: props.VerticalAlignment,
 			};
 			break;
@@ -175,14 +216,10 @@ function collectRenderableChildren(
 
 		const decoratorHost = getDecoratorHost(child.type);
 		if (decoratorHost) {
-			if (
-				decoratorHost === "uicorner" ||
-				decoratorHost === "uiscale" ||
-				decoratorHost === "uistroke"
-			) {
+			if ((hostModifierNames as readonly string[]).includes(decoratorHost)) {
 				collectHoistedModifierState(
 					state.appearance,
-					decoratorHost,
+					decoratorHost as HostModifierName,
 					child.props as PreviewDomProps,
 					computed,
 				);
@@ -261,6 +298,14 @@ export function applyHoistedModifierStyles(
 		style.boxShadow = appendStyleValue(
 			style.boxShadow,
 			state.strokeShadow,
+			", ",
+		);
+	}
+
+	if (state.gradient) {
+		style.backgroundImage = appendStyleValue(
+			style.backgroundImage,
+			state.gradient,
 			", ",
 		);
 	}

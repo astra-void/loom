@@ -699,6 +699,29 @@ export function useHostLayout(host: LayoutHostName, props: PreviewDomProps) {
 		[nodeId, resolveBridgedHostProperty, layoutContext],
 	);
 
+	// `setElementRef` is funnelled through a stable merged-ref callback, so React
+	// only invokes it once on mount — meaning the bridge would keep its original
+	// `resolveBridgedHostProperty` (and the `computed` rect it closed over). Nodes
+	// whose size resolves after mount (e.g. an AutomaticSize canvasgroup that
+	// starts `intrinsic-empty` 0x0 and later fits its children) would then report
+	// a stale 0x0 `AbsoluteSize`, leaving popper-anchored content unpositioned.
+	// Re-install the bridge whenever the resolver changes to keep it current.
+	React.useLayoutEffect(() => {
+		const element = elementRef.current;
+		if (!element) {
+			return;
+		}
+
+		installPreviewHostPropertyBridge(
+			element,
+			nodeId,
+			resolveBridgedHostProperty,
+		);
+		(
+			element as HTMLElement & { __previewLayoutContext?: unknown }
+		).__previewLayoutContext = layoutContext;
+	}, [nodeId, resolveBridgedHostProperty, layoutContext]);
+
 	React.useLayoutEffect(() => {
 		const element = elementRef.current;
 		if (!element || host !== "scrollingframe") {

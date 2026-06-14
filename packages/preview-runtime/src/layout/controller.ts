@@ -36,7 +36,9 @@ type LayoutCapability =
 	| "grid"
 	| "list"
 	| "padding"
+	| "page-layout"
 	| "size-constraint"
+	| "table-layout"
 	| "text-size-constraint";
 
 const SUPPORTED_WASM_LAYOUT_CAPABILITIES = new Set<LayoutCapability>([
@@ -296,6 +298,8 @@ function sortNodesForParent(
 	const sortOrder =
 		parentNode.layoutModifiers?.list?.sortOrder ??
 		parentNode.layoutModifiers?.grid?.sortOrder ??
+		parentNode.layoutModifiers?.page?.sortOrder ??
+		parentNode.layoutModifiers?.table?.sortOrder ??
 		"source";
 
 	return [...childNodes].sort((left, right) => {
@@ -535,8 +539,18 @@ function getNodeLayoutCapabilities(
 	if (node.layoutModifiers?.padding) {
 		capabilities.push("padding");
 	}
+	// UIPageLayout / UITableLayout are implemented only in the TS fallback path,
+	// so they are deliberately absent from SUPPORTED_WASM_LAYOUT_CAPABILITIES.
+	// Reporting them here routes any tree that uses them away from the WASM
+	// engine and into computeFallback().
+	if (node.layoutModifiers?.page) {
+		capabilities.push("page-layout");
+	}
 	if (node.layoutModifiers?.sizeConstraint) {
 		capabilities.push("size-constraint");
+	}
+	if (node.layoutModifiers?.table) {
+		capabilities.push("table-layout");
 	}
 	if (node.layoutModifiers?.textSizeConstraint) {
 		capabilities.push("text-size-constraint");
@@ -885,6 +899,10 @@ export class LayoutController {
 				this.computeGridChildren(node, contentRect, childNodes, output);
 			} else if (node.layoutModifiers?.list) {
 				this.computeListChildren(node, contentRect, childNodes, output);
+			} else if (node.layoutModifiers?.page) {
+				this.computePageChildren(node, contentRect, childNodes, output);
+			} else if (node.layoutModifiers?.table) {
+				this.computeTableChildren(node, contentRect, childNodes, output);
 			} else {
 				for (const childNode of childNodes) {
 					this.computeFallbackSubtree(childNode.id, contentRect, output);
@@ -1204,6 +1222,191 @@ export class LayoutController {
 			}
 
 			crossCursor += metric.lineCross + gap;
+		}
+	}
+
+	private computePageChildren(
+		parentNode: PreviewLayoutNode,
+		contentRect: { height: number; width: number; x: number; y: number },
+		childNodes: PreviewLayoutNode[],
+		output: Record<
+			string,
+			{ height: number; width: number; x: number; y: number }
+		>,
+	) {
+		const page = parentNode.layoutModifiers?.page;
+		if (!page || childNodes.length === 0) {
+			return;
+		}
+
+		// UIPageLayout sizes every child to the container and stacks them along
+		// the fill direction. The runtime only shows one page at a time, but for
+		// a static preview we lay the full sequence out so every page is probeable.
+		const horizontal = page.fillDirection === "horizontal";
+		const mainAxisSize = horizontal ? contentRect.width : contentRect.height;
+		const gap = resolvePaddingInset(page.padding, mainAxisSize);
+		let mainCursor = horizontal ? contentRect.x : contentRect.y;
+
+		for (const childNode of childNodes) {
+			const x = horizontal ? mainCursor : contentRect.x;
+			const y = horizontal ? contentRect.y : mainCursor;
+
+			this.computeFallbackSubtreeFromRect(
+				childNode.id,
+				applyAnchorPoint(
+					x,
+					y,
+					contentRect.width,
+					contentRect.height,
+					childNode.layout.anchorPoint.x,
+					childNode.layout.anchorPoint.y,
+				),
+				output,
+			);
+
+			mainCursor = advanceMainCursor(mainCursor, mainAxisSize, gap);
+		}
+	}
+
+	private computeTableChildren(
+		parentNode: PreviewLayoutNode,
+		contentRect: { height: number; width: number; x: number; y: number },
+		rowNodes: PreviewLayoutNode[],
+		output: Record<
+			string,
+			{ height: number; width: number; x: number; y: number }
+		>,
+	) {
+		const table = parentNode.layoutModifiers?.table;
+		if (!table || rowNodes.length === 0) {
+			return;
+		}
+
+		const gapX = resolvePaddingInset(table.padding.X, contentRect.width);
+		const gapY = resolvePaddingInset(table.padding.Y, contentRect.height);
+
+		// Each direct child is a row; its children are the row's cells. Column j
+		// is sized to the widest cell in column j, and row i to its tallest cell.
+		const rows = rowNodes.map((rowNode) => {
+			const cellIds = (this.childIdsByParent.get(rowNode.id) ?? []).filter(
+				(cellId) => this.nodes.get(cellId)?.visible !== false,
+			);
+			const cells = sortNodesForParent(
+				parentNode,
+				cellIds
+					.map((cellId) => this.nodes.get(cellId))
+					.filter((cell): cell is PreviewLayoutNode => cell !== undefined),
+			);
+			return { cells, rowNode };
+		});
+
+		const columnCount = rows.reduce(
+			(maximum, row) => Math.max(maximum, row.cells.length),
+			0,
+		);
+		if (columnCount === 0) {
+			// No cells anywhere: fall back to plain absolute positioning per row.
+			for (const row of rows) {
+				this.computeFallbackSubtree(row.rowNode.id, contentRect, output);
+			}
+			return;
+		}
+
+		const cellDimensions = rows.map((row) =>
+			row.cells.map((cell) => resolveNodeDimensions(cell, contentRect)),
+		);
+		const columnWidths = new Array<number>(columnCount).fill(0);
+		const rowHeights = rows.map(() => 0);
+		for (const [rowIndex, row] of rows.entries()) {
+			for (let columnIndex = 0; columnIndex < row.cells.length; columnIndex++) {
+				const dimensions = cellDimensions[rowIndex]?.[columnIndex];
+				if (!dimensions) {
+					continue;
+				}
+				columnWidths[columnIndex] = Math.max(
+					columnWidths[columnIndex] ?? 0,
+					dimensions.width,
+				);
+				rowHeights[rowIndex] = Math.max(
+					rowHeights[rowIndex] ?? 0,
+					dimensions.height,
+				);
+			}
+		}
+
+		const sumOf = (values: number[]) =>
+			values.reduce((total, value) => total + value, 0);
+
+		if (table.fillEmptySpaceColumns && columnCount > 0) {
+			const used = sumOf(columnWidths) + Math.max(0, columnCount - 1) * gapX;
+			const extra = (contentRect.width - used) / columnCount;
+			if (extra > 0) {
+				for (let columnIndex = 0; columnIndex < columnCount; columnIndex++) {
+					columnWidths[columnIndex] += extra;
+				}
+			}
+		}
+		if (table.fillEmptySpaceRows && rows.length > 0) {
+			const used = sumOf(rowHeights) + Math.max(0, rows.length - 1) * gapY;
+			const extra = (contentRect.height - used) / rows.length;
+			if (extra > 0) {
+				for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
+					rowHeights[rowIndex] += extra;
+				}
+			}
+		}
+
+		const tableWidth =
+			sumOf(columnWidths) + Math.max(0, columnCount - 1) * gapX;
+		const tableHeight = sumOf(rowHeights) + Math.max(0, rows.length - 1) * gapY;
+		const startX =
+			contentRect.x +
+			(table.fillEmptySpaceColumns
+				? 0
+				: alignStart(
+						table.horizontalAlignment,
+						Math.max(0, contentRect.width - tableWidth),
+					));
+		const startY =
+			contentRect.y +
+			(table.fillEmptySpaceRows
+				? 0
+				: alignStart(
+						table.verticalAlignment,
+						Math.max(0, contentRect.height - tableHeight),
+					));
+
+		let rowY = startY;
+		for (const [rowIndex, row] of rows.entries()) {
+			const rowHeight = rowHeights[rowIndex] ?? 0;
+			output[row.rowNode.id] = applyAnchorPoint(
+				startX,
+				rowY,
+				tableWidth,
+				rowHeight,
+				row.rowNode.layout.anchorPoint.x,
+				row.rowNode.layout.anchorPoint.y,
+			);
+
+			let cellX = startX;
+			for (const [columnIndex, cell] of row.cells.entries()) {
+				const columnWidth = columnWidths[columnIndex] ?? 0;
+				this.computeFallbackSubtreeFromRect(
+					cell.id,
+					applyAnchorPoint(
+						cellX,
+						rowY,
+						columnWidth,
+						rowHeight,
+						cell.layout.anchorPoint.x,
+						cell.layout.anchorPoint.y,
+					),
+					output,
+				);
+				cellX += columnWidth + gapX;
+			}
+
+			rowY += rowHeight + gapY;
 		}
 	}
 

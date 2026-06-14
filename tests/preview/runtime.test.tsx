@@ -5,6 +5,7 @@ import {
 	Box,
 	CanvasGroup,
 	Color3,
+	ColorSequence,
 	clearPreviewRuntimeIssues,
 	Enum,
 	FocusScope,
@@ -17,6 +18,7 @@ import {
 	isPreviewElement,
 	LayoutProvider,
 	normalizePreviewRuntimeError,
+	NumberSequence,
 	Portal,
 	PortalProvider,
 	PreviewTargetShell,
@@ -33,15 +35,19 @@ import {
 	TextLabel,
 	TweenInfo,
 	UDim2,
+	Vector2,
 	UIAspectRatioConstraint,
 	UICorner,
 	UIFlexItem,
+	UIGradient,
 	UIGridLayout,
 	UIListLayout,
 	UIPadding,
+	UIPageLayout,
 	UIScale,
 	UISizeConstraint,
 	UIStroke,
+	UITableLayout,
 	UITextSizeConstraint,
 	VideoFrame,
 	ViewportFrame,
@@ -2205,6 +2211,112 @@ describe("preview runtime host mapping", () => {
 		});
 	});
 
+	it("lays out UIPageLayout children as full-size pages along the fill direction", async () => {
+		render(
+			<LayoutProvider debounceMs={0} viewportHeight={600} viewportWidth={800}>
+				<ScreenGui Id="pager-screen">
+					<Frame
+						Id="pager"
+						ParentId="pager-screen"
+						Size={UDim2.fromOffset(300, 200)}
+					>
+						<UIPageLayout FillDirection="horizontal" />
+						<Frame Id="page-1" ParentId="pager" />
+						<Frame Id="page-2" ParentId="pager" />
+					</Frame>
+				</ScreenGui>
+			</LayoutProvider>,
+		);
+
+		const pageOne = document.querySelector(
+			'[data-preview-node-id="page-1"]',
+		) as HTMLElement;
+		const pageTwo = document.querySelector(
+			'[data-preview-node-id="page-2"]',
+		) as HTMLElement;
+
+		await waitFor(() => {
+			expect(pageOne.style.left).toBe("0px");
+			expect(pageOne.style.width).toBe("300px");
+			expect(pageOne.style.height).toBe("200px");
+			expect(pageTwo.style.left).toBe("300px");
+			expect(pageTwo.style.width).toBe("300px");
+		});
+		// The decorator host itself must not leak into the DOM.
+		expect(
+			document.querySelector('[data-preview-host="uipagelayout"]'),
+		).toBeNull();
+	});
+
+	it("arranges UITableLayout cells into shared columns and rows", async () => {
+		render(
+			<LayoutProvider debounceMs={0} viewportHeight={600} viewportWidth={800}>
+				<ScreenGui Id="table-screen">
+					<Frame
+						Id="grid"
+						ParentId="table-screen"
+						Size={UDim2.fromOffset(400, 200)}
+					>
+						<UITableLayout />
+						<Frame Id="trow-1" ParentId="grid">
+							<Frame
+								Id="cell-a"
+								ParentId="trow-1"
+								Size={UDim2.fromOffset(50, 30)}
+							/>
+							<Frame
+								Id="cell-b"
+								ParentId="trow-1"
+								Size={UDim2.fromOffset(90, 20)}
+							/>
+						</Frame>
+						<Frame Id="trow-2" ParentId="grid">
+							<Frame
+								Id="cell-c"
+								ParentId="trow-2"
+								Size={UDim2.fromOffset(40, 25)}
+							/>
+						</Frame>
+					</Frame>
+				</ScreenGui>
+			</LayoutProvider>,
+		);
+
+		const rowOne = document.querySelector(
+			'[data-preview-node-id="trow-1"]',
+		) as HTMLElement;
+		const rowTwo = document.querySelector(
+			'[data-preview-node-id="trow-2"]',
+		) as HTMLElement;
+		const cellA = document.querySelector(
+			'[data-preview-node-id="cell-a"]',
+		) as HTMLElement;
+		const cellB = document.querySelector(
+			'[data-preview-node-id="cell-b"]',
+		) as HTMLElement;
+		const cellC = document.querySelector(
+			'[data-preview-node-id="cell-c"]',
+		) as HTMLElement;
+
+		// DOM positions are relative to the parent node, so cells are measured
+		// against their row band and rows against the table frame.
+		await waitFor(() => {
+			// Column 0 width = max(50, 40) = 50, so column 1 starts at x = 50.
+			expect(cellA.style.left).toBe("0px");
+			expect(cellB.style.left).toBe("50px");
+			expect(cellB.style.width).toBe("90px");
+			// Row bands span the full table width (50 + 90 = 140).
+			expect(rowOne.style.width).toBe("140px");
+			// Row 1 sits below row 0 (tallest cell = 30px).
+			expect(rowTwo.style.top).toBe("30px");
+			// cell-c is column 0 of row 1, so it stretches to the column width.
+			expect(cellC.style.width).toBe("50px");
+		});
+		expect(
+			document.querySelector('[data-preview-host="uitablelayout"]'),
+		).toBeNull();
+	});
+
 	it("supports rbxts-react event interop props on preview hosts", async () => {
 		const user = userEvent.setup();
 		const activated = vi.fn();
@@ -2266,6 +2378,112 @@ describe("preview runtime host mapping", () => {
 		expect(document.querySelector('[data-preview-host="uiscale"]')).toBeNull();
 		expect(document.querySelector("[filldirection]")).toBeNull();
 		expect(document.querySelector("[scale]")).toBeNull();
+	});
+
+	it("hoists UIGradient into the parent background as a CSS linear-gradient", () => {
+		render(
+			<Frame Size={UDim2.fromOffset(120, 40)}>
+				<UIGradient
+					Color={
+						new ColorSequence(
+							Color3.fromRGB(255, 0, 0),
+							Color3.fromRGB(0, 0, 255),
+						)
+					}
+					Rotation={0}
+				/>
+				<TextLabel Text="Gradient" />
+			</Frame>,
+		);
+
+		const frame = document.querySelector(
+			'[data-preview-host="frame"]',
+		) as HTMLElement;
+		expect(screen.getByText("Gradient")).toBeTruthy();
+		// Roblox rotation 0 (left-to-right) maps to CSS 90deg. Note jsdom's
+		// CSSOM collapses fully-opaque `rgba(...,1)` stops down to `rgb(...)`.
+		expect(frame.style.backgroundImage).toContain("linear-gradient(90deg");
+		expect(frame.style.backgroundImage).toContain("rgb(255, 0, 0) 0%");
+		expect(frame.style.backgroundImage).toContain("rgb(0, 0, 255) 100%");
+		expect(
+			document.querySelector('[data-preview-host="uigradient"]'),
+		).toBeNull();
+	});
+
+	it("samples UIGradient transparency and rotation into per-stop alpha", () => {
+		render(
+			<Frame Size={UDim2.fromOffset(120, 40)}>
+				<UIGradient
+					Color={new ColorSequence(Color3.fromRGB(0, 0, 0))}
+					Rotation={90}
+					Transparency={new NumberSequence(0, 1)}
+				/>
+			</Frame>,
+		);
+
+		const frame = document.querySelector(
+			'[data-preview-host="frame"]',
+		) as HTMLElement;
+		expect(frame.style.backgroundImage).toContain("linear-gradient(180deg");
+		expect(frame.style.backgroundImage).toContain("rgb(0, 0, 0) 0%");
+		expect(frame.style.backgroundImage).toContain("rgba(0, 0, 0, 0) 100%");
+	});
+
+	it("does not apply a disabled UIGradient", () => {
+		render(
+			<Frame Size={UDim2.fromOffset(120, 40)}>
+				<UIGradient
+					Color={new ColorSequence(Color3.fromRGB(0, 0, 0))}
+					Enabled={false}
+				/>
+			</Frame>,
+		);
+
+		const frame = document.querySelector(
+			'[data-preview-host="frame"]',
+		) as HTMLElement;
+		expect(frame.style.backgroundImage).toBe("");
+	});
+
+	it("shifts UIGradient colour stops by the projected Offset", () => {
+		render(
+			<Frame Size={UDim2.fromOffset(120, 40)}>
+				<UIGradient
+					Color={
+						new ColorSequence(
+							Color3.fromRGB(255, 0, 0),
+							Color3.fromRGB(0, 0, 255),
+						)
+					}
+					Offset={new Vector2(0.25, 0)}
+					Rotation={0}
+				/>
+			</Frame>,
+		);
+
+		const frame = document.querySelector(
+			'[data-preview-host="frame"]',
+		) as HTMLElement;
+		// rotation 0 projects Offset.X directly onto the gradient axis (+0.25).
+		expect(frame.style.backgroundImage).toContain("rgb(255, 0, 0) 25%");
+		expect(frame.style.backgroundImage).toContain("rgb(0, 0, 255) 125%");
+	});
+
+	it("does not apply a disabled UIStroke", () => {
+		render(
+			<Frame Size={UDim2.fromOffset(120, 40)}>
+				<UIStroke
+					Color={Color3.fromRGB(10, 20, 30)}
+					Enabled={false}
+					Thickness={2}
+				/>
+			</Frame>,
+		);
+
+		const frame = document.querySelector(
+			'[data-preview-host="frame"]',
+		) as HTMLElement;
+		expect(frame.style.boxShadow).toBe("");
 	});
 
 	it("does not forward preview-only text label props onto the DOM", () => {

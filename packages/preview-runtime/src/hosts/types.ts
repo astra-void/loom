@@ -1,6 +1,10 @@
 import type * as React from "react";
 import type { UDim2Like, Vector2Like } from "../internal/robloxValues";
-import type { Color3Value } from "../runtime/helpers";
+import type {
+	Color3Value,
+	ColorSequence,
+	NumberSequence,
+} from "../runtime/helpers";
 import {
 	fullSizeLayoutHostNames as sharedFullSizeLayoutHostNames,
 	layoutHostNodeType as sharedLayoutHostNodeType,
@@ -16,7 +20,12 @@ export type ForwardedDomProps = React.HTMLAttributes<HTMLElement> &
 	React.InputHTMLAttributes<HTMLInputElement> &
 	React.ImgHTMLAttributes<HTMLImageElement>;
 
-export const hostModifierNames = ["uicorner", "uiscale", "uistroke"] as const;
+export const hostModifierNames = [
+	"uicorner",
+	"uiscale",
+	"uistroke",
+	"uigradient",
+] as const;
 export type HostModifierName = (typeof hostModifierNames)[number];
 
 export const decoratorHostNames = [
@@ -72,12 +81,15 @@ export type PreviewDomProps = {
 	Change?: {
 		Text?: (element: HTMLInputElement) => void;
 	};
-	Color?: Color3Value;
+	Color?: Color3Value | ColorSequence;
 	CornerRadius?: unknown;
 	DominantAxis?: string;
+	Enabled?: boolean;
 	Event?: PreviewEventTable;
 	FillDirection?: string;
 	FillDirectionMaxCells?: number;
+	FillEmptySpaceColumns?: boolean;
+	FillEmptySpaceRows?: boolean;
 	Font?: unknown;
 	FlexMode?: string;
 	GrowRatio?: number;
@@ -96,6 +108,7 @@ export type PreviewDomProps = {
 	MinTextSize?: number;
 	Modal?: boolean;
 	Name?: string;
+	Offset?: Vector2Like;
 	PaddingBottom?: unknown;
 	PaddingBetweenItems?: unknown;
 	PaddingLeft?: unknown;
@@ -125,7 +138,7 @@ export type PreviewDomProps = {
 	TextXAlignment?: string;
 	TextYAlignment?: string;
 	Thickness?: number;
-	Transparency?: number;
+	Transparency?: number | NumberSequence;
 	VerticalAlignment?: string;
 	VerticalFlex?: string;
 	Visible?: boolean;
