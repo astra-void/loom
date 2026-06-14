@@ -13,6 +13,7 @@ import {
 	isViewportLargeEnough,
 	LayoutProvider,
 	measureElementViewport,
+	type PreviewLayoutDebugNode,
 	type PreviewRuntimeIssue,
 	pickViewport,
 	setPreviewRuntimeIssueContext,
@@ -35,6 +36,7 @@ import {
 	createPreviewDebugSnapshot,
 	describeStatusDetails,
 	type PreviewDebugSnapshotInput,
+	type PreviewDebugSnapshotMode,
 	type PreviewDebugSnapshotOptions,
 	stringifyPreviewDebugSnapshot,
 	summarizeLayoutDebug,
@@ -393,6 +395,137 @@ function downloadTextFile(fileName: string, text: string) {
 	revokeObjectUrl?.();
 }
 
+const PREVIEW_DEBUG_RUNTIME_ISSUE_DISPLAY_LIMIT = 30;
+
+type PreviewDebugRect = {
+	height: number;
+	width: number;
+	x: number;
+	y: number;
+};
+
+type PreviewDebugMeasuredSize = {
+	height: number;
+	width: number;
+};
+
+type RuntimeIssueSeverityBucket = "error" | "info" | "warning";
+
+type RuntimeIssueSeverityFilter = "all" | RuntimeIssueSeverityBucket;
+
+function roundDebugValue(value: number) {
+	if (!Number.isFinite(value)) {
+		return 0;
+	}
+
+	return Math.round(value * 100) / 100;
+}
+
+function formatDebugRect(rect: PreviewDebugRect | null) {
+	if (!rect) {
+		return "n/a";
+	}
+
+	return `x ${roundDebugValue(rect.x)}, y ${roundDebugValue(rect.y)}; ${roundDebugValue(
+		rect.width,
+	)}×${roundDebugValue(rect.height)}`;
+}
+
+function formatDebugMeasuredSize(size: PreviewDebugMeasuredSize | null) {
+	if (!size) {
+		return "none";
+	}
+
+	return `${roundDebugValue(size.width)}×${roundDebugValue(size.height)}`;
+}
+
+function getLayoutDebugNodeLabel(node: PreviewLayoutDebugNode) {
+	if (node.debugLabel && node.debugLabel.trim().length > 0) {
+		return node.debugLabel;
+	}
+
+	return node.nodeType;
+}
+
+function getLayoutDebugNodeBadges(node: PreviewLayoutDebugNode) {
+	const badges: string[] = [];
+
+	if (node.hostPolicy.degraded) {
+		badges.push("degraded");
+	}
+
+	if (node.hostPolicy.fullSizeDefault) {
+		badges.push("full-size");
+	}
+
+	if (node.hostPolicy.placeholderBehavior !== "none") {
+		badges.push(`placeholder:${node.hostPolicy.placeholderBehavior}`);
+	}
+
+	return badges;
+}
+
+function countLayoutDebugNodes(nodes: PreviewLayoutDebugNode[]): number {
+	let count = 0;
+
+	for (const node of nodes) {
+		count += 1 + countLayoutDebugNodes(node.children);
+	}
+
+	return count;
+}
+
+function findLayoutDebugNode(
+	nodes: PreviewLayoutDebugNode[],
+	id: string,
+): PreviewLayoutDebugNode | null {
+	for (const node of nodes) {
+		if (node.id === id) {
+			return node;
+		}
+
+		const match = findLayoutDebugNode(node.children, id);
+		if (match) {
+			return match;
+		}
+	}
+
+	return null;
+}
+
+function getRuntimeIssueSeverityBucket(
+	issue: PreviewRuntimeIssue,
+): RuntimeIssueSeverityBucket {
+	if (isBlockingIssue(issue) || issue.severity === "error") {
+		return "error";
+	}
+
+	if (issue.severity === "info") {
+		return "info";
+	}
+
+	return "warning";
+}
+
+function summarizeRuntimeIssueSeverityCounts(issues: PreviewRuntimeIssue[]) {
+	let errors = 0;
+	let infos = 0;
+	let warnings = 0;
+
+	for (const issue of issues) {
+		const severity = getRuntimeIssueSeverityBucket(issue);
+		if (severity === "error") {
+			errors += 1;
+		} else if (severity === "info") {
+			infos += 1;
+		} else {
+			warnings += 1;
+		}
+	}
+
+	return { errors, infos, warnings };
+}
+
 function PreviewDebugHud(props: {
 	entry: PreviewEntryDescriptor;
 	events: PreviewDebugEvent[];
@@ -411,6 +544,21 @@ function PreviewDebugHud(props: {
 		props.moduleLoadState.outcome ?? props.moduleLoadState.state;
 	const [exportFeedback, setExportFeedback] = React.useState<string | null>(
 		null,
+	);
+	const [snapshotMode, setSnapshotMode] =
+		React.useState<PreviewDebugSnapshotMode>("summary");
+	const [includeLayoutTree, setIncludeLayoutTree] = React.useState(false);
+	const [runtimeIssueFilter, setRuntimeIssueFilter] =
+		React.useState<RuntimeIssueSeverityFilter>("all");
+	const [collapsedTreeNodeIds, setCollapsedTreeNodeIds] = React.useState<
+		Set<string>
+	>(() => new Set());
+	const [selectedNodeId, setSelectedNodeId] = React.useState<string | null>(
+		null,
+	);
+	const snapshotOptions = React.useMemo<PreviewDebugSnapshotOptions>(
+		() => ({ includeLayoutTree, mode: snapshotMode }),
+		[includeLayoutTree, snapshotMode],
 	);
 	const createSnapshotJson = React.useCallback(
 		(options?: PreviewDebugSnapshotOptions) =>
@@ -453,24 +601,140 @@ function PreviewDebugHud(props: {
 
 	const handleCopyJson = React.useCallback(async () => {
 		try {
-			await copyTextToClipboard(createSnapshotJson());
+			await copyTextToClipboard(createSnapshotJson(snapshotOptions));
 			setExportFeedback("Copied");
 		} catch {
 			setExportFeedback("Copy failed");
 		}
-	}, [createSnapshotJson]);
+	}, [createSnapshotJson, snapshotOptions]);
 
 	const handleDownloadJson = React.useCallback(() => {
 		try {
 			downloadTextFile(
 				getDebugSnapshotFileName(props.entry),
-				createSnapshotJson(),
+				createSnapshotJson(snapshotOptions),
 			);
 			setExportFeedback("Downloaded");
 		} catch {
 			setExportFeedback("Download failed");
 		}
-	}, [createSnapshotJson, props.entry]);
+	}, [createSnapshotJson, props.entry, snapshotOptions]);
+
+	const layoutRoots = layoutProbe.debug.roots;
+	const layoutNodeCount = React.useMemo(
+		() => countLayoutDebugNodes(layoutRoots),
+		[layoutRoots],
+	);
+	const selectedNode = selectedNodeId
+		? findLayoutDebugNode(layoutRoots, selectedNodeId)
+		: null;
+	const runtimeSeverityCounts = summarizeRuntimeIssueSeverityCounts(
+		props.runtimeIssues,
+	);
+	const runtimeIssueFilterCounts: Record<RuntimeIssueSeverityFilter, number> = {
+		all: props.runtimeIssues.length,
+		error: runtimeSeverityCounts.errors,
+		info: runtimeSeverityCounts.infos,
+		warning: runtimeSeverityCounts.warnings,
+	};
+	const filteredRuntimeIssues =
+		runtimeIssueFilter === "all"
+			? props.runtimeIssues
+			: props.runtimeIssues.filter(
+					(issue) =>
+						getRuntimeIssueSeverityBucket(issue) === runtimeIssueFilter,
+				);
+	const visibleRuntimeIssues = filteredRuntimeIssues.slice(
+		0,
+		PREVIEW_DEBUG_RUNTIME_ISSUE_DISPLAY_LIMIT,
+	);
+	const hiddenRuntimeIssueCount =
+		filteredRuntimeIssues.length - visibleRuntimeIssues.length;
+	const visibleRuntimeIssueKeyCounts = new Map<string, number>();
+	const visibleRuntimeIssueItems = visibleRuntimeIssues.map((issue) => {
+		const fingerprint = getRuntimeIssueFingerprint(issue);
+		const occurrence = (visibleRuntimeIssueKeyCounts.get(fingerprint) ?? 0) + 1;
+		visibleRuntimeIssueKeyCounts.set(fingerprint, occurrence);
+
+		return {
+			issue,
+			key: occurrence === 1 ? fingerprint : `${fingerprint}#${occurrence}`,
+			severity: getRuntimeIssueSeverityBucket(issue),
+		};
+	});
+
+	const toggleTreeNode = (id: string) => {
+		setCollapsedTreeNodeIds((previous) => {
+			const next = new Set(previous);
+			if (next.has(id)) {
+				next.delete(id);
+			} else {
+				next.add(id);
+			}
+
+			return next;
+		});
+	};
+
+	const renderTreeNodes = (
+		nodes: PreviewLayoutDebugNode[],
+		depth: number,
+	): React.ReactNode =>
+		nodes.map((node) => {
+			const hasChildren = node.children.length > 0;
+			const isCollapsed = collapsedTreeNodeIds.has(node.id);
+			const isSelected = node.id === selectedNodeId;
+			const indentStyle = {
+				paddingInlineStart: `${depth * 12}px`,
+			} satisfies React.CSSProperties;
+
+			return (
+				<div className="preview-debug-tree-node" key={node.id}>
+					<div className="preview-debug-tree-row" style={indentStyle}>
+						{hasChildren ? (
+							<button
+								aria-expanded={!isCollapsed}
+								aria-label={`Toggle ${getLayoutDebugNodeLabel(node)} children`}
+								className={`preview-debug-tree-toggle ${
+									isCollapsed ? "is-collapsed" : ""
+								}`}
+								onClick={() => toggleTreeNode(node.id)}
+								type="button"
+							/>
+						) : (
+							<span
+								aria-hidden="true"
+								className="preview-debug-tree-toggle-spacer"
+							/>
+						)}
+						<button
+							aria-pressed={isSelected}
+							className={`preview-debug-tree-label ${
+								isSelected ? "is-selected" : ""
+							}`}
+							onClick={() => setSelectedNodeId(isSelected ? null : node.id)}
+							type="button"
+						>
+							<span className="preview-debug-tree-type">
+								{getLayoutDebugNodeLabel(node)}
+							</span>
+							<span className="preview-debug-tree-rect">
+								{formatDebugRect(node.rect)}
+							</span>
+						</button>
+					</div>
+					{hasChildren && !isCollapsed ? (
+						<div className="preview-debug-tree-children">
+							{renderTreeNodes(node.children, depth + 1)}
+						</div>
+					) : undefined}
+				</div>
+			);
+		});
+
+	const selectedNodeBadges = selectedNode
+		? getLayoutDebugNodeBadges(selectedNode)
+		: [];
 
 	return (
 		<aside aria-label="Preview debug HUD" className="preview-debug-hud">
@@ -486,6 +750,28 @@ function PreviewDebugHud(props: {
 					<button onClick={handleDownloadJson} type="button">
 						Download JSON
 					</button>
+				</div>
+				<div className="preview-debug-options">
+					<label className="preview-debug-option">
+						<span>Mode</span>
+						<select
+							onChange={(event) =>
+								setSnapshotMode(event.target.value as PreviewDebugSnapshotMode)
+							}
+							value={snapshotMode}
+						>
+							<option value="summary">summary</option>
+							<option value="full">full</option>
+						</select>
+					</label>
+					<label className="preview-debug-option preview-debug-option-toggle">
+						<input
+							checked={includeLayoutTree}
+							onChange={(event) => setIncludeLayoutTree(event.target.checked)}
+							type="checkbox"
+						/>
+						<span>Layout tree</span>
+					</label>
 				</div>
 				{exportFeedback ? (
 					<small aria-live="polite">{exportFeedback}</small>
@@ -610,7 +896,182 @@ function PreviewDebugHud(props: {
 						<dt>nodes</dt>
 						<dd>{layoutSummary.nodeCount}</dd>
 					</div>
+					{layoutSummary.degradedSamples.length > 0 ? (
+						<div>
+							<dt>degraded samples</dt>
+							<dd>
+								{layoutSummary.degradedSamples
+									.map((sample) => `${sample.nodeType} (${sample.reason})`)
+									.join("; ")}
+							</dd>
+						</div>
+					) : undefined}
+					{layoutSummary.fullSizeDefaultSamples.length > 0 ? (
+						<div>
+							<dt>full-size samples</dt>
+							<dd>
+								{layoutSummary.fullSizeDefaultSamples
+									.map((sample) => `${sample.nodeType} (${sample.reason})`)
+									.join("; ")}
+							</dd>
+						</div>
+					) : undefined}
 				</dl>
+			</section>
+			<section className="preview-debug-section">
+				<h3>Runtime Issues</h3>
+				<dl className="preview-debug-list">
+					<div>
+						<dt>severity</dt>
+						<dd>
+							{runtimeSeverityCounts.errors} errors,{" "}
+							{runtimeSeverityCounts.warnings} warnings,{" "}
+							{runtimeSeverityCounts.infos} infos
+						</dd>
+					</div>
+				</dl>
+				<div
+					aria-label="Runtime issue severity filter"
+					className="preview-debug-filter"
+					role="group"
+				>
+					{(["all", "error", "warning", "info"] as const).map((filter) => (
+						<button
+							aria-pressed={runtimeIssueFilter === filter}
+							className={`preview-debug-filter-button ${
+								runtimeIssueFilter === filter ? "is-active" : ""
+							}`}
+							key={filter}
+							onClick={() => setRuntimeIssueFilter(filter)}
+							type="button"
+						>
+							{filter} ({runtimeIssueFilterCounts[filter]})
+						</button>
+					))}
+				</div>
+				{visibleRuntimeIssueItems.length > 0 ? (
+					<ol className="preview-debug-issue-list">
+						{visibleRuntimeIssueItems.map(({ issue, key, severity }) => (
+							<li className="preview-debug-issue" key={key}>
+								<div className="preview-debug-issue-header">
+									<span
+										className={`preview-debug-issue-severity preview-debug-issue-severity-${severity}`}
+									>
+										{severity}
+									</span>
+									<span className="preview-debug-issue-code">{issue.code}</span>
+								</div>
+								<span className="preview-debug-issue-summary">
+									{issue.summary}
+								</span>
+								<small className="preview-debug-issue-meta">
+									{issue.phase} · {issue.target} · {issue.relativeFile}
+								</small>
+							</li>
+						))}
+					</ol>
+				) : (
+					<p className="preview-debug-empty">
+						No runtime issues for this filter.
+					</p>
+				)}
+				{hiddenRuntimeIssueCount > 0 ? (
+					<p className="preview-debug-empty">
+						+{hiddenRuntimeIssueCount} more not shown.
+					</p>
+				) : undefined}
+			</section>
+			<section className="preview-debug-section preview-debug-section-wide">
+				<h3>Layout Tree</h3>
+				<p className="preview-debug-tree-count">{layoutNodeCount} nodes</p>
+				{layoutRoots.length > 0 ? (
+					<div
+						aria-label="Layout node tree"
+						className="preview-debug-tree"
+						role="tree"
+					>
+						{renderTreeNodes(layoutRoots, 0)}
+					</div>
+				) : (
+					<p className="preview-debug-empty">No layout nodes.</p>
+				)}
+				{selectedNode ? (
+					<dl className="preview-debug-list preview-debug-node-detail">
+						<div>
+							<dt>id</dt>
+							<dd>{selectedNode.id}</dd>
+						</div>
+						<div>
+							<dt>type</dt>
+							<dd>
+								{selectedNode.nodeType} ({selectedNode.kind})
+							</dd>
+						</div>
+						<div>
+							<dt>rect</dt>
+							<dd>{formatDebugRect(selectedNode.rect)}</dd>
+						</div>
+						<div>
+							<dt>intrinsic size</dt>
+							<dd>{formatDebugMeasuredSize(selectedNode.intrinsicSize)}</dd>
+						</div>
+						<div>
+							<dt>parent rect</dt>
+							<dd>{formatDebugRect(selectedNode.parentConstraints)}</dd>
+						</div>
+						<div>
+							<dt>layout source</dt>
+							<dd>{selectedNode.layoutSource}</dd>
+						</div>
+						<div>
+							<dt>size reason</dt>
+							<dd>
+								{selectedNode.sizeResolution.reason}
+								{selectedNode.sizeResolution.hadExplicitSize
+									? "; explicit"
+									: ""}
+								{selectedNode.sizeResolution.intrinsicSizeAvailable
+									? "; intrinsic"
+									: ""}
+							</dd>
+						</div>
+						<div>
+							<dt>provenance</dt>
+							<dd>
+								{selectedNode.provenance.source};{" "}
+								{selectedNode.provenance.detail}
+							</dd>
+						</div>
+						{selectedNode.styleHints?.width ||
+						selectedNode.styleHints?.height ? (
+							<div>
+								<dt>style hints</dt>
+								<dd>
+									{[
+										selectedNode.styleHints?.width
+											? `w ${selectedNode.styleHints.width}`
+											: null,
+										selectedNode.styleHints?.height
+											? `h ${selectedNode.styleHints.height}`
+											: null,
+									]
+										.filter(Boolean)
+										.join(", ")}
+								</dd>
+							</div>
+						) : undefined}
+						{selectedNodeBadges.length > 0 ? (
+							<div>
+								<dt>host policy</dt>
+								<dd>{selectedNodeBadges.join(", ")}</dd>
+							</div>
+						) : undefined}
+					</dl>
+				) : (
+					<p className="preview-debug-empty">
+						Select a node to inspect its geometry.
+					</p>
+				)}
 			</section>
 			<section className="preview-debug-section">
 				<h3>Recent Events</h3>

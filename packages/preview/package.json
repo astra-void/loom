@@ -45,11 +45,36 @@
 		"@types/react-dom": "^19.2.3",
 		"esbuild": "^0.28.0"
 	},
+	"peerDependencies": {
+		"@astrojs/react": ">=4",
+		"astro": ">=5"
+	},
+	"peerDependenciesMeta": {
+		"@astrojs/react": {
+			"optional": true
+		},
+		"astro": {
+			"optional": true
+		}
+	},
 	"exports": {
 		".": {
 			"types": "./dist/index.d.ts",
 			"import": "./dist/index.mjs",
 			"default": "./dist/index.mjs"
+		},
+		"./astro": {
+			"types": "./dist/astro/index.d.ts",
+			"import": "./dist/astro/index.js",
+			"default": "./dist/astro/index.js"
+		},
+		"./astro/client": {
+			"types": "./dist/astro/client.d.ts"
+		},
+		"./astro/react": {
+			"types": "./dist/astro/react.d.ts",
+			"import": "./dist/astro/react.js",
+			"default": "./dist/astro/react.js"
 		},
 		"./build": {
 			"types": "./dist/build.d.ts",

@@ -806,6 +806,247 @@ code {
 	font: inherit;
 }
 
+.preview-debug-section-wide {
+	grid-column: 1 / -1;
+}
+
+.preview-debug-options {
+	align-items: center;
+	display: inline-flex;
+	flex-wrap: wrap;
+	gap: 10px;
+}
+
+.preview-debug-option {
+	align-items: center;
+	color: var(--muted);
+	display: inline-flex;
+	gap: 5px;
+	text-transform: none;
+}
+
+.preview-debug-option select {
+	background: var(--surface);
+	border: 1px solid var(--line);
+	border-radius: 6px;
+	color: var(--ink);
+	font: inherit;
+	font-size: 0.66rem;
+	padding: 3px 6px;
+	text-transform: none;
+}
+
+.preview-debug-option-toggle {
+	cursor: pointer;
+}
+
+.preview-debug-filter {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 5px;
+}
+
+.preview-debug-filter-button {
+	background: var(--surface);
+	border: 1px solid var(--line);
+	border-radius: 6px;
+	color: var(--muted);
+	cursor: pointer;
+	font-size: 0.62rem;
+	font-weight: 700;
+	letter-spacing: 0.04em;
+	padding: 3px 7px;
+	text-transform: uppercase;
+	transition:
+		background-color 140ms ease,
+		border-color 140ms ease,
+		color 140ms ease;
+}
+
+.preview-debug-filter-button:hover {
+	background: var(--surface-hover);
+}
+
+.preview-debug-filter-button.is-active {
+	background: color-mix(in srgb, var(--accent) 18%, var(--surface));
+	border-color: var(--accent);
+	color: var(--ink);
+}
+
+.preview-debug-filter-button:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 2px;
+}
+
+.preview-debug-issue-list {
+	display: grid;
+	gap: 7px;
+	list-style: none;
+	margin: 0;
+	padding: 0;
+}
+
+.preview-debug-issue {
+	border: 1px solid var(--line);
+	border-radius: 6px;
+	display: grid;
+	gap: 3px;
+	padding: 7px 8px;
+}
+
+.preview-debug-issue-header {
+	align-items: center;
+	display: flex;
+	gap: 6px;
+}
+
+.preview-debug-issue-severity {
+	border-radius: 4px;
+	font-size: 0.58rem;
+	font-weight: 700;
+	letter-spacing: 0.06em;
+	padding: 1px 5px;
+	text-transform: uppercase;
+}
+
+.preview-debug-issue-severity-error {
+	background: var(--error-background);
+	color: var(--error-ink);
+}
+
+.preview-debug-issue-severity-warning {
+	background: var(--warning-background);
+	color: var(--warning-ink);
+}
+
+.preview-debug-issue-severity-info {
+	background: var(--accent-soft);
+	color: var(--accent-strong);
+}
+
+.preview-debug-issue-code {
+	font-family: "IBM Plex Mono", "SFMono-Regular", monospace;
+	font-size: 0.64rem;
+	font-weight: 700;
+}
+
+.preview-debug-issue-summary {
+	font-size: 0.68rem;
+	line-height: 1.4;
+}
+
+.preview-debug-issue-meta {
+	color: var(--muted);
+	font-family: "IBM Plex Mono", "SFMono-Regular", monospace;
+	font-size: 0.6rem;
+	overflow-wrap: anywhere;
+}
+
+.preview-debug-tree-count {
+	color: var(--muted);
+	font-size: 0.62rem;
+	font-weight: 700;
+	letter-spacing: 0.06em;
+	margin: 0;
+	text-transform: uppercase;
+}
+
+.preview-debug-tree {
+	display: grid;
+	gap: 1px;
+	max-height: 260px;
+	overflow: auto;
+}
+
+.preview-debug-tree-row {
+	align-items: center;
+	display: flex;
+	gap: 4px;
+}
+
+.preview-debug-tree-toggle,
+.preview-debug-tree-toggle-spacer {
+	flex: 0 0 auto;
+	height: 14px;
+	width: 14px;
+}
+
+.preview-debug-tree-toggle {
+	background: transparent;
+	border: 0;
+	cursor: pointer;
+	padding: 0;
+	position: relative;
+}
+
+.preview-debug-tree-toggle::before {
+	border-bottom: 2px solid var(--muted);
+	border-right: 2px solid var(--muted);
+	content: "";
+	height: 5px;
+	left: 3px;
+	position: absolute;
+	top: 3px;
+	transform: rotate(45deg);
+	transition: transform 120ms ease;
+	width: 5px;
+}
+
+.preview-debug-tree-toggle.is-collapsed::before {
+	transform: rotate(-45deg);
+}
+
+.preview-debug-tree-label {
+	align-items: baseline;
+	background: transparent;
+	border: 1px solid transparent;
+	border-radius: 5px;
+	color: inherit;
+	cursor: pointer;
+	display: flex;
+	flex: 1 1 auto;
+	gap: 8px;
+	justify-content: space-between;
+	min-width: 0;
+	padding: 3px 6px;
+	text-align: left;
+}
+
+.preview-debug-tree-label:hover {
+	background: var(--surface-hover);
+}
+
+.preview-debug-tree-label.is-selected {
+	background: color-mix(in srgb, var(--accent) 16%, var(--surface));
+	border-color: var(--accent);
+}
+
+.preview-debug-tree-label:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 1px;
+}
+
+.preview-debug-tree-type {
+	font-size: 0.66rem;
+	font-weight: 700;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.preview-debug-tree-rect {
+	color: var(--muted);
+	flex: 0 0 auto;
+	font-family: "IBM Plex Mono", "SFMono-Regular", monospace;
+	font-size: 0.6rem;
+}
+
+.preview-debug-node-detail {
+	border-top: 1px dashed var(--line);
+	margin-top: 4px;
+	padding-top: 8px;
+}
+
 .preview-canvas {
 	display: flex;
 	flex: 1 1 auto;
