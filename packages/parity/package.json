@@ -1,0 +1,32 @@
+{
+	"name": "@loom-dev/parity",
+	"version": "0.1.0-alpha.8",
+	"private": true,
+	"description": "1:1 geometry + visual parity harness comparing Loom previews against real Roblox.",
+	"type": "module",
+	"main": "src/index.ts",
+	"types": "src/index.ts",
+	"exports": {
+		".": "./src/index.ts",
+		"./capture": "./src/captureLoom.tsx"
+	},
+	"scripts": {
+		"typecheck": "tsc -p tsconfig.json --noEmit",
+		"format": "pnpm exec biome format --write .",
+		"lint": "pnpm exec biome check ."
+	},
+	"dependencies": {
+		"@loom-dev/preview-runtime": "workspace:*",
+		"pixelmatch": "^6.0.0",
+		"pngjs": "^7.0.0"
+	},
+	"devDependencies": {
+		"@testing-library/react": "^16.3.2",
+		"@types/node": "^25.9.3",
+		"@types/pngjs": "^6.0.5",
+		"@types/react": "^19.2.17",
+		"react": "^19.2.7",
+		"react-dom": "^19.2.7",
+		"typescript": "6.0.3"
+	}
+}
