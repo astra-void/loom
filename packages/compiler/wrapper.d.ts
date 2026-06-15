@@ -3,17 +3,17 @@ export = compiler;
 declare const compiler: CompilerModule;
 declare namespace compiler {
 	export {
-		PreviewTransformMode,
-		PreviewTransformSeverity,
-		UnsupportedPatternError,
-		PreviewTransformDiagnostic,
-		PreviewTransformOutcome,
-		TransformPreviewSourceOptions,
-		TransformPreviewSourceResultInput,
-		NormalizedTransformPreviewSourceResult,
-		TransformPreviewSourceResult,
-		NativeCompilerModule,
 		CompilerModule,
+		NativeCompilerModule,
+		NormalizedTransformPreviewSourceResult,
+		PreviewTransformDiagnostic,
+		PreviewTransformMode,
+		PreviewTransformOutcome,
+		PreviewTransformSeverity,
+		TransformPreviewSourceOptions,
+		TransformPreviewSourceResult,
+		TransformPreviewSourceResultInput,
+		UnsupportedPatternError,
 	};
 }
 type PreviewTransformMode =
