@@ -66,26 +66,6 @@ export declare function normalizePreviewAnalysisError(
 export declare function resolvePreviewGraphModulePath(
 	resolveModule?: (specifier: string) => string,
 ): string;
-export declare function collectGraphTraceWithPreviewGraph(
-	records: PreviewGraphRecordSnapshot[],
-	entryFilePath: string,
-	selectionTrace: PreviewGraphTrace["selection"],
-): {
-	selection: import("./types").PreviewSelectionTrace;
-	boundaryHops: Array<{
-		fromFile: string;
-		fromPackageRoot: string;
-		toFile: string;
-		toPackageRoot: string;
-	}>;
-	imports: PreviewGraphImportEdge[];
-	stopReason?: import("./types").PreviewGraphStopReason;
-	traversedProjects?: Array<{
-		configPath: string;
-		packageName?: string;
-		packageRoot: string;
-	}>;
-};
 export declare function collectTransitiveDependencyPathsWithPreviewGraph(
 	records: PreviewGraphRecordSnapshot[],
 	entryFilePath: string,

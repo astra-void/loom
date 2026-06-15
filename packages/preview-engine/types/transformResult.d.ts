@@ -4,6 +4,7 @@ import type {
 	PreviewTransformMode,
 	PreviewTransformOutcome,
 } from "./transformTypes";
+
 type UnsupportedPatternError = {
 	code: string;
 	column: number;

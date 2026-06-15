@@ -1,45 +1,71 @@
-import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import ts from "typescript";
+import {
+	createMaterializedFilePath,
+	createPreviewLayoutSchema,
+	getMetadataMaterializedRelativePath,
+	removeEmptyParentDirectories,
+	runWithConcurrency,
+	sortBuiltArtifacts,
+} from "./build/artifacts";
+import {
+	type CachedEntryMetadataArtifactRecord,
+	type CachedLayoutSchemaArtifactRecord,
+	type CachedModuleArtifactRecord,
+	createEntryPayloadCacheKey,
+	createLayoutSchemaCacheKey,
+	createModuleCacheKey,
+	ensureCacheDirectories,
+	getEntryMetadataCachePath,
+	getLayoutSchemaCachePath,
+	getModuleCachePath,
+	getNamespaceDir,
+	type SourceModuleRecord,
+} from "./build/cache";
+import {
+	collectBlockingTransformDiagnostics,
+	createDiagnosticsSummary,
+	pushUniqueDiagnostics,
+} from "./build/diagnostics";
+import {
+	ensureDirectory,
+	hashText,
+	normalizeRelativePath,
+	readJsonFile,
+	writeJsonFile,
+} from "./build/fsUtils";
+import {
+	BUILD_MANIFEST_FILE,
+	BUILD_MANIFEST_VERSION,
+	createBuildManifestKey,
+	readOutputManifest,
+} from "./build/manifest";
+import {
+	isPathEqualOrContained,
+	validateBuildOptions,
+} from "./build/validation";
 import { createPreviewEngine } from "./engine";
 import { resolveRealFilePath } from "./pathUtils";
 import { normalizeTransformPreviewSourceResult } from "./transformResult";
 import type {
-	PreviewBuildArtifactKind,
 	PreviewBuildDiagnostic,
 	PreviewBuildOptions,
 	PreviewBuildOutputManifest,
 	PreviewBuildResult,
 	PreviewBuiltArtifact,
-	PreviewCachedArtifactMetadata,
-	PreviewDiagnostic,
-	PreviewDiagnosticsSummary,
 	PreviewEntryPayload,
-	PreviewExecutionMode,
 	PreviewSourceTarget,
-	PreviewTransformDiagnostic,
-	PreviewTransformOutcome,
 } from "./types";
 import { PREVIEW_ENGINE_PROTOCOL_VERSION } from "./types";
 import { createWorkspaceGraphService } from "./workspaceGraph";
 
-const BUILD_MANIFEST_FILE = ".loom-preview-manifest.json";
-const BUILD_MANIFEST_VERSION = 2;
 const DEFAULT_RUNTIME_MODULE = "@loom-dev/preview-runtime";
 const DEFAULT_RUNTIME_ALIASES: string[] = [];
 const DEFAULT_REACT_ALIASES = ["@rbxts/react"];
 const DEFAULT_REACT_ROBLOX_ALIASES = ["@rbxts/react-roblox"];
-const CACHE_NAMESPACES = [
-	"transform",
-	"entry-metadata",
-	"layout-schema",
-	"manifests",
-] as const;
-
-type CacheNamespace = (typeof CACHE_NAMESPACES)[number];
 
 type PreviewCompiler =
 	| typeof import("@loom-dev/compiler/sync")
@@ -81,79 +107,6 @@ type BuildTargetContext = {
 	target: PreviewSourceTarget;
 };
 
-type SourceModuleRecord = {
-	configHash: string;
-	dependencyGraphHash: string;
-	dependencyPaths: string[];
-	relativePath: string;
-	sourceFilePath: string;
-	sourceHash: string;
-	target: PreviewSourceTarget;
-};
-
-type CachedModuleArtifactRecord = PreviewCachedArtifactMetadata & {
-	artifactKind: "module";
-	dependencyGraphHash: string;
-	id: string;
-	outcome: PreviewTransformOutcome;
-	outputCode: string | undefined;
-	relativePath: string;
-	sourceHash: string;
-};
-
-type CachedEntryMetadataArtifactRecord = PreviewCachedArtifactMetadata & {
-	artifactKind: "entry-metadata";
-	id: string;
-	payload: PreviewEntryPayload;
-	relativePath: string;
-};
-
-type PreviewLayoutSchemaSidecar = {
-	descriptor: PreviewEntryPayload["descriptor"];
-	diagnosticsSummary: PreviewEntryPayload["descriptor"]["diagnosticsSummary"];
-	entryId: string;
-	graphTrace: PreviewEntryPayload["graphTrace"];
-	runtimeAdapter: PreviewEntryPayload["runtimeAdapter"];
-	supportsLayoutDebug: boolean;
-	transform: PreviewEntryPayload["transform"];
-};
-
-type CachedLayoutSchemaArtifactRecord = PreviewCachedArtifactMetadata & {
-	artifactKind: "layout-schema";
-	id: string;
-	relativePath: string;
-	schema: PreviewLayoutSchemaSidecar;
-};
-
-function hashText(value: string) {
-	return createHash("sha1").update(value).digest("hex");
-}
-
-function normalizeRelativePath(filePath: string) {
-	return filePath.split(path.sep).join("/");
-}
-
-function ensureDirectory(dirPath: string) {
-	fs.mkdirSync(dirPath, { recursive: true });
-}
-
-function readJsonFile<T>(filePath: string): T | undefined {
-	if (!fs.existsSync(filePath)) {
-		return undefined;
-	}
-
-	try {
-		return JSON.parse(fs.readFileSync(filePath, "utf8")) as T;
-	} catch {
-		return undefined;
-	}
-}
-
-function writeJsonFile(filePath: string, value: unknown) {
-	ensureDirectory(path.dirname(filePath));
-	fs.writeFileSync(filePath, JSON.stringify(value, undefined, 2), "utf8");
-}
-
 function readPackageVersion(relativePathFromBuildFile: string) {
 	try {
 		const packageJsonPath = path.resolve(__dirname, relativePathFromBuildFile);
@@ -175,88 +128,6 @@ function getBuildVersionFingerprint() {
 		),
 		protocolVersion: PREVIEW_ENGINE_PROTOCOL_VERSION,
 	};
-}
-
-function createDiagnosticsSummary(
-	diagnostics: PreviewBuildDiagnostic[],
-): PreviewDiagnosticsSummary {
-	const byPhase = {
-		discovery: 0,
-		layout: 0,
-		runtime: 0,
-		transform: 0,
-	} satisfies Record<PreviewDiagnostic["phase"], number>;
-
-	for (const diagnostic of diagnostics) {
-		if (isPreviewDiagnostic(diagnostic)) {
-			byPhase[diagnostic.phase] += 1;
-			continue;
-		}
-
-		byPhase.transform += 1;
-	}
-
-	return {
-		byPhase,
-		hasBlocking: diagnostics.some(
-			(diagnostic) =>
-				diagnostic.blocking === true || diagnostic.severity === "error",
-		),
-		total: diagnostics.length,
-	};
-}
-
-function getDiagnosticKey(diagnostic: PreviewBuildDiagnostic) {
-	if ("phase" in diagnostic) {
-		return JSON.stringify([
-			"engine",
-			diagnostic.phase,
-			diagnostic.entryId,
-			diagnostic.file,
-			diagnostic.code,
-			diagnostic.summary,
-			diagnostic.severity,
-			diagnostic.target,
-			diagnostic.blocking ?? "",
-			diagnostic.symbol ?? "",
-			diagnostic.details ?? "",
-			diagnostic.codeFrame ?? "",
-			diagnostic.importChain?.join(">") ?? "",
-		]);
-	}
-
-	return JSON.stringify([
-		"transform",
-		diagnostic.file,
-		diagnostic.code,
-		diagnostic.line,
-		diagnostic.column,
-		diagnostic.summary,
-		diagnostic.severity,
-		diagnostic.blocking,
-		diagnostic.symbol ?? "",
-		diagnostic.details ?? "",
-		diagnostic.target,
-	]);
-}
-
-function pushUniqueDiagnostics(
-	accumulator: Map<string, PreviewBuildDiagnostic>,
-	diagnostics: PreviewBuildDiagnostic[],
-) {
-	for (const diagnostic of diagnostics) {
-		accumulator.set(getDiagnosticKey(diagnostic), diagnostic);
-	}
-}
-
-function isPathEqualOrContained(rootPath: string, candidatePath: string) {
-	const normalizedRoot = resolveRealFilePath(rootPath);
-	const normalizedCandidate = resolveRealFilePath(candidatePath);
-	return (
-		normalizedRoot === normalizedCandidate ||
-		normalizedCandidate.startsWith(`${normalizedRoot}${path.sep}`) ||
-		normalizedRoot.startsWith(`${normalizedCandidate}${path.sep}`)
-	);
 }
 
 function findNearestTsconfig(startPath: string) {
@@ -343,113 +214,6 @@ function findWorkspaceRoot(startPaths: string[]) {
 	return commonPath;
 }
 
-function validateTargetName(targetName: string) {
-	if (
-		!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(targetName) ||
-		targetName === "." ||
-		targetName === ".."
-	) {
-		throw new Error(
-			`Preview target name must be a safe path segment: ${targetName}`,
-		);
-	}
-}
-
-function validateTargets(targets: PreviewSourceTarget[]) {
-	if (targets.length === 0) {
-		throw new Error(
-			"Preview artifact generation requires at least one target.",
-		);
-	}
-
-	const seenTargetNames = new Set<string>();
-	for (const target of targets) {
-		validateTargetName(target.name);
-		if (seenTargetNames.has(target.name)) {
-			throw new Error(`Duplicate preview target name: ${target.name}`);
-		}
-
-		seenTargetNames.add(target.name);
-
-		const sourceRoot = path.resolve(target.sourceRoot);
-		if (!fs.existsSync(sourceRoot) || !fs.statSync(sourceRoot).isDirectory()) {
-			throw new Error(`Preview source directory does not exist: ${sourceRoot}`);
-		}
-
-		const packageRoot = path.resolve(target.packageRoot);
-		if (
-			!fs.existsSync(packageRoot) ||
-			!fs.statSync(packageRoot).isDirectory()
-		) {
-			throw new Error(`Preview package root does not exist: ${packageRoot}`);
-		}
-	}
-}
-
-function validateBuildOptions(options: {
-	artifactKinds: PreviewBuildArtifactKind[];
-	outDir?: string;
-	targets: PreviewSourceTarget[];
-	transformMode: PreviewExecutionMode;
-	workspaceRoot: string;
-}) {
-	validateTargets(options.targets);
-
-	if (options.artifactKinds.length === 0) {
-		throw new Error(
-			"Preview artifact generation requires at least one artifact kind.",
-		);
-	}
-
-	const uniqueArtifactKinds = new Set(options.artifactKinds);
-	if (uniqueArtifactKinds.size !== options.artifactKinds.length) {
-		throw new Error("Preview artifact kinds must be unique.");
-	}
-
-	if (
-		options.transformMode === "design-time" &&
-		options.artifactKinds.includes("module")
-	) {
-		throw new Error(
-			"Design-time transform mode does not support module artifact generation.",
-		);
-	}
-
-	if (!options.outDir) {
-		return;
-	}
-
-	const resolvedOutDir = path.resolve(options.outDir);
-	const parsedOutDir = path.parse(resolvedOutDir);
-	if (resolvedOutDir === parsedOutDir.root) {
-		throw new Error(`Preview output directory is too broad: ${resolvedOutDir}`);
-	}
-
-	if (resolvedOutDir === path.resolve(options.workspaceRoot)) {
-		throw new Error(
-			`Preview output directory must not be the workspace root: ${resolvedOutDir}`,
-		);
-	}
-
-	for (const target of options.targets) {
-		if (
-			isPathEqualOrContained(path.resolve(target.sourceRoot), resolvedOutDir)
-		) {
-			throw new Error(
-				`Preview output directory overlaps the source tree for target ${target.name}: ${resolvedOutDir}`,
-			);
-		}
-
-		if (
-			isPathEqualOrContained(path.resolve(target.packageRoot), resolvedOutDir)
-		) {
-			throw new Error(
-				`Preview output directory overlaps the package root for target ${target.name}: ${resolvedOutDir}`,
-			);
-		}
-	}
-}
-
 function createBuildTargetContexts(targets: PreviewSourceTarget[]) {
 	return targets.map((target) => {
 		const sourceRoot = resolveRealFilePath(target.sourceRoot);
@@ -529,273 +293,6 @@ function createModuleRecords(
 
 		return left.relativePath.localeCompare(right.relativePath);
 	});
-}
-
-function getNamespaceDir(cacheDir: string, namespace: CacheNamespace) {
-	return path.join(cacheDir, namespace);
-}
-
-function ensureCacheDirectories(cacheDir: string) {
-	for (const namespace of CACHE_NAMESPACES) {
-		ensureDirectory(getNamespaceDir(cacheDir, namespace));
-	}
-}
-
-function createModuleCacheKey(
-	record: SourceModuleRecord,
-	options: {
-		reactAliases: string[];
-		reactRobloxAliases: string[];
-		runtimeModule: string;
-		runtimeAliases: string[];
-		transformMode: PreviewExecutionMode;
-		versions: ReturnType<typeof getBuildVersionFingerprint>;
-	},
-) {
-	return hashText(
-		JSON.stringify({
-			artifactKind: "module",
-			configHash: record.configHash,
-			dependencyGraphHash: record.dependencyGraphHash,
-			reactAliases: options.reactAliases,
-			reactRobloxAliases: options.reactRobloxAliases,
-			protocolVersion: options.versions.protocolVersion,
-			relativePath: record.relativePath,
-			runtimeModule: options.runtimeModule,
-			runtimeAliases: options.runtimeAliases,
-			sourceHash: record.sourceHash,
-			targetName: record.target.name,
-			transformMode: options.transformMode,
-			versions: options.versions,
-		}),
-	);
-}
-
-function createEntryPayloadCacheKey(
-	payload: PreviewEntryPayload,
-	options: {
-		reactAliases: string[];
-		reactRobloxAliases: string[];
-		runtimeModule: string;
-		runtimeAliases: string[];
-		transformMode: PreviewExecutionMode;
-		versions: ReturnType<typeof getBuildVersionFingerprint>;
-	},
-) {
-	return hashText(
-		JSON.stringify({
-			artifactKind: "entry-metadata",
-			reactAliases: options.reactAliases,
-			reactRobloxAliases: options.reactRobloxAliases,
-			payload,
-			protocolVersion: options.versions.protocolVersion,
-			runtimeModule: options.runtimeModule,
-			runtimeAliases: options.runtimeAliases,
-			targetName: payload.descriptor.targetName,
-			transformMode: options.transformMode,
-			versions: options.versions,
-		}),
-	);
-}
-
-function createLayoutSchemaCacheKey(
-	schema: PreviewLayoutSchemaSidecar,
-	options: {
-		reactAliases: string[];
-		reactRobloxAliases: string[];
-		runtimeModule: string;
-		runtimeAliases: string[];
-		transformMode: PreviewExecutionMode;
-		versions: ReturnType<typeof getBuildVersionFingerprint>;
-	},
-) {
-	return hashText(
-		JSON.stringify({
-			artifactKind: "layout-schema",
-			reactAliases: options.reactAliases,
-			reactRobloxAliases: options.reactRobloxAliases,
-			protocolVersion: options.versions.protocolVersion,
-			runtimeModule: options.runtimeModule,
-			runtimeAliases: options.runtimeAliases,
-			schema,
-			targetName: schema.descriptor.targetName,
-			transformMode: options.transformMode,
-			versions: options.versions,
-		}),
-	);
-}
-
-function getModuleCachePath(cacheDir: string, cacheKey: string) {
-	return path.join(getNamespaceDir(cacheDir, "transform"), `${cacheKey}.json`);
-}
-
-function getEntryMetadataCachePath(cacheDir: string, cacheKey: string) {
-	return path.join(
-		getNamespaceDir(cacheDir, "entry-metadata"),
-		`${cacheKey}.json`,
-	);
-}
-
-function getLayoutSchemaCachePath(cacheDir: string, cacheKey: string) {
-	return path.join(
-		getNamespaceDir(cacheDir, "layout-schema"),
-		`${cacheKey}.json`,
-	);
-}
-
-function isPreviewDiagnostic(
-	value: PreviewBuildDiagnostic,
-): value is PreviewDiagnostic {
-	return "phase" in value;
-}
-
-function createBuildManifestKey(options: {
-	artifactKinds: PreviewBuildArtifactKind[];
-	reactAliases: string[];
-	reactRobloxAliases: string[];
-	projectName: string;
-	runtimeAliases: string[];
-	targets: PreviewSourceTarget[];
-	transformMode: PreviewExecutionMode;
-}) {
-	return hashText(
-		JSON.stringify({
-			artifactKinds: options.artifactKinds,
-			reactAliases: options.reactAliases,
-			reactRobloxAliases: options.reactRobloxAliases,
-			projectName: options.projectName,
-			runtimeAliases: options.runtimeAliases,
-			targets: options.targets.map((target) => ({
-				exclude: target.exclude,
-				include: target.include,
-				name: target.name,
-				packageRoot: target.packageRoot,
-				sourceRoot: target.sourceRoot,
-			})),
-			transformMode: options.transformMode,
-		}),
-	);
-}
-
-function createPreviewLayoutSchema(
-	payload: PreviewEntryPayload,
-): PreviewLayoutSchemaSidecar {
-	return {
-		descriptor: payload.descriptor,
-		diagnosticsSummary: payload.descriptor.diagnosticsSummary,
-		entryId: payload.descriptor.id,
-		graphTrace: payload.graphTrace,
-		runtimeAdapter: payload.runtimeAdapter,
-		supportsLayoutDebug: payload.descriptor.capabilities.supportsLayoutDebug,
-		transform: payload.transform,
-	};
-}
-
-function getMetadataMaterializedRelativePath(
-	kind: "entry-metadata" | "layout-schema",
-	relativePath: string,
-) {
-	const suffix =
-		kind === "entry-metadata" ? ".preview-entry.json" : ".preview-layout.json";
-	const namespace =
-		kind === "entry-metadata" ? "entry-metadata" : "layout-schema";
-	return normalizeRelativePath(
-		path.posix.join(".preview-engine", namespace, `${relativePath}${suffix}`),
-	);
-}
-
-function createMaterializedFilePath(outDir: string, relativePath: string) {
-	const normalizedRelativePath = normalizeRelativePath(relativePath);
-	if (
-		normalizedRelativePath.startsWith("../") ||
-		path.isAbsolute(normalizedRelativePath)
-	) {
-		throw new Error(
-			`Preview materialization path escaped the output directory: ${relativePath}`,
-		);
-	}
-
-	return path.join(outDir, normalizedRelativePath);
-}
-
-function readOutputManifest(outDir: string): PreviewBuildOutputManifest {
-	const manifestPath = path.join(outDir, BUILD_MANIFEST_FILE);
-	const manifest = readJsonFile<PreviewBuildOutputManifest>(manifestPath);
-	if (
-		manifest &&
-		manifest.version === BUILD_MANIFEST_VERSION &&
-		typeof manifest.files === "object"
-	) {
-		return manifest;
-	}
-
-	return {
-		artifactKinds: [],
-		files: {},
-		version: BUILD_MANIFEST_VERSION,
-		workspaceRoot: "",
-	};
-}
-
-function removeEmptyParentDirectories(rootDir: string, filePath: string) {
-	let currentDir = path.dirname(filePath);
-	while (currentDir.startsWith(rootDir) && currentDir !== rootDir) {
-		const entries = fs.existsSync(currentDir) ? fs.readdirSync(currentDir) : [];
-		if (entries.length > 0) {
-			return;
-		}
-
-		fs.rmdirSync(currentDir);
-		currentDir = path.dirname(currentDir);
-	}
-}
-
-async function runWithConcurrency<T>(
-	limit: number,
-	values: T[],
-	worker: (value: T) => Promise<void>,
-) {
-	const concurrency = Math.max(1, limit);
-	const iterator = values.values();
-
-	async function runNext(): Promise<void> {
-		const nextValue = iterator.next();
-		if (nextValue.done) {
-			return;
-		}
-
-		await worker(nextValue.value);
-		await runNext();
-	}
-
-	await Promise.all(
-		Array.from({ length: Math.min(concurrency, values.length) }, () =>
-			runNext(),
-		),
-	);
-}
-
-function sortBuiltArtifacts(artifacts: PreviewBuiltArtifact[]) {
-	return [...artifacts].sort((left, right) => {
-		if (left.kind !== right.kind) {
-			return left.kind.localeCompare(right.kind);
-		}
-
-		if (left.targetName !== right.targetName) {
-			return left.targetName.localeCompare(right.targetName);
-		}
-
-		return left.relativePath.localeCompare(right.relativePath);
-	});
-}
-
-function collectBlockingTransformDiagnostics(
-	diagnostics: PreviewBuildDiagnostic[],
-) {
-	return diagnostics.filter(
-		(diagnostic): diagnostic is PreviewTransformDiagnostic =>
-			!isPreviewDiagnostic(diagnostic),
-	);
 }
 
 export async function buildPreviewArtifacts(

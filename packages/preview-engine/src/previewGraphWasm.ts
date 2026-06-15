@@ -286,20 +286,6 @@ function withWorkspaceDiscoverySession<T>(
 	}
 }
 
-export function collectGraphTraceWithPreviewGraph(
-	records: PreviewGraphRecordSnapshot[],
-	entryFilePath: string,
-	selectionTrace: PreviewGraphTrace["selection"],
-) {
-	return withPreviewGraphSession(records, (session) => {
-		const trace = session.collectGraphTrace(entryFilePath, selectionTrace);
-		return normalizePreviewAnalysisValue({
-			...trace,
-			selection: selectionTrace,
-		});
-	});
-}
-
 export function collectTransitiveDependencyPathsWithPreviewGraph(
 	records: PreviewGraphRecordSnapshot[],
 	entryFilePath: string,
