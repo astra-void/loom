@@ -1,4 +1,5 @@
 import * as React from "react";
+
 type FontStyleDescriptor = Pick<
 	React.CSSProperties,
 	"fontFamily" | "fontStyle" | "fontWeight"

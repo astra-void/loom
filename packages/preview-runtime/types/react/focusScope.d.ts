@@ -1,4 +1,5 @@
 import * as React from "react";
+
 type FocusScopeProps = {
 	active?: boolean;
 	asChild?: boolean;
