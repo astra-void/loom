@@ -8,6 +8,7 @@ import {
 	type PreviewHeadlessEntryRenderResult,
 	type PreviewHeadlessEntryViewport,
 } from "./headlessTypes";
+
 type HeadlessCollectedEntryExecution = {
 	issues: PreviewRuntimeIssue[];
 	layoutDebug: PreviewLayoutDebugPayload | null;

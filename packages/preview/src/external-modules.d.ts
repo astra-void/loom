@@ -886,8 +886,8 @@ declare module "@loom-dev/preview-runtime" {
 }
 
 declare module "@loom-dev/preview-engine" {
-	import type { ComponentType } from "react";
 	import type { PreviewRuntimeIssue } from "@loom-dev/preview-runtime";
+	import type { ComponentType } from "react";
 
 	type TransformPreviewSourceResult =
 		import("@loom-dev/compiler").TransformPreviewSourceResult & {
