@@ -280,6 +280,18 @@ export const Enum = {
 		"Size60",
 		"Size96",
 	] as const),
+	/**
+	 * `ImageLabel.ScaleType`. loom paints `Stretch`, `Fit` and `Crop`; `Slice`
+	 * (9-slice) and `Tile` are accepted and fall back to `Stretch` until the
+	 * renderer grows the border/repeat machinery they need.
+	 */
+	ScaleType: makeEnum("ScaleType", [
+		"Stretch",
+		"Slice",
+		"Tile",
+		"Fit",
+		"Crop",
+	] as const),
 	BorderStrokePosition: makeEnum("BorderStrokePosition", [
 		"Outer",
 		"Center",

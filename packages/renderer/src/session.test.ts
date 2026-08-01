@@ -15,8 +15,13 @@ import {
 } from "@loom-dev/runtime";
 import type { LayoutResult, Rect, SceneNode } from "@loom-dev/scene";
 import { color3FromRGB, prop, udim2 } from "@loom-dev/scene";
-import { beforeEach, describe, expect, it } from "vitest";
-import { createDomSession, type DomSession, renderScene } from "./index";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+	createDomSession,
+	type DomSession,
+	renderScene,
+	setImageResolver,
+} from "./index";
 
 function layoutOf(entries: Record<string, Rect>): LayoutResult {
 	const rects: LayoutResult["rects"] = {};
@@ -660,5 +665,177 @@ describe("text sizing", () => {
 
 	it("falls back to the Roblox default for an unparseable FontSize", () => {
 		expect(paint({ FontSize: fontSize("Nonsense") })).toBe("14px");
+	});
+});
+
+describe("image layer", () => {
+	afterEach(() => {
+		setImageResolver(undefined);
+	});
+
+	function imageScene(properties: SceneNode["properties"]): SceneNode {
+		return {
+			className: "ImageLabel",
+			name: "Icon",
+			id: "icon",
+			properties,
+		};
+	}
+
+	const iconLayout = layoutOf({
+		icon: { x: 0, y: 0, width: 64, height: 64 },
+	});
+
+	function paint(properties: SceneNode["properties"]): HTMLImageElement | null {
+		const host = document.createElement("div");
+		renderScene(imageScene(properties), iconLayout, host);
+		return host.querySelector("img");
+	}
+
+	it("paints a plain URL without consulting the resolver", () => {
+		let calls = 0;
+		setImageResolver(() => {
+			calls += 1;
+			return "never";
+		});
+		const img = paint({ Image: prop.string("https://example.test/a.png") });
+		expect(img?.getAttribute("src")).toBe("https://example.test/a.png");
+		expect(calls).toBe(0);
+	});
+
+	it("leaves an asset id unpainted when no resolver is installed", () => {
+		const img = paint({ Image: prop.string("rbxassetid://1818") });
+		expect(img).not.toBeNull();
+		expect(img?.getAttribute("src")).toBeNull();
+	});
+
+	it("fills in the src once an async resolver answers", async () => {
+		setImageResolver(async (image) => `https://cdn.test/${image.slice(13)}`);
+		const img = paint({ Image: prop.string("rbxassetid://1818") });
+		expect(img?.getAttribute("src")).toBeNull(); // nothing to paint yet
+		await vi.waitFor(() =>
+			expect(img?.getAttribute("src")).toBe("https://cdn.test/1818"),
+		);
+	});
+
+	it("resolves an asset id once, however many nodes and paints use it", async () => {
+		let calls = 0;
+		setImageResolver(async (image) => {
+			calls += 1;
+			return `https://cdn.test/${image.slice(13)}`;
+		});
+		const scene: SceneNode = {
+			className: "Frame",
+			name: "Row",
+			id: "row",
+			children: [
+				imageScene({ Image: prop.string("rbxassetid://1818") }),
+				{
+					...imageScene({ Image: prop.string("rbxassetid://1818") }),
+					id: "icon2",
+				},
+			],
+		};
+		const layout = layoutOf({
+			row: { x: 0, y: 0, width: 128, height: 64 },
+			icon: { x: 0, y: 0, width: 64, height: 64 },
+			icon2: { x: 64, y: 0, width: 64, height: 64 },
+		});
+		const host = document.createElement("div");
+		renderScene(scene, layout, host);
+		await vi.waitFor(() => expect(calls).toBe(1));
+
+		// A repaint — what the vide adapter does on every frame — must reuse the
+		// resolved URL rather than resolving again, and paint it synchronously.
+		renderScene(scene, layout, host);
+		expect(
+			[...host.querySelectorAll("img")].map((el) => el.getAttribute("src")),
+		).toEqual(["https://cdn.test/1818", "https://cdn.test/1818"]);
+		expect(calls).toBe(1);
+	});
+
+	it("maps ScaleType onto object-fit", () => {
+		const scaleType = (name: string) =>
+			prop.enum({ enumType: "ScaleType", name, value: 0 });
+		const fitOf = (name?: string) =>
+			paint({
+				Image: prop.string("https://example.test/a.png"),
+				...(name ? { ScaleType: scaleType(name) } : {}),
+			})?.style.objectFit;
+		expect(fitOf()).toBe("fill"); // Stretch is the Roblox default
+		expect(fitOf("Fit")).toBe("contain");
+		expect(fitOf("Crop")).toBe("cover");
+		expect(fitOf("Slice")).toBe("fill"); // deferred, falls back to Stretch
+	});
+
+	it("maps ImageTransparency onto opacity", () => {
+		const img = paint({
+			Image: prop.string("https://example.test/a.png"),
+			ImageTransparency: prop.number(0.25),
+		});
+		expect(img?.style.opacity).toBe("0.75");
+	});
+
+	it("keeps the image behind the node's children", () => {
+		const host = document.createElement("div");
+		renderScene(
+			{
+				className: "ImageButton",
+				name: "Icon",
+				id: "icon",
+				properties: { Image: prop.string("https://example.test/a.png") },
+				children: [{ className: "TextLabel", name: "Caption", id: "caption" }],
+			},
+			layoutOf({
+				icon: { x: 0, y: 0, width: 64, height: 64 },
+				caption: { x: 0, y: 0, width: 64, height: 16 },
+			}),
+			host,
+		);
+		const el = host.firstElementChild as HTMLElement;
+		// The image is an overlay, so it precedes every laid-out child.
+		expect([...el.children].map((c) => c.tagName)).toEqual(["IMG", "DIV"]);
+	});
+
+	it("rebuilds the layer only when an image prop changes", async () => {
+		setImageResolver(async () => "https://cdn.test/1818");
+		const mount = document.createElement("div");
+		document.body.appendChild(mount);
+		const session = createDomSession(mount, {
+			resolveInstance: () => undefined,
+		});
+
+		session.patch(
+			imageScene({ Image: prop.string("rbxassetid://1818") }),
+			iconLayout,
+		);
+		const first = mount.querySelector("img");
+		await vi.waitFor(() =>
+			expect(first?.getAttribute("src")).toBe("https://cdn.test/1818"),
+		);
+
+		// Same image, unrelated prop churn: the element must survive.
+		session.patch(
+			imageScene({
+				Image: prop.string("rbxassetid://1818"),
+				BackgroundTransparency: prop.number(1),
+			}),
+			iconLayout,
+		);
+		expect(mount.querySelector("img")).toBe(first);
+
+		// A different image replaces it.
+		session.patch(
+			imageScene({ Image: prop.string("https://example.test/b.png") }),
+			iconLayout,
+		);
+		const second = mount.querySelector("img");
+		expect(second).not.toBe(first);
+		expect(second?.getAttribute("src")).toBe("https://example.test/b.png");
+
+		// Dropping Image entirely removes the layer.
+		session.patch(imageScene({}), iconLayout);
+		expect(mount.querySelector("img")).toBeNull();
+		session.dispose();
 	});
 });

@@ -180,6 +180,7 @@ export const DEFAULTS = {
 	textColor3: { r: 27 / 255, g: 42 / 255, b: 53 / 255 } as Color3,
 	textSize: 14,
 	textTransparency: 0,
+	imageTransparency: 0,
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -310,6 +311,16 @@ export const getFontName = (n: SceneNode): string | undefined =>
 /** `FontFace` (the modern `Font` datatype); undefined when unset. */
 export const getFontFace = (n: SceneNode): FontValue | undefined =>
 	asFont(props(n).FontFace);
+
+// --- image getters ---------------------------------------------------------
+/** The raw `Image` value (`rbxassetid://…` or a URL); undefined when unset. */
+export const getImage = (n: SceneNode): string | undefined =>
+	asString(props(n).Image);
+export const getImageTransparency = (n: SceneNode): number =>
+	asNumber(props(n).ImageTransparency) ?? DEFAULTS.imageTransparency;
+/** Enum item name, e.g. "Fit"; default "Stretch" (the Roblox default). */
+export const getScaleType = (n: SceneNode): string =>
+	asEnum(props(n).ScaleType)?.name ?? "Stretch";
 
 /** First child of the given Roblox class (e.g. a `UICorner`/`UIStroke` modifier). */
 export const findModifier = (

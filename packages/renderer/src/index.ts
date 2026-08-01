@@ -21,6 +21,8 @@
  * - `Visible:false` hides via CSS (the node still occupies its computed rect).
  * - Text classes paint their `Text` in an aligned overlay layer; `UICorner` and
  *   `UIStroke` modifier children become border-radius / box-shadow.
+ * - Image classes paint their `Image` in an `<img>` layer beneath the text.
+ *   `rbxassetid://` values need a host-installed {@link setImageResolver}.
  */
 
 import type { EnumItem, InputObject, LoomInstance } from "@loom-dev/runtime";
@@ -59,6 +61,9 @@ import {
 	getClipsDescendants,
 	getFontFace,
 	getFontName,
+	getImage,
+	getImageTransparency,
+	getScaleType,
 	getText,
 	getTextColor3,
 	getTextSize,
@@ -74,6 +79,7 @@ import {
 
 const ZERO_RECT: Rect = { x: 0, y: 0, width: 0, height: 0 };
 const TEXT_CLASSES = new Set(["TextLabel", "TextButton", "TextBox"]);
+const IMAGE_CLASSES = new Set(["ImageLabel", "ImageButton"]);
 const SANS =
 	'system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
 const MONO = 'ui-monospace, "Roboto Mono", "SF Mono", Menlo, monospace';
@@ -413,6 +419,137 @@ function textLayerKey(node: SceneNode): string {
 	].join(" ");
 }
 
+// --- image layer -------------------------------------------------------------
+
+/**
+ * Turns an `Image` value the browser cannot load on its own — Roblox's
+ * `rbxassetid://<id>` — into a URL an `<img>` can, returning `undefined` when
+ * it cannot. May answer synchronously or with a promise.
+ *
+ * The renderer ships no default, deliberately. Resolving an asset id needs a
+ * server hop: Roblox's thumbnail API sends no `Access-Control-Allow-Origin`, so
+ * a browser cannot read it, and baking in some third party's CORS proxy would
+ * route every consumer's asset traffic (and their users' IPs) through a service
+ * neither loom nor they control. A host that *can* reach Roblox installs its
+ * own with {@link setImageResolver} — `@loom-dev/preview` installs one backed
+ * by its own dev server. Without a resolver, `rbxassetid://` images simply do
+ * not paint; plain `http(s):`/`data:`/`blob:` URLs never need one.
+ */
+export type ImageResolver = (
+	image: string,
+) => string | undefined | Promise<string | undefined>;
+
+let imageResolver: ImageResolver | undefined;
+/** `Image` value → resolved URL, so a repaint never re-resolves. */
+const resolvedImages = new Map<string, string>();
+/** In-flight resolutions, so N nodes sharing an image make one call. */
+const pendingImages = new Map<string, Promise<string | undefined>>();
+
+/**
+ * Install the resolver for `Image` values that are not already loadable URLs.
+ * Pass `undefined` to clear it. Replacing the resolver drops the caches, since
+ * a new resolver may map the same value somewhere else.
+ */
+export function setImageResolver(resolver: ImageResolver | undefined): void {
+	imageResolver = resolver;
+	resolvedImages.clear();
+	pendingImages.clear();
+}
+
+/** URLs an `<img>` loads as-is; everything else has to go through the resolver. */
+function directImageUrl(image: string): string | undefined {
+	return /^(?:https?:|data:|blob:)/i.test(image) ? image : undefined;
+}
+
+function resolveImage(image: string): Promise<string | undefined> {
+	const cached = resolvedImages.get(image);
+	if (cached !== undefined) return Promise.resolve(cached);
+	const inflight = pendingImages.get(image);
+	if (inflight) return inflight;
+	const resolver = imageResolver;
+	if (!resolver) return Promise.resolve(undefined);
+
+	const run = (async () => {
+		try {
+			const url = await resolver(image);
+			if (typeof url === "string" && url !== "") {
+				resolvedImages.set(image, url);
+				return url;
+			}
+		} catch (err) {
+			console.error(`loom: could not resolve Image "${image}":`, err);
+		} finally {
+			pendingImages.delete(image);
+		}
+		return undefined;
+	})();
+	pendingImages.set(image, run);
+	return run;
+}
+
+/** `ScaleType` → the `object-fit` that reproduces it. */
+function objectFit(scaleType: string): string {
+	if (scaleType === "Fit") return "contain";
+	if (scaleType === "Crop") return "cover";
+	// Stretch, plus Slice/Tile until the renderer implements them.
+	return "fill";
+}
+
+/**
+ * Build an image class's `Image` layer, or `undefined` when there is none.
+ *
+ * Deferred (documented): `Slice`/`Tile` scale types, `ImageColor3` tinting, and
+ * `ImageRectOffset`/`ImageRectSize` sprite windows — each needs more than one
+ * `<img>` and a fit.
+ */
+function createImageLayer(node: SceneNode): HTMLImageElement | undefined {
+	if (!IMAGE_CLASSES.has(node.className)) return undefined;
+	const image = getImage(node);
+	if (image === undefined || image === "") return undefined;
+
+	const el = document.createElement("img");
+	el.alt = ""; // decorative: Roblox images carry no accessible name
+	el.draggable = false;
+	const s = el.style;
+	s.position = "absolute";
+	s.inset = "0";
+	s.width = "100%";
+	s.height = "100%";
+	s.objectFit = objectFit(getScaleType(node));
+	s.pointerEvents = "none";
+	s.zIndex = String(getZIndex(node)); // shares the unified ZIndex space
+	const transparency = getImageTransparency(node);
+	if (transparency > 0) s.opacity = String(Math.max(0, 1 - transparency));
+
+	const known = directImageUrl(image) ?? resolvedImages.get(image);
+	if (known !== undefined) {
+		el.src = known;
+		return el;
+	}
+	// Unresolved: paint the empty layer now and fill in the src when the
+	// resolver answers. The element may be detached by then, which is harmless.
+	void resolveImage(image).then((url) => {
+		if (url !== undefined) el.src = url;
+	});
+	return el;
+}
+
+/**
+ * Fingerprint of every input `createImageLayer` reads, so the session rebuilds
+ * the layer only when an image-affecting prop actually changed.
+ */
+function imageLayerKey(node: SceneNode): string {
+	if (!IMAGE_CLASSES.has(node.className)) return "";
+	const image = getImage(node);
+	if (image === undefined || image === "") return "";
+	return [
+		image,
+		getScaleType(node),
+		getImageTransparency(node),
+		getZIndex(node),
+	].join(" ");
+}
+
 // --- keyboard mapping --------------------------------------------------------
 
 /** `KeyboardEvent.code` → `Enum.KeyCode` (unknown codes map to `Unknown`). */
@@ -640,6 +777,10 @@ function renderNode(
 	el.dataset.loomName = node.name;
 	applyBoxStyle(el.style, node, rect, parentRect, isRoot);
 
+	// Image first: Roblox paints the image behind the label's own text.
+	const imageLayer = createImageLayer(node);
+	if (imageLayer) el.appendChild(imageLayer);
+
 	const textLayer = createTextLayer(node);
 	if (textLayer) el.appendChild(textLayer);
 
@@ -701,8 +842,10 @@ export interface DomSession {
 interface SessionEntry {
 	el: HTMLDivElement;
 	textEl: HTMLDivElement | undefined;
+	imageEl: HTMLImageElement | undefined;
 	styleKey: string;
 	textKey: string;
+	imageKey: string;
 	/** Present only on TextBox nodes: the persistent input element. */
 	input: TextBoxBinding | undefined;
 	/** Present only on ScrollingFrame nodes: the -CanvasPosition child wrapper. */
@@ -823,8 +966,10 @@ export function createDomSession(
 			entry = {
 				el,
 				textEl: undefined,
+				imageEl: undefined,
 				styleKey: "",
 				textKey: "",
+				imageKey: "",
 				input: undefined,
 				canvas: undefined,
 			};
@@ -841,6 +986,13 @@ export function createDomSession(
 		if (styleKey !== entry.styleKey) {
 			el.style.cssText = styleKey;
 			entry.styleKey = styleKey;
+		}
+
+		const imageKey = imageLayerKey(node);
+		if (imageKey !== entry.imageKey) {
+			entry.imageEl?.remove();
+			entry.imageEl = imageKey === "" ? undefined : createImageLayer(node);
+			entry.imageKey = imageKey;
 		}
 
 		// TextBox paints its text in a persistent input element, not the overlay.
@@ -871,7 +1023,9 @@ export function createDomSession(
 			entry.canvas = undefined;
 		}
 
+		// Image first so it sits behind the text, matching renderNode.
 		const overlays: HTMLElement[] = [];
+		if (entry.imageEl) overlays.push(entry.imageEl);
 		if (entry.input) overlays.push(entry.input.el);
 		if (entry.textEl) overlays.push(entry.textEl);
 		const children: HTMLElement[] = [];

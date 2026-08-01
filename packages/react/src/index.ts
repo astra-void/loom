@@ -1194,6 +1194,21 @@ export interface TextGuiProps extends GuiProps {
 	FontSize?: Bindable<EnumItem<"FontSize">>;
 }
 
+/** `ImageLabel`/`ImageButton` add the image props the `<img>` layer maps. */
+export interface ImageGuiProps extends GuiProps {
+	/**
+	 * `rbxassetid://<id>`, or any URL an `<img>` can load. Asset ids need a
+	 * resolver installed by the host — `@loom-dev/preview` ships one, so they
+	 * paint under `loom preview` and stay blank elsewhere until one is set.
+	 */
+	Image?: Bindable<string>;
+	ImageTransparency?: Bindable<number>;
+	/** `Slice` and `Tile` are accepted but paint as `Stretch` for now. */
+	ScaleType?: Bindable<EnumItem<"ScaleType">>;
+	/** Accepted but unpainted: tinting needs more than one `<img>`. */
+	ImageColor3?: Bindable<Color3>;
+}
+
 /** `TextBox` adds the editable-text props the DOM input maps. */
 export interface TextBoxProps extends TextGuiProps {
 	PlaceholderText?: Bindable<string>;
@@ -1327,8 +1342,8 @@ declare global {
 			textlabel: TextGuiProps;
 			textbutton: TextGuiProps;
 			textbox: TextBoxProps;
-			imagelabel: GuiProps;
-			imagebutton: GuiProps;
+			imagelabel: ImageGuiProps;
+			imagebutton: ImageGuiProps;
 			uilistlayout: UIListLayoutProps;
 			uigridlayout: UIGridLayoutProps;
 			uipadding: UIPaddingProps;
