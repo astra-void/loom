@@ -1023,6 +1023,47 @@ mod tests {
     }
 
     #[test]
+    fn automatic_size_treats_size_as_a_minimum() {
+        // Roblox does not let AutomaticSize shrink an element below its own
+        // `Size` — the property is the floor, and the content only grows past
+        // it. A 200-wide container holding a 50-wide child stays 200.
+        let mut container = with(
+            "Frame",
+            "Container",
+            &[
+                ("Size", udim2(0.0, 200.0, 0.0, 120.0)),
+                ("AutomaticSize", enum_item("AutomaticSize", "XY")),
+            ],
+        );
+        container.children.push(with(
+            "Frame",
+            "Child",
+            &[("Size", udim2(0.0, 50.0, 0.0, 40.0))],
+        ));
+        let r = compute_layout(&screen(vec![container]), VP).unwrap();
+        assert_eq!(r.rects["0/0"].rect.width, 200.0);
+        assert_eq!(r.rects["0/0"].rect.height, 120.0);
+
+        // …and content larger than `Size` still wins on both axes.
+        let mut grown = with(
+            "Frame",
+            "Container",
+            &[
+                ("Size", udim2(0.0, 200.0, 0.0, 120.0)),
+                ("AutomaticSize", enum_item("AutomaticSize", "XY")),
+            ],
+        );
+        grown.children.push(with(
+            "Frame",
+            "Child",
+            &[("Size", udim2(0.0, 260.0, 0.0, 300.0))],
+        ));
+        let r = compute_layout(&screen(vec![grown]), VP).unwrap();
+        assert_eq!(r.rects["0/0"].rect.width, 260.0);
+        assert_eq!(r.rects["0/0"].rect.height, 300.0);
+    }
+
+    #[test]
     fn automatic_size_free_children_bounding_box() {
         let a = with(
             "Frame",
