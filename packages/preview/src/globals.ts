@@ -59,4 +59,5 @@ declare global {
 	const tonumber: typeof runtime.tonumber;
 	const error: typeof runtime.error;
 	const warn: typeof runtime.warn;
+	const assert: typeof runtime.assert;
 }

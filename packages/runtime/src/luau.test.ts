@@ -4,6 +4,7 @@ import { Enum } from "./enums";
 import { createInstance } from "./instance";
 import {
 	applyPrototypePatches,
+	assert,
 	ipairs,
 	math,
 	pairs,
@@ -211,6 +212,63 @@ describe("prototype patches", () => {
 		expect(arr.isEmpty()).toBe(true);
 		const str = "hello" as unknown as { size(): number };
 		expect(str.size()).toBe(5);
+	});
+
+	it("installs the Luau string methods with 1-based indices", () => {
+		applyPrototypePatches();
+		type PatchedString = {
+			lower(): string;
+			upper(): string;
+			sub(i?: number, j?: number): string;
+			rep(n: number, sep?: string): string;
+			find(
+				pattern: string,
+				init?: number,
+				plain?: boolean,
+			): [number, number] | [];
+			gsub(
+				pattern: string,
+				replacement: string,
+				maxCount?: number,
+			): [string, number];
+			format(...args: unknown[]): string;
+		};
+		const s = "Hello,World" as unknown as PatchedString;
+		expect(s.lower()).toBe("hello,world");
+		expect(s.upper()).toBe("HELLO,WORLD");
+		// 1-based and inclusive: NOT slice(1, 5), and NOT the Annex B `<sub>`
+		// wrapper that `String.prototype.sub` ships by default.
+		expect(s.sub(1, 5)).toBe("Hello");
+		expect(s.sub(-5)).toBe("World");
+		expect(("ab" as unknown as PatchedString).rep(3)).toBe("ababab");
+		expect(s.find("World")).toEqual([7, 11]);
+		expect(s.find("nope")).toEqual([]);
+		expect(s.gsub("l", "L")).toEqual(["HeLLo,WorLd", 3]);
+		expect(("%d apples" as unknown as PatchedString).format(3)).toBe(
+			"3 apples",
+		);
+	});
+
+	it("leaves native String.prototype.split alone", () => {
+		applyPrototypePatches();
+		// Deliberately unpatched: `string.split` is implemented *with* the native
+		// method, so overriding it would recurse forever. Native split already
+		// matches Luau for a string separator.
+		expect("a,b,c".split(",")).toEqual(["a", "b", "c"]);
+		expect(string.split("a,b,c")).toEqual(["a", "b", "c"]);
+	});
+});
+
+describe("assert", () => {
+	it("returns the value when truthy, the way Luau does", () => {
+		const value = { ok: true };
+		expect(assert(value)).toBe(value);
+		expect(assert("text", "unused")).toBe("text");
+	});
+
+	it("throws the given message when falsy", () => {
+		expect(() => assert(undefined, "no config")).toThrow("no config");
+		expect(() => assert(false)).toThrow("assertion failed!");
 	});
 });
 

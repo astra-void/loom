@@ -535,14 +535,24 @@ export function tick(): number {
 
 /**
  * Luau `assert` — returns the value when truthy, otherwise throws.
+ *
+ * Returning the value (rather than being a TS `asserts` predicate) is the
+ * deliberate choice: `const cfg = assert(maybeCfg, "no cfg")` is the idiom this
+ * shim exists to reproduce, and an assertion function must return `void`, so
+ * the two are mutually exclusive. Callers who want narrowing can `if (!x) …`.
+ *
+ * Truthiness is JS truthiness, not Luau's — `assert(0)` throws here and does
+ * not in Luau. Loom runs the caller's own TS, whose `if` statements already use
+ * JS rules, so matching them keeps one mental model rather than two.
  */
 export function assert<T>(
 	condition: T,
 	message = "assertion failed!",
-): asserts condition {
+): NonNullable<T> {
 	if (!condition) {
 		throw new Error(message);
 	}
+	return condition as NonNullable<T>;
 }
 
 // --- prototype patches -------------------------------------------------------
@@ -551,8 +561,13 @@ function definePatch(
 	proto: object,
 	name: string,
 	value: (...args: never[]) => unknown,
+	/**
+	 * Replace an existing member instead of bailing out. Only for names JS
+	 * already defines with semantics no loom caller could want (see `sub`).
+	 */
+	force = false,
 ): void {
-	if (name in proto) return; // guarded: never clobber an existing member
+	if (!force && name in proto) return; // guarded: never clobber by accident
 	Object.defineProperty(proto, name, {
 		value,
 		configurable: true,
@@ -563,9 +578,14 @@ function definePatch(
 
 /**
  * Install the roblox-ts macro methods on `Array.prototype`/`String.prototype`
- * (`.size()`, `.isEmpty()`, `.remove(i)`, `.unorderedRemove(i)`, `.clear()`).
- * Indices are 0-based, matching roblox-ts TS-side array semantics (and the
- * lattice vitest shim). Guarded and non-enumerable; safe to call repeatedly.
+ * (`.size()`, `.isEmpty()`, `.remove(i)`, `.unorderedRemove(i)`, `.clear()`),
+ * plus the Luau string methods roblox-ts calls off a string receiver
+ * (`.lower()`, `.upper()`, `.sub()`, `.rep()`, `.find()`, `.gsub()`,
+ * `.format()`) — each one delegating to the {@link string} library, so the
+ * 1-based indices and tuple returns documented there apply here too.
+ * Array indices are 0-based, matching roblox-ts TS-side array semantics (and
+ * the lattice vitest shim). Guarded and non-enumerable; safe to call
+ * repeatedly.
  */
 export function applyPrototypePatches(): void {
 	definePatch(Array.prototype, "size", function (this: unknown[]) {
@@ -601,32 +621,54 @@ export function applyPrototypePatches(): void {
 	definePatch(String.prototype, "lower", function (this: string) {
 		return string.lower(this);
 	});
-
 	definePatch(String.prototype, "upper", function (this: string) {
 		return string.upper(this);
 	});
-
-	definePatch(String.prototype, "sub", function (this: string, i?: number, j?: number) {
-		return string.sub(this, i, j);
-	});
-
-	definePatch(String.prototype, "rep", function (this: string, n: number, separator?: string) {
-		return string.rep(this, n, separator);
-	});
-
-	definePatch(String.prototype, "split", function (this: string, separator?: string) {
-		return string.split(this, separator);
-	});
-
-	definePatch(String.prototype, "find", function (this: string, pattern: string, init?: number, plain?: boolean) {
-		return string.find(this, pattern, init, plain);
-	});
-
-	definePatch(String.prototype, "gsub", function (this: string, pattern: string, replacement: string, maxCount?: number,) {
-		return string.gsub(this, pattern, replacement, maxCount);
-	});
-
-	definePatch(String.prototype, "format", function (this: string, ...args: unknown[]) {
-		return string.format(this, ...args);
-	});
+	// `String.prototype.sub` already exists: it is the Annex B HTML wrapper that
+	// returns `<sub>…</sub>`. Nothing in a loom scene wants that, and leaving the
+	// guard in place would silently hand Luau callers markup, so this one name is
+	// forced. There is deliberately no `split` patch — JS already defines it, and
+	// `string.split` is implemented *with* it, so patching would recurse forever.
+	// Native `split(sep)` matches Luau for a string separator anyway.
+	definePatch(
+		String.prototype,
+		"sub",
+		function (this: string, i?: number, j?: number) {
+			return string.sub(this, i, j);
+		},
+		true,
+	);
+	definePatch(
+		String.prototype,
+		"rep",
+		function (this: string, n: number, separator?: string) {
+			return string.rep(this, n, separator);
+		},
+	);
+	definePatch(
+		String.prototype,
+		"find",
+		function (this: string, pattern: string, init?: number, plain?: boolean) {
+			return string.find(this, pattern, init, plain);
+		},
+	);
+	definePatch(
+		String.prototype,
+		"gsub",
+		function (
+			this: string,
+			pattern: string,
+			replacement: string,
+			maxCount?: number,
+		) {
+			return string.gsub(this, pattern, replacement, maxCount);
+		},
+	);
+	definePatch(
+		String.prototype,
+		"format",
+		function (this: string, ...args: unknown[]) {
+			return string.format(this, ...args);
+		},
+	);
 }
