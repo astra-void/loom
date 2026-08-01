@@ -54,6 +54,7 @@ import {
 	asEnum,
 	asUDim2,
 	childrenOf,
+	fontSizeToPx,
 	type PropertyValue,
 	participatesInLayout,
 	prop,
@@ -415,6 +416,17 @@ function getMeasureCtx(): CanvasRenderingContext2D | null {
 }
 
 /**
+ * Live-tree counterpart of `@loom-dev/scene`'s `getTextSize`: `TextSize` wins,
+ * legacy `FontSize` fills in, 14 is the Roblox default. Kept in sync with the
+ * vide adapter's copy.
+ */
+function liveTextSize(textSize: unknown, fontSize: unknown): number {
+	if (typeof textSize === "number") return textSize;
+	const name = fontSize instanceof EnumItem ? fontSize.Name : undefined;
+	return fontSizeToPx(name) ?? 14;
+}
+
+/**
  * Measure an auto-sizing text node's pixel bounds with the same font the renderer
  * paints, and emit them as a `TextBounds` Vector2 the layout engine reads for
  * AutomaticSize (font metrics live browser-side, not in the WASM engine).
@@ -430,7 +442,7 @@ function measureTextBounds(inst: LoomInstance): PropertyValue | undefined {
 	const ctx = getMeasureCtx();
 	if (!ctx) return undefined;
 
-	const size = typeof inst.TextSize === "number" ? inst.TextSize : 14;
+	const size = liveTextSize(inst.TextSize, inst.FontSize);
 	ctx.font = fontShorthand(instanceFont(inst), size);
 	const lines = text.split("\n");
 	let width = 0;
@@ -1178,6 +1190,7 @@ export interface TextGuiProps extends GuiProps {
 	/** The legacy font enum. `FontFace` wins when both are set, as in Roblox. */
 	Font?: Bindable<EnumItem<"Font">>;
 	FontFace?: Bindable<Font>;
+	/** The legacy text-size enum. `TextSize` wins when both are set. */
 	FontSize?: Bindable<EnumItem<"FontSize">>;
 }
 

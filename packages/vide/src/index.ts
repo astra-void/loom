@@ -14,7 +14,12 @@
 import { computeLayout, initLayout } from "@loom-dev/layout";
 import { fontShorthand, instanceFont, renderScene } from "@loom-dev/renderer";
 import { EnumItem, toPropertyValue } from "@loom-dev/runtime";
-import { type PropertyValue, prop, type SceneNode } from "@loom-dev/scene";
+import {
+	fontSizeToPx,
+	type PropertyValue,
+	prop,
+	type SceneNode,
+} from "@loom-dev/scene";
 import { effect, root } from "./reactive";
 
 export {
@@ -169,8 +174,16 @@ function measureTextBounds(live: LiveNode): PropertyValue | undefined {
 	const ctx = getMeasureCtx();
 	if (!ctx) return undefined;
 
+	// `TextSize` wins, legacy `FontSize` fills in, 14 is the Roblox default —
+	// same precedence as `@loom-dev/scene`'s `getTextSize` and the react adapter.
 	const rawSize = live.props.get("TextSize");
-	const size = typeof rawSize === "number" ? rawSize : 14;
+	const rawFontSize = live.props.get("FontSize");
+	const size =
+		typeof rawSize === "number"
+			? rawSize
+			: (fontSizeToPx(
+					rawFontSize instanceof EnumItem ? rawFontSize.Name : undefined,
+				) ?? 14);
 	ctx.font = fontShorthand(
 		instanceFont({
 			Font: live.props.get("Font"),

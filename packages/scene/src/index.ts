@@ -279,8 +279,20 @@ export const getText = (n: SceneNode): string | undefined =>
 	asString(props(n).Text);
 export const getTextColor3 = (n: SceneNode): Color3 =>
 	asColor3(props(n).TextColor3) ?? DEFAULTS.textColor3;
+/**
+ * Legacy `FontSize` enum name (`"Size24"`) → its pixel size (`24`); undefined
+ * for anything that is not a `SizeN` name. Roblox keeps `FontSize` and
+ * `TextSize` linked — writing either updates the other — so loom reads
+ * `FontSize` only as the fallback when `TextSize` is absent.
+ */
+export const fontSizeToPx = (name: string | undefined): number | undefined => {
+	const digits = name?.match(/^Size(\d+)$/)?.[1];
+	return digits === undefined ? undefined : Number(digits);
+};
 export const getTextSize = (n: SceneNode): number =>
-	asNumber(props(n).TextSize) ?? DEFAULTS.textSize;
+	asNumber(props(n).TextSize) ??
+	fontSizeToPx(asEnum(props(n).FontSize)?.name) ??
+	DEFAULTS.textSize;
 export const getTextTransparency = (n: SceneNode): number =>
 	asNumber(props(n).TextTransparency) ?? DEFAULTS.textTransparency;
 export const getTextWrapped = (n: SceneNode): boolean =>

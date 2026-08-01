@@ -624,3 +624,41 @@ describe("createDomSession", () => {
 		session.dispose();
 	});
 });
+
+describe("text sizing", () => {
+	const fontSize = (name: string) =>
+		prop.enum({ enumType: "FontSize", name, value: 0 });
+
+	function paint(properties: SceneNode["properties"]): string {
+		const host = document.createElement("div");
+		renderScene(
+			{
+				className: "TextLabel",
+				name: "Label",
+				id: "label",
+				properties: { Text: prop.string("hi"), ...properties },
+			},
+			layoutOf({ label: { x: 0, y: 0, width: 100, height: 20 } }),
+			host,
+		);
+		// The text overlay is the only layer that sets a font size.
+		const layer = [...host.querySelectorAll("div")].find(
+			(el) => el.style.fontSize !== "",
+		);
+		return layer?.style.fontSize ?? "";
+	}
+
+	it("reads the pixel size out of a legacy FontSize enum", () => {
+		expect(paint({ FontSize: fontSize("Size24") })).toBe("24px");
+	});
+
+	it("lets TextSize win when both are set, as in Roblox", () => {
+		expect(
+			paint({ TextSize: prop.number(20), FontSize: fontSize("Size24") }),
+		).toBe("20px");
+	});
+
+	it("falls back to the Roblox default for an unparseable FontSize", () => {
+		expect(paint({ FontSize: fontSize("Nonsense") })).toBe("14px");
+	});
+});
