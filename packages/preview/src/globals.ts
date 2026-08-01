@@ -4,10 +4,27 @@
  * ambient types. The Vite plugin injects this before the app entry so a real
  * roblox-ts source tree runs unmodified.
  */
+import { setImageResolver } from "@loom-dev/renderer";
 import type * as runtime from "@loom-dev/runtime";
 import { installGlobals } from "@loom-dev/runtime";
 
 installGlobals();
+
+/**
+ * Point `rbxassetid://<id>` at the dev server's asset route (see
+ * `./asset-proxy.ts`), which redirects to the CDN image. Synchronous: the
+ * server does the lookup, the browser only follows a redirect. Anything that is
+ * not an asset id is left alone — the renderer already loads plain URLs.
+ */
+setImageResolver((image) => {
+	const id = /^rbxassetid:\/\/(\d+)$/.exec(image)?.[1];
+	if (id === undefined) return undefined;
+	// Widened rather than relying on `vite/client`: this module is typechecked by
+	// the previewed app's tsconfig too, which need not pull Vite's types in.
+	const meta = import.meta as ImportMeta & { env?: { BASE_URL?: string } };
+	const base = meta.env?.BASE_URL ?? "/";
+	return `${base.endsWith("/") ? base : `${base}/`}__loom/asset/${id}`;
+});
 
 // Diagnostic: if nothing mounts into #loom-root shortly after load, the entry
 // likely doesn't self-mount (e.g. it only exports a component). Warn rather than

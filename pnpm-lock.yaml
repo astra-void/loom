@@ -278,6 +278,9 @@ importers:
       '@loom-dev/react':
         specifier: workspace:*
         version: link:../react
+      '@loom-dev/renderer':
+        specifier: workspace:*
+        version: link:../renderer
       '@loom-dev/runtime':
         specifier: workspace:*
         version: link:../runtime

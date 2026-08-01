@@ -74,6 +74,7 @@
 	},
 	"dependencies": {
 		"@loom-dev/react": "workspace:*",
+		"@loom-dev/renderer": "workspace:*",
 		"@loom-dev/runtime": "workspace:*"
 	},
 	"peerDependencies": {

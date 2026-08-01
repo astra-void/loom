@@ -25,6 +25,7 @@ import { readFileSync, statSync } from "node:fs";
 import { createRequire } from "node:module";
 import { isAbsolute, resolve, sep } from "node:path";
 import { type Plugin, searchForWorkspaceRoot } from "vite";
+import { loomAssetProxy } from "./asset-proxy.ts";
 import {
 	builtInCompatibilityAliases,
 	exactSpecifierPattern,
@@ -592,7 +593,12 @@ export function loomPreview(options: LoomPreviewOptions = {}): Plugin[] {
 		},
 	};
 
-	const plugins: Plugin[] = [importEquals, main, serveGlobals];
+	const plugins: Plugin[] = [
+		importEquals,
+		main,
+		serveGlobals,
+		loomAssetProxy(),
+	];
 
 	// Gallery mode: the target import map (dev) + the generated gallery page.
 	const patterns =
