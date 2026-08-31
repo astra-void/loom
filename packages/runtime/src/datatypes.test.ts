@@ -57,6 +57,34 @@ describe("UDim2 constructor", () => {
 	});
 });
 
+describe("Rect constructor", () => {
+	it("accepts the four-number roblox-ts form (minX, minY, maxX, maxY)", () => {
+		// roblox-ts compiles `new Rect(54, 55, 200, 200)` to this; component
+		// code (e.g. a 9-slice SliceCenter built from parsed CSS) relies on it.
+		const value = new Rect(54, 55, 200, 200);
+		expect(value.Min).toBeInstanceOf(Vector2);
+		expect(value.Min.X).toBe(54);
+		expect(value.Min.Y).toBe(55);
+		expect(value.Max.X).toBe(200);
+		expect(value.Max.Y).toBe(200);
+		expect(value.Width).toBe(146);
+		expect(value.Height).toBe(145);
+	});
+
+	it("accepts the two-Vector2 form", () => {
+		const value = new Rect(new Vector2(8, 8), new Vector2(24, 24));
+		expect(value.Min.X).toBe(8);
+		expect(value.Max.X).toBe(24);
+		expect(value.Width).toBe(16);
+	});
+
+	it("defaults to a zero Rect", () => {
+		const value = new Rect();
+		expect(value.Min.X).toBe(0);
+		expect(value.Max.Y).toBe(0);
+	});
+});
+
 describe("ColorSequence constructor", () => {
 	const red = Color3.fromRGB(255, 0, 0);
 	const blue = Color3.fromRGB(0, 0, 255);

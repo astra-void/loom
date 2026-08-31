@@ -224,29 +224,35 @@ export class Vector3 {
 
 /** A Roblox `Rect` (axis-aligned rectangle between two corners). */
 export class Rect {
+	readonly Min: Vector2;
+	readonly Max: Vector2;
 	readonly Width: number;
 	readonly Height: number;
-	constructor(
-		readonly Min: Vector2,
-		readonly Max: Vector2,
-	) {
-		this.Width = Max.X - Min.X;
-		this.Height = Max.Y - Min.Y;
+	/**
+	 * Matches roblox-ts's two `Rect.new` forms, both of which compile to
+	 * `new Rect(...)`: two `Vector2`s (`new Rect(min, max)`) or four numbers
+	 * (`new Rect(minX, minY, maxX, maxY)`). Component code uses the numeric
+	 * form (e.g. `new Rect(54, 55, 200, 200)`), so a `(Vector2, Vector2)`-only
+	 * constructor would silently store the raw numbers and break slicing.
+	 */
+	constructor(a: Vector2 | number = 0, b: Vector2 | number = 0, c = 0, d = 0) {
+		if (a instanceof Vector2) {
+			this.Min = a;
+			this.Max = b instanceof Vector2 ? b : Vector2.zero;
+		} else {
+			this.Min = new Vector2(a, typeof b === "number" ? b : 0);
+			this.Max = new Vector2(c, d);
+		}
+		this.Width = this.Max.X - this.Min.X;
+		this.Height = this.Max.Y - this.Min.Y;
 	}
-	/** `Rect.new(minX, minY, maxX, maxY)` or `Rect.new(min, max)` vectors. */
 	static new(
 		a: Vector2 | number = 0,
 		b: Vector2 | number = 0,
 		maxX = 0,
 		maxY = 0,
 	): Rect {
-		if (a instanceof Vector2) {
-			return new Rect(a, b instanceof Vector2 ? b : Vector2.zero);
-		}
-		return new Rect(
-			new Vector2(a, typeof b === "number" ? b : 0),
-			new Vector2(maxX, maxY),
-		);
+		return new Rect(a, b, maxX, maxY);
 	}
 	/** Roblox `tostring`: `"1, 2, 5, 9"` — both corners, flattened. */
 	toString(): string {
