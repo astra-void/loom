@@ -1010,6 +1010,20 @@ const DEFAULT_SCROLL_BAR_COLOR: Color3 = { r: 0.6, g: 0.6, b: 0.6 };
  * child can be painted above.
  */
 const SCROLL_BAR_Z_INDEX = 2147483647;
+/**
+ * Roblox's minimum `ZIndex`. A node's own paint — its image, its text, its
+ * `TextBox` input — is the node drawing itself, and under
+ * `ZIndexBehavior.Sibling` (the renderer's model) every descendant draws above
+ * its ancestors whatever the numbers say: `ZIndex` only ever orders siblings.
+ * Giving those layers the node's own `ZIndex` put them in the same space as its
+ * children instead, so an `ImageLabel` with `ZIndex = 2` painted its image over
+ * the default-`ZIndex` content inside it — a themed card header hiding its own
+ * title behind its background plaque. This is the only value no child can be
+ * painted below, and a negative z-index still paints above the node's own CSS
+ * background, which is the order the engine draws in: background, then
+ * image/text, then descendants.
+ */
+const OWN_PAINT_Z_INDEX = -2147483648;
 
 /** One axis of a frame's scroll bar, in the frame's own pixel space. */
 interface ScrollBar {
@@ -1248,7 +1262,7 @@ function createTextLayer(
 	s.lineHeight = `${lineHeight * textSize}px`;
 	s.overflow = "hidden";
 	s.pointerEvents = "none";
-	s.zIndex = String(getZIndex(node)); // share the unified ZIndex space with children
+	s.zIndex = String(OWN_PAINT_Z_INDEX); // the label's own text, under its children
 	// The clip rect is the label's box grown by however far the face overhangs it
 	// (see `textBleed`), and the padding hands the content box its original height
 	// straight back — so the flex alignment above places the text exactly where it
@@ -1908,7 +1922,7 @@ function createImageLayer(
 	s.position = "absolute";
 	s.inset = "0";
 	s.pointerEvents = "none";
-	s.zIndex = String(getZIndex(node)); // shares the unified ZIndex space
+	s.zIndex = String(OWN_PAINT_Z_INDEX); // the node's own image, under its children
 	const transparency = getImageTransparency(node);
 	if (transparency > 0) s.opacity = String(Math.max(0, 1 - transparency));
 	const tint = getImageColor3(node);
@@ -1965,7 +1979,6 @@ function imageLayerKey(node: SceneNode, rect: Rect): string {
 		image,
 		getScaleType(node),
 		getImageTransparency(node),
-		getZIndex(node),
 		`${tint.r},${tint.g},${tint.b}`,
 		getResampleMode(node),
 		window
@@ -2183,7 +2196,7 @@ function applyTextBoxStyle(s: CSSStyleDeclaration, node: SceneNode): void {
 	s.fontWeight = font.weight;
 	if (font.italic) s.fontStyle = "italic";
 	s.textAlign = xAlignText(getTextXAlignment(node));
-	s.zIndex = String(getZIndex(node));
+	s.zIndex = String(OWN_PAINT_Z_INDEX);
 }
 
 // --- one-shot tree walk (renderScene) ----------------------------------------

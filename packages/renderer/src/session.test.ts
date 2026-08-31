@@ -1407,6 +1407,37 @@ describe("image layer", () => {
 		).toEqual(["image", null]);
 	});
 
+	it("keeps the image behind children with a lower ZIndex than its own", () => {
+		// `ZIndexBehavior.Sibling`: `ZIndex` orders siblings, and a descendant
+		// always draws above its ancestor whatever the numbers say. Painting the
+		// layer at the node's own `ZIndex` put it in the children's z-index space
+		// instead, and an overlay panel (`ZIndex = 2`) drawn over default-`ZIndex`
+		// content hid everything inside it behind its own background image.
+		const host = document.createElement("div");
+		renderScene(
+			{
+				className: "ImageLabel",
+				name: "Panel",
+				id: "panel",
+				properties: {
+					Image: prop.string("https://example.test/a.png"),
+					ZIndex: prop.int(2),
+				},
+				children: [{ className: "TextLabel", name: "Caption", id: "caption" }],
+			},
+			layoutOf({
+				panel: { x: 0, y: 0, width: 64, height: 64 },
+				caption: { x: 0, y: 0, width: 64, height: 16 },
+			}),
+			host,
+		);
+		const el = host.firstElementChild as HTMLElement;
+		const layer = el.querySelector<HTMLElement>(LAYER) as HTMLElement;
+		const child = el.children[1] as HTMLElement;
+		expect(el.style.zIndex).toBe("2");
+		expect(Number(layer.style.zIndex)).toBeLessThan(Number(child.style.zIndex));
+	});
+
 	it("rebuilds the layer only when an image prop changes", async () => {
 		setImageResolver(async () => "https://cdn.test/1818");
 		const mount = document.createElement("div");
