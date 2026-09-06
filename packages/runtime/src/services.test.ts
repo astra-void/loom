@@ -1,9 +1,18 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Vector2 } from "./datatypes";
-import { Enum } from "./enums";
+import { Enum, type EnumItem, RobloxEnum } from "./enums";
 import { game } from "./game";
-import { createInstance, type LoomInstance } from "./instance";
-import { setTextMeasurer, setViewportSize } from "./services";
+import type { InputObject } from "./input";
+import { createInstance, getEventSignal, type LoomInstance } from "./instance";
+import { renderStepped } from "./scheduler";
+import {
+	clearInputState,
+	setContentResolver,
+	setKeyState,
+	setMouseButtonState,
+	setTextMeasurer,
+	setViewportSize,
+} from "./services";
 import type { LoomSignal } from "./signal";
 
 describe("game.GetService", () => {
@@ -14,13 +23,135 @@ describe("game.GetService", () => {
 		expect(players.Parent).toBe(game);
 	});
 
-	it("stubs unknown services with a warning", () => {
+	it("stubs unknown services, staying quiet until a missing member is read", () => {
 		const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 		const stub = game.GetService("TeleportService");
 		expect(stub.ClassName).toBe("TeleportService");
 		expect(stub).toBe(game.GetService("TeleportService"));
-		expect(warnSpy).toHaveBeenCalled();
+		// Resolving the service says nothing yet. `@rbxts/services` is a barrel,
+		// so merely importing one service evaluates every export in it; warning
+		// here buried the real warning under services the app never mentioned.
+		// The tree API a stub genuinely supports stays silent too.
+		expect(warnSpy).not.toHaveBeenCalled();
+		expect(stub.Parent).toBe(game);
+		expect(stub.IsA("Instance")).toBe(true);
+		expect(warnSpy).not.toHaveBeenCalled();
+		// Reaching for something the stub does not have is the moment worth a word.
+		expect(stub.SomeMissingMember).toBeUndefined();
+		expect(warnSpy).toHaveBeenCalledTimes(1);
+		expect(String(warnSpy.mock.calls[0]?.[0])).toContain("TeleportService");
 		warnSpy.mockRestore();
+	});
+
+	it("warns once for a stub, and refuses its method calls by name", () => {
+		const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+		const service = game.GetService("MarketplaceService");
+		// Cached: the second resolution neither rebuilds nor re-warns.
+		expect(game.GetService("MarketplaceService")).toBe(service);
+		expect(service.SomeMissingMember).toBeUndefined();
+		expect(warnSpy).toHaveBeenCalledTimes(1);
+		// Still once, however many missing members are read afterwards.
+		expect(service.AnotherMissingMember).toBeUndefined();
+		expect(warnSpy).toHaveBeenCalledTimes(1);
+		warnSpy.mockRestore();
+
+		const prompt = service.PromptGamePassPurchase as () => unknown;
+		expect(prompt).toBeTypeOf("function");
+		expect(prompt).toThrow(
+			/\[loom\] MarketplaceService:PromptGamePassPurchase\(\) is not implemented/,
+		);
+		// The `Async` suffix is a method name all on its own.
+		expect(service.UserOwnsGamePassAsync as () => unknown).toThrow(
+			/MarketplaceService:UserOwnsGamePassAsync\(\)/,
+		);
+	});
+
+	it("leaves a stub's plain property reads undefined", () => {
+		const service = game.GetService("MarketplaceService");
+		// Nouns and participles are properties, not calls — a stub that answered
+		// every read with a function would break `if service.Enabled then`.
+		expect(service.Enabled).toBeUndefined();
+		expect(service.Loaded).toBeUndefined();
+		expect(service.SomeUnknownProperty).toBeUndefined();
+		// It is a real instance underneath, so the tree API still works.
+		expect(service.IsA("Instance")).toBe(true);
+		expect(service.GetFullName()).toBe("MarketplaceService");
+		expect(game.FindFirstChild("MarketplaceService")?.ClassName).toBe(
+			"MarketplaceService",
+		);
+	});
+});
+
+describe("the DataModel itself", () => {
+	it("builds a service the first time its game.<Name> property is read", () => {
+		// Nothing has asked for ServerStorage yet, so it is not a child of `game`
+		// — reading the property is what constructs it.
+		expect(game.FindFirstChild("ServerStorage")).toBeUndefined();
+		const serverStorage = game.ServerStorage as LoomInstance;
+		expect(serverStorage.ClassName).toBe("ServerStorage");
+		expect(serverStorage).toBe(game.GetService("ServerStorage"));
+		expect(game.FindFirstChild("ServerStorage")).toBe(serverStorage);
+	});
+
+	it("reaches the well-known services as properties, as Roblox does", () => {
+		expect(game.Workspace).toBe(game.GetService("Workspace"));
+		expect(game.Players).toBe(game.GetService("Players"));
+		expect(game.Lighting).toBe(game.GetService("Lighting"));
+		expect(game.ReplicatedStorage).toBe(game.GetService("ReplicatedStorage"));
+	});
+
+	it("FindService answers for real services without minting a stub", () => {
+		const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+		const findService = game.FindService as (
+			name: string,
+		) => LoomInstance | undefined;
+		expect(findService("Workspace")).toBe(game.GetService("Workspace"));
+		expect(findService("NotARealService")).toBeUndefined();
+		// Asking did not register one, and did not warn about one either.
+		expect(findService("NotARealService")).toBeUndefined();
+		expect(warnSpy).not.toHaveBeenCalled();
+		warnSpy.mockRestore();
+	});
+
+	it("reports the identity of an unpublished place", () => {
+		expect(game.PlaceId).toBe(0);
+		expect(game.GameId).toBe(0);
+		expect(game.JobId).toBe("");
+	});
+
+	it("is already loaded, and still runs a late Loaded handler", async () => {
+		expect((game.IsLoaded as () => boolean)()).toBe(true);
+		const loaded = game.Loaded as LoomSignal<[]>;
+		const calls: number[] = [];
+		const connection = loaded.Connect(() => calls.push(1));
+		// Deferred, not synchronous: the engine never fires inside `Connect`.
+		expect(calls).toEqual([]);
+		await Promise.resolve();
+		expect(calls).toEqual([1]);
+		// Once only, exactly like the engine's own.
+		await Promise.resolve();
+		expect(calls).toEqual([1]);
+		connection.Disconnect();
+		// `Wait()` resolves for the same reason, instead of hanging forever.
+		await expect(loaded.Wait()).resolves.toEqual([]);
+	});
+
+	it("runs BindToClose callbacks when the page goes away", () => {
+		const closed: string[] = [];
+		const bindToClose = game.BindToClose as (callback: () => void) => void;
+		bindToClose(() => closed.push("saved"));
+		bindToClose(() => {
+			throw new Error("a bad shutdown hook");
+		});
+		bindToClose(() => closed.push("also saved"));
+		const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+		dispatchEvent(new Event("pagehide"));
+
+		// Every hook runs, including the ones after the one that threw.
+		expect(closed).toEqual(["saved", "also saved"]);
+		expect(errorSpy).toHaveBeenCalledTimes(1);
+		errorSpy.mockRestore();
 	});
 });
 
@@ -61,6 +192,43 @@ describe("Players", () => {
 		expect(seen).toEqual(["dark"]);
 
 		localPlayer.SetAttribute("VelaColorScheme", undefined);
+	});
+
+	it("seeds a stable, clearly fake identity on LocalPlayer", () => {
+		const player = game.GetService("Players").LocalPlayer as LoomInstance;
+		expect(player.UserId).toBe(1234567890);
+		expect(player.DisplayName).toBe("Loom Player");
+		expect(player.AccountAge).toBe(365);
+		// An `EnumItem`, not a string: a profile card comparing against
+		// `Enum.MembershipType.None` has to be able to read `.Name`/`.Value`.
+		const membership = player.MembershipType as EnumItem;
+		expect(membership.Name).toBe("None");
+		expect(membership.Value).toBe(0);
+		expect(String(membership)).toBe("Enum.MembershipType.None");
+	});
+
+	it("returns a loadable Roblox thumbnail URL, and says it is ready", () => {
+		const players = game.GetService("Players");
+		const thumbnail = players.GetUserThumbnailAsync as (
+			userId: number,
+			thumbnailType?: unknown,
+			thumbnailSize?: unknown,
+		) => [string, boolean];
+
+		const [content, isReady] = thumbnail(42, "HeadShot", "Size150x150");
+		expect(content).toBe(
+			"https://www.roblox.com/headshot-thumbnail/image?userId=42&width=150&height=150&format=png",
+		);
+		expect(isReady).toBe(true);
+
+		expect(thumbnail(7, "AvatarBust", "Size48x48")[0]).toBe(
+			"https://www.roblox.com/bust-thumbnail/image?userId=7&width=48&height=48&format=png",
+		);
+		// Arguments it cannot read fall back to a full-body avatar at 420px,
+		// rather than to a URL nothing can load.
+		expect(thumbnail(7)[0]).toBe(
+			"https://www.roblox.com/avatar-thumbnail/image?userId=7&width=420&height=420&format=png",
+		);
 	});
 });
 
@@ -134,33 +302,432 @@ describe("GuiService", () => {
 });
 
 describe("RunService", () => {
+	const runService = (): LoomInstance => game.GetService("RunService");
+
 	it("exposes frame signals and environment predicates", () => {
-		const runService = game.GetService("RunService");
-		const renderStepped = runService.RenderStepped as LoomSignal<[number]>;
-		const heartbeat = runService.Heartbeat as LoomSignal<[number]>;
-		expect(renderStepped.Connect).toBeTypeOf("function");
+		const service = runService();
+		const heartbeat = service.Heartbeat as LoomSignal<[number]>;
+		expect((service.RenderStepped as LoomSignal<[number]>).Connect).toBeTypeOf(
+			"function",
+		);
 		expect(heartbeat.Connect).toBeTypeOf("function");
-		expect(runService.PostSimulation).toBe(heartbeat);
-		expect((runService.IsStudio as () => boolean)()).toBe(false);
-		expect((runService.IsRunning as () => boolean)()).toBe(true);
-		expect((runService.IsClient as () => boolean)()).toBe(true);
+		expect(service.PostSimulation).toBe(heartbeat);
+		// The modern spelling of RenderStepped is the very same signal.
+		expect(service.PreRender).toBe(service.RenderStepped);
+		expect((service.IsStudio as () => boolean)()).toBe(false);
+		expect((service.IsRunning as () => boolean)()).toBe(true);
+		expect((service.IsClient as () => boolean)()).toBe(true);
+	});
+
+	it("places a preview as a running client, not a server or an editor", () => {
+		const service = runService();
+		// The guard shared modules actually write.
+		expect((service.IsServer as () => boolean)()).toBe(false);
+		expect((service.IsEdit as () => boolean)()).toBe(false);
+		expect((service.IsRunMode as () => boolean)()).toBe(true);
+	});
+
+	it("fires Stepped with (time, delta) and PreSimulation with the delta", () => {
+		const service = runService();
+		const stepped = service.Stepped as LoomSignal<[number, number]>;
+		const preSimulation = service.PreSimulation as LoomSignal<[number]>;
+		expect(preSimulation).not.toBe(stepped);
+
+		const steps: [number, number][] = [];
+		const deltas: number[] = [];
+		const a = stepped.Connect((time, delta) => steps.push([time, delta]));
+		const b = preSimulation.Connect((delta) => deltas.push(delta));
+
+		renderStepped.fire(0.5);
+		renderStepped.fire(0.25);
+
+		expect(steps).toHaveLength(2);
+		expect(steps[0]?.[1]).toBe(0.5);
+		expect(steps[1]?.[1]).toBe(0.25);
+		// `time` is running time, so it advances by the delta between frames.
+		expect((steps[1]?.[0] ?? 0) - (steps[0]?.[0] ?? 0)).toBeCloseTo(0.25, 10);
+		// The modern name drops the leading time argument.
+		expect(deltas).toEqual([0.5, 0.25]);
+
+		a.Disconnect();
+		b.Disconnect();
+		// The bridge lets go of the frame loop once nobody is listening.
+		renderStepped.fire(0.1);
+		renderStepped.fire(0.1);
+		expect(steps).toHaveLength(2);
+		expect(deltas).toHaveLength(2);
+	});
+
+	it("runs render-step bindings by priority, lowest first, with the delta", () => {
+		const service = runService();
+		const bind = service.BindToRenderStep as (
+			name: string,
+			priority: number,
+			callback: (deltaTime: number) => void,
+		) => void;
+		const unbind = service.UnbindFromRenderStep as (name: string) => void;
+
+		const order: string[] = [];
+		const deltas: number[] = [];
+		// Bound out of priority order on purpose: bind order must not decide it.
+		bind("camera", 200, (delta) => {
+			order.push("camera");
+			deltas.push(delta);
+		});
+		bind("input", 100, () => order.push("input"));
+		bind("first", 0, () => order.push("first"));
+
+		renderStepped.fire(0.032);
+		expect(order).toEqual(["first", "input", "camera"]);
+		expect(deltas).toEqual([0.032]);
+
+		order.length = 0;
+		unbind("input");
+		renderStepped.fire(0.016);
+		expect(order).toEqual(["first", "camera"]);
+
+		order.length = 0;
+		unbind("first");
+		unbind("camera");
+		renderStepped.fire(0.016);
+		expect(order).toEqual([]);
+	});
+
+	it("reads the priority off an Enum.RenderPriority item too", () => {
+		const service = runService();
+		const bind = service.BindToRenderStep as (
+			name: string,
+			priority: unknown,
+			callback: (deltaTime: number) => void,
+		) => void;
+		const unbind = service.UnbindFromRenderStep as (name: string) => void;
+
+		// `Enum.RenderPriority` is not in the namespace yet, so this stands in
+		// with the engine's own item names and values.
+		const renderPriority = new RobloxEnum("RenderPriority", {
+			First: 0,
+			Input: 100,
+			Camera: 200,
+			Character: 300,
+			Last: 2000,
+		});
+		const order: string[] = [];
+		bind("late", renderPriority.FromName("Last"), () => order.push("late"));
+		bind("early", renderPriority.FromName("First"), () => order.push("early"));
+
+		renderStepped.fire(0.016);
+		expect(order).toEqual(["early", "late"]);
+
+		unbind("late");
+		unbind("early");
+		renderStepped.fire(0.016);
+	});
+
+	it("replaces a binding of the same name, and survives one that throws", () => {
+		const service = runService();
+		const bind = service.BindToRenderStep as (
+			name: string,
+			priority: number,
+			callback: (deltaTime: number) => void,
+		) => void;
+		const unbind = service.UnbindFromRenderStep as (name: string) => void;
+
+		const order: string[] = [];
+		bind("hud", 100, () => order.push("old"));
+		bind("hud", 100, () => order.push("new"));
+		bind("boom", 50, () => {
+			throw new Error("a bad render-step binding");
+		});
+		const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+		renderStepped.fire(0.016);
+
+		// The rebind replaced rather than stacked, and the thrower did not stop
+		// the binding behind it.
+		expect(order).toEqual(["new"]);
+		expect(errorSpy).toHaveBeenCalledTimes(1);
+		errorSpy.mockRestore();
+
+		unbind("hud");
+		unbind("boom");
+		renderStepped.fire(0.016);
+	});
+
+	it("refuses a binding with nothing to call", () => {
+		const service = runService();
+		const bind = service.BindToRenderStep as (
+			name: string,
+			priority: number,
+			callback: unknown,
+		) => void;
+		expect(() => bind("broken", 100, undefined)).toThrow(
+			/\[loom\] RunService:BindToRenderStep\("broken"\)/,
+		);
 	});
 });
 
 describe("UserInputService", () => {
+	const uis = (): LoomInstance => game.GetService("UserInputService");
+
+	afterEach(() => {
+		clearInputState();
+	});
+
 	it("exposes capability props and input signals", () => {
-		const uis = game.GetService("UserInputService");
-		expect(uis.MouseEnabled).toBe(true);
-		expect(uis.TouchEnabled).toBe(false);
-		expect(uis.KeyboardEnabled).toBe(true);
-		expect(uis.GamepadEnabled).toBe(false);
-		expect((uis.InputBegan as LoomSignal<unknown[]>).Connect).toBeTypeOf(
+		const service = uis();
+		// happy-dom presents a fine, hovering pointer and no touch points — a
+		// desktop — and these are measured from exactly that.
+		expect(service.MouseEnabled).toBe(true);
+		expect(service.TouchEnabled).toBe(false);
+		expect(service.KeyboardEnabled).toBe(true);
+		expect(service.GamepadEnabled).toBe(false);
+		expect((service.InputBegan as LoomSignal<unknown[]>).Connect).toBeTypeOf(
 			"function",
 		);
 		expect(
-			(uis.GetFocusedTextBox as () => LoomInstance | undefined)(),
+			(service.GetFocusedTextBox as () => LoomInstance | undefined)(),
 		).toBeUndefined();
-		expect((uis.GetMouseLocation as () => Vector2)()).toEqual(Vector2.zero);
+		expect((service.GetMouseLocation as () => Vector2)()).toEqual(Vector2.zero);
+	});
+
+	it("reports a touch-only device as touch-enabled, not as a desktop", async () => {
+		// The capability flags are read once, when the service is built, so the
+		// only way to see the detection run against a different device is to
+		// build the whole runtime again behind a different `matchMedia`.
+		vi.resetModules();
+		vi.stubGlobal("matchMedia", (query: string) => ({
+			matches: query.includes("coarse"),
+			addEventListener: () => {},
+		}));
+		try {
+			await import("./services");
+			const freshGame = (await import("./game")).game;
+			const service = freshGame.GetService("UserInputService");
+			expect(service.TouchEnabled).toBe(true);
+			expect(service.MouseEnabled).toBe(false);
+			expect(service.KeyboardEnabled).toBe(false);
+		} finally {
+			vi.unstubAllGlobals();
+			vi.resetModules();
+		}
+	});
+
+	it("answers IsKeyDown and GetKeysPressed from the reported key state", () => {
+		const service = uis();
+		const isKeyDown = service.IsKeyDown as (keyCode: unknown) => boolean;
+		const getKeysPressed = service.GetKeysPressed as () => InputObject[];
+
+		expect(isKeyDown(Enum.KeyCode.W)).toBe(false);
+		expect(getKeysPressed()).toEqual([]);
+
+		setKeyState(Enum.KeyCode.W, true);
+		setKeyState(Enum.KeyCode.LeftShift, true);
+		expect(isKeyDown(Enum.KeyCode.W)).toBe(true);
+		expect(isKeyDown(Enum.KeyCode.LeftShift)).toBe(true);
+		expect(isKeyDown(Enum.KeyCode.A)).toBe(false);
+		// The engine takes the bare item name wherever it takes the item.
+		expect(isKeyDown("W")).toBe(true);
+		expect(isKeyDown("A")).toBe(false);
+
+		// Roblox answers with InputObjects, not key codes.
+		const pressed = getKeysPressed();
+		expect(pressed.map((input) => input.KeyCode)).toEqual([
+			Enum.KeyCode.W,
+			Enum.KeyCode.LeftShift,
+		]);
+		expect(pressed[0]?.UserInputType).toBe(Enum.UserInputType.Keyboard);
+		expect(pressed[0]?.UserInputState).toBe(Enum.UserInputState.Begin);
+
+		setKeyState(Enum.KeyCode.W, false);
+		expect(isKeyDown(Enum.KeyCode.W)).toBe(false);
+		expect(getKeysPressed().map((input) => input.KeyCode)).toEqual([
+			Enum.KeyCode.LeftShift,
+		]);
+	});
+
+	it("answers IsMouseButtonPressed from the reported button state", () => {
+		const service = uis();
+		const isPressed = service.IsMouseButtonPressed as (
+			inputType: unknown,
+		) => boolean;
+
+		expect(isPressed(Enum.UserInputType.MouseButton1)).toBe(false);
+		setMouseButtonState(Enum.UserInputType.MouseButton1, true);
+		expect(isPressed(Enum.UserInputType.MouseButton1)).toBe(true);
+		expect(isPressed(Enum.UserInputType.MouseButton2)).toBe(false);
+		expect(isPressed("MouseButton1")).toBe(true);
+		setMouseButtonState(Enum.UserInputType.MouseButton1, false);
+		expect(isPressed(Enum.UserInputType.MouseButton1)).toBe(false);
+	});
+
+	it("clearInputState drops everything held, so a blur cannot stick a key", () => {
+		const service = uis();
+		setKeyState(Enum.KeyCode.W, true);
+		setMouseButtonState(Enum.UserInputType.MouseButton1, true);
+
+		clearInputState();
+
+		expect(
+			(service.IsKeyDown as (key: unknown) => boolean)(Enum.KeyCode.W),
+		).toBe(false);
+		expect(
+			(service.IsMouseButtonPressed as (input: unknown) => boolean)(
+				Enum.UserInputType.MouseButton1,
+			),
+		).toBe(false);
+		expect((service.GetKeysPressed as () => InputObject[])()).toEqual([]);
+	});
+
+	it("exposes the touch signals before anything has fired one", () => {
+		const service = uis();
+		for (const name of ["TouchStarted", "TouchMoved", "TouchEnded"]) {
+			expect((service[name] as LoomSignal<unknown[]>).Connect).toBeTypeOf(
+				"function",
+			);
+		}
+		const seen: unknown[][] = [];
+		const connection = (
+			service.TouchStarted as LoomSignal<[unknown, boolean]>
+		).Connect((touch, processed) => seen.push([touch, processed]));
+
+		// What the renderer's DOM bridge does on a `touchstart`.
+		getEventSignal(service, "TouchStarted").fire(
+			{ Position: Vector2.zero },
+			false,
+		);
+
+		expect(seen).toEqual([[{ Position: Vector2.zero }, false]]);
+		connection.Disconnect();
+	});
+});
+
+describe("ContentProvider", () => {
+	/** The URLs the fake `Image` was actually asked to load, in order. */
+	const requested: string[] = [];
+
+	/**
+	 * A stand-in for the browser's `Image`. A URL with `missing` in it fails, and
+	 * so does anything that is not `http(s)` — a real browser cannot load an
+	 * `rbxassetid://` scheme either. Both outcomes land on the next microtask, so
+	 * the preload under test is genuinely asynchronous.
+	 */
+	class FakeImage {
+		onload: (() => void) | null = null;
+		onerror: (() => void) | null = null;
+		#src = "";
+		get src(): string {
+			return this.#src;
+		}
+		set src(value: string) {
+			this.#src = value;
+			requested.push(value);
+			queueMicrotask(() => {
+				if (value.includes("missing") || !value.startsWith("http")) {
+					this.onerror?.();
+				} else this.onload?.();
+			});
+		}
+	}
+
+	interface ContentProviderShape extends LoomInstance {
+		PreloadAsync(
+			list: unknown[],
+			callback?: (contentId: string, status: EnumItem) => void,
+		): Promise<void>;
+		GetAssetFetchStatus(contentId: string): EnumItem;
+		readonly RequestQueueSize: number;
+	}
+	const contentProvider = (): ContentProviderShape =>
+		game.GetService("ContentProvider") as ContentProviderShape;
+
+	afterEach(() => {
+		requested.length = 0;
+		setContentResolver(undefined);
+		vi.unstubAllGlobals();
+	});
+
+	it("really fetches each id, reports its status, and tracks the queue", async () => {
+		vi.stubGlobal("Image", FakeImage);
+		const service = contentProvider();
+		expect(service.GetAssetFetchStatus("https://loom.test/a.png").Name).toBe(
+			"None",
+		);
+		expect(service.RequestQueueSize).toBe(0);
+
+		const seen: [string, string][] = [];
+		const preloading = service.PreloadAsync(
+			["https://loom.test/a.png", "https://loom.test/missing.png"],
+			(contentId, status) => seen.push([contentId, status.Name]),
+		);
+		// Both requests are in flight the moment the call returns.
+		expect(service.RequestQueueSize).toBe(2);
+
+		await preloading;
+
+		expect(service.RequestQueueSize).toBe(0);
+		expect(requested).toEqual([
+			"https://loom.test/a.png",
+			"https://loom.test/missing.png",
+		]);
+		expect(seen.sort((a, b) => a[0].localeCompare(b[0]))).toEqual([
+			["https://loom.test/a.png", "Success"],
+			["https://loom.test/missing.png", "Failure"],
+		]);
+		expect(service.GetAssetFetchStatus("https://loom.test/a.png").Name).toBe(
+			"Success",
+		);
+		expect(
+			service.GetAssetFetchStatus("https://loom.test/missing.png").Name,
+		).toBe("Failure");
+	});
+
+	it("preloads the content property of an instance in the list", async () => {
+		vi.stubGlobal("Image", FakeImage);
+		const label = createInstance("ImageLabel");
+		label.Image = "https://loom.test/from-instance.png";
+
+		await contentProvider().PreloadAsync([label, createInstance("Frame")]);
+
+		// The Frame carries no content at all, so it is skipped rather than
+		// fetched as an empty URL.
+		expect(requested).toEqual(["https://loom.test/from-instance.png"]);
+	});
+
+	it("fetches through the installed content resolver", async () => {
+		vi.stubGlobal("Image", FakeImage);
+		setContentResolver((contentId) =>
+			contentId === "rbxassetid://12345"
+				? "https://loom.test/resolved.png"
+				: undefined,
+		);
+		const service = contentProvider();
+
+		await service.PreloadAsync(["rbxassetid://12345", "rbxassetid://999"]);
+
+		// The resolved id was fetched at its real URL; the unresolved one was
+		// handed to the browser as-is and honestly reported as a failure.
+		expect(requested).toEqual([
+			"https://loom.test/resolved.png",
+			"rbxassetid://999",
+		]);
+		expect(service.GetAssetFetchStatus("rbxassetid://12345").Name).toBe(
+			"Success",
+		);
+		expect(service.GetAssetFetchStatus("rbxassetid://999").Name).toBe(
+			"Failure",
+		);
+	});
+
+	it("survives a per-asset callback that throws", async () => {
+		vi.stubGlobal("Image", FakeImage);
+		const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+		await expect(
+			contentProvider().PreloadAsync(["https://loom.test/b.png"], () => {
+				throw new Error("a bad progress handler");
+			}),
+		).resolves.toBeUndefined();
+		expect(errorSpy).toHaveBeenCalledTimes(1);
+		errorSpy.mockRestore();
 	});
 });
 

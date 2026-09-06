@@ -1,26 +1,33 @@
 /**
  * `services.ts` — the fake Roblox service singletons.
  *
- * GuiService (selection + reduced motion), RunService (frame signals),
- * UserInputService (global input signals + focus/mouse stores), Players
- * (LocalPlayer → PlayerGui, pre-built so `WaitForChild` works synchronously),
- * Workspace (CurrentCamera + viewport size), a real CollectionService (the tag
- * registry behind `@rbxts/react`'s `Tag` prop), a no-op ContextActionService,
- * the deterministic slice of HttpService (`GenerateGUID` over Web Crypto, plus
- * JSON encoding), TextService measuring against the renderer's own fonts,
- * Debris on real timers, StarterGui's core-UI no-ops, and the services that are
- * only containers. Each is a real `LoomInstance` parented under `game`, so
- * `GetFullName`, `GetPropertyChangedSignal`, and `IsA` behave normally.
+ * GuiService (selection + reduced motion), RunService (the whole frame API —
+ * environment predicates, RenderStepped/Stepped/Heartbeat and their modern
+ * aliases, and priority-ordered render-step bindings), UserInputService (global
+ * input signals, the held-key/held-button store, and honest device capability
+ * flags), Players (LocalPlayer → PlayerGui, pre-built so `WaitForChild` works
+ * synchronously, plus a clearly-fake identity and avatar thumbnails), Workspace
+ * (CurrentCamera + viewport size), a real CollectionService (the tag registry
+ * behind `@rbxts/react`'s `Tag` prop), a no-op ContextActionService, a
+ * ContentProvider that genuinely preloads images, the deterministic slice of
+ * HttpService (`GenerateGUID` over Web Crypto, plus JSON encoding), TextService
+ * measuring against the renderer's own fonts, Debris on real timers,
+ * StarterGui's core-UI no-ops, and the services that are only containers. Each
+ * is a real `LoomInstance` parented under `game`, so `GetFullName`,
+ * `GetPropertyChangedSignal`, and `IsA` behave normally.
  */
 import { Vector2 } from "./datatypes";
-import { EnumItem } from "./enums";
+import { Enum, EnumItem, enumName, RobloxEnum } from "./enums";
 import { getService, registerService } from "./game";
+import { type InputObject, makeInputObject } from "./input";
 import {
 	createInstance,
 	getEventSignal,
+	isLoomInstance,
 	type LoomInstance,
 	registerClassMethods,
 	registerPropertyInterceptor,
+	registerPropertyReader,
 	setRawProperty,
 } from "./instance";
 import { heartbeat, renderStepped } from "./scheduler";
@@ -83,17 +90,184 @@ registerService("GuiService", () => {
 
 // --- RunService --------------------------------------------------------------
 
+/**
+ * Where a preview sits in Roblox's client/server/edit matrix.
+ *
+ * It is a *running client*: the DOM is the player's screen, there is no server
+ * peer, and nothing is being edited. `IsServer` is the one that earns its keep —
+ * shared modules open with `if RunService:IsServer() then … end` to skip the
+ * half of themselves that only makes sense on a server, and a missing method
+ * took the module down before its own guard could run.
+ */
 registerClassMethods("RunService", {
 	IsStudio: () => false,
 	IsRunning: () => true,
 	IsClient: () => true,
+	IsServer: () => false,
+	IsEdit: () => false,
+	IsRunMode: () => true,
+	BindToRenderStep: (
+		_self: LoomInstance,
+		name: string,
+		priority: unknown,
+		callback: (deltaTime: number) => void,
+	) => bindToRenderStep(name, priority, callback),
+	UnbindFromRenderStep: (_self: LoomInstance, name: string) =>
+		unbindFromRenderStep(name),
 });
+
+/**
+ * `Stepped`, and its modern spelling `PreSimulation`, driven off the frame loop.
+ *
+ * Roblox runs RenderStepped → Stepped → Heartbeat; loom's scheduler exposes only
+ * the two ends of that (`scheduler.ts` fires render, flushes, then fires
+ * heartbeat), so the simulation phase rides the render tick. Handlers therefore
+ * interleave with other `RenderStepped` listeners instead of running strictly
+ * after them — the ordering *between* two different frame signals is the one
+ * thing this cannot reproduce without a third scheduler phase. Everything a
+ * `Stepped` handler actually reads is right: the running time, the delta, and a
+ * tree nothing has flushed yet.
+ *
+ * The bridge is lazy in both directions. It connects on the first listener and
+ * tears itself down on the first frame after the last one leaves, because a
+ * permanent connection to `renderStepped` would hold the rAF loop awake for the
+ * life of the page — and an idle preview is supposed to cost nothing.
+ */
+let simulationTime = 0;
+let stepBridge: LoomConnection | undefined;
+
+function ensureStepBridge(): void {
+	if (stepBridge) return;
+	stepBridge = renderStepped.Connect((delta) => {
+		if (!stepped.hasConnections && !preSimulation.hasConnections) {
+			stepBridge?.Disconnect();
+			stepBridge = undefined;
+			return;
+		}
+		simulationTime += delta;
+		stepped.fire(simulationTime, delta);
+		preSimulation.fire(delta);
+	});
+}
+
+/** `RunService.Stepped` — `(time, deltaTime)`, as the engine fires it. */
+const stepped = new LoomSignal<[number, number]>({
+	onConnect: ensureStepBridge,
+	name: "RunService.Stepped",
+});
+
+/**
+ * `RunService.PreSimulation` — the same phase under the name Roblox ships now,
+ * which dropped the leading `time` argument and passes only the delta. A
+ * separate signal rather than an alias of `Stepped` precisely because of that:
+ * aliasing would hand every `PreSimulation` handler the running time where it
+ * expects the delta.
+ */
+const preSimulation = new LoomSignal<[number]>({
+	onConnect: ensureStepBridge,
+	name: "RunService.PreSimulation",
+});
+
+/**
+ * `BindToRenderStep` — named per-frame callbacks, in priority order.
+ *
+ * Ordering is the entire point of the API: `Enum.RenderPriority` exists so a
+ * camera binding at 200 can see what an input binding at 100 already wrote, and
+ * a version that ran callbacks in bind order would look right in a demo and be
+ * wrong in exactly the case the API was reached for. So the list is kept sorted
+ * by priority, lowest first, with bind order breaking ties.
+ *
+ * Rebinding a live name replaces it rather than stacking a second callback —
+ * the name is the identity, which is what makes `UnbindFromRenderStep(name)`
+ * able to mean anything.
+ */
+interface RenderStepBinding {
+	readonly name: string;
+	readonly priority: number;
+	readonly callback: (deltaTime: number) => void;
+	/** Bind counter: equal priorities keep the order they were bound in. */
+	readonly order: number;
+}
+
+const renderStepBindings: RenderStepBinding[] = [];
+let renderStepBridge: LoomConnection | undefined;
+let renderStepCounter = 0;
+
+function bindToRenderStep(
+	name: string,
+	priority: unknown,
+	callback: (deltaTime: number) => void,
+): undefined {
+	if (typeof callback !== "function") {
+		throw new Error(
+			`[loom] RunService:BindToRenderStep("${name}") needs a function to call`,
+		);
+	}
+	unbindFromRenderStep(name);
+	renderStepBindings.push({
+		name,
+		// Roblox takes a plain number here and casts nothing, but
+		// `Enum.RenderPriority.Camera` is what the priority *means* and is an easy
+		// thing to pass by hand; reading its `Value` is the same courtesy every
+		// other enum-valued read in loom gives.
+		priority:
+			priority instanceof EnumItem
+				? priority.Value
+				: typeof priority === "number"
+					? priority
+					: 0,
+		callback,
+		order: renderStepCounter++,
+	});
+	renderStepBindings.sort(
+		(a, b) => a.priority - b.priority || a.order - b.order,
+	);
+	renderStepBridge ??= renderStepped.Connect(runRenderStepBindings);
+	return undefined;
+}
+
+function unbindFromRenderStep(name: string): undefined {
+	const index = renderStepBindings.findIndex(
+		(binding) => binding.name === name,
+	);
+	if (index >= 0) renderStepBindings.splice(index, 1);
+	return undefined;
+}
+
+function runRenderStepBindings(delta: number): void {
+	if (renderStepBindings.length === 0) {
+		// Nothing left to run: let the frame loop go back to sleep.
+		renderStepBridge?.Disconnect();
+		renderStepBridge = undefined;
+		return;
+	}
+	// A binding may bind or unbind others from inside its callback, so iterate a
+	// snapshot and re-check membership: one that unbound itself this frame asked
+	// not to be called, and one bound this frame starts next frame.
+	for (const binding of [...renderStepBindings]) {
+		if (!renderStepBindings.includes(binding)) continue;
+		try {
+			binding.callback(delta);
+		} catch (err) {
+			// The same isolation the signals give listeners: one bad binding must
+			// not take the frame loop, and every other binding, down with it.
+			console.error(
+				`loom: the "${binding.name}" BindToRenderStep callback threw:`,
+				err,
+			);
+		}
+	}
+}
 
 registerService("RunService", () => {
 	const service = createInstance("RunService", "RunService");
 	// The scheduler owns the frame loop; the service just exposes its signals.
 	setRawProperty(service, "RenderStepped", renderStepped);
+	setRawProperty(service, "Stepped", stepped);
 	setRawProperty(service, "Heartbeat", heartbeat);
+	// The names Roblox ships now for the same three phases.
+	setRawProperty(service, "PreRender", renderStepped);
+	setRawProperty(service, "PreSimulation", preSimulation);
 	setRawProperty(service, "PostSimulation", heartbeat);
 	return service;
 });
@@ -119,19 +293,138 @@ export function setMouseLocation(position: Vector2): void {
 	mouseLocation = position;
 }
 
+/**
+ * The held-key and held-button state behind `IsKeyDown`, `GetKeysPressed` and
+ * `IsMouseButtonPressed`.
+ *
+ * The split is deliberate, and it is the contract with `@loom-dev/renderer`:
+ * the renderer owns every DOM listener and the `KeyboardEvent.code` →
+ * `Enum.KeyCode` table and reports transitions here; this side owns the state
+ * and answers the service's questions from it. Neither reaches into the other,
+ * so the key table can grow without touching the service and the service can
+ * grow without touching the DOM.
+ *
+ * Keyed by item `Name` rather than by the `EnumItem`: the items are singletons,
+ * but the engine also takes the bare string (`IsKeyDown("Space")`) and so does
+ * every other enum-valued read in loom.
+ */
+const keysDown = new Map<string, EnumItem<"KeyCode">>();
+const mouseButtonsDown = new Map<string, EnumItem<"UserInputType">>();
+
+/** DOM bridge hook: a key went down (`true`) or came back up (`false`). */
+export function setKeyState(key: EnumItem<"KeyCode">, down: boolean): void {
+	if (down) keysDown.set(key.Name, key);
+	else keysDown.delete(key.Name);
+}
+
+/** DOM bridge hook: a mouse button went down (`true`) or came up (`false`). */
+export function setMouseButtonState(
+	button: EnumItem<"UserInputType">,
+	down: boolean,
+): void {
+	if (down) mouseButtonsDown.set(button.Name, button);
+	else mouseButtonsDown.delete(button.Name);
+}
+
+/**
+ * Drop every held key and button.
+ *
+ * The renderer calls this when the window loses focus. A browser stops
+ * delivering `keyup` the moment focus leaves the page, so a key held through an
+ * alt-tab is never reported as released and would read as held forever — the
+ * classic stuck-movement-key bug, which in a preview looks like loom is broken
+ * rather than like the tab changed.
+ */
+export function clearInputState(): void {
+	keysDown.clear();
+	mouseButtonsDown.clear();
+}
+
+/** `matchMedia`'s answer, or `undefined` where there is no `matchMedia`. */
+function mediaMatches(query: string): boolean | undefined {
+	if (typeof matchMedia !== "function") return undefined;
+	try {
+		return matchMedia(query).matches;
+	} catch {
+		// Environments without full media-query support have no opinion.
+		return undefined;
+	}
+}
+
+/**
+ * `TouchEnabled` for the machine the preview is actually on.
+ *
+ * `maxTouchPoints` is the direct answer where the browser gives one; the coarse
+ * pointer query catches the rest. A hybrid laptop reports both touch and mouse,
+ * which is also what Roblox reports there — these are three independent
+ * capabilities, not a device class.
+ */
+function detectTouch(): boolean {
+	const points =
+		typeof navigator === "undefined" ? 0 : (navigator.maxTouchPoints ?? 0);
+	return points > 0 || mediaMatches("(any-pointer: coarse)") === true;
+}
+
 registerClassMethods("UserInputService", {
 	GetFocusedTextBox: () => focusedTextBox,
 	GetMouseLocation: () => mouseLocation,
+	IsKeyDown: (_self: LoomInstance, keyCode: unknown) => {
+		const name = enumName(keyCode);
+		return name !== undefined && keysDown.has(name);
+	},
+	IsMouseButtonPressed: (_self: LoomInstance, inputType: unknown) => {
+		const name = enumName(inputType);
+		return name !== undefined && mouseButtonsDown.has(name);
+	},
+	/**
+	 * Roblox answers with `InputObject`s, not key codes — handler code reads
+	 * `.KeyCode` off each one — so these are built exactly the way the DOM
+	 * bridge builds the ones it dispatches, with state `Begin`, because every
+	 * key in the list is by definition still held.
+	 */
+	GetKeysPressed: (): InputObject[] =>
+		[...keysDown.values()].map((keyCode) =>
+			makeInputObject({
+				UserInputType: Enum.UserInputType.Keyboard,
+				UserInputState: Enum.UserInputState.Begin,
+				KeyCode: keyCode,
+			}),
+		),
 });
 
 registerService("UserInputService", () => {
 	const service = createInstance("UserInputService", "UserInputService");
-	setRawProperty(service, "MouseEnabled", true);
-	setRawProperty(service, "TouchEnabled", false);
-	setRawProperty(service, "KeyboardEnabled", true);
+	// Measured, not asserted. UI code branches hard on these — control-scheme
+	// hints, hit-target sizes, whether a keyboard shortcut is worth showing at
+	// all — and a hardcoded `TouchEnabled = false` was a lie on every phone and
+	// tablet a preview runs on.
+	setRawProperty(
+		service,
+		"MouseEnabled",
+		mediaMatches("(any-pointer: fine)") ?? true,
+	);
+	setRawProperty(service, "TouchEnabled", detectTouch());
+	// No browser API reports whether a physical keyboard exists, so hover
+	// capability stands in for it: a machine with a hovering pointer is a
+	// desktop and has one, a touch-only device does not. A proxy, not a fact —
+	// and the closest one the platform offers.
+	setRawProperty(
+		service,
+		"KeyboardEnabled",
+		mediaMatches("(any-hover: hover)") ?? true,
+	);
+	// Gamepads only become visible to a page after a button press on them, so
+	// there is nothing honest to report at construction time.
 	setRawProperty(service, "GamepadEnabled", false);
 	// InputBegan/InputChanged/InputEnded are lazy event signals on the
 	// instance itself; the DOM bridge fires them via `getEventSignal`.
+	//
+	// The touch trio is not in the proxy's built-in event list, so it is created
+	// here: `UserInputService.TouchStarted` has to resolve to a signal on the
+	// first read, which is long before anything has fired one.
+	for (const event of ["TouchStarted", "TouchMoved", "TouchEnded"]) {
+		getEventSignal(service, event);
+	}
 	return service;
 });
 
@@ -151,14 +444,135 @@ registerClassMethods("PlayerGui", {
 		hitTester ? hitTester(x, y) : [],
 });
 
+/**
+ * One item of `Enum.<type>` — from the real namespace when `enums.ts` declares
+ * that type, and from an enum built here when it does not.
+ *
+ * The enums these services answer with — `MembershipType`, `AssetFetchStatus` —
+ * are not in the namespace yet. Handing back a real `EnumItem` regardless keeps
+ * everything app code reads off one correct: `.Name`, `.Value`, `.EnumType` and
+ * `tostring` all match the engine today, and the moment the namespace grows the
+ * type this picks up the shared item, so identity comparisons
+ * (`=== Enum.MembershipType.None`) start working with no change here. The
+ * alternative — a bare string, or `undefined` — is wrong in a way that survives
+ * into whatever the app does with the value.
+ *
+ * The built enums are cached per type name so every item of one shares a single
+ * `RobloxEnum`, which is what makes `item.EnumType` comparable across calls.
+ */
+const fallbackEnums = new Map<string, RobloxEnum>();
+
+function enumItem<T extends string>(
+	enumType: T,
+	values: Record<string, number>,
+	name: string,
+): EnumItem<T> {
+	const declared = (
+		Enum as unknown as Record<string, RobloxEnum<T> | undefined>
+	)[enumType];
+	let enumeration = declared;
+	if (!enumeration) {
+		const cached = fallbackEnums.get(enumType) as RobloxEnum<T> | undefined;
+		enumeration = cached ?? new RobloxEnum(enumType, values);
+		fallbackEnums.set(enumType, enumeration as unknown as RobloxEnum);
+	}
+	// A declared enum missing the item loom asked for still gets an item built
+	// against the real enum, so `tostring` reads `Enum.<Type>.<Name>` either way.
+	return (
+		enumeration.FromName(name) ??
+		new EnumItem(enumeration, name, values[name] ?? 0)
+	);
+}
+
+/** The engine's own `Enum.MembershipType` items and values. */
+const MEMBERSHIP_TYPES: Record<string, number> = {
+	None: 0,
+	BuildersClub: 1,
+	TurboBuildersClub: 2,
+	OutrageousBuildersClub: 3,
+	Premium: 4,
+};
+
+/**
+ * The local player's identity. Every value here is invented.
+ *
+ * loom has no account, no session and no Roblox web API, so there is nothing
+ * true to report — but there *is* UI that renders a profile card, and printing
+ * `undefined` beside a blank avatar is not more honest, only less useful. These
+ * are stable (a preview that re-renders must not change identity mid-session)
+ * and fake on sight: `1234567890` is nobody's user id, and the display name says
+ * so out loud.
+ */
+const FAKE_USER_ID = 1234567890;
+const FAKE_DISPLAY_NAME = "Loom Player";
+/** Days since the account was created, which is how Roblox counts it. */
+const FAKE_ACCOUNT_AGE = 365;
+
 registerService("Players", () => {
 	const players = createInstance("Players", "Players");
 	const player = createInstance("Player", "Player");
 	const playerGui = createInstance("PlayerGui", "PlayerGui");
 	playerGui.Parent = player;
 	player.Parent = players;
+	setRawProperty(player, "UserId", FAKE_USER_ID);
+	setRawProperty(player, "DisplayName", FAKE_DISPLAY_NAME);
+	setRawProperty(player, "AccountAge", FAKE_ACCOUNT_AGE);
+	setRawProperty(
+		player,
+		"MembershipType",
+		enumItem("MembershipType", MEMBERSHIP_TYPES, "None"),
+	);
 	setRawProperty(players, "LocalPlayer", player);
 	return players;
+});
+
+/** Roblox's thumbnail endpoints, keyed by `Enum.ThumbnailType` item name. */
+const THUMBNAIL_ENDPOINTS: Readonly<Record<string, string>> = {
+	AvatarThumbnail: "avatar-thumbnail",
+	AvatarBust: "bust-thumbnail",
+	HeadShot: "headshot-thumbnail",
+};
+
+/** `Enum.ThumbnailSize.Size420x420` → `420`; anything unreadable → `420`. */
+function thumbnailPixels(size: unknown): number {
+	const parsed = /^Size(\d+)x\d+$/.exec(enumName(size) ?? "");
+	return parsed ? Number(parsed[1]) : 420;
+}
+
+/**
+ * `Players:GetUserThumbnailAsync(userId, thumbnailType, thumbnailSize)` →
+ * `[content, isReady]`.
+ *
+ * The content is a real Roblox thumbnail URL — `www.roblox.com/<kind>-thumbnail
+ * /image`, the redirecting endpoint that has served avatar images for years —
+ * so the image layer can load it straight into an `<img>` and a profile card in
+ * a preview shows the same avatar it will in game. It cannot be the
+ * `tr.rbxcdn.com` hash URL the engine returns: that hash only comes back from a
+ * thumbnails API call, which a preview will not make on anyone's behalf.
+ *
+ * `isReady` is always `true`. Roblox reports `false` while its thumbnail farm is
+ * still rendering an avatar it has never drawn; here the browser does the
+ * fetching, and answering "not ready" for a URL that is perfectly loadable would
+ * strand every retry loop written around the flag.
+ */
+registerClassMethods("Players", {
+	GetUserThumbnailAsync: (
+		_self: LoomInstance,
+		userId: number,
+		thumbnailType?: unknown,
+		thumbnailSize?: unknown,
+	) => {
+		const kind =
+			THUMBNAIL_ENDPOINTS[enumName(thumbnailType) ?? ""] ?? "avatar-thumbnail";
+		const pixels = thumbnailPixels(thumbnailSize);
+		const id = Number.isFinite(Number(userId))
+			? Math.trunc(Number(userId))
+			: FAKE_USER_ID;
+		return [
+			`https://www.roblox.com/${kind}/image?userId=${id}&width=${pixels}&height=${pixels}&format=png`,
+			true,
+		];
+	},
 });
 
 // --- Workspace ---------------------------------------------------------------
@@ -522,6 +936,144 @@ registerClassMethods("StarterGui", {
 	SetCoreGuiEnabled: () => undefined,
 	GetCoreGuiEnabled: () => true,
 });
+
+// --- ContentProvider ---------------------------------------------------------
+
+/** The engine's own `Enum.AssetFetchStatus` items and values. */
+const ASSET_FETCH_STATUSES: Record<string, number> = {
+	None: 0,
+	Success: 1,
+	Failure: 2,
+	TimedOut: 3,
+};
+
+const ASSET_NONE = enumItem("AssetFetchStatus", ASSET_FETCH_STATUSES, "None");
+const ASSET_SUCCESS = enumItem(
+	"AssetFetchStatus",
+	ASSET_FETCH_STATUSES,
+	"Success",
+);
+const ASSET_FAILURE = enumItem(
+	"AssetFetchStatus",
+	ASSET_FETCH_STATUSES,
+	"Failure",
+);
+
+let contentResolver: ((contentId: string) => string | undefined) | undefined;
+
+/**
+ * Install the `rbxassetid://` → URL resolver `PreloadAsync` fetches through.
+ *
+ * The runtime has no idea how an asset id becomes a URL — that is the host's
+ * business (`@loom-dev/preview` serves them off its own asset route, a static
+ * build bakes a manifest), and it is already the same question the renderer's
+ * image resolver answers. Without one, an `rbxassetid://` in a preload list is
+ * handed to the browser as-is and honestly reports `Failure`; with one, the
+ * preload warms exactly the cache entry the image layer will read from.
+ */
+export function setContentResolver(
+	resolver: ((contentId: string) => string | undefined) | undefined,
+): void {
+	contentResolver = resolver;
+}
+
+const assetStatus = new Map<string, EnumItem<"AssetFetchStatus">>();
+let requestQueueSize = 0;
+
+/** The content id an entry names: a string is one, an instance carries one. */
+function contentIdOf(entry: unknown): string | undefined {
+	if (typeof entry === "string") return entry === "" ? undefined : entry;
+	// Roblox takes instances too, and preloads whatever content property they
+	// carry — the point of passing an ImageLabel is "fetch its Image".
+	if (!isLoomInstance(entry)) return undefined;
+	for (const key of ["Image", "Texture", "TextureID", "SoundId"]) {
+		const value = entry[key];
+		if (typeof value === "string" && value !== "") return value;
+	}
+	return undefined;
+}
+
+/** Load one content id, answering whether the browser actually got it. */
+function fetchContent(contentId: string): Promise<boolean> {
+	const url = contentResolver?.(contentId) ?? contentId;
+	if (typeof Image !== "function") return Promise.resolve(false);
+	return new Promise<boolean>((resolve) => {
+		const image = new Image();
+		image.onload = () => resolve(true);
+		image.onerror = () => resolve(false);
+		image.src = url;
+	});
+}
+
+/**
+ * `ContentProvider` — a real preloader rather than a stub.
+ *
+ * `PreloadAsync` genuinely fetches: each id goes through an `Image`, so the
+ * browser cache is warm by the time the scene shows it, which is the entire
+ * reason a loading screen calls this. The per-asset callback fires with the
+ * `(contentId, status)` pair Roblox passes, so a progress bar counts up for
+ * real.
+ *
+ * The one thing it cannot do is yield. Roblox blocks the calling thread until
+ * every asset has resolved; a browser has one thread it is not allowed to
+ * block, so this returns a promise for that same moment — `await` it in preview
+ * code, and compiled roblox-ts that ignores the return value simply carries on
+ * while the fetches run, which is the honest closest behaviour and never worse
+ * than not preloading at all.
+ */
+async function preloadAsync(
+	list: unknown,
+	callback?: (contentId: string, status: EnumItem<"AssetFetchStatus">) => void,
+): Promise<void> {
+	const entries = Array.isArray(list) ? (list as unknown[]) : [list];
+	await Promise.all(
+		entries.map(async (entry) => {
+			const contentId = contentIdOf(entry);
+			if (contentId === undefined) return;
+			requestQueueSize++;
+			let loaded = false;
+			try {
+				loaded = await fetchContent(contentId);
+			} finally {
+				requestQueueSize--;
+			}
+			const status = loaded ? ASSET_SUCCESS : ASSET_FAILURE;
+			assetStatus.set(contentId, status);
+			try {
+				callback?.(contentId, status);
+			} catch (err) {
+				// A loading screen's own progress handler must not sink the rest of
+				// the preload, and there is nowhere else to put its error.
+				console.error("loom: a PreloadAsync callback threw:", err);
+			}
+		}),
+	);
+}
+
+registerClassMethods("ContentProvider", {
+	PreloadAsync: (
+		_self: LoomInstance,
+		list: unknown,
+		callback?: (
+			contentId: string,
+			status: EnumItem<"AssetFetchStatus">,
+		) => void,
+	) => preloadAsync(list, callback),
+	GetAssetFetchStatus: (_self: LoomInstance, contentId: string) =>
+		assetStatus.get(contentId) ?? ASSET_NONE,
+});
+
+// Derived, not stored: the number of preloads in flight changes several times
+// per `PreloadAsync` call and nothing should have to remember to write it.
+registerPropertyReader(
+	"ContentProvider",
+	"RequestQueueSize",
+	() => requestQueueSize,
+);
+
+registerService("ContentProvider", () =>
+	createInstance("ContentProvider", "ContentProvider"),
+);
 
 // --- plain containers --------------------------------------------------------
 
