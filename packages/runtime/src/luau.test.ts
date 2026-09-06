@@ -7,10 +7,12 @@ import {
 	assert,
 	bit32,
 	buffer,
+	coroutine,
 	debug,
 	ipairs,
 	LUAU_IS_EMPTY,
 	LUAU_SIZE,
+	LuauThread,
 	math,
 	os,
 	pairs,
@@ -31,6 +33,7 @@ import {
 	utf8,
 	xpcall,
 } from "./luau";
+import { LoomSignal } from "./signal";
 
 describe("pcall", () => {
 	it("returns [true, result] on success", () => {
@@ -830,7 +833,9 @@ describe("datatype arithmetic", () => {
 
 	it("audited lattice Enum usages exist", () => {
 		expect(Enum.UserInputType.MouseButton1.Name).toBe("MouseButton1");
-		expect(Enum.KeyCode.PageDown.EnumType).toBe("KeyCode");
+		// `EnumType` is the enum itself, not its name: `Enum.KeyCode.A.EnumType ==
+		// Enum.KeyCode` is what the engine answers.
+		expect(Enum.KeyCode.PageDown.EnumType).toBe(Enum.KeyCode);
 		expect(Enum.ScreenInsets.CoreUISafeInsets).toBeDefined();
 		expect(Enum.ScrollingDirection.XY).toBeDefined();
 		expect(Enum.TextTruncate.AtEnd).toBeDefined();
@@ -895,5 +900,455 @@ describe("the size/isEmpty macro keys", () => {
 		expect(Object.prototype.propertyIsEnumerable.call({}, LUAU_SIZE)).toBe(
 			false,
 		);
+	});
+});
+
+describe("string.format's printf grammar", () => {
+	it("honours width and the zero flag", () => {
+		expect(string.format("%02d:%02d", 9, 5)).toBe("09:05");
+		expect(string.format("%5d|", 42)).toBe("   42|");
+		expect(string.format("%05d", 42)).toBe("00042");
+		// The zero pad goes between the sign and the digits, never in front.
+		expect(string.format("%05d", -42)).toBe("-0042");
+	});
+
+	it("left-aligns with the minus flag", () => {
+		expect(string.format("%-10s|", "hi")).toBe("hi        |");
+		expect(string.format("%-6.2f|", 1.5)).toBe("1.50  |");
+		// `-` wins over `0`, as it does in C.
+		expect(string.format("%-05d|", 7)).toBe("7    |");
+	});
+
+	it("signs numbers with + and space", () => {
+		expect(string.format("%+d", 5)).toBe("+5");
+		expect(string.format("%+d", -5)).toBe("-5");
+		expect(string.format("% d", 5)).toBe(" 5");
+		expect(string.format("%+.1f", 0.24)).toBe("+0.2");
+		expect(string.format("%+06.1f", -3.5)).toBe("-003.5");
+	});
+
+	it("combines width and precision on floats", () => {
+		expect(string.format("%5.1f", 9.87)).toBe("  9.9");
+		expect(string.format("%.3f", 1.5)).toBe("1.500");
+		expect(string.format("%.0f", 2.4)).toBe("2");
+		expect(string.format("%8.3f", -1.5)).toBe("  -1.500");
+	});
+
+	it("formats integers, octal, hex and unsigned", () => {
+		expect(string.format("%i", -7.9)).toBe("-7");
+		expect(string.format("%o", 8)).toBe("10");
+		expect(string.format("%#o", 8)).toBe("010");
+		expect(string.format("%x", 255)).toBe("ff");
+		expect(string.format("%X", 255)).toBe("FF");
+		expect(string.format("%#x", 255)).toBe("0xff");
+		expect(string.format("%#010x", 255)).toBe("0x000000ff");
+		// Luau's integers are 32-bit, so the unsigned view of -1 is 0xffffffff.
+		expect(string.format("%x", -1)).toBe("ffffffff");
+		expect(string.format("%u", -1)).toBe("4294967295");
+		// A precision on an integer is a minimum digit count, not a rounding.
+		expect(string.format("%.5d", 42)).toBe("00042");
+	});
+
+	it("formats exponential and general notation the way C does", () => {
+		// Two exponent digits minimum — JS alone would print `1.5e+3`.
+		expect(string.format("%e", 1500)).toBe("1.500000e+03");
+		expect(string.format("%.2e", 1500)).toBe("1.50e+03");
+		expect(string.format("%E", 1500)).toBe("1.500000E+03");
+		expect(string.format("%g", 100000)).toBe("100000");
+		expect(string.format("%g", 1000000)).toBe("1e+06");
+		expect(string.format("%g", 0.0001)).toBe("0.0001");
+		expect(string.format("%g", 0.00001)).toBe("1e-05");
+		expect(string.format("%g", 1.5)).toBe("1.5");
+		expect(string.format("%G", 0.00001)).toBe("1E-05");
+	});
+
+	it("truncates strings with a precision and formats chars", () => {
+		expect(string.format("%.2s", "hello")).toBe("he");
+		expect(string.format("%6.2s|", "hello")).toBe("    he|");
+		expect(string.format("%c%c", 72, 105)).toBe("Hi");
+	});
+
+	it("quotes with %q the way Lua reads back", () => {
+		expect(string.format("%q", 'a"b')).toBe('"a\\"b"');
+		expect(string.format("%q", "a\\b")).toBe('"a\\\\b"');
+		// A newline escapes to a backslash and a *real* newline, not `\n`.
+		expect(string.format("%q", "a\nb")).toBe('"a\\\nb"');
+		expect(string.format("%q", "a\tb")).toBe('"a\\9b"');
+	});
+
+	it("tostrings anything through Luau's %*", () => {
+		expect(string.format("%*", 12)).toBe("12");
+		expect(string.format("key=%*", undefined)).toBe("key=nil");
+		expect(string.format("%*", Enum.KeyCode.Space)).toBe("Enum.KeyCode.Space");
+	});
+
+	it("keeps %% and leaves an unknown conversion alone", () => {
+		expect(string.format("100%%")).toBe("100%");
+		expect(string.format("%d%%", 50)).toBe("50%");
+		// The engine raises "invalid conversion"; a preview should still render.
+		expect(string.format("%y")).toBe("%y");
+	});
+
+	it("still formats the plain cases the old three-case switch did", () => {
+		expect(string.format("%d items", 3.7)).toBe("3 items");
+		expect(string.format("%s!", "hi")).toBe("hi!");
+		expect(string.format("%.2f", 1.2345)).toBe("1.23");
+	});
+});
+
+describe("string.gsub replacements", () => {
+	it("expands %0 and %1 back-references in a string repl", () => {
+		expect(string.gsub("hello", "(l)", "[%1]")).toEqual(["he[l][l]o", 2]);
+		expect(string.gsub("ab", "%a", "<%0>")).toEqual(["<a><b>", 2]);
+		// With no captures at all, %1 names the whole match, as it does in Lua.
+		expect(string.gsub("ab", "%a", "<%1>")).toEqual(["<a><b>", 2]);
+		expect(string.gsub("a", "a", "100%%")).toEqual(["100%", 1]);
+	});
+
+	it("calls a function repl with the captures", () => {
+		expect(
+			string.gsub("hello world", "%w+", (word) => word.toUpperCase()),
+		).toEqual(["HELLO WORLD", 2]);
+		const seen: string[][] = [];
+		const [out] = string.gsub("k=v", "(%a+)=(%a+)", (key, value) => {
+			seen.push([key, value]);
+			return `${value}=${key}`;
+		});
+		expect(out).toBe("v=k");
+		expect(seen).toEqual([["k", "v"]]);
+	});
+
+	it("keeps the original text when a function repl returns nil or false", () => {
+		expect(
+			string.gsub("ab", "%a", (c) => (c === "a" ? "A" : undefined)),
+		).toEqual(["Ab", 2]);
+		expect(string.gsub("ab", "%a", () => false)).toEqual(["ab", 2]);
+		// The count is every *match*, not every substitution — Lua counts matches.
+		expect(string.gsub("abc", "%a", () => false)[1]).toBe(3);
+	});
+
+	it("indexes a table repl by the first capture", () => {
+		expect(
+			string.gsub("$name is $age", "%$(%a+)", { name: "Ann", age: "7" }),
+		).toEqual(["Ann is 7", 2]);
+		// A missing key is nil, so that match survives untouched.
+		expect(string.gsub("$name $who", "%$(%a+)", { name: "Ann" })).toEqual([
+			"Ann $who",
+			2,
+		]);
+		const map = new Map([["a", "1"]]);
+		expect(string.gsub("ab", "%a", map)).toEqual(["1b", 2]);
+	});
+
+	it("accepts a number repl and returns the Lua (string, count) pair", () => {
+		expect(string.gsub("ab", "%a", 0)).toEqual(["00", 2]);
+		const [result, count] = string.gsub("a.b.c", "%.", "/");
+		expect(result).toBe("a/b/c");
+		expect(count).toBe(2);
+		// maxCount stops both the substitution and the count.
+		expect(string.gsub("aaa", "a", "b", 2)).toEqual(["bba", 2]);
+	});
+});
+
+describe("coroutine", () => {
+	it("runs a generator body up to each yield", () => {
+		const co = coroutine.create(function* (start: number) {
+			yield start + 1;
+			yield start + 2;
+			return "done";
+		});
+		expect(coroutine.status(co)).toBe("suspended");
+		expect(coroutine.resume(co, 10)).toEqual([true, 11]);
+		expect(coroutine.status(co)).toBe("suspended");
+		expect(coroutine.resume(co)).toEqual([true, 12]);
+		expect(coroutine.resume(co)).toEqual([true, "done"]);
+		expect(coroutine.status(co)).toBe("dead");
+	});
+
+	it("feeds resume arguments back into the paused yield", () => {
+		const seen: unknown[] = [];
+		const co = coroutine.create(function* () {
+			seen.push(yield "first");
+			seen.push(yield "second");
+		});
+		coroutine.resume(co);
+		coroutine.resume(co, "a");
+		coroutine.resume(co, "b", "c");
+		// One argument arrives as itself, several as the tuple they are.
+		expect(seen).toEqual(["a", ["b", "c"]]);
+	});
+
+	it("refuses to resume a dead coroutine", () => {
+		const co = coroutine.create(() => 1);
+		expect(coroutine.resume(co)).toEqual([true, 1]);
+		expect(coroutine.status(co)).toBe("dead");
+		expect(coroutine.resume(co)).toEqual([
+			false,
+			"cannot resume dead coroutine",
+		]);
+	});
+
+	it("reports a thrown error as [false, message] and kills the thread", () => {
+		const co = coroutine.create(function* () {
+			yield 1;
+			throw new Error("boom");
+		});
+		expect(coroutine.resume(co)).toEqual([true, 1]);
+		expect(coroutine.resume(co)).toEqual([false, "boom"]);
+		expect(coroutine.status(co)).toBe("dead");
+	});
+
+	it("runs a plain function body straight through", () => {
+		const co = coroutine.create((a: number, b: number) => a + b);
+		expect(coroutine.resume(co, 2, 3)).toEqual([true, 5]);
+		expect(coroutine.status(co)).toBe("dead");
+	});
+
+	it("tracks running / normal / suspended across a nested resume", () => {
+		let innerView: string[] = [];
+		const inner = coroutine.create(function* () {
+			yield "paused";
+		});
+		const outer = coroutine.create(function* () {
+			coroutine.resume(inner);
+			innerView = [coroutine.status(inner), coroutine.status(outer)];
+			yield;
+		});
+		coroutine.resume(outer);
+		// While `outer` resumed `inner`, `outer` was "normal", not "running".
+		expect(innerView).toEqual(["suspended", "running"]);
+		expect(coroutine.status(outer)).toBe("suspended");
+	});
+
+	it("answers running() and isyieldable() about the current thread", () => {
+		expect(coroutine.running()).toBeUndefined();
+		expect(coroutine.isyieldable()).toBe(false);
+		let inside: unknown;
+		let yieldable = false;
+		const co = coroutine.create(() => {
+			inside = coroutine.running();
+			yieldable = coroutine.isyieldable();
+		});
+		coroutine.resume(co);
+		expect(inside).toBe(co);
+		expect(yieldable).toBe(true);
+		// The stack unwinds cleanly: back on the main thread afterwards.
+		expect(coroutine.running()).toBeUndefined();
+		expect(coroutine.isyieldable()).toBe(false);
+	});
+
+	it("wrap resumes and rethrows instead of returning a tuple", () => {
+		const nextValue = coroutine.wrap(function* () {
+			yield 1;
+			yield 2;
+		});
+		expect(nextValue()).toBe(1);
+		expect(nextValue()).toBe(2);
+		const boom = coroutine.wrap(() => {
+			throw new Error("nope");
+		});
+		expect(() => boom()).toThrow("nope");
+	});
+
+	it("close kills a suspended thread and runs its finally block", () => {
+		let cleaned = false;
+		const co = coroutine.create(function* () {
+			try {
+				yield 1;
+				yield 2;
+			} finally {
+				cleaned = true;
+			}
+		});
+		expect(coroutine.resume(co)).toEqual([true, 1]);
+		expect(coroutine.close(co)).toEqual([true]);
+		expect(cleaned).toBe(true);
+		expect(coroutine.status(co)).toBe("dead");
+	});
+
+	it("refuses to close the thread it is running on", () => {
+		let attempt: unknown;
+		const co = coroutine.create(() => {
+			attempt = coroutine.close(co);
+		});
+		coroutine.resume(co);
+		expect(attempt).toEqual([false, "cannot close a running coroutine"]);
+	});
+
+	it("names the generator boundary instead of faking coroutine.yield()", () => {
+		// The one thing this mapping cannot do: a JS frame cannot suspend the
+		// generator that called it, so `coroutine.yield()` explains itself rather
+		// than returning a value nobody yielded.
+		expect(() => coroutine.yield(1)).toThrow(
+			"loom: attempt to yield from outside a coroutine",
+		);
+		const co = coroutine.create(() => coroutine.yield(1));
+		const [ok, message] = coroutine.resume(co);
+		expect(ok).toBe(false);
+		expect(String(message)).toContain("loom: coroutine.yield()");
+		expect(String(message)).toContain("function* ()");
+	});
+
+	it("is what typeOf calls a thread", () => {
+		const co = coroutine.create(() => undefined);
+		expect(co).toBeInstanceOf(LuauThread);
+		expect(typeOf(co)).toBe("thread");
+		expect(typeIs(co, "thread")).toBe(true);
+	});
+});
+
+describe("task threads", () => {
+	afterEach(() => {
+		vi.useRealTimers();
+	});
+
+	it("spawn runs synchronously and hands back the thread", () => {
+		const order: string[] = [];
+		const thread = task.spawn((label: string) => {
+			order.push(label);
+		}, "inside");
+		order.push("after");
+		// Synchronous, not microtask-deferred: app code reads what spawn wrote on
+		// the very next line.
+		expect(order).toEqual(["inside", "after"]);
+		expect(thread).toBeInstanceOf(LuauThread);
+		expect(thread.status).toBe("dead");
+	});
+
+	it("spawn stops a generator body at its first yield", () => {
+		const reached: string[] = [];
+		const thread = task.spawn(function* () {
+			reached.push("before");
+			yield;
+			reached.push("after");
+		});
+		expect(reached).toEqual(["before"]);
+		expect(thread.status).toBe("suspended");
+		coroutine.resume(thread);
+		expect(reached).toEqual(["before", "after"]);
+	});
+
+	it("spawn reports a thrown error rather than unwinding the caller", () => {
+		const reported = vi.spyOn(console, "error").mockImplementation(() => {});
+		const thread = task.spawn(() => {
+			throw new Error("handler blew up");
+		});
+		expect(thread.status).toBe("dead");
+		expect(reported).toHaveBeenCalledOnce();
+		reported.mockRestore();
+	});
+
+	it("defer waits for the microtask and cancel stops it", async () => {
+		const order: string[] = [];
+		const thread = task.defer(() => order.push("deferred"));
+		order.push("after");
+		expect(order).toEqual(["after"]);
+		expect(thread).toBeInstanceOf(LuauThread);
+		await Promise.resolve();
+		expect(order).toEqual(["after", "deferred"]);
+
+		const cancelled = vi.fn();
+		task.cancel(task.defer(cancelled));
+		await Promise.resolve();
+		expect(cancelled).not.toHaveBeenCalled();
+	});
+
+	it("wait resolves with the elapsed time, not the requested one", async () => {
+		const elapsed = await task.wait(0.02);
+		expect(typeof elapsed).toBe("number");
+		expect(elapsed).toBeGreaterThan(0);
+		// A browser timer overshoots; the engine returns what really passed.
+		expect(elapsed).toBeGreaterThanOrEqual(0.015);
+	});
+});
+
+describe("typeOf on signals and connections", () => {
+	it("answers RBXScriptSignal and RBXScriptConnection", () => {
+		const signal = new LoomSignal<[number]>();
+		const connection = signal.Connect(() => {});
+		expect(typeOf(signal)).toBe("RBXScriptSignal");
+		expect(typeOf(connection)).toBe("RBXScriptConnection");
+		expect(typeIs(signal, "RBXScriptSignal")).toBe(true);
+		expect(typeIs(connection, "RBXScriptConnection")).toBe(true);
+		expect(typeIs(connection, "RBXScriptSignal")).toBe(false);
+		// A disconnected connection is still a connection.
+		connection.Disconnect();
+		expect(typeOf(connection)).toBe("RBXScriptConnection");
+	});
+
+	it("still calls an ordinary table a table", () => {
+		expect(typeOf({ Disconnect: () => {} })).toBe("table");
+		expect(typeOf({ Connected: true })).toBe("table");
+		expect(typeOf(new Map())).toBe("table");
+		expect(typeOf(createInstance("Frame"))).toBe("Instance");
+	});
+});
+
+describe("the Array.prototype.sort patch", () => {
+	beforeAll(() => applyPrototypePatches());
+
+	/**
+	 * `list.sort(predicate)` the way roblox-ts emits it — the patched method,
+	 * called with Luau's boolean comparator. The cast is only about types: a
+	 * roblox-ts project's own lib declares `sort` as taking the predicate, while
+	 * the stock TS lib insists on a numeric comparator, and this keeps that one
+	 * disagreement in a single place instead of on every call below.
+	 */
+	function sortWithPredicate<T>(
+		list: T[],
+		predicate: (a: T, b: T) => boolean,
+	): T[] {
+		const sortable = list as unknown as {
+			sort(comp: (a: T, b: T) => boolean): T[];
+		};
+		return sortable.sort(predicate);
+	}
+
+	it("adapts Luau's boolean predicate", () => {
+		// What roblox-ts emits: `table.sort`'s comparator, where true means
+		// "a comes before b". Coerced to a number this reads as 1/0 and shuffles.
+		const nums = [3, 1, 2];
+		sortWithPredicate(nums, (a, b) => a > b);
+		expect(nums).toEqual([3, 2, 1]);
+		const words = ["pear", "fig", "apple"];
+		sortWithPredicate(words, (a, b) => a.length < b.length);
+		expect(words).toEqual(["fig", "pear", "apple"]);
+	});
+
+	it("leaves a numeric JS comparator exactly as it was", () => {
+		expect([3, 1, 2].sort((a, b) => a - b)).toEqual([1, 2, 3]);
+		expect([3, 1, 2].sort((a, b) => b - a)).toEqual([3, 2, 1]);
+		const objects = [{ n: 2 }, { n: 1 }];
+		expect(objects.sort((a, b) => a.n - b.n).map((o) => o.n)).toEqual([1, 2]);
+	});
+
+	it("keeps the native lexicographic default when no comparator is given", () => {
+		expect([10, 9, 1].sort()).toEqual([1, 10, 9]);
+		expect(["b", "a"].sort()).toEqual(["a", "b"]);
+	});
+
+	it("returns the same array it sorted, and stays stable", () => {
+		const list = [
+			{ k: "b", i: 0 },
+			{ k: "a", i: 1 },
+			{ k: "b", i: 2 },
+		];
+		const sorted = sortWithPredicate(list, (a, b) => a.k < b.k);
+		expect(sorted).toBe(list);
+		expect(sorted.map((entry) => entry.i)).toEqual([1, 0, 2]);
+	});
+
+	it("survives being installed twice without wrapping itself", () => {
+		applyPrototypePatches();
+		applyPrototypePatches();
+		expect(sortWithPredicate([3, 1, 2], (a, b) => a > b)).toEqual([3, 2, 1]);
+		expect([3, 1, 2].sort((a, b) => a - b)).toEqual([1, 2, 3]);
+	});
+
+	it("is non-enumerable, like every other patch here", () => {
+		expect(Object.prototype.propertyIsEnumerable.call([], "sort")).toBe(false);
+		expect(
+			Object.prototype.propertyIsEnumerable.call(Array.prototype, "sort"),
+		).toBe(false);
 	});
 });

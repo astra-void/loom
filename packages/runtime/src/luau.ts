@@ -4,7 +4,7 @@
  * `typeIs`/`typeOf`, `pcall` (array-tuple `[ok, ...results]`), `pairs`/`ipairs`
  * generators, `select` and the `raw*` accessors, the `math`/`string`/`table`/
  * `os`/`bit32`/`utf8`/`buffer`/`debug` libraries (Luau's 1-based positions and
- * all), an inert `coroutine`, the `task` scheduler (with cancelable
+ * all), a generator-backed `coroutine`, the `task` scheduler (with cancelable
  * `task.delay`), and the guarded prototype patches roblox-ts macro methods
  * compile to (`Array.prototype.size()`, `.remove()`, `String.prototype.size()`).
  * `installGlobals` in `index.ts` wires all of this onto `globalThis` before
@@ -20,6 +20,8 @@ import {
 	Color3,
 	ColorSequence,
 	ColorSequenceKeypoint,
+	DateTime,
+	Random,
 	Rect,
 	TweenInfo,
 	UDim,
@@ -27,10 +29,30 @@ import {
 	Vector2,
 	Vector3,
 } from "./datatypes";
-import { EnumItem } from "./enums";
+import { EnumItem, RobloxEnum } from "./enums";
 import { isLoomInstance } from "./instance";
+import { LoomSignal } from "./signal";
 
 // --- type reflection ---------------------------------------------------------
+
+/**
+ * Whether `value` has the `RBXScriptConnection` shape.
+ *
+ * Signals are recognized with `instanceof LoomSignal`, but their connections
+ * cannot be: `LoomSignal.Connect` hands back an object literal closing over its
+ * listener (see `signal.ts`), so there is no constructor to test against and a
+ * structural check is the only honest one available. The pair of members is
+ * specific enough in practice — Roblox userdata is not otherwise distinguishable
+ * either, and an app object carrying both a `Disconnect` method and a
+ * `Connected` boolean *is* connection-shaped by every test a caller can apply.
+ */
+function isConnectionShaped(value: object): boolean {
+	const candidate = value as { Disconnect?: unknown; Connected?: unknown };
+	return (
+		typeof candidate.Disconnect === "function" &&
+		typeof candidate.Connected === "boolean"
+	);
+}
 
 /** Luau `typeof()` — recognizes loom datatypes, enum items, and instances. */
 export function typeOf(value: unknown): string {
@@ -46,12 +68,23 @@ export function typeOf(value: unknown): string {
 	if (value instanceof Rect) return "Rect";
 	if (value instanceof CFrame) return "CFrame";
 	if (value instanceof TweenInfo) return "TweenInfo";
+	if (value instanceof Random) return "Random";
+	if (value instanceof DateTime) return "DateTime";
 	if (value instanceof EnumItem) return "EnumItem";
+	// `typeof(Enum.KeyCode)` is "Enum" in Roblox — the namespace object is its
+	// own datatype, distinct from the items it holds.
+	if (value instanceof RobloxEnum) return "Enum";
+	if (value instanceof LoomSignal) return "RBXScriptSignal";
 	// Declared further down the file; a class in TDZ is fine to name here,
 	// because `typeOf` only ever runs after the module has finished evaluating.
 	if (value instanceof LuauBuffer) return "buffer";
+	if (value instanceof LuauThread) return "thread";
 	const t = typeof value;
-	if (t === "object") return "table";
+	if (t === "object") {
+		return isConnectionShaped(value as object)
+			? "RBXScriptConnection"
+			: "table";
+	}
 	return t; // "string" | "number" | "boolean" | "function" | …
 }
 
@@ -432,6 +465,273 @@ function captures(match: RegExpExecArray): string[] {
 }
 
 /**
+ * A `string.gsub` replacement: the literal string (with `%1` back-references),
+ * a table indexed by the first capture, or a function called with the captures.
+ * All three are Lua, and roblox-ts code reaches for all three.
+ */
+export type GsubReplacement =
+	| string
+	| number
+	| ReadonlyMap<string, unknown>
+	| Record<string, unknown>
+	| ((...matched: string[]) => unknown);
+
+/** One replacement's worth of `%0`…`%9` / `%%` expansion in a string `repl`. */
+function expandReferences(
+	repl: string,
+	match: string,
+	groups: readonly (string | undefined)[],
+): string {
+	return repl.replace(/%([0-9%])/g, (_m, d: string) => {
+		if (d === "%") return "%";
+		if (d === "0") return match;
+		// With no captures at all, `%1` names the whole match — Lua treats the
+		// match itself as capture one in that case, and patterns written without
+		// parentheses rely on it.
+		if (d === "1" && groups.length === 0) return match;
+		return groups[Number(d) - 1] ?? "";
+	});
+}
+
+/**
+ * The Lua `%[flags][width][.precision]conversion` grammar.
+ *
+ * Anything that does not match is left in the output verbatim (`%y` stays
+ * `%y`), which is the forgiving direction: the engine raises "invalid
+ * conversion", and a preview that renders a stray `%y` beats one that dies.
+ */
+const FORMAT_SPEC = /%([-+ #0]*)(\d*)(?:\.(\d*))?([diuoxXeEfFgGqsc*%])/g;
+
+/** The `+`/space flags' prefix for a signed conversion. */
+function signPrefix(negative: boolean, flags: string): string {
+	if (negative) return "-";
+	if (flags.includes("+")) return "+";
+	if (flags.includes(" ")) return " ";
+	return "";
+}
+
+/**
+ * Lay a finished conversion out in `width`. `-` left-aligns; `0` pads with
+ * zeros *between* the sign (or the `#` prefix) and the digits, never in front of
+ * it, which is what makes `%+06.1f` of -1.5 read `-001.5` rather than `00-1.5`.
+ */
+function padTo(
+	prefix: string,
+	body: string,
+	flags: string,
+	width: number,
+	zeroPad: boolean,
+): string {
+	const text = prefix + body;
+	if (text.length >= width) return text;
+	if (flags.includes("-")) return text.padEnd(width);
+	if (zeroPad && flags.includes("0")) {
+		return prefix + body.padStart(width - prefix.length, "0");
+	}
+	return text.padStart(width);
+}
+
+/**
+ * The digits of an integer conversion, without a sign. `BigInt` rather than
+ * `String(n)` because a double past 1e21 stringifies to exponent notation, and
+ * `%d` must never print `1e+21`.
+ */
+function integerDigits(value: number): string {
+	if (!Number.isFinite(value)) return Number.isNaN(value) ? "nan" : "inf";
+	return BigInt(Math.abs(Math.trunc(value))).toString();
+}
+
+/**
+ * The 32-bit unsigned view `%u`, `%o`, `%x` and `%X` format.
+ *
+ * Luau's `lua_Integer` is a 32-bit `int`, so `string.format("%x", -1)` is
+ * `"ffffffff"` there and here; a value past 2^32 wraps in both.
+ */
+function unsignedView(value: number): number {
+	return Math.trunc(Number(value)) >>> 0;
+}
+
+/** Trim `%g`'s trailing fraction zeros, leaving any exponent suffix intact. */
+function trimTrailingZeros(text: string): string {
+	const at = text.indexOf("e");
+	const mantissa = at < 0 ? text : text.slice(0, at);
+	const exponent = at < 0 ? "" : text.slice(at);
+	if (!mantissa.includes(".")) return mantissa + exponent;
+	return mantissa.replace(/0+$/, "").replace(/\.$/, "") + exponent;
+}
+
+/**
+ * `%e`'s mantissa and exponent. JS writes `1e+5`; C (and therefore Lua) pads the
+ * exponent to at least two digits, so the same number must read `1e+05`.
+ */
+function exponentialDigits(abs: number, precision: number): string {
+	return abs
+		.toExponential(precision)
+		.replace(/e([+-])(\d)$/, (_m, sign: string, digit: string) => {
+			return `e${sign}0${digit}`;
+		});
+}
+
+/** `%g` — `%e` when the exponent runs away, `%f` otherwise, zeros trimmed. */
+function generalDigits(
+	abs: number,
+	precision: number | undefined,
+	flags: string,
+): string {
+	// C's rule: precision 0 means 1 significant digit, an absent one means 6.
+	const significant = precision === undefined ? 6 : Math.max(precision, 1);
+	// The exponent comes from the *rounded* value, not from `log10`, because the
+	// choice between the two forms is made after rounding: 999999.5 at six
+	// significant digits is 1e+06, and reading its exponent as 5 would print it
+	// the long way as `1000000`.
+	const exponent =
+		abs === 0 ? 0 : Number(abs.toExponential(significant - 1).split("e")[1]);
+	const text =
+		exponent < -4 || exponent >= significant
+			? exponentialDigits(abs, significant - 1)
+			: abs.toFixed(Math.max(significant - 1 - exponent, 0));
+	// `#` keeps the trailing zeros the way it does everywhere else in printf.
+	return flags.includes("#") ? text : trimTrailingZeros(text);
+}
+
+/**
+ * `%q` — the string, quoted so Lua can read it straight back. Faithful to the
+ * engine's `addquoted`, including the detail that a newline is escaped as a
+ * backslash followed by a *real* newline rather than by an `n`.
+ */
+function quoted(s: string): string {
+	let out = '"';
+	for (let i = 0; i < s.length; i++) {
+		const c = s[i] as string;
+		const code = s.charCodeAt(i);
+		if (c === '"' || c === "\\" || c === "\n") {
+			out += `\\${c}`;
+		} else if (code < 0x20 || code === 0x7f) {
+			// A digit right after a decimal escape would be swallowed into it, so
+			// those get the full three-digit form.
+			const next = s[i + 1];
+			out +=
+				next !== undefined && next >= "0" && next <= "9"
+					? `\\${String(code).padStart(3, "0")}`
+					: `\\${code}`;
+		} else {
+			out += c;
+		}
+	}
+	return `${out}"`;
+}
+
+/** One `%…` conversion of {@link string.format}, already parsed. */
+function formatOne(
+	spec: string,
+	flags: string,
+	width: number,
+	precision: number | undefined,
+	arg: unknown,
+): string {
+	switch (spec) {
+		case "d":
+		case "i": {
+			const value = Math.trunc(Number(arg));
+			const digits = integerDigits(value);
+			// `%.0d` of zero prints nothing at all — a real printf rule, and the one
+			// place an explicit precision can shorten a number rather than pad it.
+			const padded =
+				precision === undefined
+					? digits
+					: precision === 0 && value === 0
+						? ""
+						: digits.padStart(precision, "0");
+			return padTo(
+				signPrefix(value < 0, flags),
+				padded,
+				flags,
+				width,
+				precision === undefined,
+			);
+		}
+		case "u":
+		case "o":
+		case "x":
+		case "X": {
+			const value = unsignedView(arg as number);
+			const base = spec === "u" ? 10 : spec === "o" ? 8 : 16;
+			let digits = value.toString(base);
+			if (spec === "X") digits = digits.toUpperCase();
+			if (precision !== undefined) digits = digits.padStart(precision, "0");
+			// `#` is printf's "alternate form": a leading 0 for octal, 0x/0X for hex,
+			// and nothing at all for a zero value (there is no `0x0` in C either).
+			let prefix = "";
+			if (flags.includes("#") && value !== 0) {
+				if (spec === "o") prefix = digits.startsWith("0") ? "" : "0";
+				else if (spec === "x") prefix = "0x";
+				else if (spec === "X") prefix = "0X";
+			}
+			return padTo(prefix, digits, flags, width, precision === undefined);
+		}
+		case "f":
+		case "F":
+		case "e":
+		case "E":
+		case "g":
+		case "G": {
+			const value = Number(arg);
+			const upper = spec === "F" || spec === "E" || spec === "G";
+			if (!Number.isFinite(value)) {
+				const word = Number.isNaN(value) ? "nan" : "inf";
+				return padTo(
+					Number.isNaN(value) ? "" : signPrefix(value < 0, flags),
+					upper ? word.toUpperCase() : word,
+					flags,
+					width,
+					// Never zero-pad `inf`: `%08f` of infinity is `     inf` in C.
+					false,
+				);
+			}
+			const abs = Math.abs(value);
+			let digits: string;
+			if (spec === "f" || spec === "F") {
+				digits = abs.toFixed(precision ?? 6);
+			} else if (spec === "e" || spec === "E") {
+				digits = exponentialDigits(abs, precision ?? 6);
+			} else {
+				digits = generalDigits(abs, precision, flags);
+			}
+			if (flags.includes("#") && !digits.includes(".")) digits += ".";
+			if (upper) digits = digits.toUpperCase();
+			// A negative zero is negative: printf writes `-0.00`, and so does Luau.
+			const negative = value < 0 || Object.is(value, -0);
+			return padTo(signPrefix(negative, flags), digits, flags, width, true);
+		}
+		case "c":
+			return padTo(
+				"",
+				String.fromCharCode(Math.trunc(Number(arg))),
+				flags,
+				width,
+				false,
+			);
+		case "q":
+			return padTo("", quoted(tostring(arg)), flags, width, false);
+		case "*":
+			// Luau's own conversion: whatever the value is, `tostring` it.
+			return padTo("", tostring(arg), flags, width, false);
+		default: {
+			// `%s`. A precision truncates the string, which is the one printf rule
+			// people reach for when a name has to fit a fixed-width column.
+			const text = tostring(arg);
+			return padTo(
+				"",
+				precision === undefined ? text : text.slice(0, precision),
+				flags,
+				width,
+				false,
+			);
+		}
+	}
+}
+
+/**
  * The Luau `string` library (browser subset; indices are 1-based).
  *
  * Luau strings are byte strings and JS strings are sequences of UTF-16 code
@@ -518,14 +818,28 @@ export const string = {
 		return index >= 0 ? [index + 1, index + pattern.length] : [];
 	},
 	/**
-	 * `string.gsub` — returns the `[result, count]` tuple. Supports the same
-	 * pattern subset as `find` and treats richer patterns as literal text.
-	 * `%0`/`%1`… in the replacement reference the match and its captures.
+	 * `string.gsub` — returns the `[result, count]` tuple Lua's multi-return is,
+	 * where the count is every match seen, not just the ones that changed
+	 * anything. Supports the same pattern subset as `find` and treats richer
+	 * patterns as literal text.
+	 *
+	 * All three Lua replacement kinds work, because roblox-ts code uses all
+	 * three:
+	 *
+	 * - a **string**, where `%0` is the whole match and `%1`…`%9` are its
+	 *   captures (`%1` means the whole match when the pattern captured nothing),
+	 *   and `%%` is a literal percent;
+	 * - a **function**, called with the captures (or the whole match when there
+	 *   are none) — whatever it returns is `tostring`ed, and a `false`/`nil`
+	 *   return leaves the original text alone, which is how Lua spells "not this
+	 *   one";
+	 * - a **table** (a plain object or a `Map`), looked up by the first capture,
+	 *   with the same false/nil rule.
 	 */
 	gsub(
 		s: string,
 		pattern: string,
-		repl: string,
+		repl: GsubReplacement,
 		maxCount?: number,
 	): [string, number] {
 		const limit = maxCount ?? Number.POSITIVE_INFINITY;
@@ -536,11 +850,24 @@ export const string = {
 			if (count >= limit) return match;
 			count += 1;
 			const groups = args.slice(1, -2) as (string | undefined)[];
-			return repl.replace(/%([0-9%])/g, (_m, d: string) => {
-				if (d === "%") return "%";
-				if (d === "0") return match;
-				return groups[Number(d) - 1] ?? "";
-			});
+			// What Lua hands a function or a table: the captures, or the whole
+			// match standing in for capture one when the pattern has none.
+			const matched =
+				groups.length === 0 ? [match] : groups.map((capture) => capture ?? "");
+			let replacement: unknown;
+			if (typeof repl === "function") {
+				replacement = repl(...matched);
+			} else if (typeof repl === "string" || typeof repl === "number") {
+				return expandReferences(String(repl), match, groups);
+			} else if (repl instanceof Map) {
+				replacement = repl.get(matched[0] as string);
+			} else {
+				replacement = (repl as Record<string, unknown>)[matched[0] as string];
+			}
+			// Lua: "if the value returned is false or nil, the match is kept".
+			if (replacement === undefined || replacement === null) return match;
+			if (replacement === false) return match;
+			return tostring(replacement);
 		});
 		return [result, count];
 	},
@@ -574,29 +901,52 @@ export const string = {
 			found = re.exec(s);
 		}
 	},
-	/** `string.format` — supports `%d %s %f %x %X %%` and `%.Nf`. */
+	/**
+	 * `string.format` — the whole printf grammar Lua exposes:
+	 * `%[flags][width][.precision]conv`, with flags `-` `+` ` ` `#` `0` and the
+	 * conversions `d i u o x X e E f F g G q s c %` plus Luau's own `%*`
+	 * (`tostring` the argument, whatever it is).
+	 *
+	 * The flags are the reason this is not a three-case switch: `%02d` for a
+	 * clock, `%-10s` for a column, `%5.1f` for a stat readout and `%+d` for a
+	 * delta are the four things UI number formatting is actually made of, and a
+	 * formatter that drops the width silently produces a plausible-looking wrong
+	 * answer rather than an error anyone would notice.
+	 *
+	 * An unrecognized conversion is left in the output verbatim instead of
+	 * raising the engine's "invalid conversion to format" — see
+	 * {@link FORMAT_SPEC}.
+	 *
+	 * One honest divergence, in the last digit and only at an exact tie: the
+	 * rounding comes from JS's `toFixed`/`toExponential`, which round halves away
+	 * from zero, where C rounds them to even. `%.1f` of 0.25 is `0.3` here and
+	 * `0.2` in the engine. Reimplementing decimal rounding to close a half-ULP
+	 * gap would cost far more correctness than it bought.
+	 */
 	format(fmt: string, ...args: unknown[]): string {
 		let argIndex = 0;
 		return fmt.replace(
-			/%(?:(%)|(?:\.(\d+))?([dsfxX]))/g,
-			(match, pct: string | undefined, prec: string | undefined, spec) => {
-				if (pct) return "%";
+			FORMAT_SPEC,
+			(
+				_match,
+				flags: string,
+				widthText: string,
+				precisionText: string | undefined,
+				spec: string,
+			) => {
+				if (spec === "%") return "%";
 				const arg = args[argIndex];
 				argIndex += 1;
-				switch (spec) {
-					case "d":
-						return String(Math.trunc(Number(arg)));
-					case "s":
-						return tostring(arg);
-					case "f":
-						return Number(arg).toFixed(prec !== undefined ? Number(prec) : 6);
-					case "x":
-						return (Math.trunc(Number(arg)) >>> 0).toString(16);
-					case "X":
-						return (Math.trunc(Number(arg)) >>> 0).toString(16).toUpperCase();
-					default:
-						return match;
-				}
+				const width = widthText === "" ? 0 : Number(widthText);
+				// `%.f` is a precision of zero, not a missing one — the digits are
+				// optional in the grammar and their absence means 0.
+				const precision =
+					precisionText === undefined
+						? undefined
+						: precisionText === ""
+							? 0
+							: Number(precisionText);
+				return formatOne(spec, flags, width, precision, arg);
 			},
 		);
 	},
@@ -909,7 +1259,7 @@ export function rawlen(t: object | string): number {
 	return Object.keys(t).length;
 }
 
-// --- os / coroutine ----------------------------------------------------------
+// --- os ----------------------------------------------------------------------
 
 /** The table `os.date("*t")` returns, and the one `os.time` accepts. */
 export interface DateTable {
@@ -1434,22 +1784,210 @@ export const buffer = {
 	},
 };
 
+// --- coroutine ---------------------------------------------------------------
+
+/** The four states Lua's `coroutine.status` reports. */
+export type LuauThreadStatus = "suspended" | "running" | "normal" | "dead";
+
 /**
- * An inert `coroutine` library — enough for feature-detection code paths.
- * There are no real Luau threads in the browser; `running` is always `nil`.
+ * A coroutine body. A **generator function** is the one that can actually
+ * suspend; a plain function is accepted (roblox-ts emits plenty of them) and
+ * simply runs start to finish on its first resume, because a JS frame with no
+ * `yield` in it has no suspension point to stop at. The return is `unknown`
+ * rather than a generator union so that both spellings pass without a cast —
+ * {@link LuauThread.step} is what tells them apart, at run time.
+ */
+export type LuauThreadBody = (...args: never[]) => unknown;
+
+/**
+ * A Luau thread, backed by a JS generator.
+ *
+ * **The boundary, stated plainly.** Luau can suspend a coroutine from any depth
+ * of the call stack: `coroutine.yield()` inside a function inside a function
+ * unwinds back to whoever resumed it. JS generators can only suspend their own
+ * frame, and only at a literal `yield` keyword — there is no way to pause an
+ * arbitrary JS call stack from a browser page. So loom maps a coroutine onto a
+ * generator, which gets the whole model right *except* for yielding across a
+ * function boundary, and {@link coroutine.yield} throws a `loom:` error naming
+ * that limit rather than quietly returning a value the caller never yielded.
+ * Write the body as `function* () { … yield x; … }` and everything else here —
+ * resume arguments, yielded values, status transitions, `wrap`, `close` — is the
+ * real semantics.
+ */
+export class LuauThread {
+	/** @internal The body, until the first resume calls it. */
+	private readonly body: LuauThreadBody;
+	/** @internal The generator the body returned, once it has been started. */
+	private iterator: Iterator<unknown, unknown, unknown> | undefined;
+	/** @internal */
+	state: LuauThreadStatus = "suspended";
+
+	constructor(body: LuauThreadBody) {
+		this.body = body;
+	}
+
+	/** Lua's `coroutine.status(co)` for this thread. */
+	get status(): LuauThreadStatus {
+		return this.state;
+	}
+
+	/**
+	 * @internal Advance the thread one step, starting it if it has not run yet.
+	 *
+	 * The first resume's arguments are the body's parameters; every later one
+	 * supplies the value the paused `yield` expression evaluates to. A single
+	 * argument arrives as itself and several arrive as an array, because a JS
+	 * `yield` expression is one value and a Lua one is a tuple.
+	 */
+	step(args: unknown[]): IteratorResult<unknown, unknown> {
+		if (this.iterator === undefined) {
+			const started = (this.body as (...a: unknown[]) => unknown)(...args);
+			const candidate = started as Iterator<unknown, unknown, unknown> | null;
+			if (
+				candidate !== null &&
+				typeof candidate === "object" &&
+				typeof candidate.next === "function"
+			) {
+				this.iterator = candidate;
+			} else {
+				// A plain function body: it already ran to completion, and there was
+				// never a point at which it could have suspended.
+				return { done: true, value: started };
+			}
+		}
+		const resumed =
+			args.length === 0 ? undefined : args.length === 1 ? args[0] : args;
+		return this.iterator.next(resumed);
+	}
+
+	/**
+	 * @internal Run the generator's `finally` blocks and mark the thread dead —
+	 * the closest thing a generator has to Lua's to-be-closed variables.
+	 */
+	finish(): void {
+		this.state = "dead";
+		this.iterator?.return?.(undefined);
+	}
+}
+
+/**
+ * The resume stack: the innermost entry is the running thread, the ones beneath
+ * it are `"normal"` (resumed something else and are waiting on it), and an empty
+ * stack means the main thread — which is why `coroutine.running()` answers `nil`
+ * there, exactly as Lua 5.1 and Luau do.
+ */
+const threadStack: LuauThread[] = [];
+
+/**
+ * The Luau `coroutine` library, over JS generators. See {@link LuauThread} for
+ * the one thing this mapping cannot do, and why.
+ *
+ * `resume` and `close` return the array-tuples the rest of this module uses for
+ * Lua multi-returns, so `const [ok, value] = coroutine.resume(co)` reads exactly
+ * as it does in Luau — the same shape {@link pcall} hands back, and for the same
+ * reason.
  */
 export const coroutine = {
-	running(): undefined {
-		return undefined;
+	/** `coroutine.create` — a suspended thread; the body does not run yet. */
+	create(fn: LuauThreadBody): LuauThread {
+		return new LuauThread(fn);
 	},
-	status(_co?: unknown): string {
-		return "suspended";
+	/**
+	 * `coroutine.resume(co, ...)` — `[true, ...values]` when the thread yields or
+	 * returns, `[false, message]` when it errors (the error dies with the thread
+	 * instead of unwinding the resumer, as it does in Luau).
+	 */
+	resume(co: LuauThread, ...args: unknown[]): [boolean, ...unknown[]] {
+		if (!(co instanceof LuauThread)) {
+			return [false, "loom: coroutine.resume expects a thread"];
+		}
+		if (co.state === "dead") return [false, "cannot resume dead coroutine"];
+		if (co.state !== "suspended") {
+			return [false, "cannot resume non-suspended coroutine"];
+		}
+		const parent = threadStack[threadStack.length - 1];
+		if (parent) parent.state = "normal";
+		co.state = "running";
+		threadStack.push(co);
+		try {
+			const step = co.step(args);
+			co.state = step.done ? "dead" : "suspended";
+			return step.value === undefined ? [true] : [true, step.value];
+		} catch (err) {
+			co.state = "dead";
+			return [false, err instanceof Error ? err.message : err];
+		} finally {
+			threadStack.pop();
+			if (parent) parent.state = "running";
+		}
 	},
-	create<A extends unknown[], R>(fn: (...args: A) => R): { fn: typeof fn } {
-		return { fn };
+	/**
+	 * `coroutine.yield` — the one call this mapping cannot honour.
+	 *
+	 * Suspending here would mean pausing the JS stack between this frame and the
+	 * generator's, which no browser can do. Throwing a `loom:` error that names
+	 * the fix is the honest answer; returning `undefined` and continuing would
+	 * silently run the rest of the body at the wrong time.
+	 */
+	yield(..._values: unknown[]): never {
+		throw new Error(
+			threadStack.length === 0
+				? "loom: attempt to yield from outside a coroutine"
+				: "loom: coroutine.yield() cannot suspend a JavaScript frame — write the coroutine body as a generator (`function* () { … }`) and use the `yield` keyword directly",
+		);
 	},
-	wrap<A extends unknown[], R>(fn: (...args: A) => R): typeof fn {
-		return fn;
+	/**
+	 * `coroutine.isyieldable()` — true inside a thread, false on the main one.
+	 * A generator body genuinely *can* yield, so this answers about the thread,
+	 * not about the {@link coroutine.yield} shim above.
+	 */
+	isyieldable(): boolean {
+		return threadStack.length > 0;
+	},
+	/** `coroutine.running()` — the running thread, or `nil` on the main one. */
+	running(): LuauThread | undefined {
+		return threadStack[threadStack.length - 1];
+	},
+	/**
+	 * `coroutine.status(co)`. A non-thread reports `"dead"` rather than raising
+	 * the engine's type error — a status check should never be the thing that
+	 * takes a preview down.
+	 */
+	status(co?: unknown): LuauThreadStatus {
+		return co instanceof LuauThread ? co.state : "dead";
+	},
+	/**
+	 * `coroutine.wrap(fn)` — a function that resumes the thread and returns the
+	 * yielded value directly, re-throwing the body's error instead of reporting
+	 * it in a tuple. One thread per `wrap`, as in Luau.
+	 */
+	wrap(fn: LuauThreadBody): (...args: unknown[]) => unknown {
+		const co = new LuauThread(fn);
+		return (...args: unknown[]) => {
+			const [ok, value] = coroutine.resume(co, ...args);
+			if (!ok) throw value instanceof Error ? value : new Error(String(value));
+			return value;
+		};
+	},
+	/**
+	 * `coroutine.close(co)` — kills a suspended or dead thread and returns
+	 * `[true]`, or `[false, message]` when the thread is still on the stack.
+	 * Closing runs the generator's `finally` blocks, which is what Lua's
+	 * to-be-closed variables amount to here.
+	 */
+	close(co: LuauThread): [boolean, ...unknown[]] {
+		if (!(co instanceof LuauThread)) {
+			return [false, "loom: coroutine.close expects a thread"];
+		}
+		if (co.state === "running" || co.state === "normal") {
+			return [false, `cannot close a ${co.state} coroutine`];
+		}
+		try {
+			co.finish();
+		} catch (err) {
+			return [false, err instanceof Error ? err.message : err];
+		}
+		return [true];
 	},
 };
 
@@ -1462,17 +2000,62 @@ export interface TaskDelayHandle {
 }
 
 /**
+ * Report a thread that died, the way the engine does.
+ *
+ * `task.spawn`/`task.defer` run the body on its own thread, so an error there
+ * never reaches the caller — Roblox prints it to the output window and carries
+ * on. Swallowing it entirely would leave an app author staring at a callback
+ * that "just stopped"; `console.error` is that output window.
+ */
+function reportThreadError(where: string, err: unknown): void {
+	console.error(`loom: ${where} thread errored:`, err);
+}
+
+/**
  * The Roblox `task` scheduling library, mapped onto browser timers (the subset
  * UI code uses). `task.wait` returns a Promise so `await task.wait(n)` works; a
  * bare synchronous `task.wait()` cannot block in the browser. `task.delay`
  * returns a handle `task.cancel` can revoke.
+ *
+ * `spawn` and `defer` return the {@link LuauThread} they run the body on, so
+ * `task.cancel(thread)` and `coroutine.status(thread)` work on the result the
+ * way they do in the engine.
  */
 export const task = {
-	spawn<A extends unknown[]>(fn: (...args: A) => void, ...args: A): void {
-		queueMicrotask(() => fn(...args));
+	/**
+	 * `task.spawn(fn, ...)` — runs the body **immediately**, synchronously, up to
+	 * its first yield, and returns its thread.
+	 *
+	 * The synchronous start is the whole difference between `spawn` and `defer`
+	 * and it is load-bearing: app code writes `task.spawn(() => state.ready =
+	 * true)` and then reads `state.ready` on the next line. Deferring to a
+	 * microtask (which is what this used to do) makes that read fail, so the same
+	 * source behaves differently in the preview than in Studio.
+	 *
+	 * A thread may be passed instead of a function, as in the engine, in which
+	 * case it is resumed rather than created.
+	 */
+	spawn(fn: LuauThreadBody | LuauThread, ...args: unknown[]): LuauThread {
+		const thread = fn instanceof LuauThread ? fn : new LuauThread(fn);
+		const [ok, value] = coroutine.resume(thread, ...args);
+		if (!ok) reportThreadError("task.spawn", value);
+		return thread;
 	},
-	defer<A extends unknown[]>(fn: (...args: A) => void, ...args: A): void {
-		queueMicrotask(() => fn(...args));
+	/**
+	 * `task.defer(fn, ...)` — the same, one resumption cycle later. A microtask
+	 * is the browser's closest equivalent: it runs after the current call stack
+	 * unwinds but before the next frame or timer, which is where the engine's
+	 * deferred threads land too.
+	 */
+	defer(fn: LuauThreadBody | LuauThread, ...args: unknown[]): LuauThread {
+		const thread = fn instanceof LuauThread ? fn : new LuauThread(fn);
+		queueMicrotask(() => {
+			// `task.cancel` may have killed it in the meantime.
+			if (thread.status === "dead") return;
+			const [ok, value] = coroutine.resume(thread, ...args);
+			if (!ok) reportThreadError("task.defer", value);
+		});
+		return thread;
 	},
 	delay<A extends unknown[]>(
 		seconds: number,
@@ -1487,14 +2070,34 @@ export const task = {
 		};
 		return handle;
 	},
-	cancel(handle: TaskDelayHandle | undefined): void {
+	/** `task.cancel` — revokes a pending `delay`, or kills a spawned thread. */
+	cancel(handle: TaskDelayHandle | LuauThread | undefined): void {
 		if (!handle) return;
+		if (handle instanceof LuauThread) {
+			handle.finish();
+			return;
+		}
 		clearTimeout(handle.timeout);
 		handle.cancelled = true;
 	},
+	/**
+	 * `task.wait(duration?)` — resolves with the seconds that **actually**
+	 * elapsed, which is what the engine returns and not the duration asked for.
+	 * Timers overshoot (a backgrounded tab clamps them to once a second), and
+	 * animation code that integrates the returned delta drifts badly if it is
+	 * handed the nominal value instead of the real one.
+	 *
+	 * Still a Promise: `await task.wait(n)` is the browser's only way to resume
+	 * later, since a bare synchronous `task.wait()` cannot block the one thread
+	 * the page has.
+	 */
 	wait(seconds = 0): Promise<number> {
+		const started = performance.now();
 		return new Promise((resolve) =>
-			setTimeout(() => resolve(seconds), Math.max(0, seconds) * 1000),
+			setTimeout(
+				() => resolve((performance.now() - started) / 1000),
+				Math.max(0, seconds) * 1000,
+			),
 		);
 	},
 };
@@ -1534,7 +2137,8 @@ function definePatch(
 	value: (...args: never[]) => unknown,
 	/**
 	 * Replace an existing member instead of bailing out. Only for names JS
-	 * already defines with semantics no loom caller could want (see `sub`).
+	 * already defines with semantics no loom caller could want (`sub`), or where
+	 * the roblox-ts spelling and the JS one disagree about the arguments (`sort`).
 	 */
 	force = false,
 ): void {
@@ -1564,9 +2168,30 @@ function definePatch(
 export const LUAU_SIZE = Symbol.for("loom.size");
 export const LUAU_IS_EMPTY = Symbol.for("loom.isEmpty");
 
+/** A comparator the patched `sort` accepts: Lua's predicate or JS's number. */
+type SortComparator = (a: unknown, b: unknown) => unknown;
+
+/** `Array.prototype.sort`, as this module has to talk about it. */
+type ArraySort = ((comp?: SortComparator) => unknown[]) & {
+	[NATIVE_SORT]?: (comp?: SortComparator) => unknown[];
+};
+
+/**
+ * The brand the sort patch stamps itself with, carrying the untouched native
+ * `Array.prototype.sort` it wrapped.
+ *
+ * Without it, a second `applyPrototypePatches()` — or a second copy of this
+ * module in one page, which a preview bundling both an app and loom can easily
+ * produce — would wrap the wrapper, and every `.sort()` in the page would grow
+ * another frame and another comparator round-trip. `Symbol.for`, like the macro
+ * keys above, so both copies reach the same brand.
+ */
+const NATIVE_SORT = Symbol.for("loom.nativeSort");
+
 /**
  * Install the roblox-ts macro methods on `Array.prototype`/`String.prototype`
- * (`.size()`, `.isEmpty()`, `.remove(i)`, `.unorderedRemove(i)`, `.clear()`),
+ * (`.size()`, `.isEmpty()`, `.remove(i)`, `.unorderedRemove(i)`, `.clear()`,
+ * and the `.sort()` that takes Luau's boolean predicate),
  * plus the Luau string methods roblox-ts calls off a string receiver
  * (`.lower()`, `.upper()`, `.sub()`, `.rep()`, `.find()`, `.gsub()`,
  * `.format()`) — each one delegating to the {@link string} library, so the
@@ -1626,6 +2251,37 @@ export function applyPrototypePatches(): void {
 	definePatch(Array.prototype, "clear", function (this: unknown[]) {
 		this.length = 0;
 	});
+	// `sort` is FORCED, like `sub` below, and for a subtler reason. roblox-ts
+	// compiles `arr.sort(cb)` to Luau's `table.sort`, whose comparator is a
+	// *predicate*: `true` means "a comes before b". JS wants a negative, zero or
+	// positive number, and a boolean coerces to 1/0 — so `true` reads as "a after
+	// b" and `false` as "equal", and a roblox-ts comparator run through the
+	// native sort scrambles the array instead of ordering it, silently.
+	//
+	// The wrapper looks at what the comparator actually returned rather than
+	// sniffing it up front (a probe call would run a user comparator on values it
+	// was never asked about). A number goes straight through untouched, which is
+	// what keeps React, Vite and loom's own layout code — all sharing this one
+	// prototype — on exactly native behaviour; only a boolean pays for the second
+	// `comp(b, a)` probe that turns a predicate into an ordering, the same
+	// translation {@link table.sort} does.
+	const installedSort = Array.prototype.sort as unknown as ArraySort;
+	const nativeSort = installedSort[NATIVE_SORT] ?? installedSort;
+	const luauSort = function (this: unknown[], comp?: SortComparator) {
+		if (comp === undefined) return nativeSort.call(this);
+		return nativeSort.call(this, (a: unknown, b: unknown) => {
+			const decision = comp(a, b);
+			if (typeof decision !== "boolean") return decision;
+			return decision ? -1 : comp(b, a) ? 1 : 0;
+		});
+	} as ArraySort;
+	luauSort[NATIVE_SORT] = nativeSort;
+	definePatch(
+		Array.prototype,
+		"sort",
+		luauSort as unknown as (...args: never[]) => unknown,
+		true,
+	);
 	definePatch(String.prototype, "size", function (this: string) {
 		return this.length;
 	});
@@ -1669,7 +2325,7 @@ export function applyPrototypePatches(): void {
 		function (
 			this: string,
 			pattern: string,
-			replacement: string,
+			replacement: GsubReplacement,
 			maxCount?: number,
 		) {
 			return string.gsub(this, pattern, replacement, maxCount);
