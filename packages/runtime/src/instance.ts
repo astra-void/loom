@@ -7,10 +7,12 @@
  * direct property writes, and portal containers all share the same object.
  * Property writes mark the instance dirty so the scheduler re-flushes the world.
  */
-import { DEFAULTS } from "@loom-dev/scene";
-import { UDim2, Vector2 } from "./datatypes";
+import { DEFAULTS, fontSizeToPx } from "@loom-dev/scene";
+import { Color3, Rect, UDim, UDim2, Vector2 } from "./datatypes";
+import { Enum, enumName } from "./enums";
 import { classChain, isA } from "./registry";
 import { markDirty } from "./scheduler";
+import type { LoomConnection } from "./signal";
 import { LoomSignal } from "./signal";
 
 /** Roblox events the proxy exposes as lazily created signals. */
@@ -20,6 +22,10 @@ export const EVENT_NAMES: ReadonlySet<string> = new Set([
 	"MouseButton1Down",
 	"MouseButton1Up",
 	"MouseButton2Click",
+	"MouseButton2Down",
+	"MouseButton2Up",
+	"MouseWheelForward",
+	"MouseWheelBackward",
 	"InputBegan",
 	"InputEnded",
 	"InputChanged",
@@ -76,6 +82,7 @@ export interface LoomInstance {
 	FindFirstAncestorOfClass(className: string): LoomInstance | undefined;
 	FindFirstAncestorWhichIsA(className: string): LoomInstance | undefined;
 	WaitForChild(name: string, timeout?: number): LoomInstance | undefined;
+	Clone(): LoomInstance | undefined;
 	IsDescendantOf(ancestor: LoomInstance): boolean;
 	GetPropertyChangedSignal(propertyName: string): LoomSignal<[]>;
 	GetAttribute(attribute: string): unknown;
@@ -114,22 +121,56 @@ let nextId = 0;
 const IMPLS = new WeakMap<object, InstanceImpl>();
 
 /**
- * The `GuiObject` properties whose Roblox default is unambiguous and which app
- * code reads back to reason about the tree — hit tests, traversals, and the
- * geometry a drag restores. Thunks, so each read hands out its own datatype
+ * One class's read defaults. Thunks, so each read hands out its own datatype
  * instance rather than a shared mutable one.
  *
- * The numbers come from `@loom-dev/scene`'s `DEFAULTS`, which the renderer and
- * the layout engine already paint by: a second copy here could disagree with
- * what is on screen, which is the one thing a default must never do.
+ * Where a number is already Roblox truth in `@loom-dev/scene`'s `DEFAULTS` it is
+ * read from there rather than copied: the renderer and the layout engine paint
+ * by those, and a second copy here could disagree with what is on screen, which
+ * is the one thing a default must never do.
  */
-const GUI_OBJECT_DEFAULTS: Readonly<Record<string, () => unknown>> = {
+type DefaultTable = Readonly<Record<string, () => unknown>>;
+
+/** A runtime `Color3` out of the 0..1 channels `@loom-dev/scene` stores. */
+function sceneColor(channels: { r: number; g: number; b: number }): Color3 {
+	return new Color3(channels.r, channels.g, channels.b);
+}
+
+/**
+ * `Enum.BorderMode.Outline`, the `GuiObject` default — looked up rather than
+ * written down, because `enums.ts` owns the namespace and has no `BorderMode` in
+ * it yet. Minting a stand-in item here would be worse than answering nothing:
+ * once the enum lands, `frame.BorderMode == Enum.BorderMode.Outline` would be
+ * comparing two objects that merely look alike. The property starts answering
+ * the moment the enum exists, with no change needed here.
+ */
+function borderModeOutline(): unknown {
+	const borderMode = (Enum as unknown as Record<string, unknown>).BorderMode as
+		| Record<string, unknown>
+		| undefined;
+	return borderMode?.Outline;
+}
+
+/**
+ * The `GuiObject` properties every 2D class inherits. `BorderColor3` is the same
+ * dark navy as the text default, but it is a *separate* engine constant — the
+ * two happening to match is not a reason to make one follow the other.
+ */
+const GUI_OBJECT_DEFAULTS: DefaultTable = {
 	Visible: () => DEFAULTS.visible,
 	ZIndex: () => DEFAULTS.zIndex,
+	BackgroundColor3: () => sceneColor(DEFAULTS.backgroundColor3),
 	BackgroundTransparency: () => DEFAULTS.backgroundTransparency,
+	BorderColor3: () => Color3.fromRGB(27, 42, 53),
+	BorderSizePixel: () => 1,
+	BorderMode: () => borderModeOutline(),
 	Rotation: () => 0,
 	LayoutOrder: () => 0,
 	Active: () => false,
+	/** New in 2023: `false` greys the object out and stops it taking input. */
+	Interactable: () => true,
+	/** Gamepad selection, off until an object opts in. */
+	Selectable: () => false,
 	ClipsDescendants: () => false,
 	AnchorPoint: () => Vector2.zero,
 	Position: () => new UDim2(),
@@ -137,29 +178,169 @@ const GUI_OBJECT_DEFAULTS: Readonly<Record<string, () => unknown>> = {
 };
 
 /**
+ * What `TextLabel`, `TextButton` and `TextBox` share. They have no common
+ * ancestor below `GuiObject` — the engine declares the text properties on each
+ * of the three — so the table is spread into all three rather than hung off a
+ * class that does not exist.
+ *
+ * `TextBounds` is `(0, 0)` until something measures the text: the adapters
+ * measure with the browser's own font metrics and write the result back, so a
+ * label read before its first paint reports no bounds, exactly as one read
+ * before the engine's first frame does.
+ */
+const TEXT_DEFAULTS: DefaultTable = {
+	TextColor3: () => sceneColor(DEFAULTS.textColor3),
+	TextTransparency: () => DEFAULTS.textTransparency,
+	TextScaled: () => false,
+	RichText: () => false,
+	// `TextSize` (14) and `TextWrapped` (false) default too, but they are
+	// answered by the alias readers further down — see `textSizeReader`.
+	TextXAlignment: () => Enum.TextXAlignment.Center,
+	TextYAlignment: () => Enum.TextYAlignment.Center,
+	LineHeight: () => DEFAULTS.lineHeight,
+	TextStrokeColor3: () => new Color3(0, 0, 0),
+	TextStrokeTransparency: () => 1,
+	TextBounds: () => Vector2.zero,
+	TextFits: () => true,
+};
+
+/** What `ImageLabel` and `ImageButton` share, for the same reason. */
+const IMAGE_DEFAULTS: DefaultTable = {
+	Image: () => "",
+	/** White: `ImageColor3` multiplies the image, so white is "no tint". */
+	ImageColor3: () => sceneColor(DEFAULTS.imageColor3),
+	ImageTransparency: () => DEFAULTS.imageTransparency,
+	ScaleType: () => Enum.ScaleType.Stretch,
+	SliceCenter: () => Rect.new(0, 0, 0, 0),
+	SliceScale: () => 1,
+	TileSize: () => UDim2.new(1, 0, 1, 0),
+	/** A zero `ImageRectSize` is the engine's "no sprite window". */
+	ImageRectOffset: () => Vector2.zero,
+	ImageRectSize: () => Vector2.zero,
+	/** Nothing has loaded before the DOM has fetched it. */
+	IsLoaded: () => false,
+};
+
+/**
  * Class-aware read defaults for properties app code reads before ever writing.
  * Roblox reflection always yields a typed value; the props store starts empty,
  * so these keep `inst.Rotation += d` (Spinner motion),
- * `viewport.CanvasPosition.Y` (lattice ScrollArea metrics) and
- * `descendant.Visible && …` (a drag's droppable hit test) from seeing
- * `undefined`. Only properties with a known read-before-write consumer are
- * listed — everything else stays `undefined` like before.
+ * `viewport.CanvasPosition.Y` (lattice ScrollArea metrics),
+ * `descendant.Visible && …` (a drag's droppable hit test) and
+ * `if label.Text ~= "" then` from seeing `undefined`.
+ *
+ * Keyed by the class that *declares* the property, and resolved up the class
+ * chain, so a subclass overrides its base the way the engine's own defaults do
+ * (`UIGridLayout` fills horizontally where a `UIListLayout` fills down).
  */
+const CLASS_DEFAULTS: Readonly<Record<string, DefaultTable>> = {
+	/**
+	 * Every instance has it, and `Clone` is built on it: a non-archivable
+	 * instance is skipped by a clone and by anything that serializes the tree.
+	 */
+	Instance: { Archivable: () => true },
+	GuiObject: GUI_OBJECT_DEFAULTS,
+	CanvasGroup: { GroupTransparency: () => 0 },
+	ScrollingFrame: {
+		CanvasPosition: () => Vector2.zero,
+		AbsoluteWindowSize: () => Vector2.zero,
+		AbsoluteCanvasSize: () => Vector2.zero,
+		/**
+		 * `{0, 0}, {2, 0}` — two windows tall, the engine's odd but real default.
+		 *
+		 * This is what *reflection* answers, and it is the honest answer. The
+		 * layout engine and `scrollMetrics` both read an **absent** `CanvasSize`
+		 * as no canvas of its own — children lay out in the window and the frame
+		 * does not scroll — so a ScrollingFrame that never sets it scrolls in
+		 * Studio and stands still here. Papering over that by reporting a value
+		 * the paint side does not use would only hide it in a second place.
+		 */
+		CanvasSize: () => UDim2.new(0, 0, 2, 0),
+		ScrollBarThickness: () => 12,
+		ScrollBarImageColor3: () => new Color3(1, 1, 1),
+		ScrollBarImageTransparency: () => 0,
+		ScrollingEnabled: () => true,
+		ScrollingDirection: () => Enum.ScrollingDirection.XY,
+		AutomaticCanvasSize: () => Enum.AutomaticCanvasSize.None,
+		ElasticBehavior: () => Enum.ElasticBehavior.WhenScrollable,
+	},
+	LayerCollector: {
+		Enabled: () => true,
+		ZIndexBehavior: () => Enum.ZIndexBehavior.Sibling,
+	},
+	ScreenGui: {
+		DisplayOrder: () => 0,
+		IgnoreGuiInset: () => false,
+		ResetOnSpawn: () => true,
+	},
+	// The three text classes differ only in the placeholder string the engine
+	// puts in `Text` — which is exactly the value `if label.Text ~= ""` trips on.
+	TextLabel: { ...TEXT_DEFAULTS, Text: () => "Label" },
+	TextButton: { ...TEXT_DEFAULTS, Text: () => "Button" },
+	TextBox: { ...TEXT_DEFAULTS, Text: () => "TextBox" },
+	ImageLabel: IMAGE_DEFAULTS,
+	ImageButton: IMAGE_DEFAULTS,
+	UIGridStyleLayout: {
+		HorizontalAlignment: () => Enum.HorizontalAlignment.Left,
+		VerticalAlignment: () => Enum.VerticalAlignment.Top,
+		/**
+		 * `Name`, not `LayoutOrder` — verified in Studio, and what the layout
+		 * engine's `flow_order` already sorts by. Runtime and engine have to give
+		 * the same answer here or a list reads one order and lays out another.
+		 */
+		SortOrder: () => Enum.SortOrder.Name,
+	},
+	UIListLayout: {
+		Padding: () => new UDim(0, 0),
+		FillDirection: () => Enum.FillDirection.Vertical,
+	},
+	// A grid flows across before it wraps down, and a page layout pages sideways:
+	// both default to `Horizontal`, unlike the list. `UIGridLayout` has no
+	// `Padding` at all — `CellPadding` is its spelling — so it gets none here.
+	UIGridLayout: { FillDirection: () => Enum.FillDirection.Horizontal },
+	UIPageLayout: {
+		Padding: () => new UDim(0, 0),
+		FillDirection: () => Enum.FillDirection.Horizontal,
+	},
+};
+
 function classDefaultProperty(className: string, key: string): unknown {
-	switch (key) {
-		case "GroupTransparency":
-			return isA(className, "CanvasGroup") ? 0 : undefined;
-		case "CanvasPosition":
-		case "AbsoluteWindowSize":
-		case "AbsoluteCanvasSize":
-			return isA(className, "ScrollingFrame") ? Vector2.zero : undefined;
-		default: {
-			const fallback = GUI_OBJECT_DEFAULTS[key];
-			return fallback !== undefined && isA(className, "GuiObject")
-				? fallback()
-				: undefined;
-		}
+	for (const cls of classChain(className)) {
+		const fallback = CLASS_DEFAULTS[cls]?.[key];
+		if (fallback !== undefined) return fallback();
 	}
+	return undefined;
+}
+
+/**
+ * `ContentText` — what the engine actually lays out: `Text` with the rich-text
+ * markup resolved away. Read-only and computed in Roblox, never stored, so it is
+ * a reader rather than a default: a written `Text` has to move it, and nothing
+ * ever writes `ContentText` itself.
+ *
+ * Only the tag *syntax* is undone here (tags dropped, the five XML entities
+ * decoded), which is what `ContentText` promises; whether a run ends up bold or
+ * red is the renderer's business, not this property's.
+ */
+const RICH_TEXT_TAG = /<[^<>]*>/g;
+const XML_ENTITIES: Readonly<Record<string, string>> = {
+	"&lt;": "<",
+	"&gt;": ">",
+	"&amp;": "&",
+	"&quot;": '"',
+	"&apos;": "'",
+};
+
+function contentText(self: LoomInstance): string {
+	const text = self.Text;
+	if (typeof text !== "string") return "";
+	if (self.RichText !== true) return text;
+	return text
+		.replace(RICH_TEXT_TAG, "")
+		.replace(
+			/&(?:lt|gt|amp|quot|apos);/g,
+			(entity) => XML_ENTITIES[entity] ?? entity,
+		);
 }
 
 function getName(impl: InstanceImpl): string {
@@ -274,6 +455,78 @@ function destroyImpl(impl: InstanceImpl, detach: boolean): void {
 	impl.destroyed = true;
 }
 
+/**
+ * The pending half of {@link METHODS.WaitForChild}: a promise for a child that
+ * is not there yet, resolved the moment one is.
+ *
+ * It watches two things, because the engine does: a child being *parented*
+ * under the instance, and a child already under it being *renamed* into the
+ * name being waited for. Watching only the first would leave
+ * `WaitForChild("Panel")` hanging on a tree that builds its children first and
+ * names them after, which is exactly how a reconciler builds one.
+ *
+ * Everything it connected is disconnected as soon as it settles, and `Destroy`
+ * drops the signals wholesale, so a wait on a tree that goes away simply never
+ * resolves — the same end the engine's yielded thread meets.
+ */
+function pendingChild(
+	impl: InstanceImpl,
+	name: string,
+	timeout?: number,
+): PromiseLike<LoomInstance | undefined> {
+	let settle: (value: LoomInstance | undefined) => void = () => {};
+	const pending = new Promise<LoomInstance | undefined>((resolve) => {
+		settle = resolve;
+	});
+	const connections: LoomConnection[] = [];
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	const finish = (value: LoomInstance | undefined): void => {
+		for (const connection of connections) connection.Disconnect();
+		connections.length = 0;
+		if (timer !== undefined) clearTimeout(timer);
+		settle(value);
+	};
+	const check = (): void => {
+		const child = findFirstChildImpl(impl, name, false);
+		if (child) finish(child.proxy);
+	};
+	const watchRenames = (child: InstanceImpl): void => {
+		connections.push(getOrCreatePropSignal(child, "Name").Connect(check));
+	};
+	connections.push(
+		getOrCreateEventSignal(impl, "ChildAdded").Connect((child) => {
+			const childImpl = IMPLS.get(child as object);
+			if (childImpl) watchRenames(childImpl);
+			check();
+		}),
+	);
+	for (const child of impl.children) watchRenames(child);
+	if (timeout !== undefined && timeout > 0) {
+		timer = setTimeout(() => finish(undefined), timeout * 1000);
+	}
+	return pending;
+}
+
+/**
+ * The recursive half of {@link METHODS.Clone}. Builds the copy's subtree by
+ * hand rather than through `Parent`: nothing is connected to a brand-new clone,
+ * so firing `ChildAdded` and marking it dirty would only schedule a flush for a
+ * tree that is not in the world yet.
+ */
+function cloneImpl(impl: InstanceImpl): InstanceImpl | undefined {
+	if (impl.props.get("Archivable") === false) return undefined;
+	const copy = IMPLS.get(createInstance(impl.className)) as InstanceImpl;
+	for (const [key, value] of impl.props) copy.props.set(key, value);
+	for (const [key, value] of impl.attributes) copy.attributes.set(key, value);
+	for (const child of impl.children) {
+		const childCopy = cloneImpl(child);
+		if (!childCopy) continue;
+		childCopy.parent = copy;
+		copy.children.push(childCopy);
+	}
+	return copy;
+}
+
 const METHODS = {
 	IsA(impl: InstanceImpl, className: string): boolean {
 		return isA(impl.className, className);
@@ -329,18 +582,56 @@ const METHODS = {
 		}
 		return undefined;
 	},
+	/**
+	 * Present-or-pending, because the browser has no way to yield.
+	 *
+	 * Roblox blocks the calling thread until a child of that name exists. A child
+	 * that is already there comes back directly, which is what every synchronous
+	 * caller in a preview does (`LocalPlayer.WaitForChild("PlayerGui")`), and one
+	 * that is not comes back as a thenable that resolves when it is parented — or
+	 * renamed into place, which the engine also honours — so
+	 * `await panel.WaitForChild("Button")` reads like the Luau it was compiled
+	 * from. With a `timeout` the thenable resolves to `undefined` once it expires,
+	 * as the engine's does; without one it waits forever, and the warning stands
+	 * in for the engine's own "Infinite yield possible" notice.
+	 *
+	 * The declared return type stays `LoomInstance` because that is what the
+	 * caller ends up holding either way. Synchronous code that reaches straight
+	 * through a *pending* result reads `undefined` members off the thenable
+	 * rather than the child's — no worse than the `undefined` this used to return
+	 * outright, and the warning says which case it hit.
+	 */
 	WaitForChild(
 		impl: InstanceImpl,
 		name: string,
-		_timeout?: number,
+		timeout?: number,
 	): LoomInstance | undefined {
 		const found = findFirstChildImpl(impl, name, false);
 		if (found) return found.proxy;
 		console.warn(
 			`[loom] WaitForChild("${name}") on ${METHODS.GetFullName(impl)}: ` +
-				"child not found — the synchronous runtime returns undefined instead of yielding",
+				"child is not there yet — the browser cannot yield, so this returns a " +
+				"thenable to await rather than the instance",
 		);
-		return undefined;
+		return pendingChild(impl, name, timeout) as unknown as LoomInstance;
+	},
+	/**
+	 * Roblox `Clone`: a deep copy of the instance and its descendants, with
+	 * properties and attributes carried over, `Parent` left `nil`, and no event
+	 * connections — the copy is a fresh instance that nothing is listening to.
+	 *
+	 * `Archivable = false` is skipped, which is the flag's whole purpose: a
+	 * non-archivable descendant is left out of the copy, and a non-archivable
+	 * *root* clones to `nil`.
+	 *
+	 * Property values are shared rather than re-made: every Roblox datatype is
+	 * immutable, so sharing one is indistinguishable from copying it. The one
+	 * thing the engine does that this does not is re-point an instance-valued
+	 * property at the clone of what it referenced — rare in a GUI tree, and
+	 * guessing at it would be worse than leaving the reference where it was.
+	 */
+	Clone(impl: InstanceImpl): LoomInstance | undefined {
+		return cloneImpl(impl)?.proxy;
 	},
 	IsDescendantOf(impl: InstanceImpl, ancestor: LoomInstance): boolean {
 		const ancestorImpl = IMPLS.get(ancestor);
@@ -518,6 +809,56 @@ function findPropertyReader(
 		if (reader) return reader;
 	}
 	return undefined;
+}
+
+/** The instance's own stored value for `key`, with no default behind it. */
+function rawProperty(self: LoomInstance, key: string): unknown {
+	return IMPLS.get(self)?.props.get(key);
+}
+
+/**
+ * `TextWrapped` and its deprecated alias `TextWrap`. The engine holds *one*
+ * property under two names — Roblox's own docs call `TextWrap` "simply an alias"
+ * — so both spellings have to answer the same thing.
+ *
+ * A reader rather than a default, and one that reads the raw store rather than
+ * the proxy, because a class default now answers where `undefined` used to:
+ * consumers written as `TextWrapped ?? TextWrap` (the react adapter measures its
+ * wrap width that way) would take the default `false` as an answer and never
+ * look at the alias, and a label that set only `TextWrap` would stop wrapping.
+ */
+function textWrappedReader(self: LoomInstance): unknown {
+	return (
+		rawProperty(self, "TextWrapped") ?? rawProperty(self, "TextWrap") ?? false
+	);
+}
+
+/**
+ * `TextSize`, or the legacy `FontSize` enum it is linked to — writing either
+ * moves both in the engine, and the pixel size lives in the enum item's name
+ * (`Size24` → 24). Same reasoning as {@link textWrappedReader}: without this a
+ * label that only ever set `FontSize` would read (and measure at) the 14px
+ * default.
+ *
+ * Only this direction is answered. Going the other way — `TextSize = 13` making
+ * `FontSize` read something — has no truthful answer, since the enum has no item
+ * for most sizes.
+ */
+function textSizeReader(self: LoomInstance): unknown {
+	const size = rawProperty(self, "TextSize");
+	if (typeof size === "number") return size;
+	return (
+		fontSizeToPx(enumName(rawProperty(self, "FontSize"))) ?? DEFAULTS.textSize
+	);
+}
+
+// Derived and aliased reads, registered on each of the three text classes: they
+// share no ancestor below `GuiObject`, which every other 2D class also inherits.
+for (const className of ["TextLabel", "TextButton", "TextBox"]) {
+	registerPropertyReader(className, "ContentText", contentText);
+	registerPropertyReader(className, "TextWrapped", textWrappedReader);
+	registerPropertyReader(className, "TextWrap", textWrappedReader);
+	registerPropertyReader(className, "TextSize", textSizeReader);
 }
 
 // --- TextBox focus adapter ---------------------------------------------------

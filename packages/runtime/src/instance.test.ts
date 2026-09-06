@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
-import { UDim2, Vector2 } from "./datatypes";
+import { type Color3, type Rect, type UDim, UDim2, Vector2 } from "./datatypes";
+import { Enum } from "./enums";
 import {
 	createInstance,
 	getInternalId,
+	getRawProperties,
 	isLoomInstance,
 	type LoomInstance,
 	setFeedbackProperty,
@@ -10,6 +12,28 @@ import {
 } from "./instance";
 import { getDirtyCount } from "./scheduler";
 import type { LoomSignal } from "./signal";
+
+/**
+ * `WaitForChild` is declared as the instance the caller ends up holding, so a
+ * test that means to await the *pending* case has to say so. The cast is the
+ * shape of the divergence from Roblox's yielding call, and is exactly what app
+ * code writes when it awaits one.
+ */
+function pendingWait(
+	result: LoomInstance | undefined,
+): PromiseLike<LoomInstance | undefined> {
+	return result as unknown as PromiseLike<LoomInstance | undefined>;
+}
+
+/** `Color3` equality by channel — the datatype has no `==` of its own. */
+function rgb(value: unknown): [number, number, number] {
+	const color = value as Color3;
+	return [
+		Math.round(color.R * 255),
+		Math.round(color.G * 255),
+		Math.round(color.B * 255),
+	];
+}
 
 describe("LoomInstance tree", () => {
 	it("parents, lists children, and finds descendants", () => {
@@ -53,16 +77,57 @@ describe("LoomInstance tree", () => {
 		expect(deep.FindFirstAncestorWhichIsA("GuiObject")).toBe(inner);
 	});
 
-	it("WaitForChild returns synchronously or warns and returns undefined", () => {
+	it("WaitForChild returns a child that is already there synchronously", () => {
 		const root = createInstance("Frame", "Root");
 		const child = createInstance("Frame", "Child");
 		child.Parent = root;
 		expect(root.WaitForChild("Child")).toBe(child);
+	});
 
+	it("WaitForChild warns and hands back a thenable for a child that is not", async () => {
+		const root = createInstance("Frame", "Root");
 		const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-		expect(root.WaitForChild("Missing")).toBeUndefined();
+		const pending = pendingWait(root.WaitForChild("Later"));
 		expect(warnSpy).toHaveBeenCalledOnce();
 		warnSpy.mockRestore();
+
+		const child = createInstance("Frame", "Later");
+		child.Parent = root;
+		expect(await pending).toBe(child);
+	});
+
+	it("WaitForChild's thenable resolves on a rename, as the engine's does", async () => {
+		// The reconciler order that used to hang: children are parented first and
+		// named afterwards, so nothing named `Panel` is ever *added*.
+		const root = createInstance("Frame", "Root");
+		const child = createInstance("Frame", "Unnamed");
+		child.Parent = root;
+		const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+		const pending = pendingWait(root.WaitForChild("Panel"));
+		warnSpy.mockRestore();
+
+		child.Name = "Panel";
+		expect(await pending).toBe(child);
+	});
+
+	it("WaitForChild gives up at the timeout, like the engine", async () => {
+		vi.useFakeTimers();
+		const root = createInstance("Frame", "Root");
+		const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+		const pending = pendingWait(root.WaitForChild("Never", 5));
+		warnSpy.mockRestore();
+
+		vi.advanceTimersByTime(4999);
+		let settled = false;
+		void pending.then(() => {
+			settled = true;
+		});
+		await Promise.resolve();
+		expect(settled).toBe(false);
+
+		vi.advanceTimersByTime(1);
+		expect(await pending).toBeUndefined();
+		vi.useRealTimers();
 	});
 
 	it("reparenting fires ChildRemoved, ChildAdded, and AncestryChanged", () => {
@@ -232,6 +297,78 @@ describe("LoomInstance types", () => {
 	});
 });
 
+describe("Instance:Clone", () => {
+	it("deep-copies properties, attributes and descendants, unparented", () => {
+		const root = createInstance("Frame", "Card");
+		root.BackgroundTransparency = 0.25;
+		root.Size = UDim2.fromOffset(200, 80);
+		root.SetAttribute("Theme", "dark");
+		const label = createInstance("TextLabel", "Title");
+		label.Text = "Hello";
+		label.Parent = root;
+		const corner = createInstance("UICorner");
+		corner.Parent = label;
+		root.Parent = createInstance("Frame", "World");
+
+		const clone = root.Clone() as LoomInstance;
+		expect(clone).not.toBe(root);
+		expect(clone.Parent).toBeUndefined(); // a clone starts detached, as in Roblox
+		expect(clone.ClassName).toBe("Frame");
+		expect(clone.Name).toBe("Card");
+		expect(clone.BackgroundTransparency).toBe(0.25);
+		expect((clone.Size as UDim2).X.Offset).toBe(200);
+		expect(clone.GetAttribute("Theme")).toBe("dark");
+
+		const clonedLabel = clone.FindFirstChild("Title") as LoomInstance;
+		expect(clonedLabel).toBeDefined();
+		expect(clonedLabel).not.toBe(label);
+		expect(clonedLabel.Text).toBe("Hello");
+		expect(clonedLabel.Parent).toBe(clone);
+		expect(clonedLabel.FindFirstChildOfClass("UICorner")).toBeDefined();
+		expect(clone.GetDescendants()).toHaveLength(2);
+	});
+
+	it("copies no connections and no later writes", () => {
+		const source = createInstance("Frame", "Source");
+		const fired: string[] = [];
+		source
+			.GetPropertyChangedSignal("Visible")
+			.Connect(() => fired.push("prop"));
+		(source.Changed as LoomSignal<[string]>).Connect(() =>
+			fired.push("changed"),
+		);
+
+		const clone = source.Clone() as LoomInstance;
+		clone.Visible = false;
+		expect(fired).toEqual([]); // the clone is listened to by nobody
+		expect(source.Visible).toBe(true); // …and writing it left the original alone
+	});
+
+	it("skips Archivable = false descendants and clones such a root to nil", () => {
+		const root = createInstance("Frame", "Root");
+		const kept = createInstance("Frame", "Kept");
+		kept.Parent = root;
+		const skipped = createInstance("Frame", "Skipped");
+		skipped.Archivable = false;
+		skipped.Parent = root;
+		const grandchild = createInstance("Frame", "Grandchild");
+		grandchild.Parent = skipped;
+
+		const clone = root.Clone() as LoomInstance;
+		expect(clone.GetChildren()).toHaveLength(1);
+		expect(clone.FindFirstChild("Kept")).toBeDefined();
+		expect(clone.FindFirstChild("Skipped", true)).toBeUndefined();
+		expect(clone.FindFirstChild("Grandchild", true)).toBeUndefined();
+
+		expect(skipped.Clone()).toBeUndefined();
+	});
+
+	it("Archivable defaults to true", () => {
+		expect(createInstance("Frame").Archivable).toBe(true);
+		expect(createInstance("Folder").Archivable).toBe(true);
+	});
+});
+
 describe("class read defaults and feedback writes", () => {
 	it("defaults Rotation/GroupTransparency/scroll metrics reads by class", () => {
 		const frame = createInstance("Frame");
@@ -246,6 +383,174 @@ describe("class read defaults and feedback writes", () => {
 		const group = createInstance("CanvasGroup");
 		expect(group.GroupTransparency).toBe(0);
 		expect(frame.GroupTransparency).toBeUndefined();
+	});
+
+	it("answers the GuiObject appearance defaults", () => {
+		const frame = createInstance("Frame");
+		expect(rgb(frame.BackgroundColor3)).toEqual([163, 162, 165]);
+		expect(rgb(frame.BorderColor3)).toEqual([27, 42, 53]);
+		expect(frame.BorderSizePixel).toBe(1);
+		expect(frame.BackgroundTransparency).toBe(0);
+		expect(frame.Interactable).toBe(true);
+		expect(frame.Selectable).toBe(false);
+		expect(frame.Active).toBe(false);
+		expect(frame.Visible).toBe(true);
+		expect(frame.ZIndex).toBe(1);
+		expect(frame.AnchorPoint).toBe(Vector2.zero);
+		expect((frame.Size as UDim2).X.Scale).toBe(0);
+		// Inherited by every 2D class, not just Frame.
+		expect(rgb(createInstance("TextButton").BorderColor3)).toEqual([
+			27, 42, 53,
+		]);
+	});
+
+	it("keeps read defaults out of the property store", () => {
+		// A default is what reflection *answers*, not something the instance owns:
+		// letting one into the store would encode it into the Scene IR and make an
+		// untouched property indistinguishable from a deliberately set one.
+		const frame = createInstance("Frame");
+		expect(frame.BackgroundColor3).toBeDefined();
+		expect(getRawProperties(frame).has("BackgroundColor3")).toBe(false);
+
+		const changed: string[] = [];
+		(frame.Changed as LoomSignal<[string]>).Connect((key) => changed.push(key));
+		frame.BorderSizePixel = 0;
+		expect(frame.BorderSizePixel).toBe(0); // a write wins over the default
+		expect(changed).toEqual(["BorderSizePixel"]);
+	});
+
+	it("gives each text class the placeholder Text the engine gives it", () => {
+		// `if label.Text ~= "" then` is the idiom this exists for: in Roblox a
+		// fresh label reads its class name-ish placeholder, never nil.
+		expect(createInstance("TextLabel").Text).toBe("Label");
+		expect(createInstance("TextButton").Text).toBe("Button");
+		expect(createInstance("TextBox").Text).toBe("TextBox");
+		expect(createInstance("Frame").Text).toBeUndefined();
+	});
+
+	it("answers the shared Text* defaults on all three text classes", () => {
+		for (const className of ["TextLabel", "TextButton", "TextBox"]) {
+			const text = createInstance(className);
+			expect(rgb(text.TextColor3)).toEqual([27, 42, 53]);
+			expect(text.TextSize).toBe(14);
+			expect(text.TextTransparency).toBe(0);
+			expect(text.TextScaled).toBe(false);
+			expect(text.TextWrapped).toBe(false);
+			expect(text.RichText).toBe(false);
+			expect(text.TextXAlignment).toBe(Enum.TextXAlignment.Center);
+			expect(text.TextYAlignment).toBe(Enum.TextYAlignment.Center);
+			expect(text.LineHeight).toBe(1);
+			expect(text.TextStrokeTransparency).toBe(1);
+			expect(rgb(text.TextStrokeColor3)).toEqual([0, 0, 0]);
+			expect(text.TextBounds).toBe(Vector2.zero);
+			expect(text.TextFits).toBe(true);
+		}
+	});
+
+	it("derives ContentText from Text, resolving rich-text markup", () => {
+		const label = createInstance("TextLabel");
+		expect(label.ContentText).toBe("Label");
+
+		label.Text = "<b>Bold</b> &amp; plain";
+		// RichText off: the markup is literal text, and so is ContentText.
+		expect(label.ContentText).toBe("<b>Bold</b> &amp; plain");
+
+		label.RichText = true;
+		expect(label.ContentText).toBe("Bold & plain");
+
+		// Read-only in the engine: a write cannot make it disagree with Text.
+		label.ContentText = "spoofed";
+		expect(label.ContentText).toBe("Bold & plain");
+	});
+
+	it("reads TextWrapped and TextWrap as the one property the engine has", () => {
+		const label = createInstance("TextLabel");
+		expect(label.TextWrapped).toBe(false);
+		expect(label.TextWrap).toBe(false);
+
+		// The deprecated spelling is the same property, so setting it wraps —
+		// a default that answered `false` first would have swallowed this.
+		label.TextWrap = true;
+		expect(label.TextWrapped).toBe(true);
+
+		// Both set: `TextWrapped` wins, as `@loom-dev/scene` reads it too.
+		label.TextWrapped = false;
+		expect(label.TextWrapped).toBe(false);
+	});
+
+	it("reads TextSize through the legacy FontSize enum it is linked to", () => {
+		const button = createInstance("TextButton");
+		expect(button.TextSize).toBe(14);
+
+		button.FontSize = Enum.FontSize.Size24; // the size lives in the name
+		expect(button.TextSize).toBe(24);
+		button.FontSize = "Size36"; // the engine takes the bare string too
+		expect(button.TextSize).toBe(36);
+
+		button.TextSize = 18; // an explicit TextSize wins over the legacy enum
+		expect(button.TextSize).toBe(18);
+	});
+
+	it("answers the ScreenGui defaults", () => {
+		const gui = createInstance("ScreenGui");
+		expect(gui.Enabled).toBe(true);
+		expect(gui.DisplayOrder).toBe(0);
+		expect(gui.IgnoreGuiInset).toBe(false);
+		expect(gui.ResetOnSpawn).toBe(true);
+		expect(gui.ZIndexBehavior).toBe(Enum.ZIndexBehavior.Sibling);
+		// `Enabled`/`ZIndexBehavior` are LayerCollector's, so the siblings get them.
+		expect(createInstance("SurfaceGui").Enabled).toBe(true);
+		expect(createInstance("SurfaceGui").ResetOnSpawn).toBeUndefined();
+	});
+
+	it("answers the ScrollingFrame defaults", () => {
+		const scroll = createInstance("ScrollingFrame");
+		const canvas = scroll.CanvasSize as UDim2;
+		expect([canvas.X.Scale, canvas.X.Offset]).toEqual([0, 0]);
+		expect([canvas.Y.Scale, canvas.Y.Offset]).toEqual([2, 0]);
+		expect(scroll.ScrollBarThickness).toBe(12);
+		expect(scroll.ScrollingEnabled).toBe(true);
+		expect(scroll.ScrollingDirection).toBe(Enum.ScrollingDirection.XY);
+		expect(scroll.AutomaticCanvasSize).toBe(Enum.AutomaticSize.None);
+		expect(scroll.ElasticBehavior).toBe(Enum.ElasticBehavior.WhenScrollable);
+		expect(rgb(scroll.ScrollBarImageColor3)).toEqual([255, 255, 255]);
+		expect(scroll.ScrollBarImageTransparency).toBe(0);
+	});
+
+	it("answers the Image* defaults on both image classes", () => {
+		for (const className of ["ImageLabel", "ImageButton"]) {
+			const image = createInstance(className);
+			expect(image.Image).toBe("");
+			expect(rgb(image.ImageColor3)).toEqual([255, 255, 255]);
+			expect(image.ImageTransparency).toBe(0);
+			expect(image.ScaleType).toBe(Enum.ScaleType.Stretch);
+			const slice = image.SliceCenter as Rect;
+			expect([slice.Min.X, slice.Min.Y, slice.Max.X, slice.Max.Y]).toEqual([
+				0, 0, 0, 0,
+			]);
+			expect(image.SliceScale).toBe(1);
+			const tile = image.TileSize as UDim2;
+			expect([tile.X.Scale, tile.Y.Scale]).toEqual([1, 1]);
+			expect(image.ImageRectOffset).toBe(Vector2.zero);
+			expect(image.ImageRectSize).toBe(Vector2.zero);
+			expect(image.IsLoaded).toBe(false);
+		}
+	});
+
+	it("answers the layout defaults, with FillDirection per class", () => {
+		const list = createInstance("UIListLayout");
+		expect(list.SortOrder).toBe(Enum.SortOrder.Name); // Studio-verified default
+		expect(list.HorizontalAlignment).toBe(Enum.HorizontalAlignment.Left);
+		expect(list.VerticalAlignment).toBe(Enum.VerticalAlignment.Top);
+		expect(list.FillDirection).toBe(Enum.FillDirection.Vertical);
+		const padding = list.Padding as UDim;
+		expect([padding.Scale, padding.Offset]).toEqual([0, 0]);
+
+		// A grid flows across before it wraps, and has no `Padding` of its own.
+		const grid = createInstance("UIGridLayout");
+		expect(grid.FillDirection).toBe(Enum.FillDirection.Horizontal);
+		expect(grid.SortOrder).toBe(Enum.SortOrder.Name);
+		expect(grid.Padding).toBeUndefined();
 	});
 
 	it("setFeedbackProperty fires signals only on real change and never marks dirty", () => {
