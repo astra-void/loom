@@ -5,6 +5,7 @@
  */
 import type { InputObject, LoomInstance } from "@loom-dev/runtime";
 import {
+	clearInputState,
 	createInstance,
 	Enum,
 	getEventSignal,
@@ -28,8 +29,10 @@ import {
 	cssFontSize,
 	type DomSession,
 	fontShorthand,
+	keyCodeFromKeyboardEvent,
 	registerFont,
 	renderScene,
+	scaledTextSize,
 	setImageResolver,
 } from "./index";
 
@@ -108,6 +111,29 @@ function firePointer(
 	init: MouseEventInit = {},
 ): void {
 	target.dispatchEvent(new PointerEventCtor(type, { bubbles: true, ...init }));
+}
+
+/** `UserInputService:IsKeyDown`, called the way Roblox code calls it. */
+function isKeyDown(key: unknown): boolean {
+	return (getService("UserInputService").IsKeyDown as (k: unknown) => boolean)(
+		key,
+	);
+}
+
+/** `UserInputService:IsMouseButtonPressed`. */
+function isMouseButtonPressed(button: unknown): boolean {
+	return (
+		getService("UserInputService").IsMouseButtonPressed as (
+			b: unknown,
+		) => boolean
+	)(button);
+}
+
+/** `UserInputService:GetKeysPressed`, as the `InputObject`s Roblox answers with. */
+function keysPressed(): InputObject[] {
+	return (
+		getService("UserInputService").GetKeysPressed as () => InputObject[]
+	)();
 }
 
 describe("createDomSession", () => {
@@ -320,6 +346,292 @@ describe("createDomSession", () => {
 		session.dispose();
 	});
 
+	/** A button (id `"btn"`) inside a frame (id `"box"`), both live instances. */
+	function mountButton(): {
+		button: LoomInstance;
+		frame: LoomInstance;
+		buttonEl: Element;
+		frameEl: Element;
+		session: DomSession;
+	} {
+		const frame = createInstance("Frame", "Box");
+		const button = createInstance("TextButton", "Button");
+		const frameId = getInternalId(frame);
+		const buttonId = getInternalId(button);
+		const scene: SceneNode = {
+			className: "Frame",
+			name: "Box",
+			id: frameId,
+			properties: { Active: prop.bool(true) },
+			children: [{ className: "TextButton", name: "Button", id: buttonId }],
+		};
+		const layout = layoutOf({
+			[frameId]: { x: 0, y: 0, width: 200, height: 100 },
+			[buttonId]: { x: 0, y: 0, width: 100, height: 40 },
+		});
+		const session = makeSession(
+			new Map([
+				[frameId, frame],
+				[buttonId, button],
+			]),
+		);
+		session.patch(scene, layout);
+		return {
+			button,
+			frame,
+			buttonEl: mount.querySelector(`[data-loom-id="${buttonId}"]`) as Element,
+			frameEl: mount.querySelector(`[data-loom-id="${frameId}"]`) as Element,
+			session,
+		};
+	}
+
+	/** Record every firing of `names` on `inst`, tagged with the event name. */
+	function record(inst: LoomInstance, names: string[]): unknown[][] {
+		const seen: unknown[][] = [];
+		for (const name of names) {
+			getEventSignal(inst, name).Connect((...args) =>
+				seen.push([name, ...args]),
+			);
+		}
+		return seen;
+	}
+
+	it("fires the global InputBegan/InputEnded pair for every press", () => {
+		// The service half, not the control half: outside-press dismissal (a menu
+		// closing when you click anywhere else) is built entirely on these two,
+		// and they fire whether or not the press landed on anything.
+		const { buttonEl, session } = mountButton();
+		const uis = getService("UserInputService");
+		const seen: unknown[][] = [];
+		const began = getEventSignal(uis, "InputBegan").Connect((...args) =>
+			seen.push(["began", ...args]),
+		);
+		const ended = getEventSignal(uis, "InputEnded").Connect((...args) =>
+			seen.push(["ended", ...args]),
+		);
+
+		firePointer(buttonEl, "pointerdown", { clientX: 2, clientY: 2 });
+		firePointer(buttonEl, "pointerup", { clientX: 2, clientY: 2 });
+		// The press that never paired (released over nothing) still ends.
+		firePointer(mount, "pointerdown", { clientX: 2, clientY: 2, button: 2 });
+		firePointer(mount, "pointerup", { clientX: 2, clientY: 2, button: 2 });
+
+		expect(seen.map((entry) => entry[0])).toEqual([
+			"began",
+			"ended",
+			"began",
+			"ended",
+		]);
+		expect((seen[1]?.[1] as InputObject).UserInputState).toBe(
+			Enum.UserInputState.End,
+		);
+		began.Disconnect();
+		ended.Disconnect();
+		session.dispose();
+	});
+
+	it("fires MouseButton1Down/Up on the button with (x, y)", () => {
+		const { button, buttonEl, session } = mountButton();
+		const seen = record(button, [
+			"MouseButton1Down",
+			"MouseButton1Up",
+			"MouseButton1Click",
+		]);
+
+		firePointer(buttonEl, "pointerdown", { clientX: 12, clientY: 8 });
+		firePointer(buttonEl, "pointerup", { clientX: 14, clientY: 9 });
+
+		// Down and up carry the pointer in mount-relative pixels; the click, which
+		// is the *pair*, carries nothing — exactly the engine's three signatures.
+		expect(seen).toEqual([
+			["MouseButton1Down", 12, 8],
+			["MouseButton1Up", 14, 9],
+			["MouseButton1Click"],
+		]);
+		session.dispose();
+	});
+
+	it("fires the MouseButton2 trio on a secondary press without activating", () => {
+		const { button, buttonEl, session } = mountButton();
+		const seen = record(button, [
+			"MouseButton2Down",
+			"MouseButton2Up",
+			"MouseButton2Click",
+			"MouseButton1Click",
+			"Activated",
+		]);
+
+		firePointer(buttonEl, "pointerdown", { clientX: 5, clientY: 6, button: 2 });
+		firePointer(buttonEl, "pointerup", { clientX: 5, clientY: 6, button: 2 });
+
+		// A right-click raises no `Activated` and no `MouseButton1Click` in Roblox;
+		// a context menu listens for `MouseButton2Click` and had nothing to hear.
+		expect(seen).toEqual([
+			["MouseButton2Down", 5, 6],
+			["MouseButton2Up", 5, 6],
+			["MouseButton2Click"],
+		]);
+		session.dispose();
+	});
+
+	it("routes a press on a button's decorative child back to the button", () => {
+		// A TextButton with a label inside it: the pointer lands on the label, and
+		// the engine still reports the button's own down/up/click.
+		const button = createInstance("TextButton", "Button");
+		const label = createInstance("TextLabel", "Caption");
+		const buttonId = getInternalId(button);
+		const labelId = getInternalId(label);
+		const scene: SceneNode = {
+			className: "TextButton",
+			name: "Button",
+			id: buttonId,
+			children: [{ className: "TextLabel", name: "Caption", id: labelId }],
+		};
+		const session = makeSession(
+			new Map([
+				[buttonId, button],
+				[labelId, label],
+			]),
+		);
+		session.patch(
+			scene,
+			layoutOf({
+				[buttonId]: { x: 0, y: 0, width: 100, height: 40 },
+				[labelId]: { x: 0, y: 0, width: 100, height: 40 },
+			}),
+		);
+		const labelEl = mount.querySelector(
+			`[data-loom-id="${labelId}"]`,
+		) as Element;
+		const seen = record(button, ["MouseButton1Down", "MouseButton1Click"]);
+
+		firePointer(labelEl, "pointerdown", { clientX: 3, clientY: 4 });
+		firePointer(labelEl, "pointerup", { clientX: 3, clientY: 4 });
+
+		expect(seen).toEqual([["MouseButton1Down", 3, 4], ["MouseButton1Click"]]);
+		session.dispose();
+	});
+
+	it("pairs a click per button, so a right press cannot be left-clicked shut", () => {
+		const { button, buttonEl, session } = mountButton();
+		const seen = record(button, [
+			"MouseButton1Click",
+			"MouseButton2Click",
+			"Activated",
+		]);
+
+		// Press with the secondary button, release with the primary one: two
+		// unrelated halves, and neither button has a pair to report.
+		firePointer(buttonEl, "pointerdown", { clientX: 5, clientY: 6, button: 2 });
+		firePointer(buttonEl, "pointerup", { clientX: 5, clientY: 6, button: 0 });
+
+		expect(seen).toEqual([]);
+		session.dispose();
+	});
+
+	it("reports the held mouse button to UserInputService", () => {
+		const { buttonEl, session } = mountButton();
+		expect(isMouseButtonPressed(Enum.UserInputType.MouseButton1)).toBe(false);
+
+		firePointer(buttonEl, "pointerdown", { clientX: 1, clientY: 1 });
+		expect(isMouseButtonPressed(Enum.UserInputType.MouseButton1)).toBe(true);
+		expect(isMouseButtonPressed(Enum.UserInputType.MouseButton2)).toBe(false);
+
+		firePointer(buttonEl, "pointerup", { clientX: 1, clientY: 1 });
+		expect(isMouseButtonPressed(Enum.UserInputType.MouseButton1)).toBe(false);
+		session.dispose();
+	});
+
+	it("drives a button's whole MouseButton1 family from a tap", () => {
+		// The engine synthesizes the mouse family from a touch on a GuiButton — a
+		// phone can press a button loom's UI never gave a mouse — but
+		// `IsMouseButtonPressed` stays false there, because a finger is
+		// `UserInputType.Touch` and not a button.
+		const { button, buttonEl, session } = mountButton();
+		const seen = record(button, [
+			"MouseButton1Down",
+			"MouseButton1Up",
+			"MouseButton1Click",
+		]);
+		const touch = { pointerType: "touch", pointerId: 4 };
+
+		firePointer(buttonEl, "pointerdown", { clientX: 1, clientY: 1, ...touch });
+		expect(isMouseButtonPressed(Enum.UserInputType.MouseButton1)).toBe(false);
+		firePointer(buttonEl, "pointerup", { clientX: 1, clientY: 1, ...touch });
+
+		expect(seen).toEqual([
+			["MouseButton1Down", 1, 1],
+			["MouseButton1Up", 1, 1],
+			["MouseButton1Click"],
+		]);
+		session.dispose();
+	});
+
+	it("releases a held button when the gesture is cancelled", () => {
+		const { buttonEl, session } = mountButton();
+		firePointer(buttonEl, "pointerdown", { clientX: 1, clientY: 1 });
+		expect(isMouseButtonPressed(Enum.UserInputType.MouseButton1)).toBe(true);
+		// No `pointerup` follows a cancel, so the button has to be retired here or
+		// it reads as held for the rest of the session.
+		firePointer(buttonEl, "pointercancel", { clientX: 1, clientY: 1 });
+		expect(isMouseButtonPressed(Enum.UserInputType.MouseButton1)).toBe(false);
+		session.dispose();
+	});
+
+	it("fires MouseMoved on the whole hovered chain with (x, y)", () => {
+		const { button, frame, buttonEl, session } = mountButton();
+		const onButton = record(button, ["MouseMoved"]);
+		const onFrame = record(frame, ["MouseMoved"]);
+
+		firePointer(buttonEl, "pointermove", { clientX: 21, clientY: 7 });
+
+		// Declared in EVENT_NAMES but never dispatched before: `:Connect`
+		// succeeded, so a hover-tracking tooltip looked wired and never moved.
+		expect(onButton).toEqual([["MouseMoved", 21, 7]]);
+		// The ancestor is under the pointer too, exactly as MouseEnter/Leave are.
+		expect(onFrame).toEqual([["MouseMoved", 21, 7]]);
+		session.dispose();
+	});
+
+	it("fires MouseWheelForward/Backward and a MouseWheel input", () => {
+		const { button, buttonEl, session } = mountButton();
+		const seen = record(button, ["MouseWheelForward", "MouseWheelBackward"]);
+		const uis = getService("UserInputService");
+		const changed: InputObject[] = [];
+		const conn = getEventSignal(uis, "InputChanged").Connect((input) =>
+			changed.push(input as InputObject),
+		);
+
+		const wheel = (deltaY: number): void => {
+			const e = new WheelEvent("wheel", {
+				bubbles: true,
+				cancelable: true,
+				deltaY,
+			});
+			// happy-dom's WheelEvent drops the MouseEvent half of the init, so the
+			// pointer coordinates the handler reports have to be put on by hand.
+			Object.defineProperty(e, "clientX", { value: 9 });
+			Object.defineProperty(e, "clientY", { value: 3 });
+			buttonEl.dispatchEvent(e);
+		};
+		wheel(-120); // away from the user
+		wheel(120);
+
+		expect(seen).toEqual([
+			["MouseWheelForward", 9, 3],
+			["MouseWheelBackward", 9, 3],
+		]);
+		// Roblox reports the direction in the input object's Position.Z, which is
+		// where every zoom-on-scroll handler reads it from.
+		expect(changed.map((input) => input.UserInputType)).toEqual([
+			Enum.UserInputType.MouseWheel,
+			Enum.UserInputType.MouseWheel,
+		]);
+		expect(changed.map((input) => input.Position.Z)).toEqual([1, -1]);
+		conn.Disconnect();
+		session.dispose();
+	});
+
 	it("fires MouseEnter/MouseLeave with (x, y) via hover chain diff", () => {
 		const frame = createInstance("Frame", "Hover");
 		const frameId = getInternalId(frame);
@@ -511,6 +823,229 @@ describe("createDomSession", () => {
 		window.dispatchEvent(new KeyboardEvent("keydown", { code: "Space" }));
 		expect(keys).toHaveLength(1); // deselected → no element routing
 		session.dispose();
+	});
+
+	it("maps DOM key codes onto the engine's KeyCode items", () => {
+		// Keyed off `KeyboardEvent.code` — the physical key — so WASD stays WASD on
+		// an AZERTY board, which is what `Enum.KeyCode` does in the engine.
+		const codeFor = (code: string) =>
+			keyCodeFromKeyboardEvent(new KeyboardEvent("keydown", { code }));
+		expect(codeFor("KeyW")).toBe(Enum.KeyCode.W);
+		expect(codeFor("Digit4")).toBe(Enum.KeyCode.Four);
+		expect(codeFor("Numpad4")).toBe(Enum.KeyCode.KeypadFour);
+		expect(codeFor("F5")).toBe(Enum.KeyCode.F5);
+		expect(codeFor("ShiftLeft")).toBe(Enum.KeyCode.LeftShift);
+		expect(codeFor("ShiftRight")).toBe(Enum.KeyCode.RightShift);
+		expect(codeFor("ControlLeft")).toBe(Enum.KeyCode.LeftControl);
+		expect(codeFor("Minus")).toBe(Enum.KeyCode.Minus);
+		expect(codeFor("Equal")).toBe(Enum.KeyCode.Equals);
+		expect(codeFor("BracketLeft")).toBe(Enum.KeyCode.LeftBracket);
+		expect(codeFor("Backquote")).toBe(Enum.KeyCode.Backquote);
+		expect(codeFor("Escape")).toBe(Enum.KeyCode.Escape);
+		expect(codeFor("Insert")).toBe(Enum.KeyCode.Insert);
+		expect(codeFor("ContextMenu")).toBe(Enum.KeyCode.Menu);
+		// The keypad's Enter is its own item in the engine, not `Return`.
+		expect(codeFor("Enter")).toBe(Enum.KeyCode.Return);
+		expect(codeFor("NumpadEnter")).toBe(Enum.KeyCode.KeypadEnter);
+		// Nothing is guessed at: a key the engine has no item for reads Unknown.
+		expect(codeFor("IntlBackslash")).toBe(Enum.KeyCode.Unknown);
+		expect(codeFor("F19")).toBe(Enum.KeyCode.Unknown);
+	});
+
+	it("reports held keys so UserInputService can answer IsKeyDown", () => {
+		clearInputState();
+		const session = makeSession(new Map());
+		expect(isKeyDown(Enum.KeyCode.W)).toBe(false);
+
+		window.dispatchEvent(new KeyboardEvent("keydown", { code: "KeyW" }));
+		window.dispatchEvent(new KeyboardEvent("keydown", { code: "ShiftLeft" }));
+		expect(isKeyDown(Enum.KeyCode.W)).toBe(true);
+		expect(isKeyDown(Enum.KeyCode.LeftShift)).toBe(true);
+		// Roblox answers `GetKeysPressed` with real InputObjects, not key codes.
+		expect(keysPressed().map((input) => input.KeyCode)).toEqual([
+			Enum.KeyCode.W,
+			Enum.KeyCode.LeftShift,
+		]);
+
+		window.dispatchEvent(new KeyboardEvent("keyup", { code: "KeyW" }));
+		expect(isKeyDown(Enum.KeyCode.W)).toBe(false);
+		expect(isKeyDown(Enum.KeyCode.LeftShift)).toBe(true);
+		session.dispose();
+	});
+
+	it("raises InputBegan once per press, not once per auto-repeat", () => {
+		clearInputState();
+		const session = makeSession(new Map());
+		const button = createInstance("TextButton", "Selected");
+		const guiService = getService("GuiService");
+		guiService.SelectedObject = button;
+		const began: InputObject[] = [];
+		const conn = getEventSignal(button, "InputBegan").Connect((input) =>
+			began.push(input as InputObject),
+		);
+
+		const key = (repeat: boolean): KeyboardEvent => {
+			const e = new KeyboardEvent("keydown", {
+				code: "ArrowDown",
+				repeat,
+				cancelable: true,
+			});
+			window.dispatchEvent(e);
+			return e;
+		};
+		const first = key(false);
+		const held = key(true);
+		const stillHeld = key(true);
+
+		// The OS repeating a held key is not a second press, and the engine raises
+		// no second InputBegan for it.
+		expect(began).toHaveLength(1);
+		// The repeats are still swallowed, though: an arrow that stopped being
+		// prevented halfway through would start scrolling the page under the app.
+		expect(first.defaultPrevented).toBe(true);
+		expect(held.defaultPrevented).toBe(true);
+		expect(stillHeld.defaultPrevented).toBe(true);
+		expect(isKeyDown(Enum.KeyCode.Down)).toBe(true);
+
+		window.dispatchEvent(new KeyboardEvent("keyup", { code: "ArrowDown" }));
+		expect(isKeyDown(Enum.KeyCode.Down)).toBe(false);
+		conn.Disconnect();
+		guiService.SelectedObject = undefined;
+		session.dispose();
+	});
+
+	it("routes keys to the focused TextBox as well as the selection", () => {
+		clearInputState();
+		const { inst, session, input } = mountTextBox();
+		const seen: unknown[][] = [];
+		getEventSignal(inst, "InputBegan").Connect((...args) =>
+			seen.push(["began", ...args]),
+		);
+		getEventSignal(inst, "InputEnded").Connect((...args) =>
+			seen.push(["ended", ...args]),
+		);
+
+		// Unfocused, the box hears nothing: the keys are not landing on it.
+		window.dispatchEvent(new KeyboardEvent("keydown", { code: "Escape" }));
+		expect(seen).toHaveLength(0);
+
+		input.focus();
+		window.dispatchEvent(new KeyboardEvent("keydown", { code: "Escape" }));
+		window.dispatchEvent(new KeyboardEvent("keyup", { code: "Escape" }));
+		expect(seen).toHaveLength(2);
+		expect((seen[0]?.[1] as InputObject).KeyCode).toBe(Enum.KeyCode.Escape);
+		expect((seen[0]?.[1] as InputObject).UserInputType).toBe(
+			Enum.UserInputType.Keyboard,
+		);
+		expect((seen[1]?.[1] as InputObject).UserInputState).toBe(
+			Enum.UserInputState.End,
+		);
+		input.blur();
+		session.dispose();
+	});
+
+	it("drops every held key when focus leaves the page", () => {
+		// A browser stops delivering `keyup` the moment focus goes, so a key held
+		// through an alt-tab would read as held forever — the stuck-movement-key
+		// bug, which in a preview looks like loom is broken rather than like the
+		// tab changed.
+		clearInputState();
+		const session = makeSession(new Map());
+		window.dispatchEvent(new KeyboardEvent("keydown", { code: "KeyW" }));
+		expect(isKeyDown(Enum.KeyCode.W)).toBe(true);
+
+		window.dispatchEvent(new Event("blur"));
+		expect(isKeyDown(Enum.KeyCode.W)).toBe(false);
+		expect(keysPressed()).toEqual([]);
+		session.dispose();
+	});
+
+	it("takes its window listeners with it on dispose", () => {
+		// The session is re-created on every re-mount; a leaked keydown listener
+		// would fire the app's handlers twice and then three times.
+		clearInputState();
+		const session = makeSession(new Map());
+		const uis = getService("UserInputService");
+		const began: unknown[][] = [];
+		const conn = getEventSignal(uis, "InputBegan").Connect((...args) =>
+			began.push(args),
+		);
+
+		window.dispatchEvent(new KeyboardEvent("keydown", { code: "KeyQ" }));
+		expect(began).toHaveLength(1);
+
+		session.dispose();
+		window.dispatchEvent(new KeyboardEvent("keydown", { code: "KeyQ" }));
+		expect(began).toHaveLength(1);
+		// And the state it owned went with it, so a fresh session starts clean.
+		expect(isKeyDown(Enum.KeyCode.Q)).toBe(false);
+		conn.Disconnect();
+	});
+
+	// --- TextScaled ---------------------------------------------------------------
+
+	it("scales a TextScaled TextBox to its box and reports bounds to match", () => {
+		// The box is 200 x 36 (see `mountTextBox`), so one line of text resolves to
+		// 36 — `TextSize` is not read at all while `TextScaled` is on.
+		const { inst, session, input } = mountTextBox({
+			Text: prop.string("hi"),
+			TextSize: prop.number(9),
+			TextScaled: prop.bool(true),
+		});
+		expect(input.style.fontSize).toBe("36px");
+		// TextBounds has to describe the size actually painted, or the auto-resize
+		// that reads it sizes the box against a font nothing is wearing.
+		expect((inst.TextBounds as Vector2).Y).toBe(36);
+		session.dispose();
+
+		const plain = mountTextBox({
+			Text: prop.string("hi"),
+			TextSize: prop.number(9),
+		});
+		expect(plain.input.style.fontSize).toBe("9px");
+		expect((plain.inst.TextBounds as Vector2).Y).toBe(9);
+		plain.session.dispose();
+	});
+
+	it("re-fits a TextScaled node when its rect changes, not its props", () => {
+		const inst = createInstance("TextLabel", "Label");
+		const id = getInternalId(inst);
+		const scene: SceneNode = {
+			className: "TextLabel",
+			name: "Label",
+			id,
+			properties: { Text: prop.string("hi"), TextScaled: prop.bool(true) },
+		};
+		const session = makeSession(new Map([[id, inst]]));
+		const fontSize = (): string => {
+			const layer = mount.querySelector<HTMLElement>(
+				`[data-loom-id="${id}"] > div`,
+			);
+			return layer?.style.fontSize ?? "";
+		};
+
+		session.patch(
+			scene,
+			layoutOf({ [id]: { x: 0, y: 0, width: 200, height: 40 } }),
+		);
+		expect(fontSize()).toBe("40px");
+		// Nothing about the node changed — only the box it was given.
+		session.patch(
+			scene,
+			layoutOf({ [id]: { x: 0, y: 0, width: 200, height: 18 } }),
+		);
+		expect(fontSize()).toBe("18px");
+		session.dispose();
+	});
+
+	it("scaledTextSize stops at the engine's 1…100 window", () => {
+		const font = { family: "Arial", weight: "400", italic: false };
+		// The measurer here reports no advances, so only the height binds.
+		expect(scaledTextSize({ text: "hi", font, width: 200, height: 4000 })).toBe(
+			100,
+		);
+		expect(scaledTextSize({ text: "hi", font, width: 200, height: 0 })).toBe(1);
+		expect(scaledTextSize({ text: "", font, width: 200, height: 100 })).toBe(1);
 	});
 
 	// --- GroupTransparency / Rotation --------------------------------------------

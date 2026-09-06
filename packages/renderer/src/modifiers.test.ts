@@ -32,6 +32,12 @@ function layoutOf(entries: Record<string, Rect>): LayoutResult {
 /**
  * The card is a *child* of the root: scene roots are transparent containers and
  * never take background or modifier styling.
+ *
+ * `BorderSizePixel = 0` because the engine's default is 1 and the legacy border
+ * shares `box-shadow` with the modifiers — see the `Border` block at the bottom
+ * of this file, which is where that default is asserted. Leaving it on here
+ * would put a ring on the end of every expectation below and make the `UIStroke`
+ * and `UIShadow` cases about two things at once.
  */
 function sceneWith(modifiers: SceneNode[]): SceneNode {
 	return {
@@ -43,7 +49,10 @@ function sceneWith(modifiers: SceneNode[]): SceneNode {
 				className: "Frame",
 				name: "Card",
 				id: "card",
-				properties: { BackgroundColor3: prop.color3(color3FromRGB(255, 0, 0)) },
+				properties: {
+					BackgroundColor3: prop.color3(color3FromRGB(255, 0, 0)),
+					BorderSizePixel: prop.int(0),
+				},
 				children: modifiers,
 			},
 		],
@@ -515,5 +524,269 @@ describe("TextWrap", () => {
 		expect(
 			paintedOf({ Text: prop.string("a\nb"), TextWrapped: prop.bool(false) }),
 		).toEqual({ whiteSpace: "pre", text: "a\nb" });
+	});
+});
+
+describe("Border", () => {
+	/**
+	 * A card that keeps whatever `BorderSizePixel` the engine's defaults give it
+	 * — unlike {@link cardStyle}, which turns the legacy border off so the
+	 * modifier suites can assert `box-shadow` on its own.
+	 */
+	function borderCard(
+		properties: SceneNode["properties"],
+		modifiers: SceneNode[] = [],
+	): HTMLElement {
+		const mount = document.createElement("div");
+		renderScene(
+			{
+				className: "Frame",
+				name: "Root",
+				id: "root",
+				children: [
+					{
+						className: "Frame",
+						name: "Card",
+						id: "card",
+						properties,
+						children: modifiers,
+					},
+				],
+			},
+			LAYOUT,
+			mount,
+		);
+		const card = mount.querySelector<HTMLElement>('[data-loom-name="Card"]');
+		if (!card) throw new Error("card not rendered");
+		return card;
+	}
+
+	it("draws the engine's default 1px slate ring on a Frame that sets nothing", () => {
+		// Roblox ships `BorderSizePixel = 1` and `BorderColor3 = (27, 42, 53)`, so
+		// an unstyled Frame really does have a thin dark outline in-game. Painting
+		// none of it made a preview look tidier than the thing it previews — and
+		// made `BorderSizePixel = 0`, the line half of Roblox UI code opens with,
+		// look like it had never done anything.
+		expect(borderCard({}).style.boxShadow).toBe(
+			"0 0 0 1px rgba(27, 42, 53, 1)",
+		);
+	});
+
+	it("takes BorderSizePixel and BorderColor3", () => {
+		expect(
+			borderCard({
+				BorderSizePixel: prop.int(3),
+				BorderColor3: prop.color3(color3FromRGB(0, 255, 0)),
+			}).style.boxShadow,
+		).toBe("0 0 0 3px rgba(0, 255, 0, 1)");
+	});
+
+	it("puts an Inset border inside the box and a Middle one across the edge", () => {
+		const mode = (name: string): SceneNode["properties"] => ({
+			BorderSizePixel: prop.int(4),
+			BorderMode: prop.enum({ enumType: "BorderMode", name, value: 0 }),
+		});
+		// Outline is the default and paints wholly outside the rect.
+		expect(borderCard(mode("Outline")).style.boxShadow).toBe(
+			"0 0 0 4px rgba(27, 42, 53, 1)",
+		);
+		expect(borderCard(mode("Inset")).style.boxShadow).toBe(
+			"inset 0 0 0 4px rgba(27, 42, 53, 1)",
+		);
+		expect(borderCard(mode("Middle")).style.boxShadow).toBe(
+			"0 0 0 2px rgba(27, 42, 53, 1), inset 0 0 0 2px rgba(27, 42, 53, 1)",
+		);
+	});
+
+	it("draws nothing at BorderSizePixel 0", () => {
+		expect(borderCard({ BorderSizePixel: prop.int(0) }).style.boxShadow).toBe(
+			"",
+		);
+	});
+
+	it("spends BackgroundTransparency on the border as well as the fill", () => {
+		// One property for the whole box in the engine, which is what keeps the
+		// default border off the invisible container Frames real UI is built from.
+		expect(
+			borderCard({ BackgroundTransparency: prop.number(0.25) }).style.boxShadow,
+		).toBe("0 0 0 1px rgba(27, 42, 53, 0.75)");
+		expect(
+			borderCard({ BackgroundTransparency: prop.number(1) }).style.boxShadow,
+		).toBe("");
+	});
+
+	it("layers under a UIStroke ring rather than replacing it", () => {
+		// Both land on `box-shadow`; CSS paints the earlier one on top, so the
+		// modern effect wins the edge and the legacy border sits beneath it.
+		expect(
+			borderCard({}, [
+				{
+					className: "UIStroke",
+					name: "UIStroke",
+					properties: {
+						Color: prop.color3(color3FromRGB(0, 0, 255)),
+						Thickness: prop.number(2),
+					},
+				},
+			]).style.boxShadow,
+		).toBe("0 0 0 2px rgba(0, 0, 255, 1), 0 0 0 1px rgba(27, 42, 53, 1)");
+	});
+
+	it("never changes the box it rings", () => {
+		// The whole reason this is a box-shadow: a CSS `border` is part of the box
+		// model, so a 20px one would eat 40px of a card the layout engine already
+		// sized — the engine's border is paint over a rect, not part of it.
+		const plain = borderCard({ BorderSizePixel: prop.int(0) }).style;
+		const thick = borderCard({ BorderSizePixel: prop.int(20) }).style;
+		expect(thick.width).toBe(plain.width);
+		expect(thick.height).toBe(plain.height);
+		expect(thick.left).toBe(plain.left);
+		expect(thick.top).toBe(plain.top);
+		expect(thick.borderWidth).toBe("");
+	});
+});
+
+describe("TextScaled", () => {
+	/**
+	 * A label alone in a box of the given size. The stubbed measurer above spends
+	 * a flat {@link CHAR_W} per character *whatever the font size*, so the width
+	 * axis is constant here and the fit is decided by the height — which makes
+	 * every size below one this file can state exactly rather than approximate.
+	 */
+	function scaledLabel(
+		properties: SceneNode["properties"],
+		width: number,
+		height: number,
+		modifiers: SceneNode[] = [],
+	): HTMLElement {
+		const mount = document.createElement("div");
+		renderScene(
+			{
+				className: "Frame",
+				name: "Root",
+				id: "root",
+				children: [
+					{
+						className: "TextLabel",
+						name: "Label",
+						id: "label",
+						properties,
+						children: modifiers,
+					},
+				],
+			},
+			layoutOf({
+				root: { x: 0, y: 0, width: 400, height: 300 },
+				label: { x: 0, y: 0, width, height },
+			}),
+			mount,
+		);
+		const layer = mount.querySelector<HTMLElement>(
+			'[data-loom-name="Label"] > div',
+		);
+		if (!layer) throw new Error("text layer not rendered");
+		return layer;
+	}
+
+	const scaled = (
+		text: string,
+		extra: SceneNode["properties"] = {},
+	): SceneNode["properties"] => ({
+		Text: prop.string(text),
+		TextScaled: prop.bool(true),
+		...extra,
+	});
+
+	it("grows the text to the engine's 100 ceiling when the box has room", () => {
+		// One 4-character line is 24px wide against a 200px box, so only the
+		// height binds — and 100 is where the engine stops growing on its own.
+		expect(scaledLabel(scaled("aaaa"), 200, 100).style.fontSize).toBe("100px");
+	});
+
+	it("shrinks to the size that fits the box's height", () => {
+		// Two lines in a 100px box: `TextSize + (n - 1) * TextSize * LineHeight`
+		// is 2 * size, so 50 is the largest that still fits.
+		expect(scaledLabel(scaled("one\ntwo"), 200, 100).style.fontSize).toBe(
+			"50px",
+		);
+		expect(scaledLabel(scaled("one\ntwo"), 200, 30).style.fontSize).toBe(
+			"15px",
+		);
+	});
+
+	it("ignores TextSize outright", () => {
+		// Not a starting point the engine scales from — the property is simply
+		// not read while `TextScaled` is on.
+		const style = scaledLabel(
+			scaled("aaaa", { TextSize: prop.number(8) }),
+			200,
+			100,
+		).style;
+		expect(style.fontSize).toBe("100px");
+		expect(
+			scaledLabel({ Text: prop.string("aaaa") }, 200, 100).style.fontSize,
+		).toBe("14px"); // the same label without TextScaled: the Roblox default
+	});
+
+	it("wraps whatever TextWrapped says", () => {
+		// Fitting a box means fitting both axes, so the string has to be allowed
+		// to break — and the breaks are the measurement's own, not the browser's.
+		const layer = scaledLabel(
+			scaled("aaaa bbbb cccc", { TextWrapped: prop.bool(false) }),
+			24,
+			24,
+		);
+		const inner = layer.querySelector<HTMLElement>("div");
+		expect(inner?.textContent).toBe("aaaa\nbbbb\ncccc");
+		expect(inner?.style.whiteSpace).toBe("pre");
+		// Three lines in 24px.
+		expect(layer.style.fontSize).toBe("8px");
+	});
+
+	it("spends LineHeight between the lines it is fitting", () => {
+		// 2 lines at LineHeight 1.5 occupy `size + size * 1.5`, so 40px of box
+		// buys 16 rather than the 20 a flat `n * size` would have allowed.
+		expect(
+			scaledLabel(scaled("one\ntwo", { LineHeight: prop.number(1.5) }), 200, 40)
+				.style.fontSize,
+		).toBe("16px");
+	});
+
+	it("clamps to a UITextSizeConstraint", () => {
+		const constraint = (properties: SceneNode["properties"]): SceneNode[] => [
+			{
+				className: "UITextSizeConstraint",
+				name: "UITextSizeConstraint",
+				properties,
+			},
+		];
+		expect(
+			scaledLabel(
+				scaled("aaaa"),
+				200,
+				100,
+				constraint({ MaxTextSize: prop.number(20) }),
+			).style.fontSize,
+		).toBe("20px");
+		// Below the floor the engine stops shrinking and lets the text overflow,
+		// which is the whole point of `MinTextSize`.
+		expect(
+			scaledLabel(
+				scaled("one\ntwo"),
+				200,
+				10,
+				constraint({ MinTextSize: prop.number(12) }),
+			).style.fontSize,
+		).toBe("12px");
+	});
+
+	it("bottoms out when no size can make the string fit", () => {
+		// A single unbreakable word wider than the box: `wrapLines` never splits
+		// mid-word, so the widest line stays over the wrap width and the search
+		// runs all the way down. (With this file's size-independent advances that
+		// is every size; a real face would stop somewhere above the floor.)
+		expect(scaledLabel(scaled("aaaaaaaaaa"), 24, 24).style.fontSize).toBe(
+			"1px",
+		);
 	});
 });

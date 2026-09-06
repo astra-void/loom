@@ -31,6 +31,7 @@
 
 import type { EnumItem, InputObject, LoomInstance } from "@loom-dev/runtime";
 import {
+	clearInputState,
 	Enum,
 	getEventSignal,
 	getFocusedTextBox,
@@ -39,6 +40,8 @@ import {
 	makeInputObject,
 	registerTextBoxAdapter,
 	setFocusedTextBox,
+	setKeyState,
+	setMouseButtonState,
 	setMouseLocation,
 	setTextMeasurer,
 	unregisterTextBoxAdapter,
@@ -82,6 +85,7 @@ import {
 	getSliceScale,
 	getText,
 	getTextColor3,
+	getTextScaled,
 	getTextSize,
 	getTextTransparency,
 	getTextWrapped,
@@ -701,6 +705,125 @@ export function measureText(request: {
 // business knowing about canvases or font stacks. Both adapters load the
 // renderer, so `TextService:GetTextSize` works under either one.
 setTextMeasurer(measureText);
+
+// --- TextScaled ---------------------------------------------------------------
+
+/**
+ * The window `TextScaled` searches when no `UITextSizeConstraint` narrows it.
+ * The engine will grow text to 100 and shrink it to 1, and no further — a
+ * `TextScaled` label in a very tall box does not end up with 400px glyphs.
+ */
+const TEXT_SCALED_MAX = 100;
+const TEXT_SCALED_MIN = 1;
+
+/**
+ * Fingerprint -> the size the search settled on. The search costs a handful of
+ * wrap passes and both the repaint fingerprint and the paint ask for it every
+ * frame, so without this a scaled label re-measures itself twice a frame for as
+ * long as it is on screen.
+ */
+const scaledSizeCache = new Map<string, number>();
+// A face finishing its download changes every advance the search was decided
+// on, so the answers it produced are no longer the ones it would produce.
+onFontsChanged(() => scaledSizeCache.clear());
+
+/**
+ * The `TextSize` `TextScaled` resolves to: the largest whole size at which the
+ * string still fits inside `width` x `height`.
+ *
+ * `TextScaled` ignores `TextSize` outright — the property is not a starting
+ * point the engine scales *from*, it is simply not read — so this is the only
+ * thing that decides how big the glyphs come out. Wrapping is on regardless of
+ * `TextWrapped`, which is what the engine does too: scaling to fit a box means
+ * fitting both axes, and a string that cannot break can only ever satisfy the
+ * width by shrinking past the point of legibility.
+ *
+ * Measured through {@link wrapLines}, the same call the text overlay paints its
+ * breaks with and the same one `TextService:GetTextSize` answers from — so the
+ * size reported back and the size drawn are one number, not two that agree by
+ * luck.
+ *
+ * Whole sizes rather than the engine's continuous scale: the search is a binary
+ * one either way, and a fractional answer would report a `TextBounds` no
+ * `GetTextSize` call could reproduce. Below `minSize` the text simply overflows
+ * its box, which is exactly what `UITextSizeConstraint.MinTextSize` means.
+ */
+export function scaledTextSize(request: {
+	text: string;
+	font: ResolvedFont;
+	width: number;
+	height: number;
+	/** `LineHeight`; the engine spends it only *between* lines (default 1). */
+	lineHeight?: number;
+	minSize?: number;
+	maxSize?: number;
+}): number {
+	const min = Math.max(1, Math.floor(request.minSize ?? TEXT_SCALED_MIN));
+	const max = Math.max(min, Math.floor(request.maxSize ?? TEXT_SCALED_MAX));
+	const { text, width, height } = request;
+	// No box yet (the first frame, before layout has run) or nothing to fit:
+	// the floor, so the label paints at a legible size rather than at 100.
+	if (text === "" || !(width > 0) || !(height > 0)) return min;
+	const lineHeight = request.lineHeight ?? 1;
+	const key = `${min}-${max} ${width}x${height} ${lineHeight} ${
+		request.font.italic ? "italic " : ""
+	}${request.font.weight} ${request.font.family} ${text}`;
+	const cached = scaledSizeCache.get(key);
+	if (cached !== undefined) return cached;
+
+	const fits = (size: number): boolean => {
+		const { lines, widest } = wrapLines(
+			text,
+			width,
+			widthMeasurer(request.font, size),
+		);
+		// A word wider than the box survives `wrapLines` unbroken, so the widest
+		// line is checked rather than assumed to be within the wrap width.
+		if (widest > width) return false;
+		// The block height the overlay actually paints: `LineHeight` is spent
+		// between baselines only, so n lines occupy `size + (n - 1) * size * lh`.
+		return size + (lines.length - 1) * size * lineHeight <= height;
+	};
+	let best = min;
+	if (fits(max)) {
+		best = max;
+	} else {
+		let lo = min;
+		let hi = max;
+		while (lo < hi) {
+			const mid = Math.ceil((lo + hi) / 2);
+			if (fits(mid)) lo = mid;
+			else hi = mid - 1;
+		}
+		best = lo;
+	}
+	scaledSizeCache.set(key, best);
+	return best;
+}
+
+/**
+ * The size a text node's glyphs are painted at: `TextSize`, unless `TextScaled`
+ * is on and the box decides instead.
+ *
+ * Every reader of a text node's size goes through here — the overlay layer, its
+ * repaint fingerprint, the clip rect, and the TextBox `<input>` — so a scaled
+ * label cannot end up measured at one size and painted at another.
+ */
+function effectiveTextSize(node: SceneNode, rect: Rect): number {
+	if (!getTextScaled(node)) return getTextSize(node);
+	// `UITextSizeConstraint` is the engine's way of bounding the search, and the
+	// only reason a `TextScaled` label ever stops growing before it fills the box.
+	const constraint = findModifier(node, "UITextSizeConstraint");
+	return scaledTextSize({
+		text: getText(node) ?? "",
+		font: nodeFont(node),
+		width: rect.width,
+		height: rect.height,
+		lineHeight: getLineHeight(node),
+		minSize: asNumber(constraint?.properties?.MinTextSize),
+		maxSize: asNumber(constraint?.properties?.MaxTextSize),
+	});
+}
 const yAlignFlex = (a: string): string =>
 	a === "Top" ? "flex-start" : a === "Bottom" ? "flex-end" : "center";
 const xAlignText = (a: string): string =>
@@ -781,6 +904,56 @@ function strokeShadow(node: SceneNode): string | undefined {
 	}
 }
 
+/** Roblox's `GuiObject.BorderSizePixel` default — a 1px border, not none. */
+const DEFAULT_BORDER_SIZE = 1;
+/** Roblox's `GuiObject.BorderColor3` default, `Color3.fromRGB(27, 42, 53)`. */
+const DEFAULT_BORDER_COLOR: Color3 = { r: 27 / 255, g: 42 / 255, b: 53 / 255 };
+
+/**
+ * `BorderSizePixel` / `BorderColor3` / `BorderMode` -> a box-shadow ring — the
+ * same trick {@link strokeShadow} plays, for the same reason: a CSS `border` is
+ * part of the box model and would push the node's own content (and, with
+ * `box-sizing: content-box`, its children) in by its thickness, while the
+ * engine's border is pure paint over a rect the layout engine already decided.
+ *
+ * This is the legacy border every GuiObject has carried since before `UIStroke`
+ * existed, and the part that surprises is that it is **on by default**: the
+ * engine ships `BorderSizePixel = 1` with that dark slate `BorderColor3`, so a
+ * Frame that sets nothing really does draw a thin outline in-game. loom read
+ * none of the three properties, which made an unstyled Frame come out cleaner
+ * in the preview than in the engine — and made `BorderSizePixel = 0`, the line
+ * half of Roblox UI code opens with, look like it had done nothing.
+ *
+ * What keeps the default from being loud is that the engine spends
+ * `BackgroundTransparency` on the border as well as the fill — one property for
+ * the whole box — so the invisible container Frames real UI is built out of
+ * stay borderless here too.
+ *
+ * `BorderMode` decides which side of the edge the pixels sit on, exactly as
+ * `BorderStrokePosition` does for `UIStroke`: `Outline` (the default) paints
+ * wholly outside the rect, `Inset` wholly inside it, and `Middle` straddles the
+ * edge with half the thickness each way.
+ */
+function borderShadow(node: SceneNode): string | undefined {
+	const thickness =
+		asNumber(node.properties?.BorderSizePixel) ?? DEFAULT_BORDER_SIZE;
+	if (!(thickness > 0)) return undefined;
+	const transparency = getBackgroundTransparency(node);
+	if (transparency >= 1) return undefined;
+	const color = asColor3(node.properties?.BorderColor3) ?? DEFAULT_BORDER_COLOR;
+	const paint = cssColor(color, transparency);
+	switch (asEnum(node.properties?.BorderMode)?.name) {
+		case "Inset":
+			return `inset 0 0 0 ${thickness}px ${paint}`;
+		case "Middle": {
+			const half = thickness / 2;
+			return `0 0 0 ${half}px ${paint}, inset 0 0 0 ${half}px ${paint}`;
+		}
+		default:
+			return `0 0 0 ${thickness}px ${paint}`;
+	}
+}
+
 /**
  * `UIShadow` -> a CSS drop shadow. Same compositing model in both engines: the
  * shadow paints outside the parent's box, behind its background, and follows
@@ -816,18 +989,22 @@ function dropShadow(node: SceneNode, rect: Rect): string | undefined {
 }
 
 /**
- * The stroke ring and the drop shadow share one CSS property, so they are
- * emitted together. Ring first: CSS paints earlier shadows on top, and the
- * stroke hugs the border box while the shadow spreads out behind it.
+ * The stroke ring, the legacy border and the drop shadow all land on one CSS
+ * property, so they are emitted together. CSS paints earlier shadows on top, so
+ * the order is the engine's depth order read outward: `UIStroke` is the modern
+ * effect and wins the edge, `BorderSizePixel` sits under it on the same edge,
+ * and the drop shadow spreads out behind them both.
  */
 function applyShadows(
 	s: CSSStyleDeclaration,
 	node: SceneNode,
 	rect: Rect,
 ): void {
-	const layers = [strokeShadow(node), dropShadow(node, rect)].filter(
-		(layer): layer is string => layer !== undefined,
-	);
+	const layers = [
+		strokeShadow(node),
+		borderShadow(node),
+		dropShadow(node, rect),
+	].filter((layer): layer is string => layer !== undefined);
 	// Assigned either way: a session patches the same element every frame, so a
 	// stroke that is switched off has to take its ring with it.
 	s.boxShadow = layers.join(", ");
@@ -856,6 +1033,11 @@ function applyGradient(s: CSSStyleDeclaration, node: SceneNode): void {
  * listener on any of them is hit-testable, `Active` or not — see the patch in
  * `patchNode`.
  */
+// `MouseButton2Down`/`Up` and `MouseWheelForward`/`Backward` are dispatched from
+// here but are not yet in the runtime's `EVENT_NAMES`, so a Luau-style
+// `button.MouseButton2Down:Connect(...)` cannot resolve them off the proxy —
+// only the react adapter's `Event` prop, which asks for the signal by name, can.
+// Adding the four names there is all that is left.
 const POINTER_EVENT_NAMES: readonly string[] = [
 	"InputBegan",
 	"InputChanged",
@@ -867,6 +1049,10 @@ const POINTER_EVENT_NAMES: readonly string[] = [
 	"MouseButton1Down",
 	"MouseButton1Up",
 	"MouseButton2Click",
+	"MouseButton2Down",
+	"MouseButton2Up",
+	"MouseWheelForward",
+	"MouseWheelBackward",
 	"Activated",
 ];
 
@@ -1214,19 +1400,24 @@ function scrollBarKey(
 /** Build a text class's `Text` overlay layer, or `undefined` when empty. */
 function createTextLayer(
 	node: SceneNode,
-	/** The laid-out width the text wraps inside; 0 when it has none yet. */
-	width: number,
+	/**
+	 * The laid-out box the text lives in; zero-sized before the first layout.
+	 * The width is what wrapping breaks against, and `TextScaled` needs the
+	 * height too — it is fitting the string to the whole rect, not to a line.
+	 */
+	rect: Rect,
 ): HTMLDivElement | undefined {
 	if (!TEXT_CLASSES.has(node.className)) return undefined;
 	const text = getText(node);
 	if (text === undefined || text === "") return undefined;
 
+	const width = rect.width;
 	// Outer layer handles vertical alignment; the inner full-width element lets
 	// `text-align` align every (wrapped) line over the whole label width.
 	const layer = document.createElement("div");
 	const s = layer.style;
 	const font = nodeFont(node);
-	const textSize = getTextSize(node);
+	const textSize = effectiveTextSize(node, rect);
 	s.position = "absolute";
 	s.inset = "0";
 	s.display = "flex";
@@ -1289,11 +1480,14 @@ function createTextLayer(
 	// now come from `wrapLines`, the same call the measurement made, and `pre`
 	// keeps them. A label with no width yet has nothing to wrap against and falls
 	// back to letting CSS do it.
-	const wrapped = getTextWrapped(node);
+	// `TextScaled` wraps whatever `TextWrapped` says: the size was chosen by
+	// fitting the string to both axes of the box, and painting that size on one
+	// unbroken line would run it straight out the side.
+	const wrapped = getTextWrapped(node) || getTextScaled(node);
 	const preBreak = wrapped && width > 0;
 	inner.style.whiteSpace = wrapped && !preBreak ? "pre-wrap" : "pre";
 	if (getRichText(node)) {
-		paintRichText(inner, text, node, preBreak ? width : 0);
+		paintRichText(inner, text, node, preBreak ? width : 0, textSize);
 	} else {
 		// `RichText = false` means the markup is not markup: `<b>` is two angle
 		// brackets and a letter, and `textContent` is what shows it as such.
@@ -1318,9 +1512,10 @@ function breakRichSegments(
 	segments: readonly RichSegment[],
 	node: SceneNode,
 	width: number,
+	/** The size untagged runs paint at — `TextSize`, or what `TextScaled` chose. */
+	baseTextSize: number,
 ): string[] {
 	const baseFont = nodeFont(node);
-	const baseTextSize = getTextSize(node);
 	const out: string[] = [];
 	let lineWidth = 0;
 	for (const segment of segments) {
@@ -1377,14 +1572,17 @@ function paintRichText(
 	text: string,
 	node: SceneNode,
 	width: number,
+	/** The size untagged runs paint at — `TextSize`, or what `TextScaled` chose. */
+	baseTextSize: number,
 ): void {
 	const baseColor = getTextColor3(node);
 	const baseTransparency = getTextTransparency(node);
 	const baseFont = nodeFont(node);
-	const baseTextSize = getTextSize(node);
 	const segments = parseRichText(text);
 	const broken =
-		width > 0 ? breakRichSegments(segments, node, width) : undefined;
+		width > 0
+			? breakRichSegments(segments, node, width, baseTextSize)
+			: undefined;
 	let index = -1;
 	for (const segment of segments) {
 		index += 1;
@@ -1469,33 +1667,40 @@ function withAlpha(color: string, alpha: number): string {
  * Fingerprint of every input `createTextLayer` reads, so the session rebuilds
  * the overlay only when a text-affecting prop actually changed.
  */
-function textLayerKey(node: SceneNode, width: number): string {
+function textLayerKey(node: SceneNode, rect: Rect): string {
 	if (!TEXT_CLASSES.has(node.className)) return "";
 	const text = getText(node);
 	if (text === undefined || text === "") return "";
 	const font = nodeFont(node);
+	// The one number the whole layer is built from, and under `TextScaled` a
+	// function of the box: a scaled label that only got shorter paints smaller
+	// glyphs with nothing else about it having changed.
+	const textSize = effectiveTextSize(node, rect);
 	return [
 		text,
 		// Wrapped text carries its own line breaks now, so a label that only got
 		// wider has to be repainted to break in the new places.
-		width,
+		rect.width,
 		font.family,
 		font.weight,
 		font.italic ? 1 : 0,
-		getTextSize(node),
+		textSize,
 		// `LineHeight` drives the layer's line spacing and the leading it crops off
 		// the outer edges, so a scene that changes only that has to be repainted.
 		getLineHeight(node),
 		// Metrics, not a property: a face finishing its download changes what the
 		// clip rect has to make room for while every prop above stays as it was.
-		textBleed(font, getTextSize(node)),
+		textBleed(font, textSize),
 		cssColor(getTextColor3(node), getTextTransparency(node)),
 		getTextWrapped(node) ? 1 : 0,
+		// `TextScaled` turns wrapping on by itself, so it changes the paint even
+		// where `TextWrapped` and the resolved size both came out the same.
+		getTextScaled(node) ? 1 : 0,
 		getRichText(node) ? 1 : 0,
 		getTextXAlignment(node),
 		getTextYAlignment(node),
 		getZIndex(node),
-	].join(" ");
+	].join(" ");
 }
 
 // --- image layer -------------------------------------------------------------
@@ -1982,16 +2187,31 @@ function imageLayerKey(node: SceneNode, rect: Rect): string {
 
 // --- keyboard mapping --------------------------------------------------------
 
-/** `KeyboardEvent.code` → `Enum.KeyCode` (unknown codes map to `Unknown`). */
+/**
+ * `KeyboardEvent.code` -> `Enum.KeyCode`.
+ *
+ * Keyed off `code`, never `key`: `code` names the *physical* key by its US-QWERTY
+ * position and does not move when the OS layout does, which is exactly what
+ * `Enum.KeyCode` is. On an AZERTY keyboard Roblox still calls the key left of Z
+ * `Enum.KeyCode.A` and still walks a character forward with W — reading `key`
+ * would have handed WASD movement to ZQSD and broken every keyboard-driven
+ * scene the moment its author changed layout. It is also why the letters are
+ * built from a loop over `KeyA`…`KeyZ` rather than from what was typed.
+ *
+ * Left unmapped, and so `Unknown` rather than guessed at: `IntlBackslash`,
+ * `IntlRo`, `IntlYen` and the other layout-specific keys (the engine has no
+ * item for the physical key, only for the character it produces on one layout),
+ * the media/browser keys, and `F16`+ — `Enum.KeyCode` stops at `F15`.
+ */
 const KEY_CODE_MAP: Record<string, EnumItem<"KeyCode">> = (() => {
 	const map: Record<string, EnumItem<"KeyCode">> = {
 		Space: Enum.KeyCode.Space,
 		Enter: Enum.KeyCode.Return,
-		NumpadEnter: Enum.KeyCode.Return,
 		Escape: Enum.KeyCode.Escape,
 		Tab: Enum.KeyCode.Tab,
 		Backspace: Enum.KeyCode.Backspace,
 		Delete: Enum.KeyCode.Delete,
+		Insert: Enum.KeyCode.Insert,
 		ArrowUp: Enum.KeyCode.Up,
 		ArrowDown: Enum.KeyCode.Down,
 		ArrowLeft: Enum.KeyCode.Left,
@@ -2000,15 +2220,132 @@ const KEY_CODE_MAP: Record<string, EnumItem<"KeyCode">> = (() => {
 		End: Enum.KeyCode.End,
 		PageUp: Enum.KeyCode.PageUp,
 		PageDown: Enum.KeyCode.PageDown,
+		// The punctuation keys, named for where they sit on a US board — the same
+		// convention `code` uses and the same one the engine's items follow.
+		Minus: Enum.KeyCode.Minus,
+		Equal: Enum.KeyCode.Equals,
+		BracketLeft: Enum.KeyCode.LeftBracket,
+		BracketRight: Enum.KeyCode.RightBracket,
+		Backslash: Enum.KeyCode.BackSlash,
+		Semicolon: Enum.KeyCode.Semicolon,
+		Quote: Enum.KeyCode.Quote,
+		Backquote: Enum.KeyCode.Backquote,
+		Comma: Enum.KeyCode.Comma,
+		Period: Enum.KeyCode.Period,
+		Slash: Enum.KeyCode.Slash,
+		// Modifiers. The engine tells left from right, so `code` has to as well —
+		// a shortcut bound to `LeftControl` must not fire on the right one.
+		ShiftLeft: Enum.KeyCode.LeftShift,
+		ShiftRight: Enum.KeyCode.RightShift,
+		ControlLeft: Enum.KeyCode.LeftControl,
+		ControlRight: Enum.KeyCode.RightControl,
+		AltLeft: Enum.KeyCode.LeftAlt,
+		AltRight: Enum.KeyCode.RightAlt,
+		// Command on a Mac, the Windows key elsewhere; `Meta` in both engines.
+		MetaLeft: Enum.KeyCode.LeftMeta,
+		MetaRight: Enum.KeyCode.RightMeta,
+		CapsLock: Enum.KeyCode.CapsLock,
+		NumLock: Enum.KeyCode.NumLock,
+		ScrollLock: Enum.KeyCode.ScrollLock,
+		ContextMenu: Enum.KeyCode.Menu,
+		PrintScreen: Enum.KeyCode.Print,
+		Pause: Enum.KeyCode.Pause,
+		Help: Enum.KeyCode.Help,
+		// The keypad is a separate block in the engine, all the way down to its
+		// own Enter — `NumpadEnter` is `KeypadEnter`, not `Return`.
+		NumpadDecimal: Enum.KeyCode.KeypadPeriod,
+		NumpadDivide: Enum.KeyCode.KeypadDivide,
+		NumpadMultiply: Enum.KeyCode.KeypadMultiply,
+		NumpadSubtract: Enum.KeyCode.KeypadMinus,
+		NumpadAdd: Enum.KeyCode.KeypadPlus,
+		NumpadEnter: Enum.KeyCode.KeypadEnter,
+		NumpadEqual: Enum.KeyCode.KeypadEquals,
 	};
-	for (let i = 0; i < 26; i += 1) {
-		const letter = String.fromCharCode(65 + i) as keyof typeof Enum.KeyCode;
-		map[`Key${letter}`] = Enum.KeyCode[letter];
+	// Written out rather than indexed by a computed name: `Enum.KeyCode` also
+	// carries `GetEnumItems`/`FromName`/`FromValue`, so a `keyof` index is a
+	// union of items *and* methods and no longer types as one item.
+	const LETTERS = [
+		Enum.KeyCode.A,
+		Enum.KeyCode.B,
+		Enum.KeyCode.C,
+		Enum.KeyCode.D,
+		Enum.KeyCode.E,
+		Enum.KeyCode.F,
+		Enum.KeyCode.G,
+		Enum.KeyCode.H,
+		Enum.KeyCode.I,
+		Enum.KeyCode.J,
+		Enum.KeyCode.K,
+		Enum.KeyCode.L,
+		Enum.KeyCode.M,
+		Enum.KeyCode.N,
+		Enum.KeyCode.O,
+		Enum.KeyCode.P,
+		Enum.KeyCode.Q,
+		Enum.KeyCode.R,
+		Enum.KeyCode.S,
+		Enum.KeyCode.T,
+		Enum.KeyCode.U,
+		Enum.KeyCode.V,
+		Enum.KeyCode.W,
+		Enum.KeyCode.X,
+		Enum.KeyCode.Y,
+		Enum.KeyCode.Z,
+	];
+	for (let i = 0; i < LETTERS.length; i += 1) {
+		const item = LETTERS[i];
+		if (item) map[`Key${String.fromCharCode(65 + i)}`] = item;
+	}
+	// The digit row and the keypad, in step: `Digit3` is `Three`, `Numpad3` is
+	// `KeypadThree`, and the engine keeps the two apart.
+	const DIGITS: readonly [EnumItem<"KeyCode">, EnumItem<"KeyCode">][] = [
+		[Enum.KeyCode.Zero, Enum.KeyCode.KeypadZero],
+		[Enum.KeyCode.One, Enum.KeyCode.KeypadOne],
+		[Enum.KeyCode.Two, Enum.KeyCode.KeypadTwo],
+		[Enum.KeyCode.Three, Enum.KeyCode.KeypadThree],
+		[Enum.KeyCode.Four, Enum.KeyCode.KeypadFour],
+		[Enum.KeyCode.Five, Enum.KeyCode.KeypadFive],
+		[Enum.KeyCode.Six, Enum.KeyCode.KeypadSix],
+		[Enum.KeyCode.Seven, Enum.KeyCode.KeypadSeven],
+		[Enum.KeyCode.Eight, Enum.KeyCode.KeypadEight],
+		[Enum.KeyCode.Nine, Enum.KeyCode.KeypadNine],
+	];
+	for (let i = 0; i < DIGITS.length; i += 1) {
+		const pair = DIGITS[i];
+		if (!pair) continue;
+		map[`Digit${i}`] = pair[0];
+		map[`Numpad${i}`] = pair[1];
+	}
+	// `Enum.KeyCode` stops at F15; F16-F24 exist in the DOM and stay `Unknown`.
+	const FUNCTION_KEYS = [
+		Enum.KeyCode.F1,
+		Enum.KeyCode.F2,
+		Enum.KeyCode.F3,
+		Enum.KeyCode.F4,
+		Enum.KeyCode.F5,
+		Enum.KeyCode.F6,
+		Enum.KeyCode.F7,
+		Enum.KeyCode.F8,
+		Enum.KeyCode.F9,
+		Enum.KeyCode.F10,
+		Enum.KeyCode.F11,
+		Enum.KeyCode.F12,
+		Enum.KeyCode.F13,
+		Enum.KeyCode.F14,
+		Enum.KeyCode.F15,
+	];
+	for (let i = 0; i < FUNCTION_KEYS.length; i += 1) {
+		const item = FUNCTION_KEYS[i];
+		if (item) map[`F${i + 1}`] = item;
 	}
 	return map;
 })();
 
-/** Map a DOM keyboard event to the Roblox KeyCode it represents. */
+/**
+ * Map a DOM keyboard event to the Roblox KeyCode it represents; a key the
+ * engine has no item for reads `Unknown`, which is what an `InputObject` that
+ * carries no key says anyway.
+ */
 export function keyCodeFromKeyboardEvent(
 	e: KeyboardEvent,
 ): EnumItem<"KeyCode"> {
@@ -2040,11 +2377,18 @@ function getTextMeasureCtx(): CanvasRenderingContext2D | null {
  * write it to `inst.TextBounds` (a `Vector2`) — only when it actually changed,
  * so the property signal and dirty-mark don't loop. Lattice's textarea reads
  * `TextBox.TextBounds` for auto-resize.
+ *
+ * `size` is what the box is *painted* at, which is `TextSize` right up until
+ * `TextScaled` takes over and picks its own — and a `TextBounds` measured at a
+ * size the input is not wearing is a lie the auto-resize would size against.
  */
-function updateTextBounds(inst: LoomInstance, text: string): void {
+function updateTextBounds(
+	inst: LoomInstance,
+	text: string,
+	size: number,
+): void {
 	const ctx = getTextMeasureCtx();
 	if (!ctx) return;
-	const size = typeof inst.TextSize === "number" ? inst.TextSize : 14;
 	ctx.font = fontShorthand(instanceFont(inst), size);
 	const lines = text.split("\n");
 	let width = 0;
@@ -2064,6 +2408,12 @@ interface TextBoxBinding {
 	inst: LoomInstance;
 	multiLine: boolean;
 	styleKey: string;
+	/**
+	 * The size the input is painted at, which `TextScaled` makes a function of
+	 * the node's box rather than of `TextSize`. Kept current by `patchTextBox`
+	 * so the keystroke path can re-measure `TextBounds` without a layout rect.
+	 */
+	textSize: number;
 	/** Reentrancy guard: a DOM `input` event is being applied to `Text`. */
 	applying: boolean;
 	/** Set right before a programmatic/Enter blur so FocusLost sees it. */
@@ -2082,6 +2432,7 @@ interface TextBoxBinding {
 function createTextBoxBinding(
 	inst: LoomInstance,
 	multiLine: boolean,
+	textSize: number,
 ): TextBoxBinding {
 	const el = document.createElement(multiLine ? "textarea" : "input");
 	const initialText = typeof inst.Text === "string" ? inst.Text : "";
@@ -2092,6 +2443,7 @@ function createTextBoxBinding(
 		inst,
 		multiLine,
 		styleKey: "",
+		textSize,
 		applying: false,
 		enterPressed: false,
 		dispose(): void {
@@ -2108,7 +2460,7 @@ function createTextBoxBinding(
 		} finally {
 			binding.applying = false;
 		}
-		updateTextBounds(inst, el.value);
+		updateTextBounds(inst, el.value, binding.textSize);
 	};
 	const onFocus = (): void => {
 		// Roblox default: ClearTextOnFocus is true unless explicitly disabled.
@@ -2133,9 +2485,12 @@ function createTextBoxBinding(
 		getEventSignal(inst, "FocusLost").fire(enterPressed, input);
 	};
 	const onKeyDown = (e: Event): void => {
+		// The keypad's Enter is its own `Enum.KeyCode` in the engine, but it is the
+		// same key to anyone typing into a single-line box: both submit.
+		const keyCode = keyCodeFromKeyboardEvent(e as KeyboardEvent);
 		if (
 			!multiLine &&
-			keyCodeFromKeyboardEvent(e as KeyboardEvent) === Enum.KeyCode.Return
+			(keyCode === Enum.KeyCode.Return || keyCode === Enum.KeyCode.KeypadEnter)
 		) {
 			binding.enterPressed = true;
 			el.blur();
@@ -2155,7 +2510,7 @@ function createTextBoxBinding(
 		IsFocused: () => document.activeElement === el,
 	});
 
-	updateTextBounds(inst, initialText);
+	updateTextBounds(inst, initialText, textSize);
 	return binding;
 }
 
@@ -2164,7 +2519,11 @@ function createTextBoxBinding(
  * chrome (transparent background, no border/outline), and the same font
  * mapping the text overlay layer uses — the input IS the text layer here.
  */
-function applyTextBoxStyle(s: CSSStyleDeclaration, node: SceneNode): void {
+function applyTextBoxStyle(
+	s: CSSStyleDeclaration,
+	node: SceneNode,
+	rect: Rect,
+): void {
 	const font = nodeFont(node);
 	s.position = "absolute";
 	s.inset = "0";
@@ -2178,7 +2537,7 @@ function applyTextBoxStyle(s: CSSStyleDeclaration, node: SceneNode): void {
 	s.outline = "none";
 	s.resize = "none";
 	s.color = cssColor(getTextColor3(node), getTextTransparency(node));
-	s.fontSize = `${cssFontSize(font, getTextSize(node))}px`;
+	s.fontSize = `${cssFontSize(font, effectiveTextSize(node, rect))}px`;
 	s.fontFamily = font.family;
 	s.fontWeight = font.weight;
 	if (font.italic) s.fontStyle = "italic";
@@ -2209,7 +2568,7 @@ function renderNode(
 	const imageLayer = createImageLayer(node, rect);
 	if (imageLayer) el.appendChild(imageLayer);
 
-	const textLayer = createTextLayer(node, rect.width);
+	const textLayer = createTextLayer(node, rect);
 	if (textLayer) el.appendChild(textLayer);
 
 	// ScrollingFrame children live in the canvas wrapper (see makeCanvasWrapper)
@@ -2320,8 +2679,10 @@ function syncChildren(el: HTMLElement, desired: readonly HTMLElement[]): void {
  * Event argument shapes (the react adapter prepends the instance itself):
  * - `InputBegan`/`InputEnded`/`InputChanged` → `(inputObject)`
  * - `Activated` → `(inputObject, clickCount)`
- * - `MouseButton1Click` → `()` (GuiButton classes only)
- * - `MouseEnter`/`MouseLeave` → `(x, y)` in mount-relative pixels
+ * - `MouseButton1Click`/`MouseButton2Click` → `()` (GuiButton classes only)
+ * - `MouseButton1Down`/`Up`, `MouseButton2Down`/`Up` → `(x, y)` (GuiButton only)
+ * - `MouseEnter`/`MouseLeave`/`MouseMoved` → `(x, y)` in mount-relative pixels
+ * - `MouseWheelForward`/`MouseWheelBackward` → `(x, y)`
  */
 export function createDomSession(
 	mount: HTMLElement,
@@ -2348,9 +2709,11 @@ export function createDomSession(
 		entry: SessionEntry,
 		node: SceneNode,
 		id: string,
+		rect: Rect,
 	): void {
 		const inst = options.resolveInstance(id);
 		const multiLine = asBool(node.properties?.MultiLine) === true;
+		const textSize = effectiveTextSize(node, rect);
 		if (
 			entry.input &&
 			(entry.input.inst !== inst || entry.input.multiLine !== multiLine)
@@ -2359,11 +2722,16 @@ export function createDomSession(
 			entry.input = undefined;
 		}
 		if (!entry.input && inst) {
-			entry.input = createTextBoxBinding(inst, multiLine);
+			entry.input = createTextBoxBinding(inst, multiLine, textSize);
 		}
 		const binding = entry.input;
 		if (!binding) return;
 		const el = binding.el;
+
+		// A `TextScaled` box re-fits itself whenever its rect moves, so the size the
+		// keystroke path measures against has to follow the layout, not the props.
+		const resized = binding.textSize !== textSize;
+		binding.textSize = textSize;
 
 		// Echo guard: only write `value` when the prop actually differs (an
 		// external `Text` write) — a matching value means the change originated
@@ -2371,7 +2739,9 @@ export function createDomSession(
 		const text = getText(node) ?? "";
 		if (!binding.applying && el.value !== text) {
 			el.value = text;
-			updateTextBounds(binding.inst, text);
+			updateTextBounds(binding.inst, text, textSize);
+		} else if (resized) {
+			updateTextBounds(binding.inst, el.value, textSize);
 		}
 		const placeholder = asString(node.properties?.PlaceholderText) ?? "";
 		if (el.placeholder !== placeholder) el.placeholder = placeholder;
@@ -2379,7 +2749,7 @@ export function createDomSession(
 		if (el.readOnly !== readOnly) el.readOnly = readOnly;
 
 		scratch.style.cssText = "";
-		applyTextBoxStyle(scratch.style, node);
+		applyTextBoxStyle(scratch.style, node, rect);
 		const styleKey = scratch.style.cssText;
 		if (styleKey !== binding.styleKey) {
 			el.style.cssText = styleKey;
@@ -2458,15 +2828,14 @@ export function createDomSession(
 
 		// TextBox paints its text in a persistent input element, not the overlay.
 		const isTextBox = node.className === "TextBox";
-		const textKey = isTextBox ? "" : textLayerKey(node, rect.width);
+		const textKey = isTextBox ? "" : textLayerKey(node, rect);
 		if (textKey !== entry.textKey) {
 			entry.textEl?.remove();
-			entry.textEl =
-				textKey === "" ? undefined : createTextLayer(node, rect.width);
+			entry.textEl = textKey === "" ? undefined : createTextLayer(node, rect);
 			entry.textKey = textKey;
 		}
 
-		if (isTextBox) patchTextBox(entry, node, id);
+		if (isTextBox) patchTextBox(entry, node, id, rect);
 		else if (entry.input) {
 			entry.input.dispose();
 			entry.input = undefined;
@@ -2609,17 +2978,111 @@ export function createDomSession(
 
 	const userInputService = (): LoomInstance => getService("UserInputService");
 
-	let pressed: LoomInstance | undefined;
+	/**
+	 * Fire `name` on `inst` only if something is listening.
+	 *
+	 * `getEventSignal` mints the signal on demand, so calling it to dispatch
+	 * would leave a live `LoomSignal` on every node the pointer has ever moved
+	 * across. These events are per-move and per-chain — this asks first.
+	 */
+	function fireIfListening(
+		inst: LoomInstance,
+		name: string,
+		...args: unknown[]
+	): void {
+		if (!hasAnyEventConnection(inst, [name])) return;
+		getEventSignal(inst, name).fire(...args);
+	}
+
+	/**
+	 * The GuiButton a press or release belongs to: the innermost one in the
+	 * chain, which is how Roblox routes a click that landed on a button's own
+	 * decorative label or icon back to the button itself.
+	 */
+	function buttonInChain(chain: LoomInstance[]): LoomInstance | undefined {
+		return chain.find((inst) => inst.IsA("GuiButton"));
+	}
+
+	/**
+	 * The `MouseButtonNDown`/`Up`/`Click` family a button reports this input
+	 * under, or `undefined` for one it reports none for.
+	 *
+	 * A touch counts as MouseButton1: the engine drives a GuiButton's whole mouse
+	 * family from a tap, which is why a phone can press a button loom's UI never
+	 * gave a mouse. The middle button reports nothing — Roblox has no
+	 * `MouseButton3Click` on GuiButton, only the raw `InputBegan`.
+	 */
+	function mouseButtonEventPrefix(
+		type: EnumItem<"UserInputType">,
+	): string | undefined {
+		if (
+			type === Enum.UserInputType.MouseButton1 ||
+			type === Enum.UserInputType.Touch
+		) {
+			return "MouseButton1";
+		}
+		if (type === Enum.UserInputType.MouseButton2) return "MouseButton2";
+		return undefined;
+	}
+
+	/**
+	 * A button that is currently held, and what it was pressed on.
+	 *
+	 * Per button rather than one `pressed`: the engine tracks each mouse button's
+	 * press separately, so a right-press followed by a left-release is two
+	 * unrelated halves and must not activate anything. Keyed by the
+	 * `UserInputType` name, which is also what `Touch` answers to — a finger is
+	 * its own "button" here and gets the same press/release pairing.
+	 */
+	interface Press {
+		/** The innermost instance under the press; absent on empty background. */
+		target: LoomInstance | undefined;
+		type: EnumItem<"UserInputType">;
+	}
+	const presses = new Map<string, Press>();
 	let hoverChain: LoomInstance[] = [];
+
+	/**
+	 * Hand the held-button state back to `UserInputService`.
+	 *
+	 * A touch is not a mouse button — `IsMouseButtonPressed(MouseButton1)` is
+	 * false on a phone in the engine too — so only the real buttons are reported.
+	 */
+	function reportButtonState(
+		type: EnumItem<"UserInputType">,
+		down: boolean,
+	): void {
+		if (type === Enum.UserInputType.Touch) return;
+		setMouseButtonState(type, down);
+	}
+
+	/** Release every held button, e.g. when the session or the gesture ends. */
+	function releasePresses(): void {
+		for (const press of presses.values()) reportButtonState(press.type, false);
+		presses.clear();
+	}
 
 	function onPointerDown(e: PointerEvent): void {
 		const input = pointerInput(e, Enum.UserInputState.Begin);
+		const { x, y } = relPoint(e);
 		const chain = chainFromEvent(e);
 		for (const inst of chain) {
 			getEventSignal(inst, "InputBegan").fire(input);
 		}
 		getEventSignal(userInputService(), "InputBegan").fire(input, false);
-		pressed = chain[0];
+		reportButtonState(input.UserInputType, true);
+		// `MouseButton1Down`/`MouseButton2Down` are the button's own press half,
+		// reported in mount-relative pixels the way `MouseEnter` is. Declared in
+		// the runtime's event list all along and never once fired, which is the
+		// worst state for an event to be in: `:Connect` succeeded, so a control
+		// that dimmed itself on press looked wired and simply never dimmed.
+		const prefix = mouseButtonEventPrefix(input.UserInputType);
+		const button = buttonInChain(chain);
+		if (prefix && button) fireIfListening(button, `${prefix}Down`, x, y);
+		presses.set(input.UserInputType.Name, {
+			target: chain[0],
+			type: input.UserInputType,
+		});
 		// A press that landed on a scroll bar thumb is that thumb's drag, never
 		// also the canvas's: the two would scroll the same frame opposite ways.
 		if (beginThumbDrag(e, chain)) return;
@@ -2628,39 +3091,53 @@ export function createDomSession(
 
 	function onPointerUp(e: PointerEvent): void {
 		const input = pointerInput(e, Enum.UserInputState.End);
+		const { x, y } = relPoint(e);
 		const chain = chainFromEvent(e);
 		for (const inst of chain) {
 			getEventSignal(inst, "InputEnded").fire(input);
 		}
-		// Only a primary press activates a GuiButton in Roblox; a right-click
-		// raises InputBegan/InputEnded and nothing else. A touch that turned into
-		// a scroll gesture is not a press either — the finger left the control —
-		// and neither is a drag of the scroll bar thumb.
+		reportButtonState(input.UserInputType, false);
+		// A touch that turned into a scroll gesture is not a press — the finger
+		// left the control — and neither is a drag of the scroll bar thumb.
 		const scrolled =
 			(drag?.pointerId === e.pointerId && drag.dragged) ||
 			(thumb?.pointerId === e.pointerId && thumb.moved);
 		if (drag?.pointerId === e.pointerId) drag = undefined;
 		if (thumb?.pointerId === e.pointerId) thumb = undefined;
-		const activates =
-			!scrolled &&
-			(input.UserInputType === Enum.UserInputType.MouseButton1 ||
-				input.UserInputType === Enum.UserInputType.Touch);
-		if (activates && pressed && chain.includes(pressed)) {
-			// Roblox activates the pressed control even when the press landed on a
-			// decorative child (label, icon): route to the nearest instance in the
-			// chain with an Activated listener, falling back to the pressed one.
-			const target =
-				chain.find(
-					(inst) => getEventSignal(inst, "Activated").hasConnections,
-				) ?? pressed;
-			getEventSignal(target, "Activated").fire(input, 1);
-			const clickTarget = chain.find((inst) => inst.IsA("GuiButton"));
-			if (clickTarget) {
-				getEventSignal(clickTarget, "MouseButton1Click").fire();
+		const press = presses.get(input.UserInputType.Name);
+		presses.delete(input.UserInputType.Name);
+		const prefix = mouseButtonEventPrefix(input.UserInputType);
+		const button = buttonInChain(chain);
+		// The release half fires on whatever button the pointer came up over,
+		// which is what the engine reports — press and release can be different
+		// controls, and `MouseButtonNUp` describes the release, not the pair.
+		if (prefix && button) fireIfListening(button, `${prefix}Up`, x, y);
+		// The *click* is the pair: same button, pressed and released over the same
+		// control, and not swallowed by a scroll. Only a primary press (or a tap)
+		// activates a GuiButton in Roblox; a secondary one raises
+		// `MouseButton2Click` and no `Activated`.
+		const pressedOn = press?.target;
+		if (!scrolled && pressedOn && chain.includes(pressedOn)) {
+			if (
+				input.UserInputType === Enum.UserInputType.MouseButton1 ||
+				input.UserInputType === Enum.UserInputType.Touch
+			) {
+				// Roblox activates the pressed control even when the press landed on a
+				// decorative child (label, icon): route to the nearest instance in the
+				// chain with an Activated listener, falling back to the pressed one.
+				const target =
+					chain.find(
+						(inst) => getEventSignal(inst, "Activated").hasConnections,
+					) ?? pressedOn;
+				getEventSignal(target, "Activated").fire(input, 1);
+				if (button) getEventSignal(button, "MouseButton1Click").fire();
+			} else if (input.UserInputType === Enum.UserInputType.MouseButton2) {
+				if (button) fireIfListening(button, "MouseButton2Click");
 			}
 		}
+		// Last, as it always has been: the global service hears the release after
+		// the control it landed on has finished reacting to it.
 		getEventSignal(userInputService(), "InputEnded").fire(input, false);
-		pressed = undefined;
 	}
 
 	function onPointerMove(e: PointerEvent): void {
@@ -2684,6 +3161,12 @@ export function createDomSession(
 		const chain = chainFromEvent(e);
 		for (const inst of chain) {
 			getEventSignal(inst, "InputChanged").fire(input);
+			// `GuiObject.MouseMoved(x, y)` — every object the pointer is currently
+			// over, the same chain `MouseEnter`/`MouseLeave` bracket and the same
+			// mount-relative pixels. Declared but never dispatched until now, which
+			// is the worst state for an event to be in: `:Connect` succeeded, so a
+			// hover-tracking tooltip looked wired and simply never moved.
+			fireIfListening(inst, "MouseMoved", x, y);
 		}
 		getEventSignal(userInputService(), "InputChanged").fire(input, false);
 	}
@@ -2756,13 +3239,40 @@ export function createDomSession(
 	}
 
 	/**
-	 * Delegated wheel scrolling: the nearest ScrollingFrame ancestor of the event
-	 * target consumes the delta. `preventDefault` only when scroll was actually
-	 * consumed. Wheel deltas are on-screen pixels, canvas positions are layout
-	 * pixels — hence the scale division, same as pointer coordinates.
+	 * The wheel: an `Enum.UserInputType.MouseWheel` input on `UserInputService`,
+	 * `MouseWheelForward`/`MouseWheelBackward` on the objects under the pointer,
+	 * and — where there is a ScrollingFrame under it — the scroll itself.
+	 *
+	 * The engine reports the wheel's direction in the input object's `Position.Z`
+	 * as +1 (forward, away from the user) or -1 (backward), which is where every
+	 * "zoom on scroll" handler reads it from; there is no pixel delta to report,
+	 * so `Position.X/Y` carry the pointer as they do for mouse movement.
+	 *
+	 * The scroll itself goes to the nearest ScrollingFrame ancestor of the event
+	 * target, and `preventDefault` runs only when it actually consumed something.
+	 * Wheel deltas are on-screen pixels, canvas positions are layout pixels —
+	 * hence the scale division, same as pointer coordinates.
 	 */
 	function onWheel(e: WheelEvent): void {
-		const frame = chainFromEvent(e).find((inst) => inst.IsA("ScrollingFrame"));
+		const { x, y } = relPoint(e);
+		const chain = chainFromEvent(e);
+		// A trackpad's horizontal-only flick has no wheel direction to report; the
+		// engine has no item for it either, so only the vertical axis speaks.
+		const direction = e.deltaY < 0 ? 1 : e.deltaY > 0 ? -1 : 0;
+		if (direction !== 0) {
+			const input = makeInputObject({
+				UserInputType: Enum.UserInputType.MouseWheel,
+				UserInputState: Enum.UserInputState.Change,
+				Position: Vector3.new(x, y, direction),
+			});
+			const name = direction > 0 ? "MouseWheelForward" : "MouseWheelBackward";
+			for (const inst of chain) {
+				fireIfListening(inst, "InputChanged", input);
+				fireIfListening(inst, name, x, y);
+			}
+			getEventSignal(userInputService(), "InputChanged").fire(input, false);
+		}
+		const frame = chain.find((inst) => inst.IsA("ScrollingFrame"));
 		if (!frame) return;
 		const scale = mountScale(mount.getBoundingClientRect().width);
 		if (scrollFrameBy(frame, e.deltaX / scale, e.deltaY / scale)) {
@@ -2904,19 +3414,28 @@ export function createDomSession(
 	// --- keyboard delegation ---------------------------------------------------
 	// Key events are global (window), mirroring Roblox: UserInputService fires
 	// for every key with `gameProcessedEvent = true` while a TextBox is focused.
+	// The renderer also owns the held-key state the service answers
+	// `IsKeyDown`/`GetKeysPressed` from — it reports every transition through
+	// `setKeyState`, and the service side never touches the DOM. That split is
+	// the contract in `@loom-dev/runtime`'s `services.ts`.
+	//
 	// Element-level routing: keys additionally fire InputBegan/InputEnded on the
-	// GuiService.SelectedObject instance only (not its ancestors) — closest to
-	// Roblox's selection-focused key routing, and what lattice item components
-	// (tabs/radio-group/…) listen for.
+	// GuiService.SelectedObject instance (Roblox's selection-focused key routing,
+	// and what lattice item components — tabs/radio-group/… — listen for) and on
+	// the focused TextBox, which is the object the engine considers the keys to
+	// be landing on while someone is typing into it. Neither routes to ancestors:
+	// GuiObject input events do not bubble in the engine, and for a key there is
+	// no geometry that would put a parent "under" the input the way a pointer
+	// does.
 
 	function keyInput(
-		e: KeyboardEvent,
+		keyCode: EnumItem<"KeyCode">,
 		state: EnumItem<"UserInputState">,
 	): InputObject {
 		return makeInputObject({
 			UserInputType: Enum.UserInputType.Keyboard,
 			UserInputState: state,
-			KeyCode: keyCodeFromKeyboardEvent(e),
+			KeyCode: keyCode,
 		});
 	}
 
@@ -2924,35 +3443,68 @@ export function createDomSession(
 		return getService("GuiService").SelectedObject as LoomInstance | undefined;
 	}
 
-	function onKeyDown(e: KeyboardEvent): void {
-		const input = keyInput(e, Enum.UserInputState.Begin);
-		const textBoxFocused = getFocusedTextBox() !== undefined;
+	/** The GuiObjects a key is routed to, at most two and never duplicated. */
+	function keyTargets(): LoomInstance[] {
+		const targets: LoomInstance[] = [];
 		const selected = selectedInstance();
-		if (selected) getEventSignal(selected, "InputBegan").fire(input);
-		getEventSignal(userInputService(), "InputBegan").fire(
-			input,
-			textBoxFocused,
-		);
+		if (selected) targets.push(selected);
+		const focused = getFocusedTextBox();
+		if (focused && focused !== selected) targets.push(focused);
+		return targets;
+	}
+
+	function onKeyDown(e: KeyboardEvent): void {
+		const keyCode = keyCodeFromKeyboardEvent(e);
+		const textBoxFocused = getFocusedTextBox() !== undefined;
+		// The OS repeating a held key is not a second press, and the engine raises
+		// no second `InputBegan` for it — a held movement key begins once and ends
+		// once. `preventDefault` below still runs on the repeats: a held arrow that
+		// stopped being swallowed halfway through would start scrolling the page.
+		if (!e.repeat) {
+			setKeyState(keyCode, true);
+			const input = keyInput(keyCode, Enum.UserInputState.Begin);
+			for (const inst of keyTargets()) {
+				getEventSignal(inst, "InputBegan").fire(input);
+			}
+			getEventSignal(userInputService(), "InputBegan").fire(
+				input,
+				textBoxFocused,
+			);
+		}
 		// Keep the page from scrolling under selection-driven Space/arrow input,
 		// but never swallow keys while the user is typing in a TextBox.
 		if (
 			!textBoxFocused &&
-			selected &&
-			(input.KeyCode === Enum.KeyCode.Space ||
-				ARROW_KEY_CODES.has(input.KeyCode))
+			selectedInstance() &&
+			(keyCode === Enum.KeyCode.Space || ARROW_KEY_CODES.has(keyCode))
 		) {
 			e.preventDefault();
 		}
 	}
 
 	function onKeyUp(e: KeyboardEvent): void {
-		const input = keyInput(e, Enum.UserInputState.End);
-		const selected = selectedInstance();
-		if (selected) getEventSignal(selected, "InputEnded").fire(input);
+		const keyCode = keyCodeFromKeyboardEvent(e);
+		setKeyState(keyCode, false);
+		const input = keyInput(keyCode, Enum.UserInputState.End);
+		for (const inst of keyTargets()) {
+			getEventSignal(inst, "InputEnded").fire(input);
+		}
 		getEventSignal(userInputService(), "InputEnded").fire(
 			input,
 			getFocusedTextBox() !== undefined,
 		);
+	}
+
+	/**
+	 * Focus left the page. A browser stops delivering `keyup` the moment it does,
+	 * so a key held through an alt-tab would read as held forever — the classic
+	 * stuck-movement-key bug, which in a preview looks like loom is broken rather
+	 * than like the tab changed. Same for a button held while a native drag or an
+	 * OS window steals the pointer.
+	 */
+	function onWindowBlur(): void {
+		clearInputState();
+		presses.clear();
 	}
 
 	/**
@@ -2968,7 +3520,9 @@ export function createDomSession(
 	function onPointerCancel(e: PointerEvent): void {
 		if (drag?.pointerId === e.pointerId) drag = undefined;
 		if (thumb?.pointerId === e.pointerId) thumb = undefined;
-		if (pressed) pressed = undefined;
+		// No `pointerup` is coming, so the press has to be retired here or the
+		// button reads as held for the rest of the session.
+		releasePresses();
 	}
 
 	// Roblox has no double-tap zoom; without this every tap on a phone waits
@@ -2988,6 +3542,7 @@ export function createDomSession(
 	mount.addEventListener("wheel", onWheel, { passive: false });
 	window.addEventListener("keydown", onKeyDown);
 	window.addEventListener("keyup", onKeyUp);
+	window.addEventListener("blur", onWindowBlur);
 
 	function removeEntry(entry: SessionEntry): void {
 		entry.input?.dispose();
@@ -2998,7 +3553,7 @@ export function createDomSession(
 	function clear(): void {
 		for (const entry of entries.values()) removeEntry(entry);
 		entries.clear();
-		pressed = undefined;
+		releasePresses();
 		drag = undefined;
 		thumb = undefined;
 		hoverChain = [];
@@ -3027,6 +3582,10 @@ export function createDomSession(
 			mount.removeEventListener("wheel", onWheel);
 			window.removeEventListener("keydown", onKeyDown);
 			window.removeEventListener("keyup", onKeyUp);
+			window.removeEventListener("blur", onWindowBlur);
+			// The session owned the held-key state; a re-mount must not inherit a
+			// key that was down when the old one went away.
+			clearInputState();
 			clear();
 		},
 	};
