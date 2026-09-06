@@ -3,8 +3,10 @@
  *
  * Everything preview app code touches at runtime lives here: the Roblox
  * datatypes (`datatypes.ts`) and `Enum` namespace (`enums.ts`), the Luau
- * global environment (`luau.ts`), Roblox-shaped signals (`signal.ts`), the
- * Proxy-based live instance tree (`instance.ts` + `registry.ts`), input
+ * global environment (`luau.ts`), the roblox-ts `Promise` (`promise.ts` — the
+ * evaera API apps expect, not the browser's), Roblox-shaped signals
+ * (`signal.ts`), the Proxy-based live instance tree (`instance.ts` +
+ * `registry.ts`), input
  * objects (`input.ts`), the frame scheduler (`scheduler.ts`), the stateful
  * layout classes (`layouts.ts`), and the fake `game` service tree (`game.ts` +
  * `services.ts`). `installGlobals` wires the lot onto `globalThis` the way
@@ -17,6 +19,7 @@ export * from "./input";
 export * from "./instance";
 export * from "./layouts";
 export * from "./luau";
+export * from "./promise";
 export * from "./registry";
 export * from "./scheduler";
 export * from "./services";
@@ -28,9 +31,11 @@ import {
 	Color3,
 	ColorSequence,
 	ColorSequenceKeypoint,
+	DateTime,
 	Font,
 	NumberSequence,
 	NumberSequenceKeypoint,
+	Random,
 	Rect,
 	TweenInfo,
 	UDim,
@@ -89,10 +94,27 @@ export function installGlobals(
 	target.CFrame = CFrame;
 	target.TweenInfo = TweenInfo;
 	target.Font = Font;
+	target.Random = Random;
+	target.DateTime = DateTime;
 	target.Enum = Enum;
 	// The live tree.
 	target.game = game;
 	target.Instance = Instance;
+	// Roblox exposes the Workspace service as a bare global too, and shared
+	// modules reach for it without a `game.GetService` in sight.
+	target.workspace = game.Workspace;
+	// `Promise` is deliberately NOT installed here, and that is not an
+	// oversight. roblox-ts apps do mean evaera's Promise by the bare name, but
+	// this global is shared with everything else on the page — React, the Vite
+	// client, the renderer — and the two APIs genuinely disagree:
+	// `Promise.allSettled` resolves to an array of `Promise.Status` in Roblox
+	// and to `{status, value}` records in JS, so whichever one owns the global,
+	// the other half of the page is wrong. Overwriting it broke loom's own
+	// prerender and Vite plumbing the moment it was tried.
+	// App code gets the Roblox Promise as a MODULE-SCOPE binding instead: the
+	// preview plugin prepends an aliased import to each app module, which
+	// shadows the global for that file only and leaves the host's untouched.
+	// `RobloxPromise` is exported from this package for that injection to use.
 	// Luau environment.
 	target.task = luau.task;
 	target.tick = luau.tick;
