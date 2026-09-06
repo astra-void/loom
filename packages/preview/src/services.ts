@@ -4,10 +4,20 @@
  * roblox-ts code imports service singletons as named exports
  * (`import { RunService } from "@rbxts/services"`); the Vite plugin aliases
  * that specifier here. Each export is the same singleton `game.GetService`
- * returns, so preview code and app code always see one instance. Only the
- * services the runtime actually implements are exported — an unknown service
- * would be a warned stub anyway, so a missing name here surfaces as a build
- * error instead of a silent stub.
+ * returns, so preview code and app code always see one instance.
+ *
+ * The list is wider than the set of services loom implements, and deliberately
+ * so. A missing name here is
+ *
+ *     The requested module "@rbxts/services" does not provide an export named
+ *     "MarketplaceService"
+ *
+ * — a *build* error, which takes down a preview whose only sin was importing a
+ * service beside the ones it uses. An exported name that resolves to
+ * `GetService`'s stub costs one console warning at startup and then fails
+ * precisely, on the line that actually calls into the service, naming the
+ * member (see `game.ts`). Loud where the problem is beats fatal where it is
+ * not, so the unimplemented services are exported too.
  */
 import { getService, type LoomInstance, type Vector2 } from "@loom-dev/runtime";
 
@@ -15,6 +25,23 @@ export const CollectionService: LoomInstance = getService("CollectionService");
 export const ContextActionService: LoomInstance = getService(
 	"ContextActionService",
 );
+/**
+ * Typed past `LoomInstance`'s `unknown` index for the same reason as
+ * {@link LoomHttpService}: app code *calls* these. `PreloadAsync` really does
+ * fetch the ids it is given, and returns a promise where Roblox would yield —
+ * see `services.ts` in `@loom-dev/runtime`.
+ */
+export interface LoomContentProvider extends LoomInstance {
+	PreloadAsync(
+		contentIdList: readonly unknown[],
+		callback?: (contentId: string, status: unknown) => void,
+	): Promise<void>;
+	GetAssetFetchStatus(contentId: string): unknown;
+	readonly RequestQueueSize: number;
+}
+export const ContentProvider = getService(
+	"ContentProvider",
+) as LoomContentProvider;
 export const GuiService: LoomInstance = getService("GuiService");
 /**
  * Typed beyond `LoomInstance` because the index signature that carries arbitrary
@@ -78,3 +105,29 @@ export const SoundService: LoomInstance = getService("SoundService");
 export const StarterPack: LoomInstance = getService("StarterPack");
 export const StarterPlayer: LoomInstance = getService("StarterPlayer");
 export const Teams: LoomInstance = getService("Teams");
+
+/**
+ * Exported, not implemented — the stub half of the policy in this file's
+ * header.
+ *
+ * Every one of these is a service a browser cannot honestly stand in for:
+ * purchases, teleports, cross-server messaging, datastores, moderation policy,
+ * analytics and the platform's own telemetry all need a Roblox server on the
+ * other end, and inventing an answer for `UserOwnsGamePassAsync` would be worse
+ * than saying nothing. They resolve to `GetService`'s warned stub, whose
+ * unimplemented method calls throw by name, so a UI that merely *imports*
+ * `MarketplaceService` alongside the services it really uses still mounts.
+ */
+export const AnalyticsService: LoomInstance = getService("AnalyticsService");
+export const DataStoreService: LoomInstance = getService("DataStoreService");
+export const LocalizationService: LoomInstance = getService(
+	"LocalizationService",
+);
+export const LogService: LoomInstance = getService("LogService");
+export const MarketplaceService: LoomInstance =
+	getService("MarketplaceService");
+export const MessagingService: LoomInstance = getService("MessagingService");
+export const PolicyService: LoomInstance = getService("PolicyService");
+export const Stats: LoomInstance = getService("Stats");
+export const TeleportService: LoomInstance = getService("TeleportService");
+export const TextChatService: LoomInstance = getService("TextChatService");

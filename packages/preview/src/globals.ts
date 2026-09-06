@@ -106,8 +106,26 @@ declare global {
 	const CFrame: typeof runtime.CFrame;
 	const TweenInfo: typeof runtime.TweenInfo;
 	const Font: typeof runtime.Font;
+	const Random: typeof runtime.Random;
+	const DateTime: typeof runtime.DateTime;
 	const Enum: typeof runtime.Enum;
+	// `Promise` is deliberately absent: lib.es5 already declares
+	// `var Promise: PromiseConstructor` and a redeclaration is a compile error.
+	// Unlike `print` below, the runtime does not overwrite the value either —
+	// the page global stays the browser's. It has to: React, the Vite client and
+	// loom's own prerender all reach for it, and the two Promises disagree where
+	// it counts (`allSettled` resolves to `{status, value}` records in JS and to
+	// `Promise.Status` in Roblox, and Roblox's `all` rejects a non-promise
+	// entry), so whichever API owned the global, the other half of the page
+	// would be wrong. App code gets the roblox-ts Promise as a module-scope
+	// binding instead: the `loom-preview:roblox-promise` plugin in `./vite.ts`
+	// appends `import { RobloxPromise as Promise } from "<runtime>"` to each
+	// previewed module that mentions the name, which shadows the global for that
+	// file alone. Its *types* come from `@rbxts/compiler-types` in the app's own
+	// tsconfig.
 	const game: runtime.DataModel;
+	/** Roblox's bare alias for `game.Workspace`. */
+	const workspace: runtime.LoomInstance;
 	const Instance: typeof runtime.Instance;
 	// Luau environment (`string` shadows the TS builtin *type* name, which is
 	// fine — this declares a global *value*). `print` is deliberately absent:
