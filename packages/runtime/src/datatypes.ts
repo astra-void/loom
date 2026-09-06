@@ -9,7 +9,7 @@
  * match roblox-ts's operator macro names.
  */
 import { type PropertyValue, prop } from "@loom-dev/scene";
-import { Enum, EnumItem } from "./enums";
+import { Enum, EnumItem, enumTypeName } from "./enums";
 
 export class UDim {
 	constructor(
@@ -224,14 +224,38 @@ export class Vector3 {
 
 /** A Roblox `Rect` (axis-aligned rectangle between two corners). */
 export class Rect {
+	readonly Min: Vector2;
+	readonly Max: Vector2;
 	readonly Width: number;
 	readonly Height: number;
+	/**
+	 * Both forms `Rect.new` takes, because roblox-ts compiles both to
+	 * `new Rect(...)`: two `Vector2` corners (`new Rect(min, max)`) or four
+	 * numbers (`new Rect(minX, minY, maxX, maxY)`). Component code writes the
+	 * numeric form for `SliceCenter` — `new Rect(8, 8, 24, 24)` — and a
+	 * `(Vector2, Vector2)`-only constructor would store those raw numbers in
+	 * `Min`/`Max`, so `Min.X` reads back `undefined` and the 9-slice IR encodes
+	 * `NaN` insets instead of a border.
+	 *
+	 * A lone `Vector2` leaves `Max` at the origin. The engine rejects that call
+	 * outright, but an error thrown mid-render takes the whole scene down with
+	 * it, and an empty rect at least keeps the rest of the tree drawing.
+	 */
 	constructor(
-		readonly Min: Vector2,
-		readonly Max: Vector2,
+		a: Vector2 | number = 0,
+		b: Vector2 | number = 0,
+		maxX = 0,
+		maxY = 0,
 	) {
-		this.Width = Max.X - Min.X;
-		this.Height = Max.Y - Min.Y;
+		if (a instanceof Vector2) {
+			this.Min = a;
+			this.Max = b instanceof Vector2 ? b : Vector2.zero;
+		} else {
+			this.Min = new Vector2(a, typeof b === "number" ? b : 0);
+			this.Max = new Vector2(maxX, maxY);
+		}
+		this.Width = this.Max.X - this.Min.X;
+		this.Height = this.Max.Y - this.Min.Y;
 	}
 	/** `Rect.new(minX, minY, maxX, maxY)` or `Rect.new(min, max)` vectors. */
 	static new(
@@ -240,13 +264,7 @@ export class Rect {
 		maxX = 0,
 		maxY = 0,
 	): Rect {
-		if (a instanceof Vector2) {
-			return new Rect(a, b instanceof Vector2 ? b : Vector2.zero);
-		}
-		return new Rect(
-			new Vector2(a, typeof b === "number" ? b : 0),
-			new Vector2(maxX, maxY),
-		);
+		return new Rect(a, b, maxX, maxY);
 	}
 	/** Roblox `tostring`: `"1, 2, 5, 9"` — both corners, flattened. */
 	toString(): string {
@@ -607,6 +625,656 @@ export class NumberSequence {
 	}
 }
 
+// --- Random ------------------------------------------------------------------
+
+/** 32-bit left rotate — the one primitive xoshiro is built out of. */
+function rotl32(x: number, k: number): number {
+	return ((x << k) | (x >>> (32 - k))) >>> 0;
+}
+
+/**
+ * SplitMix32's finalizer, which is what turns a seed word into a lane of
+ * xoshiro state. Dropping the raw seed into the lanes instead would leave the
+ * low-entropy seeds real code actually passes — `new Random(1)`, `new Random(2)`
+ * — drawing near-identical opening numbers, which is exactly the case a seeded
+ * generator exists to get right.
+ */
+function splitMix32(z: number): number {
+	let x = Math.imul(z ^ (z >>> 16), 0x21f0_aaad);
+	x = Math.imul(x ^ (x >>> 15), 0x735a_2d97);
+	return (x ^ (x >>> 15)) >>> 0;
+}
+
+/**
+ * A seed as the two 32-bit halves of its int64 value, which is the type the
+ * engine's `Random.new(seed)` declares. A fractional seed is therefore
+ * truncated, and a non-finite one falls back to zero rather than poisoning
+ * every lane with `NaN` and making the whole stream return `NaN` forever.
+ */
+function seedWords(seed: number): [number, number] {
+	const value = Number.isFinite(seed) ? Math.trunc(seed) : 0;
+	// `>>> 0` takes the low word modulo 2^32 and `Math.floor(v / 2^32)` the
+	// high one, both in two's complement — so negative seeds stay distinct.
+	return [value >>> 0, Math.floor(value / 4_294_967_296) >>> 0];
+}
+
+/**
+ * The seed `new Random()` draws when the caller gives none. The engine's source
+ * for it is unspecified; the browser's CSPRNG is the closest honest stand-in,
+ * with the clock behind it for the contexts that expose no `crypto`.
+ */
+function entropySeed(): [number, number] {
+	if (
+		typeof crypto !== "undefined" &&
+		typeof crypto.getRandomValues === "function"
+	) {
+		const words = crypto.getRandomValues(new Uint32Array(2));
+		return [words[0] ?? 0, words[1] ?? 0];
+	}
+	const now = Date.now();
+	return [now >>> 0, Math.floor(Math.random() * 4_294_967_296) >>> 0];
+}
+
+/**
+ * A Roblox `Random` — a seeded pseudo-random stream.
+ *
+ * roblox-ts compiles `new Random(seed)` straight through to `Random.new(seed)`,
+ * so this has to work as a JS constructor *and* carry the static the Luau form
+ * names — the same double life `UDim2` leads.
+ *
+ * The draws come from an explicit xoshiro128** state rather than `Math.random`,
+ * because being *seedable* is the entire point of the type: code seeds one to
+ * lay out a procedural scene or to replay a shuffle, and `Math.random` cannot
+ * be seeded at all, so a preview built on it would redraw a different scene on
+ * every reload. What loom cannot promise is that the numbers match Studio's —
+ * the engine's generator is not published and cannot be reproduced from
+ * outside, so a seed is repeatable *here*, not identical to the engine's. A
+ * layout baked against the engine's stream for a given seed will differ.
+ */
+export class Random {
+	private s0 = 0;
+	private s1 = 0;
+	private s2 = 0;
+	private s3 = 0;
+
+	constructor(seed?: number) {
+		const [low, high] = seed === undefined ? entropySeed() : seedWords(seed);
+		let counter = low | 0;
+		const lane = (): number => {
+			counter = (counter + 0x9e37_79b9) | 0;
+			return splitMix32(counter ^ high);
+		};
+		this.s0 = lane();
+		this.s1 = lane();
+		this.s2 = lane();
+		this.s3 = lane();
+		// xoshiro never escapes an all-zero state. SplitMix32 essentially never
+		// hands one back, but a generator silently stuck returning 0 forever is
+		// worth the one branch to rule out.
+		if ((this.s0 | this.s1 | this.s2 | this.s3) === 0) this.s0 = 1;
+	}
+
+	/** `Random.new(seed)` — the name the Luau constructor goes by. */
+	static new(seed?: number): Random {
+		return new Random(seed);
+	}
+
+	/**
+	 * `NextNumber()` draws over `[0, 1)`; `NextNumber(min, max)` over
+	 * `[min, max)` — half-open at the top, as the engine documents it.
+	 */
+	NextNumber(): number;
+	NextNumber(min: number, max: number): number;
+	NextNumber(min?: number, max?: number): number {
+		const unit = this.nextDouble();
+		if (min === undefined || max === undefined) return unit;
+		return min + (max - min) * unit;
+	}
+
+	/**
+	 * `NextInteger(min, max)` — uniform over the **inclusive** range, both ends
+	 * reachable, as in the engine. An empty range has no integer to answer with
+	 * and throws, which is what Studio does rather than inventing a value.
+	 */
+	NextInteger(min: number, max: number): number {
+		if (min > max) {
+			throw new Error(
+				`[loom] Random:NextInteger expected min <= max, received (${min}, ${max})`,
+			);
+		}
+		// `Math.min` covers the one-in-2^53 rounding where the scaled double
+		// reaches the span exactly and would land a step past `max`.
+		return Math.min(max, min + Math.floor(this.nextDouble() * (max - min + 1)));
+	}
+
+	/**
+	 * `NextUnitVector()` — a direction drawn uniformly over the sphere, which is
+	 * not the same as drawing each component uniformly: doing that and
+	 * normalizing bunches the results toward the cube's corners. Sampling the
+	 * height first and then the angle around it keeps the density even.
+	 */
+	NextUnitVector(): Vector3 {
+		const z = this.NextNumber(-1, 1);
+		const angle = this.NextNumber(0, 2 * Math.PI);
+		const radius = Math.sqrt(1 - z * z);
+		return new Vector3(radius * Math.cos(angle), radius * Math.sin(angle), z);
+	}
+
+	/**
+	 * `NextGaussian(mean, standardDeviation)` — a normal draw by Box–Muller,
+	 * defaulting to the standard normal exactly as the engine's overload does.
+	 */
+	NextGaussian(mean = 0, standardDeviation = 1): number {
+		// `Math.log(0)` is -Infinity, so redraw the (vanishingly rare) zero
+		// rather than letting one land an Infinity in a caller's layout.
+		let unit = this.nextDouble();
+		while (unit === 0) unit = this.nextDouble();
+		return (
+			mean +
+			standardDeviation *
+				Math.sqrt(-2 * Math.log(unit)) *
+				Math.cos(2 * Math.PI * this.nextDouble())
+		);
+	}
+
+	/**
+	 * `Shuffle(array)` — a Fisher–Yates shuffle **in place**, returning nothing,
+	 * the way the engine's `Random:Shuffle(t)` rewrites the table handed to it
+	 * instead of answering a copy. roblox-ts arrays are real JS arrays in the
+	 * browser, so this walks 0-based over the whole array; the engine walks the
+	 * 1-based array part of the table, which is the same pass.
+	 */
+	Shuffle<T>(array: T[]): void {
+		for (let i = array.length - 1; i > 0; i--) {
+			const j = this.NextInteger(0, i);
+			// `noUncheckedIndexedAccess` widens both reads to `T | undefined`;
+			// `i` and `j` are in range by construction, so the casts are safe and
+			// an array that genuinely holds `undefined` still swaps correctly.
+			const held = array[i] as T;
+			array[i] = array[j] as T;
+			array[j] = held;
+		}
+	}
+
+	/**
+	 * `Clone()` — a fork of the stream, not a reseed. The copy carries the state
+	 * the original has already reached and advances independently from there, so
+	 * replaying a sequence means cloning *before* the draws; re-`new`ing the
+	 * seed only reproduces it if nothing has drawn yet.
+	 */
+	Clone(): Random {
+		const clone = new Random(0);
+		clone.s0 = this.s0;
+		clone.s1 = this.s1;
+		clone.s2 = this.s2;
+		clone.s3 = this.s3;
+		return clone;
+	}
+
+	/** One xoshiro128** step: advances the lanes, returns the next 32 bits. */
+	private nextUint32(): number {
+		const result = Math.imul(rotl32(Math.imul(this.s1, 5), 7), 9) >>> 0;
+		const t = this.s1 << 9;
+		this.s2 ^= this.s0;
+		this.s3 ^= this.s1;
+		this.s1 ^= this.s2;
+		this.s0 ^= this.s3;
+		this.s2 ^= t;
+		this.s3 = rotl32(this.s3, 11);
+		// `^=` and `<<` hand back *signed* 32-bit results; normalizing keeps
+		// every lane an unsigned word, which is what the doubles are built from.
+		this.s0 >>>= 0;
+		this.s1 >>>= 0;
+		this.s2 >>>= 0;
+		this.s3 >>>= 0;
+		return result;
+	}
+
+	/**
+	 * A double over `[0, 1)` carrying the full 53 bits of mantissa, built from
+	 * two draws. One 32-bit draw would quantize every number to a multiple of
+	 * 2^-32, which shows up as visible banding the moment a `NextNumber` result
+	 * drives a position or an alpha.
+	 */
+	private nextDouble(): number {
+		const high = this.nextUint32() >>> 5; // 27 bits
+		const low = this.nextUint32() >>> 6; // 26 bits
+		return (high * 67_108_864 + low) / 9_007_199_254_740_992;
+	}
+}
+
+// --- DateTime ----------------------------------------------------------------
+
+/**
+ * The table `DateTime:ToLocalTime()` and `:ToUniversalTime()` hand back: the
+ * calendar fields broken out, PascalCase like every other Roblox reflection
+ * name, with `Month` and `Day` 1-based rather than JS's zero-based month.
+ */
+export interface DateTimeTable {
+	Year: number;
+	Month: number;
+	Day: number;
+	Hour: number;
+	Minute: number;
+	Second: number;
+	Millisecond: number;
+}
+
+/** Zero-pad to `width` digits, keeping a leading `-` outside the padding. */
+function padNumber(value: number, width: number): string {
+	const sign = value < 0 ? "-" : "";
+	return sign + String(Math.abs(Math.trunc(value))).padStart(width, "0");
+}
+
+/**
+ * A Roblox `DateTime` — one instant, stored as a millisecond count since the
+ * Unix epoch, with the calendar arithmetic and the formatting hung off it.
+ *
+ * Unlike every other datatype here there is no `DateTime.new`: the engine
+ * exposes only the named factories (`now`, `fromUnixTimestamp`, `fromIsoDate`,
+ * …) and roblox-ts's typings follow, so no compiled call ever reaches the
+ * constructor. It stays public because a `DateTime` has to be constructible
+ * from a millisecond count somewhere, and that is the honest signature for it.
+ */
+export class DateTime {
+	/** Milliseconds since the Unix epoch — the one field the type stores. */
+	readonly UnixTimestampMillis: number;
+
+	constructor(unixTimestampMillis = 0) {
+		// The engine's field is an int64 millisecond count, so a fractional
+		// input (something `tick()`-derived, say) rounds here rather than
+		// dragging a sub-millisecond remainder through every later conversion.
+		this.UnixTimestampMillis = Math.round(unixTimestampMillis);
+	}
+
+	/**
+	 * Whole seconds since the epoch, **floored** — an instant 1.5s after the
+	 * epoch reports 1, and one 1.5s before it reports -2. Flooring rather than
+	 * truncating keeps the value monotonic across the epoch, which truncation
+	 * (answering -1 for two different seconds) does not.
+	 */
+	get UnixTimestamp(): number {
+		return Math.floor(this.UnixTimestampMillis / 1000);
+	}
+
+	/** `DateTime.now()` — the browser's clock, to the millisecond. */
+	static now(): DateTime {
+		return new DateTime(Date.now());
+	}
+
+	/** `DateTime.fromUnixTimestamp(seconds)` — seconds since the epoch. */
+	static fromUnixTimestamp(unixTimestamp: number): DateTime {
+		return new DateTime(unixTimestamp * 1000);
+	}
+
+	/** `DateTime.fromUnixTimestampMillis(ms)` — milliseconds since the epoch. */
+	static fromUnixTimestampMillis(unixTimestampMillis: number): DateTime {
+		return new DateTime(unixTimestampMillis);
+	}
+
+	/**
+	 * `DateTime.fromUniversalTime(y, mo, d, h, mi, s, ms)` — every argument
+	 * optional and defaulting to the epoch, as the engine documents.
+	 *
+	 * Out-of-range fields roll over (month 13 is January of the next year), the
+	 * way `os.time` and JS's own `Date` do. The engine rejects them instead, so
+	 * a preview keeps rendering where Studio would have raised — the honest
+	 * trade, since a thrown error inside a render takes the tree down with it.
+	 */
+	static fromUniversalTime(
+		year = 1970,
+		month = 1,
+		day = 1,
+		hour = 0,
+		minute = 0,
+		second = 0,
+		millisecond = 0,
+	): DateTime {
+		// Built with setters rather than `Date.UTC`, whose two-digit years map
+		// onto 1900+ — `fromUniversalTime(70, …)` means the year 70, not 1970.
+		const date = new Date(0);
+		date.setUTCFullYear(year, month - 1, day);
+		date.setUTCHours(hour, minute, second, millisecond);
+		return new DateTime(date.getTime());
+	}
+
+	/**
+	 * `DateTime.fromLocalTime(...)` — the same fields read in the viewer's
+	 * timezone. In the engine "local" is the player's machine; in a preview it
+	 * is the browser's, which is the same promise.
+	 */
+	static fromLocalTime(
+		year = 1970,
+		month = 1,
+		day = 1,
+		hour = 0,
+		minute = 0,
+		second = 0,
+		millisecond = 0,
+	): DateTime {
+		const date = new Date(0);
+		date.setFullYear(year, month - 1, day);
+		date.setHours(hour, minute, second, millisecond);
+		return new DateTime(date.getTime());
+	}
+
+	/**
+	 * `DateTime.fromIsoDate(iso)` — `undefined` (Luau's `nil`) when the string
+	 * is not an ISO 8601 date. That is the engine's contract, and the reason
+	 * calling code guards the result instead of using it straight.
+	 *
+	 * Checked against an explicit pattern before `Date.parse` sees it, because
+	 * `Date.parse` also accepts a pile of implementation-defined formats
+	 * ("December 17, 1995", "Mar 5 2020") that the engine refuses — letting
+	 * those through would hand the preview a `DateTime` where Studio has `nil`.
+	 *
+	 * A string naming no zone is read as UTC. Left to JS, a bare *date* parses
+	 * as UTC while a *date-time* parses as local, and that split would make the
+	 * same ISO string mean different instants on different machines.
+	 */
+	static fromIsoDate(isoDate: string): DateTime | undefined {
+		const match = ISO_8601_DATE.exec(isoDate);
+		if (match === null) return undefined;
+		// The ISO grammar admits a day the month does not have, and JS rolls it
+		// over — "2024-02-30" parses as March 1st — where the engine answers nil.
+		// Re-reading the calendar date back off its own parse catches that; the
+		// date head is exactly ten characters, the pattern above guarantees it.
+		const head = isoDate.slice(0, 10);
+		const headMillis = Date.parse(head);
+		if (Number.isNaN(headMillis)) return undefined;
+		if (new Date(headMillis).toISOString().slice(0, 10) !== head) {
+			return undefined;
+		}
+		const hasTime = match[1] !== undefined;
+		const hasZone = match[2] !== undefined;
+		const millis = Date.parse(hasTime && !hasZone ? `${isoDate}Z` : isoDate);
+		return Number.isNaN(millis) ? undefined : new DateTime(millis);
+	}
+
+	/**
+	 * `ToIsoDate()` — the instant in UTC as `YYYY-MM-DDTHH:MM:SSZ`.
+	 *
+	 * Second precision with no fractional part, which is the shape the engine
+	 * prints: the milliseconds a `DateTime` carries are dropped here, and a
+	 * caller that needs them reads `UnixTimestampMillis` or
+	 * `ToUniversalTime().Millisecond`. Assembled by hand rather than from
+	 * `Date#toISOString`, which always writes the `.000` back in.
+	 */
+	ToIsoDate(): string {
+		const t = this.ToUniversalTime();
+		const date = `${padNumber(t.Year, 4)}-${padNumber(t.Month, 2)}-${padNumber(t.Day, 2)}`;
+		const time = `${padNumber(t.Hour, 2)}:${padNumber(t.Minute, 2)}:${padNumber(t.Second, 2)}`;
+		return `${date}T${time}Z`;
+	}
+
+	/** `ToUniversalTime()` — the calendar fields in UTC. */
+	ToUniversalTime(): DateTimeTable {
+		const date = new Date(this.UnixTimestampMillis);
+		return {
+			Year: date.getUTCFullYear(),
+			Month: date.getUTCMonth() + 1,
+			Day: date.getUTCDate(),
+			Hour: date.getUTCHours(),
+			Minute: date.getUTCMinutes(),
+			Second: date.getUTCSeconds(),
+			Millisecond: date.getUTCMilliseconds(),
+		};
+	}
+
+	/** `ToLocalTime()` — the same fields in the viewer's own timezone. */
+	ToLocalTime(): DateTimeTable {
+		const date = new Date(this.UnixTimestampMillis);
+		return {
+			Year: date.getFullYear(),
+			Month: date.getMonth() + 1,
+			Day: date.getDate(),
+			Hour: date.getHours(),
+			Minute: date.getMinutes(),
+			Second: date.getSeconds(),
+			Millisecond: date.getMilliseconds(),
+		};
+	}
+
+	/**
+	 * `FormatUniversalTime(format, locale)` — the instant rendered in UTC
+	 * against an LDML pattern. See {@link formatDateTime} for the tokens.
+	 *
+	 * `locale` is a required argument in the engine; it defaults here because a
+	 * missing one would otherwise render `undefined` into `Intl` and throw, and
+	 * `"en-us"` is the value every Roblox example passes.
+	 */
+	FormatUniversalTime(format: string, locale = "en-us"): string {
+		return formatDateTime(
+			this.ToUniversalTime(),
+			this.UnixTimestampMillis,
+			format,
+			locale,
+			"UTC",
+		);
+	}
+
+	/** `FormatLocalTime(format, locale)` — the same, in the viewer's zone. */
+	FormatLocalTime(format: string, locale = "en-us"): string {
+		return formatDateTime(
+			this.ToLocalTime(),
+			this.UnixTimestampMillis,
+			format,
+			locale,
+			undefined,
+		);
+	}
+}
+
+/**
+ * ISO 8601 as `DateTime.fromIsoDate` accepts it: a calendar date, optionally
+ * followed by a time and optionally by a zone designator. Group 1 captures the
+ * time (so a bare date is distinguishable) and group 2 the zone, which is what
+ * decides whether a `Z` has to be appended before parsing.
+ */
+const ISO_8601_DATE =
+	/^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?(Z|[+-]\d{2}:?\d{2})?)?$/;
+
+/** Every ASCII letter is a reserved LDML pattern character. */
+const PATTERN_LETTER = /[A-Za-z]/;
+
+/**
+ * Locale-dependent formatters, cached because constructing one is an ICU
+ * lookup and a clock label re-formatting every frame would otherwise build a
+ * fresh one on each pass. Keyed by everything that changes the output; the set
+ * of locales an app uses is tiny, so the map does not need eviction.
+ */
+const FORMATTER_CACHE = new Map<string, Intl.DateTimeFormat>();
+
+/**
+ * One locale-dependent piece of a formatted instant — a month or weekday name,
+ * the AM/PM marker, a timezone label — pulled out of `Intl.DateTimeFormat` by
+ * part rather than by formatting the whole date, so that the LDML pattern
+ * decides where each piece lands instead of `Intl`'s locale-chosen ordering.
+ */
+function localePart(
+	millis: number,
+	locale: string,
+	timeZone: string | undefined,
+	options: Intl.DateTimeFormatOptions,
+	part: string,
+): string {
+	const key = `${locale} ${timeZone ?? ""} ${JSON.stringify(options)}`;
+	let formatter = FORMATTER_CACHE.get(key);
+	if (formatter === undefined) {
+		formatter = new Intl.DateTimeFormat(
+			locale,
+			timeZone === undefined ? options : { ...options, timeZone },
+		);
+		FORMATTER_CACHE.set(key, formatter);
+	}
+	const parts = formatter.formatToParts(new Date(millis));
+	return parts.find((piece) => piece.type === part)?.value ?? "";
+}
+
+/** LDML widens a name token by repeating it: 3 short, 4 full, 5+ narrow. */
+function nameWidth(count: number): "short" | "long" | "narrow" {
+	if (count >= 5) return "narrow";
+	if (count === 4) return "long";
+	return "short";
+}
+
+/** One LDML token, `count` characters wide, against the broken-out fields. */
+function formatToken(
+	token: string,
+	count: number,
+	fields: DateTimeTable,
+	millis: number,
+	locale: string,
+	timeZone: string | undefined,
+): string {
+	switch (token) {
+		case "y":
+			// LDML's odd one out: `yy` is the last two digits, every other width
+			// is the full year zero-padded to that many places.
+			return count === 2
+				? padNumber(fields.Year % 100, 2)
+				: padNumber(fields.Year, count);
+		case "M":
+		case "L":
+			return count <= 2
+				? padNumber(fields.Month, count)
+				: localePart(
+						millis,
+						locale,
+						timeZone,
+						{ month: nameWidth(count) },
+						"month",
+					);
+		case "d":
+			return padNumber(fields.Day, count);
+		case "E":
+			return localePart(
+				millis,
+				locale,
+				timeZone,
+				{ weekday: nameWidth(count) },
+				"weekday",
+			);
+		case "H":
+			return padNumber(fields.Hour, count);
+		case "h": {
+			const hour = fields.Hour % 12;
+			return padNumber(hour === 0 ? 12 : hour, count);
+		}
+		case "m":
+			return padNumber(fields.Minute, count);
+		case "s":
+			return padNumber(fields.Second, count);
+		case "S":
+			// A fraction, so it is truncated to the requested digits and padded
+			// out past three — never rounded, which LDML is explicit about.
+			return padNumber(fields.Millisecond, 3)
+				.slice(0, count)
+				.padEnd(count, "0");
+		case "a":
+			return localePart(
+				millis,
+				locale,
+				timeZone,
+				{ hour: "numeric", hour12: true },
+				"dayPeriod",
+			);
+		case "z":
+			return localePart(
+				millis,
+				locale,
+				timeZone,
+				{ timeZoneName: count >= 4 ? "long" : "short" },
+				"timeZoneName",
+			);
+		default:
+			// A pattern letter loom does not implement, written back out as the
+			// author typed it rather than dropped or guessed at — the same policy
+			// `os.date` follows for an unknown strftime specifier.
+			return token.repeat(count);
+	}
+}
+
+/**
+ * Format one instant against a Unicode **LDML** (UTS #35) pattern — the grammar
+ * `DateTime:FormatLocalTime` takes in the engine, and emphatically *not*
+ * strftime. The difference bites quietly rather than loudly: a strftime pattern
+ * like `"%H:%M"` is not rejected, it is *misread* — `%` is literal text while
+ * `H` and `M` are LDML's hour and **month**, so it comes back as `%14:%3`. The
+ * engine does the same thing with it, which is the point of matching here.
+ *
+ * The tokens loom implements, each widened by repeating it:
+ *
+ * - `y` year — `yy` is the last two digits, `yyyy` pads to four
+ * - `M` month — 1-2 digits, `MMM` short name, `MMMM` full, `MMMMM` narrow
+ * - `L` stand-alone month — same output as `M` (see below)
+ * - `d` day of month — `dd` zero-pads
+ * - `E` day of week — `E`..`EEE` short name, `EEEE` full, `EEEEE` narrow
+ * - `H` hour 0-23, `h` hour 1-12 — doubled to zero-pad
+ * - `m` minute, `s` second — doubled to zero-pad
+ * - `S` fractional second — `S` tenths, `SS` hundredths, `SSS` milliseconds
+ * - `a` the AM/PM marker
+ * - `z` timezone name — `zzzz` the long form
+ *
+ * Every other pattern letter (`G`, `Q`, `w`, `D`, `k`, `K`, `e`, `c`, `Z`, `X`,
+ * `V`, `u`, …) is emitted verbatim. Text between single quotes is literal and
+ * `''` is one apostrophe, as LDML specifies.
+ *
+ * `L` is LDML's *stand-alone* month, which differs from `M` only in languages
+ * that inflect a month named on its own (the Slavic ones, mainly). `Intl`
+ * exposes just the formatting form, so loom prints that for both: correct for
+ * `en-us` and every locale that does not inflect, and the closest answer
+ * available for the ones that do.
+ */
+function formatDateTime(
+	fields: DateTimeTable,
+	millis: number,
+	pattern: string,
+	locale: string,
+	timeZone: string | undefined,
+): string {
+	const out: string[] = [];
+	let i = 0;
+	while (i < pattern.length) {
+		const char = pattern.charAt(i);
+		if (char === "'") {
+			i++;
+			// `''` is a literal apostrophe, whether or not a quote is open.
+			if (pattern.charAt(i) === "'") {
+				out.push("'");
+				i++;
+				continue;
+			}
+			while (i < pattern.length) {
+				if (pattern.charAt(i) === "'") {
+					if (pattern.charAt(i + 1) === "'") {
+						out.push("'");
+						i += 2;
+						continue;
+					}
+					i++;
+					break;
+				}
+				out.push(pattern.charAt(i));
+				i++;
+			}
+			continue;
+		}
+		if (!PATTERN_LETTER.test(char)) {
+			out.push(char);
+			i++;
+			continue;
+		}
+		let count = 0;
+		while (pattern.charAt(i) === char) {
+			count++;
+			i++;
+		}
+		out.push(formatToken(char, count, fields, millis, locale, timeZone));
+	}
+	return out.join("");
+}
+
 /**
  * Roblox's `==` for the datatypes, which compare **by value**: in the engine
  * `UDim2.new(0, 0, 0, 0) == UDim2.new(0, 0, 0, 0)` is true, because they are
@@ -651,6 +1319,13 @@ export function robloxEquals(a: unknown, b: unknown): boolean {
 		return (
 			a.Family === b.Family && a.Weight === b.Weight && a.Style === b.Style
 		);
+	// A `DateTime` is an immutable instant, so two of them naming the same
+	// millisecond are the same value — the same reasoning as every datatype
+	// above. `Random` deliberately gets no case: its state is mutable, two
+	// generators that happen to sit on the same lanes are still two streams,
+	// and identity is the only sane answer for one.
+	if (a instanceof DateTime && b instanceof DateTime)
+		return a.UnixTimestampMillis === b.UnixTimestampMillis;
 	if (a instanceof ColorSequenceKeypoint && b instanceof ColorSequenceKeypoint)
 		return a.Time === b.Time && robloxEquals(a.Value, b.Value);
 	if (
@@ -665,7 +1340,8 @@ export function robloxEquals(a: unknown, b: unknown): boolean {
 	if (a instanceof NumberSequence && b instanceof NumberSequence)
 		return keypointsEqual(a.Keypoints, b.Keypoints);
 	// `EnumItem`s are singletons, so `Object.is` above already settled them, and
-	// anything else (a handler table, a Roblox instance) keeps identity.
+	// anything else (a handler table, a Roblox instance, a `Random`) keeps
+	// identity.
 	return false;
 }
 
@@ -678,6 +1354,11 @@ function keypointsEqual(a: readonly unknown[], b: readonly unknown[]): boolean {
  * the canonical datatype→IR mapping shared by every frontend adapter (react, vide,
  * …). Unknown values (including Vector3/CFrame/TweenInfo, which the IR has no slot
  * for) return `undefined` so the property is dropped.
+ *
+ * `Random` and `DateTime` get no encoding on purpose: neither is a scene
+ * property. A generator is mutable program state and an instant is something a
+ * component turns into *text* before it ever reaches a property, so there is
+ * nothing for the renderer to paint and nothing for the IR to carry.
  */
 export function toPropertyValue(v: unknown): PropertyValue | undefined {
 	if (v instanceof UDim2) {
@@ -711,7 +1392,14 @@ export function toPropertyValue(v: unknown): PropertyValue | undefined {
 		});
 	}
 	if (v instanceof EnumItem) {
-		return prop.enum({ enumType: v.EnumType, name: v.Name, value: v.Value });
+		// `EnumType` is the enum *object* (so that `item.EnumType == Enum.KeyCode`
+		// holds, as in the engine); the IR wants the bare type name, which is what
+		// `enumTypeName` peels off it.
+		return prop.enum({
+			enumType: enumTypeName(v),
+			name: v.Name,
+			value: v.Value,
+		});
 	}
 	if (typeof v === "number") return prop.number(v);
 	if (typeof v === "boolean") return prop.bool(v);

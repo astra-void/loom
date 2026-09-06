@@ -3,9 +3,11 @@ import {
 	Color3,
 	ColorSequence,
 	ColorSequenceKeypoint,
+	DateTime,
 	Font,
 	NumberSequence,
 	NumberSequenceKeypoint,
+	Random,
 	Rect,
 	robloxEquals,
 	toPropertyValue,
@@ -415,5 +417,452 @@ describe("tostring", () => {
 	it("reaches them through Luau tostring too", () => {
 		expect(tostring(new Vector2(2, 8))).toBe("2, 8");
 		expect(tostring(undefined)).toBe("nil");
+	});
+});
+
+describe("Rect constructor", () => {
+	it("accepts the four-number roblox-ts form (minX, minY, maxX, maxY)", () => {
+		// roblox-ts compiles `Rect.new(8, 8, 24, 24)` — the SliceCenter form —
+		// to `new Rect(8, 8, 24, 24)`, which used to store the raw numbers in
+		// Min/Max and encode NaN insets into the 9-slice IR.
+		const value = new Rect(8, 8, 24, 24);
+		expect(value.Min).toEqual(new Vector2(8, 8));
+		expect(value.Max).toEqual(new Vector2(24, 24));
+		expect(value.Width).toBe(16);
+		expect(value.Height).toBe(16);
+		expect(toPropertyValue(value)).toEqual({
+			type: "Rect",
+			value: { min: { x: 8, y: 8 }, max: { x: 24, y: 24 } },
+		});
+	});
+
+	it("still accepts the two-Vector2 form existing callers write", () => {
+		const value = new Rect(new Vector2(1, 2), new Vector2(4, 6));
+		expect(value.Min).toEqual(new Vector2(1, 2));
+		expect(value.Max).toEqual(new Vector2(4, 6));
+		expect(value.Width).toBe(3);
+		expect(value.Height).toBe(4);
+	});
+
+	it("leaves Max at the origin for a lone Vector2, and defaults to empty", () => {
+		expect(new Rect(new Vector2(3, 4)).Max).toEqual(Vector2.zero);
+		expect(new Rect().toString()).toBe("0, 0, 0, 0");
+	});
+
+	it("Rect.new and the constructor agree on every form", () => {
+		expect(robloxEquals(Rect.new(1, 2, 5, 9), new Rect(1, 2, 5, 9))).toBe(true);
+		expect(
+			robloxEquals(
+				Rect.new(new Vector2(1, 2), new Vector2(5, 9)),
+				new Rect(1, 2, 5, 9),
+			),
+		).toBe(true);
+		expect(robloxEquals(new Rect(1, 2, 5, 9), new Rect(1, 2, 5, 8))).toBe(
+			false,
+		);
+	});
+});
+
+describe("Random", () => {
+	const draw = (random: Random, count: number): number[] =>
+		Array.from({ length: count }, () => random.NextNumber());
+
+	it("repeats its sequence for a given seed", () => {
+		// The whole reason for an explicit PRNG rather than Math.random: a seed
+		// has to draw the same numbers on every reload, or a procedurally laid
+		// out scene redraws differently each time the preview refreshes.
+		expect(draw(new Random(12_345), 8)).toEqual(draw(new Random(12_345), 8));
+		expect(draw(Random.new(12_345), 8)).toEqual(draw(new Random(12_345), 8));
+	});
+
+	it("separates adjacent low-entropy seeds", () => {
+		// `new Random(1)` and `new Random(2)` are what real code passes; without
+		// the SplitMix32 scramble they would open with near-identical draws.
+		const first = draw(new Random(1), 6);
+		const second = draw(new Random(2), 6);
+		expect(first).not.toEqual(second);
+		expect(first.some((n, i) => Math.abs(n - (second[i] ?? 0)) > 0.01)).toBe(
+			true,
+		);
+		expect(draw(new Random(-1), 6)).not.toEqual(draw(new Random(1), 6));
+	});
+
+	it("truncates a fractional seed, as the engine's int64 parameter does", () => {
+		expect(draw(new Random(7.9), 4)).toEqual(draw(new Random(7), 4));
+		expect(draw(new Random(Number.NaN), 4)).toEqual(draw(new Random(0), 4));
+	});
+
+	it("draws an unseeded stream from entropy, not a fixed default", () => {
+		expect(new Random().NextNumber()).not.toBe(new Random().NextNumber());
+	});
+
+	it("NextNumber covers [0, 1) and scales to [min, max)", () => {
+		const random = new Random(31);
+		let total = 0;
+		for (let i = 0; i < 5000; i++) {
+			const unit = random.NextNumber();
+			expect(unit).toBeGreaterThanOrEqual(0);
+			expect(unit).toBeLessThan(1);
+			total += unit;
+			const scaled = random.NextNumber(10, 20);
+			expect(scaled).toBeGreaterThanOrEqual(10);
+			expect(scaled).toBeLessThan(20);
+		}
+		// A uniform stream, not a constant or a drifting one.
+		expect(total / 5000).toBeCloseTo(0.5, 1);
+	});
+
+	it("NextInteger is inclusive at both ends and stays uniform", () => {
+		const random = new Random(7);
+		const counts = new Map<number, number>();
+		for (let i = 0; i < 3000; i++) {
+			const roll = random.NextInteger(1, 6);
+			expect(Number.isInteger(roll)).toBe(true);
+			expect(roll).toBeGreaterThanOrEqual(1);
+			expect(roll).toBeLessThanOrEqual(6);
+			counts.set(roll, (counts.get(roll) ?? 0) + 1);
+		}
+		// Both 1 and 6 have to turn up: the range is closed at both ends.
+		expect([...counts.keys()].sort((a, b) => a - b)).toEqual([
+			1, 2, 3, 4, 5, 6,
+		]);
+		for (const count of counts.values()) expect(count).toBeGreaterThan(400);
+	});
+
+	it("NextInteger handles a single value and a negative range", () => {
+		const random = new Random(3);
+		expect(random.NextInteger(5, 5)).toBe(5);
+		for (let i = 0; i < 200; i++) {
+			const value = random.NextInteger(-3, -1);
+			expect(value).toBeGreaterThanOrEqual(-3);
+			expect(value).toBeLessThanOrEqual(-1);
+		}
+	});
+
+	it("NextInteger refuses an empty range rather than inventing a value", () => {
+		expect(() => new Random(1).NextInteger(5, 1)).toThrow(
+			"[loom] Random:NextInteger expected min <= max, received (5, 1)",
+		);
+	});
+
+	it("NextUnitVector returns unit-length Vector3s, repeatably", () => {
+		const random = new Random(99);
+		for (let i = 0; i < 100; i++) {
+			const direction = random.NextUnitVector();
+			expect(direction).toBeInstanceOf(Vector3);
+			expect(direction.Magnitude).toBeCloseTo(1, 12);
+		}
+		expect(new Random(99).NextUnitVector()).toEqual(
+			new Random(99).NextUnitVector(),
+		);
+	});
+
+	it("NextUnitVector spreads over the sphere rather than one hemisphere", () => {
+		const random = new Random(1234);
+		let positiveZ = 0;
+		for (let i = 0; i < 400; i++) {
+			if (random.NextUnitVector().Z > 0) positiveZ++;
+		}
+		expect(positiveZ).toBeGreaterThan(150);
+		expect(positiveZ).toBeLessThan(250);
+	});
+
+	it("NextGaussian is a repeatable standard normal by default", () => {
+		expect(new Random(8).NextGaussian()).toBe(new Random(8).NextGaussian());
+		const random = new Random(8);
+		const samples = Array.from({ length: 4000 }, () => random.NextGaussian());
+		const mean = samples.reduce((a, b) => a + b, 0) / samples.length;
+		const variance =
+			samples.reduce((a, b) => a + (b - mean) ** 2, 0) / samples.length;
+		expect(mean).toBeCloseTo(0, 1);
+		expect(Math.sqrt(variance)).toBeCloseTo(1, 1);
+		// A zero deviation collapses onto the mean exactly.
+		expect(new Random(8).NextGaussian(10, 0)).toBe(10);
+	});
+
+	it("Shuffle rewrites the array it is handed, in place", () => {
+		const array = [1, 2, 3, 4, 5, 6, 7, 8];
+		const sorted = [...array];
+		const returned = new Random(4).Shuffle(array);
+		// The engine's Shuffle returns nothing; the array itself is the result.
+		expect(returned).toBeUndefined();
+		expect(array).not.toEqual(sorted);
+		expect([...array].sort((a, b) => a - b)).toEqual(sorted);
+	});
+
+	it("Shuffle is a permutation, and the same one for the same seed", () => {
+		const first = ["a", "b", "c", "d", "e", "f"];
+		const second = [...first];
+		new Random(2024).Shuffle(first);
+		new Random(2024).Shuffle(second);
+		expect(first).toEqual(second);
+		expect([...first].sort()).toEqual(["a", "b", "c", "d", "e", "f"]);
+	});
+
+	it("Shuffle leaves empty and single-element arrays alone", () => {
+		const empty: number[] = [];
+		const single = [42];
+		new Random(1).Shuffle(empty);
+		new Random(1).Shuffle(single);
+		expect(empty).toEqual([]);
+		expect(single).toEqual([42]);
+	});
+
+	it("Clone forks the stream where it stands, and runs on independently", () => {
+		const source = new Random(2024);
+		source.NextNumber();
+		source.NextNumber();
+		const clone = source.Clone();
+		// A fork of the stream, not a reseed: the clone opens where the original
+		// stands, which is not where a freshly seeded generator would.
+		const forked = draw(clone, 3);
+		expect(forked).not.toEqual(draw(new Random(2024), 3));
+		// Running the clone on does not move the original, which still has those
+		// same three numbers waiting for it.
+		for (let i = 0; i < 100; i++) clone.NextNumber();
+		expect(draw(source, 3)).toEqual(forked);
+	});
+
+	it("is program state, not a scene property, and keeps identity semantics", () => {
+		const random = new Random(1);
+		expect(toPropertyValue(random)).toBeUndefined();
+		expect(robloxEquals(random, random)).toBe(true);
+		// Two generators on the same seed are still two mutable streams.
+		expect(robloxEquals(new Random(1), new Random(1))).toBe(false);
+	});
+});
+
+describe("DateTime", () => {
+	// 2024-03-05T14:07:09.123Z — a Tuesday, afternoon, with a fraction on it.
+	const stampMillis = Date.UTC(2024, 2, 5, 14, 7, 9, 123);
+	const stamp = DateTime.fromUnixTimestampMillis(stampMillis);
+	const pad = (value: number, width = 2): string =>
+		String(value).padStart(width, "0");
+
+	it("carries the epoch millis and reports floored seconds", () => {
+		expect(DateTime.fromUnixTimestamp(1_700_000_000).UnixTimestampMillis).toBe(
+			1_700_000_000_000,
+		);
+		expect(DateTime.fromUnixTimestamp(1_700_000_000).UnixTimestamp).toBe(
+			1_700_000_000,
+		);
+		expect(DateTime.fromUnixTimestampMillis(1500).UnixTimestamp).toBe(1);
+		// Floored, not truncated, so the count stays monotonic across the epoch.
+		expect(DateTime.fromUnixTimestampMillis(-1500).UnixTimestamp).toBe(-2);
+		expect(DateTime.fromUnixTimestampMillis(0).UnixTimestamp).toBe(0);
+	});
+
+	it("now() reads the browser clock", () => {
+		const before = Date.now();
+		const now = DateTime.now();
+		expect(now.UnixTimestampMillis).toBeGreaterThanOrEqual(before);
+		expect(now.UnixTimestampMillis).toBeLessThanOrEqual(Date.now());
+	});
+
+	it("fromUniversalTime defaults to the epoch and rolls over out-of-range fields", () => {
+		expect(DateTime.fromUniversalTime().UnixTimestampMillis).toBe(0);
+		expect(
+			DateTime.fromUniversalTime(2024, 3, 5, 14, 7, 9, 123).UnixTimestampMillis,
+		).toBe(stampMillis);
+		// Month 13 is January of the next year, as os.time and Date both have it.
+		const rolled = DateTime.fromUniversalTime(2024, 13, 1).ToUniversalTime();
+		expect(rolled.Year).toBe(2025);
+		expect(rolled.Month).toBe(1);
+	});
+
+	it("fromUniversalTime means the year it is given, not 1900 plus it", () => {
+		// `Date.UTC(70, …)` is 1970; the engine's year 70 is the year 70.
+		expect(DateTime.fromUniversalTime(70, 1, 1).ToUniversalTime().Year).toBe(
+			70,
+		);
+		expect(DateTime.fromUniversalTime(70, 1, 1).ToIsoDate()).toBe(
+			"0070-01-01T00:00:00Z",
+		);
+	});
+
+	it("fromLocalTime round-trips through ToLocalTime in the viewer's zone", () => {
+		const local = DateTime.fromLocalTime(2024, 3, 5, 14, 7, 9, 123);
+		expect(local.ToLocalTime()).toEqual({
+			Year: 2024,
+			Month: 3,
+			Day: 5,
+			Hour: 14,
+			Minute: 7,
+			Second: 9,
+			Millisecond: 123,
+		});
+		expect(DateTime.fromLocalTime().ToLocalTime().Year).toBe(1970);
+	});
+
+	it("ToUniversalTime breaks the instant into 1-based calendar fields", () => {
+		expect(stamp.ToUniversalTime()).toEqual({
+			Year: 2024,
+			Month: 3,
+			Day: 5,
+			Hour: 14,
+			Minute: 7,
+			Second: 9,
+			Millisecond: 123,
+		});
+	});
+
+	it("ToIsoDate prints UTC to the second, with no fractional part", () => {
+		expect(DateTime.fromUnixTimestampMillis(0).ToIsoDate()).toBe(
+			"1970-01-01T00:00:00Z",
+		);
+		expect(stamp.ToIsoDate()).toBe("2024-03-05T14:07:09Z");
+		// The dropped milliseconds are still on the object.
+		expect(stamp.ToUniversalTime().Millisecond).toBe(123);
+	});
+
+	it("fromIsoDate parses the ISO forms, reading a missing zone as UTC", () => {
+		expect(DateTime.fromIsoDate("2024-03-05T14:07:09Z")?.ToIsoDate()).toBe(
+			"2024-03-05T14:07:09Z",
+		);
+		expect(
+			DateTime.fromIsoDate("2024-03-05T14:07:09.123Z")?.UnixTimestampMillis,
+		).toBe(stampMillis);
+		// No zone designator: UTC, not the machine's timezone.
+		expect(
+			DateTime.fromIsoDate("2024-03-05T14:07:09")?.UnixTimestampMillis,
+		).toBe(Date.UTC(2024, 2, 5, 14, 7, 9));
+		expect(DateTime.fromIsoDate("2024-03-05")?.UnixTimestampMillis).toBe(
+			Date.UTC(2024, 2, 5),
+		);
+		expect(DateTime.fromIsoDate("2024-03-05T14:07")?.UnixTimestampMillis).toBe(
+			Date.UTC(2024, 2, 5, 14, 7),
+		);
+		expect(
+			DateTime.fromIsoDate("2024-03-05T14:07:09+02:00")?.UnixTimestampMillis,
+		).toBe(Date.UTC(2024, 2, 5, 12, 7, 9));
+		expect(DateTime.fromIsoDate(stamp.ToIsoDate())?.UnixTimestamp).toBe(
+			stamp.UnixTimestamp,
+		);
+	});
+
+	it("fromIsoDate answers undefined for anything that is not an ISO date", () => {
+		// Luau's nil. Everything here is either not ISO at all, or a shape
+		// `Date.parse` would happily reinterpret on its own.
+		for (const text of [
+			"",
+			"not a date",
+			"December 17, 1995",
+			"Mar 5 2020",
+			"05/03/2024",
+			"2024-3-5",
+			"2024-03-05 14:07:09",
+			"2024-13-01",
+			"2024-02-30",
+			"2024-03-05T25:00:00Z",
+			"2024-03-05T14:07:09Zjunk",
+		]) {
+			expect(DateTime.fromIsoDate(text)).toBeUndefined();
+		}
+	});
+
+	it("formats LDML numeric tokens, widening on repetition", () => {
+		expect(stamp.FormatUniversalTime("yyyy-MM-dd")).toBe("2024-03-05");
+		expect(stamp.FormatUniversalTime("y")).toBe("2024");
+		expect(stamp.FormatUniversalTime("yy")).toBe("24");
+		expect(stamp.FormatUniversalTime("yyyyy")).toBe("02024");
+		expect(stamp.FormatUniversalTime("M/d")).toBe("3/5");
+		expect(stamp.FormatUniversalTime("HH:mm:ss")).toBe("14:07:09");
+		expect(stamp.FormatUniversalTime("H:m:s")).toBe("14:7:9");
+	});
+
+	it("formats the 12-hour clock and its day period", () => {
+		expect(stamp.FormatUniversalTime("h:mm a")).toBe("2:07 PM");
+		expect(stamp.FormatUniversalTime("hh")).toBe("02");
+		// Midnight is 12 AM on a 12-hour clock, not 0.
+		const midnight = DateTime.fromUniversalTime(2024, 3, 5);
+		expect(midnight.FormatUniversalTime("h a")).toBe("12 AM");
+		expect(midnight.FormatUniversalTime("H")).toBe("0");
+	});
+
+	it("formats month and weekday names at every width", () => {
+		expect(stamp.FormatUniversalTime("MMM")).toBe("Mar");
+		expect(stamp.FormatUniversalTime("MMMM")).toBe("March");
+		expect(stamp.FormatUniversalTime("MMMMM")).toBe("M");
+		// `L` is LDML's stand-alone month; Intl exposes only the format form, so
+		// loom prints that for both — identical in en-us.
+		expect(stamp.FormatUniversalTime("LLL")).toBe("Mar");
+		expect(stamp.FormatUniversalTime("LLLL")).toBe("March");
+		expect(stamp.FormatUniversalTime("LL")).toBe("03");
+		expect(stamp.FormatUniversalTime("E")).toBe("Tue");
+		expect(stamp.FormatUniversalTime("EEE")).toBe("Tue");
+		expect(stamp.FormatUniversalTime("EEEE")).toBe("Tuesday");
+		expect(stamp.FormatUniversalTime("EEEEE")).toBe("T");
+	});
+
+	it("honours the locale argument for the name tokens", () => {
+		expect(stamp.FormatUniversalTime("MMMM", "fr-FR")).toBe("mars");
+		expect(stamp.FormatUniversalTime("EEEE", "fr-FR")).toBe("mardi");
+		// Numbers are locale-independent here: the pattern, not Intl, lays out.
+		expect(stamp.FormatUniversalTime("yyyy-MM-dd", "fr-FR")).toBe("2024-03-05");
+	});
+
+	it("truncates the fractional second rather than rounding it", () => {
+		expect(stamp.FormatUniversalTime("S")).toBe("1");
+		expect(stamp.FormatUniversalTime("SS")).toBe("12");
+		expect(stamp.FormatUniversalTime("SSS")).toBe("123");
+		expect(stamp.FormatUniversalTime("SSSS")).toBe("1230");
+		expect(
+			DateTime.fromUnixTimestampMillis(
+				Date.UTC(2024, 2, 5, 0, 0, 0, 7),
+			).FormatUniversalTime("SSS"),
+		).toBe("007");
+	});
+
+	it("names the timezone", () => {
+		expect(stamp.FormatUniversalTime("z")).toBe("UTC");
+		expect(stamp.FormatUniversalTime("zzzz")).toBe(
+			"Coordinated Universal Time",
+		);
+	});
+
+	it("treats quoted text as literal, with '' for an apostrophe", () => {
+		expect(stamp.FormatUniversalTime("'at' HH:mm")).toBe("at 14:07");
+		expect(stamp.FormatUniversalTime("''")).toBe("'");
+		expect(stamp.FormatUniversalTime("h 'o''clock'")).toBe("2 o'clock");
+		expect(stamp.FormatUniversalTime("EEEE, MMMM d, yyyy 'at' h:mm a")).toBe(
+			"Tuesday, March 5, 2024 at 2:07 PM",
+		);
+	});
+
+	it("writes an unimplemented pattern letter back out verbatim", () => {
+		expect(stamp.FormatUniversalTime("QQ")).toBe("QQ");
+		expect(stamp.FormatUniversalTime("G")).toBe("G");
+		// LDML, not strftime: `%` is literal but H and M are read as hour and
+		// *month*, so an os.date pattern comes back quietly mangled — which is
+		// what the engine does with one too.
+		expect(stamp.FormatUniversalTime("%H:%M")).toBe("%14:%3");
+	});
+
+	it("FormatLocalTime renders in the viewer's own timezone", () => {
+		const local = stamp.ToLocalTime();
+		expect(stamp.FormatLocalTime("yyyy-MM-dd HH:mm:ss")).toBe(
+			`${local.Year}-${pad(local.Month)}-${pad(local.Day)} ${pad(
+				local.Hour,
+			)}:${pad(local.Minute)}:${pad(local.Second)}`,
+		);
+	});
+
+	it("compares by instant and carries no IR encoding", () => {
+		// An immutable value type, so two DateTimes on the same millisecond are
+		// the same value — but no scene property holds one, so nothing encodes.
+		expect(
+			robloxEquals(
+				DateTime.fromUnixTimestampMillis(stampMillis),
+				DateTime.fromUnixTimestampMillis(stampMillis),
+			),
+		).toBe(true);
+		expect(
+			robloxEquals(
+				DateTime.fromUnixTimestampMillis(stampMillis),
+				DateTime.fromUnixTimestampMillis(stampMillis + 1),
+			),
+		).toBe(false);
+		expect(robloxEquals(stamp, new UDim(0, 0))).toBe(false);
+		expect(toPropertyValue(stamp)).toBeUndefined();
 	});
 });
