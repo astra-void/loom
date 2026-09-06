@@ -1,6 +1,6 @@
 {
 	"name": "@loom-dev/vide",
-	"version": "0.11.0",
+	"version": "0.12.0",
 	"description": "Vide adapter for loom — fine-grained reactivity producing the same Scene IR as the React renderer.",
 	"keywords": [
 		"loom",

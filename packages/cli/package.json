@@ -1,6 +1,6 @@
 {
 	"name": "loom-dev",
-	"version": "0.11.0",
+	"version": "0.12.0",
 	"description": "CLI for the loom preview and build toolchain — preview a roblox-ts UI project in the browser with zero config.",
 	"keywords": [
 		"loom",

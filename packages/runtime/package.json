@@ -1,6 +1,6 @@
 {
 	"name": "@loom-dev/runtime",
-	"version": "0.11.0",
+	"version": "0.12.0",
 	"description": "Browser-side Roblox runtime for loom — datatypes, Enum, signals, the live instance tree, input, and the frame scheduler.",
 	"keywords": [
 		"loom",

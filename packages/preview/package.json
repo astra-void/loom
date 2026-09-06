@@ -1,6 +1,6 @@
 {
 	"name": "@loom-dev/preview",
-	"version": "0.11.0",
+	"version": "0.12.0",
 	"description": "Loom source-first preview: run a roblox-ts UI source tree in the browser, via a Vite plugin.",
 	"keywords": [
 		"loom",

@@ -1,6 +1,6 @@
 {
 	"name": "@loom-dev/layout",
-	"version": "0.11.0",
+	"version": "0.12.0",
 	"description": "Roblox-accurate UI layout for loom, computed by a Rust/WASM engine.",
 	"keywords": [
 		"loom",

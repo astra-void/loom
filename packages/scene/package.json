@@ -1,6 +1,6 @@
 {
 	"name": "@loom-dev/scene",
-	"version": "0.11.0",
+	"version": "0.12.0",
 	"description": "Loom Scene IR — the framework-agnostic Roblox GUI tree, layout I/O types, and Roblox-truth defaults.",
 	"keywords": [
 		"loom",

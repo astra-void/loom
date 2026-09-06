@@ -1,6 +1,6 @@
 {
 	"name": "@loom-dev/react",
-	"version": "0.11.0",
+	"version": "0.12.0",
 	"description": "React renderer for loom — a react-reconciler host config driving loom's live Roblox instance tree.",
 	"keywords": [
 		"loom",
