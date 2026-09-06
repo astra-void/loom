@@ -13,7 +13,7 @@
  * would have rejected the goal at creation time.
  */
 import { Color3, TweenInfo, UDim, UDim2, Vector2 } from "./datatypes";
-import { Enum, type EnumItem } from "./enums";
+import { Enum, EnumItem, enumName } from "./enums";
 import { registerService } from "./game";
 import {
 	createInstance,
@@ -252,27 +252,38 @@ registerClassMethods("Tween", {
 
 // --- TweenService ------------------------------------------------------------
 
+/**
+ * Build one `Tween` over `target`. Behind `TweenService:Create` and behind the
+ * `GuiObject` tween methods both, so the two cannot drift into animating by
+ * different rules.
+ */
+function createTween(
+	target: LoomInstance,
+	info: TweenInfo,
+	goals: Record<string, unknown>,
+): LoomInstance {
+	const tween = createInstance("Tween", "Tween");
+	setRawProperty(tween, "Instance", target);
+	setRawProperty(tween, "TweenInfo", info);
+	setPlaybackState(tween, "Begin");
+	states.set(tween, {
+		target,
+		info: info ?? new TweenInfo(),
+		goals: goals ?? {},
+		from: {},
+		elapsed: 0,
+		playing: false,
+	});
+	return tween;
+}
+
 registerClassMethods("TweenService", {
 	Create: (
 		_self: LoomInstance,
 		target: LoomInstance,
 		info: TweenInfo,
 		goals: Record<string, unknown>,
-	) => {
-		const tween = createInstance("Tween", "Tween");
-		setRawProperty(tween, "Instance", target);
-		setRawProperty(tween, "TweenInfo", info);
-		setPlaybackState(tween, "Begin");
-		states.set(tween, {
-			target,
-			info: info ?? new TweenInfo(),
-			goals: goals ?? {},
-			from: {},
-			elapsed: 0,
-			playing: false,
-		});
-		return tween;
-	},
+	) => createTween(target, info, goals),
 	GetValue: (
 		_self: LoomInstance,
 		alpha: number,
@@ -284,6 +295,161 @@ registerClassMethods("TweenService", {
 registerService("TweenService", () =>
 	createInstance("TweenService", "TweenService"),
 );
+
+// --- GuiObject:TweenPosition / :TweenSize / :TweenSizeAndPosition ------------
+
+/**
+ * The tween methods that predate `TweenService`, and that plenty of shipped
+ * roblox-ts UI still calls: `frame:TweenPosition(goal, "Out", "Quad", 0.3,
+ * true)`. They animate one object's `Position`/`Size` and — unlike a
+ * `TweenService` tween, which is an instance you hold — the object owns at most
+ * one of them at a time. That ownership is the whole contract: a second call
+ * with `override = false` is refused (returns `false`) rather than fighting the
+ * first for the same property.
+ *
+ * They are built on the machinery above rather than beside it, so an old-style
+ * tween eases, repeats and steps by exactly the same code a `TweenService` one
+ * does.
+ */
+interface GuiTween {
+	readonly tween: LoomInstance;
+	readonly callback?: TweenCallback;
+}
+
+/**
+ * What the engine hands the callback is an `Enum.TweenStatus`
+ * (`Completed`/`Canceled`), an enum `enums.ts` does not carry. The nearest true
+ * thing loom has is the `Enum.PlaybackState` its own tweens already report, and
+ * it says the same two words — so that is what arrives here, and a callback that
+ * only compares `.Name` (which is how these are written) cannot tell.
+ */
+type TweenCallback = (status: EnumItem<"PlaybackState">) => void;
+
+const guiTweens = new WeakMap<LoomInstance, GuiTween>();
+
+/**
+ * An `EnumItem` or the bare string spelling of one, which the engine takes
+ * wherever it takes the item (`frame:TweenPosition(goal, "Out", "Quad")` is how
+ * most of this code is written). Anything that is not an item of `namespace` —
+ * a misspelling, or a name that happens to collide with one of the enum's own
+ * methods — comes back `undefined` and lets the caller's default stand.
+ */
+function pickEnumItem<E extends string>(
+	namespace: object,
+	value: unknown,
+): EnumItem<E> | undefined {
+	const name = enumName(value);
+	if (name === undefined) return undefined;
+	const item = (namespace as Record<string, unknown>)[name];
+	return item instanceof EnumItem ? (item as EnumItem<E>) : undefined;
+}
+
+function stopGuiTween(target: LoomInstance, running: GuiTween): void {
+	guiTweens.delete(target);
+	(running.tween.Cancel as () => void)();
+	// Roblox tells the interrupted callback it was interrupted — a fade-out that
+	// cleans up after itself has to hear about being overridden, or it cleans up
+	// the object the new tween is animating.
+	running.callback?.(Enum.PlaybackState.Cancelled);
+}
+
+/**
+ * The body of all three methods. Roblox's argument order is
+ * `(…goals, easingDirection, easingStyle, time, override, callback)` — note that
+ * direction comes *before* style here, the opposite of `TweenInfo.new`.
+ */
+function startGuiTween(
+	self: LoomInstance,
+	goals: Record<string, unknown>,
+	easingDirection: unknown,
+	easingStyle: unknown,
+	time: number,
+	override: boolean,
+	callback?: TweenCallback,
+): boolean {
+	const running = guiTweens.get(self);
+	if (running) {
+		if (!override) return false;
+		stopGuiTween(self, running);
+	}
+	const info = new TweenInfo(
+		typeof time === "number" ? time : 1,
+		pickEnumItem<"EasingStyle">(Enum.EasingStyle, easingStyle) ??
+			Enum.EasingStyle.Quad,
+		pickEnumItem<"EasingDirection">(Enum.EasingDirection, easingDirection) ??
+			Enum.EasingDirection.Out,
+	);
+	const tween = createTween(self, info, goals);
+	const entry: GuiTween = { tween, callback };
+	guiTweens.set(self, entry);
+	getEventSignal(tween, "Completed").Connect((status) => {
+		// Only clear the slot if this tween still owns it: an override already
+		// replaced the entry, and must not have it deleted out from under it.
+		if (guiTweens.get(self) === entry) guiTweens.delete(self);
+		callback?.(status as EnumItem<"PlaybackState">);
+	});
+	(tween.Play as () => void)();
+	return true;
+}
+
+registerClassMethods("GuiObject", {
+	TweenPosition: (
+		self: LoomInstance,
+		endPosition: UDim2,
+		easingDirection?: EnumItem<"EasingDirection"> | string,
+		easingStyle?: EnumItem<"EasingStyle"> | string,
+		time = 1,
+		override = false,
+		callback?: TweenCallback,
+	) =>
+		startGuiTween(
+			self,
+			{ Position: endPosition },
+			easingDirection,
+			easingStyle,
+			time,
+			override,
+			callback,
+		),
+	TweenSize: (
+		self: LoomInstance,
+		endSize: UDim2,
+		easingDirection?: EnumItem<"EasingDirection"> | string,
+		easingStyle?: EnumItem<"EasingStyle"> | string,
+		time = 1,
+		override = false,
+		callback?: TweenCallback,
+	) =>
+		startGuiTween(
+			self,
+			{ Size: endSize },
+			easingDirection,
+			easingStyle,
+			time,
+			override,
+			callback,
+		),
+	/** Size first, then position — the engine's own argument order. */
+	TweenSizeAndPosition: (
+		self: LoomInstance,
+		endSize: UDim2,
+		endPosition: UDim2,
+		easingDirection?: EnumItem<"EasingDirection"> | string,
+		easingStyle?: EnumItem<"EasingStyle"> | string,
+		time = 1,
+		override = false,
+		callback?: TweenCallback,
+	) =>
+		startGuiTween(
+			self,
+			{ Size: endSize, Position: endPosition },
+			easingDirection,
+			easingStyle,
+			time,
+			override,
+			callback,
+		),
+});
 
 /** Test seam: how many tweens are currently being stepped. */
 export function getActiveTweenCount(): number {
