@@ -12,6 +12,10 @@
 //!   `ScrollingFrame` lays children out against its `CanvasSize`, and is the one
 //!   container that does not cap their `AutomaticSize` at its own box — content
 //!   taller (or wider) than the window is what there is to scroll.
+//! - `UIScale` multiplies the size of the object it is parented to *and* of
+//!   everything under it — child offsets, padding and layout gaps alike — so the
+//!   subtree renders `Scale` times bigger about that object's own top-left. It
+//!   never moves the object itself: the position its parent gave it stands.
 //! - The TOP node always fills the viewport, regardless of className.
 //! - Non-layout modifier children get no rect and do not advance the positional id.
 //!
@@ -20,8 +24,16 @@
 //! f32 pixel-snapping parity, `SizeConstraint` axis modes, grid `StartCorner` variants,
 //! `AspectType: ScaleWithParentSize`, `CanvasPosition`/scroll offset, `ScrollBarThickness`
 //! (the scrollbar-reserved `AbsoluteWindowSize`), `AutomaticSize` combined with an explicit
-//! `CanvasSize` on a `ScrollingFrame`, and scale `UIPadding` on an `AutomaticSize` axis
-//! (treated as offset-only so measurement and placement agree).
+//! `CanvasSize` on a `ScrollingFrame`, scale `UIPadding` on an `AutomaticSize` axis
+//! (treated as offset-only so measurement and placement agree), and a `UIScale` on a
+//! node whose extent its *container* assigns rather than the node resolving it — a
+//! `UIGridLayout` cell, a `UITableLayout` track or line, a flex `Fill` cross axis.
+//! The rule here is that a `UIScale` multiplies the size a node resolves for itself
+//! (`resolve_size`), which is every free-placed, list-flowed and page node; where a
+//! container hands down an extent instead, that extent stands and only what is
+//! *inside* the scaled node grows. Which of the two the engine does was not
+//! verifiable without a running Studio, and guessing would have been worse than
+//! saying so.
 
 use loom_scene::{
     participates_in_layout, LayoutNode, LayoutResult, PropertyValue, Rect, SceneNode, UDim,
@@ -55,9 +67,14 @@ impl std::error::Error for LayoutError {}
 /// error a fraction of a pixel wide.
 const EPS: f64 = 1e-6;
 
+/// A `UDim` against a parent extent, in real pixels.
+///
+/// `u.scale` needs no conversion — it resolves against a parent extent that is
+/// already scaled — but `u.offset` is a raw scene number, so it is worth `unit`
+/// real pixels apiece (see [`own_scale`]).
 #[inline]
-fn resolve_axis(u: UDim, parent_axis_px: f64) -> f64 {
-    parent_axis_px * u.scale + u.offset
+fn resolve_axis(u: UDim, parent_axis_px: f64, unit: f64) -> f64 {
+    parent_axis_px * u.scale + u.offset * unit
 }
 
 fn find_modifier<'a>(node: &'a SceneNode, class: &str) -> Option<&'a SceneNode> {
@@ -99,6 +116,36 @@ fn align_offset(space: f64, block: f64, align: &str) -> f64 {
         "Right" | "Bottom" => space - block,
         _ => 0.0, // Left / Top
     }
+}
+
+// --- UIScale -----------------------------------------------------------------
+
+/// The multiplier a node's own `UIScale` child puts on it — 1.0 when it has none,
+/// which is also the engine's default `Scale`.
+///
+/// A `UIScale` scales the GuiObject it is parented to along with every descendant:
+/// `Scale = 2` on a card doubles the card, its `UIPadding`, its `UIListLayout`
+/// gaps and every offset underneath, so the whole subtree renders twice as big
+/// about the card's top-left. It is the standard way an app scales its UI to the
+/// viewport, and the standard hover "pop" (a tween on `Scale`) — both of which
+/// need the object itself to grow, not only its contents.
+///
+/// Scales nest multiplicatively: a 1.5 inside a 2 renders at 3. That running
+/// product is what travels down this file as `unit` — "how many real pixels one
+/// scene `Offset` pixel is worth here". It is threaded as its own parameter
+/// rather than folded into [`Limits`] because every ceiling in this file is
+/// already in real pixels; only the raw offsets a scene carries need converting.
+/// `unit` and not `scale` because `UDim::scale` — the fraction-of-parent
+/// component — sits right next to it in these expressions and the two are not
+/// the same thing.
+///
+/// A negative `Scale` has no meaning for a box with a width, so it clamps to 0
+/// and collapses the subtree the way `Scale = 0` does.
+fn own_scale(node: &SceneNode) -> f64 {
+    find_modifier(node, "UIScale")
+        .and_then(|s| num_prop(s, "Scale"))
+        .unwrap_or(1.0)
+        .max(0.0)
 }
 
 // --- own size: constraints + automatic size ----------------------------------
@@ -201,7 +248,7 @@ fn automatic_canvas_axes(node: &SceneNode) -> (bool, bool) {
 /// `AutomaticCanvasSize` is not free to grow. A zero `CanvasSize` axis is not a
 /// zero-high box to squeeze the content into — [`content_box`] already reads it
 /// as "no canvas, fall back to the window" — so it leaves no ceiling either.
-fn content_limits(node: &SceneNode, rect: Rect, content: Rect) -> Limits {
+fn content_limits(node: &SceneNode, rect: Rect, content: Rect, inner: f64) -> Limits {
     if node.class_name != "ScrollingFrame" {
         return Limits::definite(content.width, content.height);
     }
@@ -210,8 +257,8 @@ fn content_limits(node: &SceneNode, rect: Rect, content: Rect) -> Limits {
         .get("CanvasSize")
         .and_then(PropertyValue::as_udim2);
     let (auto_x, auto_y) = automatic_canvas_axes(node);
-    let canvas_w = canvas.map_or(0.0, |cs| resolve_axis(cs.x, rect.width));
-    let canvas_h = canvas.map_or(0.0, |cs| resolve_axis(cs.y, rect.height));
+    let canvas_w = canvas.map_or(0.0, |cs| resolve_axis(cs.x, rect.width, inner));
+    let canvas_h = canvas.map_or(0.0, |cs| resolve_axis(cs.y, rect.height, inner));
     Limits {
         x: if auto_x || canvas_w <= 0.0 {
             None
@@ -231,17 +278,21 @@ fn content_limits(node: &SceneNode, rect: Rect, content: Rect) -> Limits {
 /// (offset only) so the auto-size measurement and the placement content box agree
 /// — a scale-padded auto axis is otherwise circular. The single shared reader for
 /// both `resolve_size` and `content_box` so they can never diverge.
-fn padding_insets(node: &SceneNode, w: f64, h: f64) -> (f64, f64, f64, f64) {
+///
+/// The insets live inside the node, so `inner` is the node's own scale already
+/// folded in (see [`own_scale`]): a 12px inset in a doubled card is 24 real px,
+/// the same as everything else the card holds.
+fn padding_insets(node: &SceneNode, w: f64, h: f64, inner: f64) -> (f64, f64, f64, f64) {
     let Some(pad) = find_modifier(node, "UIPadding") else {
         return (0.0, 0.0, 0.0, 0.0);
     };
     let (ax, ay) = automatic_axes(node);
     let xref = if ax { 0.0 } else { w };
     let yref = if ay { 0.0 } else { h };
-    let l = udim_prop(pad, "PaddingLeft").map_or(0.0, |u| resolve_axis(u, xref));
-    let r = udim_prop(pad, "PaddingRight").map_or(0.0, |u| resolve_axis(u, xref));
-    let t = udim_prop(pad, "PaddingTop").map_or(0.0, |u| resolve_axis(u, yref));
-    let b = udim_prop(pad, "PaddingBottom").map_or(0.0, |u| resolve_axis(u, yref));
+    let l = udim_prop(pad, "PaddingLeft").map_or(0.0, |u| resolve_axis(u, xref, inner));
+    let r = udim_prop(pad, "PaddingRight").map_or(0.0, |u| resolve_axis(u, xref, inner));
+    let t = udim_prop(pad, "PaddingTop").map_or(0.0, |u| resolve_axis(u, yref, inner));
+    let b = udim_prop(pad, "PaddingBottom").map_or(0.0, |u| resolve_axis(u, yref, inner));
     (l, r, t, b)
 }
 
@@ -262,34 +313,54 @@ fn apply_aspect_ratio(node: &SceneNode, w: f64, h: f64) -> (f64, f64) {
 }
 
 /// `UISizeConstraint` Min/Max clamp.
-fn apply_size_constraint(node: &SceneNode, w: f64, h: f64) -> (f64, f64) {
+///
+/// The bounds are pixel numbers like any other, so under a `UIScale` they clamp
+/// at `unit`-scaled pixels — a 100px floor inside a doubled card is 200 real px,
+/// which is what keeps the subtree uniformly scaled instead of the constrained
+/// box alone staying its original size. The node's *own* `UIScale` multiplies
+/// after the clamp (see [`resolve_size`]): the constraint bounds the size the
+/// object asks for, so a button that pops to 1.1x on hover still pops even with
+/// a `MaxSize` pinning its resting width.
+fn apply_size_constraint(node: &SceneNode, w: f64, h: f64, unit: f64) -> (f64, f64) {
     let Some(sc) = find_modifier(node, "UISizeConstraint") else {
         return (w, h);
     };
     let min = vec2_prop(sc, "MinSize").unwrap_or(Vector2 { x: 0.0, y: 0.0 });
-    let mut w = w.max(min.x);
-    let mut h = h.max(min.y);
+    let mut w = w.max(min.x * unit);
+    let mut h = h.max(min.y * unit);
     if let Some(max) = vec2_prop(sc, "MaxSize") {
-        w = w.min(max.x);
-        h = h.min(max.y);
+        w = w.min(max.x * unit);
+        h = h.min(max.y * unit);
     }
     (w, h)
 }
 
 /// Size from the `Size` UDim2 plus aspect-ratio and min/max constraints (before
-/// AutomaticSize).
-fn base_size(node: &SceneNode, parent: Rect) -> (f64, f64) {
+/// AutomaticSize, and before the node's own `UIScale`).
+fn base_size(node: &SceneNode, parent: Rect, unit: f64) -> (f64, f64) {
     let s = node.size();
-    let w = resolve_axis(s.x, parent.width).max(0.0);
-    let h = resolve_axis(s.y, parent.height).max(0.0);
+    let w = resolve_axis(s.x, parent.width, unit).max(0.0);
+    let h = resolve_axis(s.y, parent.height, unit).max(0.0);
     let (w, h) = apply_aspect_ratio(node, w, h);
-    apply_size_constraint(node, w, h)
+    apply_size_constraint(node, w, h, unit)
 }
 
 /// Final resolved `(width, height)` of a node: base size grown by AutomaticSize,
 /// never past the room `limit` says its parent has (see [`Limits`]).
-fn resolve_size(node: &SceneNode, parent: Rect, limit: Limits) -> (f64, f64) {
-    let (w, h) = base_size(node, parent);
+///
+/// `unit` is the scale of the space the node is placed in — its parent's inner
+/// scale. Its own `UIScale` multiplies on top of that, and everything it holds
+/// is measured at the product.
+fn resolve_size(node: &SceneNode, parent: Rect, limit: Limits, unit: f64) -> (f64, f64) {
+    // The node's own `UIScale` is a multiplier on the size it just resolved, not
+    // only on what is inside it — that is what makes a `Scale` tween grow the
+    // button it sits on. The `Size` scale component is multiplied too: the
+    // engine scales the object's rendered extent, so a `fromScale(1, 1)` panel
+    // under `Scale = 2` renders at twice its parent and overflows it.
+    let own = own_scale(node);
+    let inner = unit * own;
+    let (bw, bh) = base_size(node, parent, unit);
+    let (w, h) = (bw * own, bh * own);
     let (mut ax, mut ay) = automatic_axes(node);
     // A scale size against a parent axis that has no size *yet* is not zero.
     // `Size={fromScale(1, 0)}` inside an auto-sizing parent is the library idiom
@@ -309,7 +380,7 @@ fn resolve_size(node: &SceneNode, parent: Rect, limit: Limits) -> (f64, f64) {
     if !ax && !ay {
         return (w, h);
     }
-    let (l, r, t, b) = padding_insets(node, w, h);
+    let (l, r, t, b) = padding_insets(node, w, h, inner);
     let (pad_x, pad_y) = (l + r, t + b);
     // What this node can offer its own children: its width when it has one of
     // its own, else the room it was given — less the padding in between.
@@ -325,11 +396,15 @@ fn resolve_size(node: &SceneNode, parent: Rect, limit: Limits) -> (f64, f64) {
             Limits::room(h - pad_y)
         },
     };
+    // Measured at `inner`, so the content already carries this node's own scale:
+    // a doubled card hugging a 60px child measures 120, and multiplying by `own`
+    // again would make it 240.
     let (content_w, content_h) = measure_content(
         node,
         (w - pad_x).max(0.0),
         (h - pad_y).max(0.0),
         child_limit,
+        inner,
     );
     let measured_w = content_w + pad_x;
     let measured_h = content_h + pad_y;
@@ -351,7 +426,13 @@ fn resolve_size(node: &SceneNode, parent: Rect, limit: Limits) -> (f64, f64) {
 
 /// The bounding content size of `node`'s children, given a content box of
 /// `(content_w, content_h)`. Used by AutomaticSize.
-fn measure_content(node: &SceneNode, content_w: f64, content_h: f64, limit: Limits) -> (f64, f64) {
+fn measure_content(
+    node: &SceneNode,
+    content_w: f64,
+    content_h: f64,
+    limit: Limits,
+    inner: f64,
+) -> (f64, f64) {
     let content = Rect {
         x: 0.0,
         y: 0.0,
@@ -361,27 +442,27 @@ fn measure_content(node: &SceneNode, content_w: f64, content_h: f64, limit: Limi
     let children = layout_children(node);
 
     let (mut w, mut h) = if let Some(list) = find_modifier(node, "UIListLayout") {
-        let m = list_metrics(content, list, &children, automatic_axes(node), limit);
+        let m = list_metrics(content, list, &children, automatic_axes(node), limit, inner);
         if m.vertical {
             (m.cross_max, m.total_main)
         } else {
             (m.total_main, m.cross_max)
         }
     } else if let Some(grid) = find_modifier(node, "UIGridLayout") {
-        let g = grid_metrics(content, grid, children.len());
+        let g = grid_metrics(content, grid, children.len(), inner);
         (g.block_w, g.block_h)
     } else if let Some(table) = find_modifier(node, "UITableLayout") {
         // The table's natural extent — `FillEmptySpace*` fills a container that
         // has a size, and this is the pass that decides what that size is.
         let lines = table_lines(table, &children);
-        table_metrics(content, table, &lines, limit).block()
+        table_metrics(content, table, &lines, limit, inner).block()
     } else if let Some(page) = find_modifier(node, "UIPageLayout") {
         // Pages are stacked one container apart, so the strip's extent is not a
         // content size anybody could hug: an auto-sized pager takes the current
         // page, which is the only one the container is meant to show.
         let order = flow_order(&children, page);
         match order.get(page_index(page, order.len())) {
-            Some(&(_, current)) => resolve_size(current, content, limit),
+            Some(&(_, current)) => resolve_size(current, content, limit, inner),
             None => (0.0, 0.0),
         }
     } else {
@@ -392,7 +473,7 @@ fn measure_content(node: &SceneNode, content_w: f64, content_h: f64, limit: Limi
         let mut max_w: f64 = 0.0;
         let mut max_h: f64 = 0.0;
         for &(_, child) in &children {
-            let r = child_rect(child, content, limit);
+            let r = child_rect(child, content, limit, inner);
             max_w = max_w.max(r.x + r.width);
             max_h = max_h.max(r.y + r.height);
         }
@@ -402,9 +483,15 @@ fn measure_content(node: &SceneNode, content_w: f64, content_h: f64, limit: Limi
     // A text class contributes its measured `TextBounds` (a Vector2 injected by the
     // adapter, since font metrics live browser-side). Auto-size hugs the larger of
     // the children bounding box and the text.
+    //
+    // The adapter measures at the node's own `TextSize`, knowing nothing about any
+    // `UIScale` above it, so the bounds arrive unscaled and are converted here.
+    // A `UIScale` enlarges the text it covers along with everything else — that is
+    // how a whole screen scales to the viewport — so a doubled label hugs twice
+    // the text it would have hugged on its own.
     if let Some(tb) = vec2_prop(node, "TextBounds") {
-        w = w.max(tb.x);
-        h = h.max(tb.y);
+        w = w.max(tb.x * inner);
+        h = h.max(tb.y * inner);
     }
     (w, h)
 }
@@ -413,7 +500,7 @@ fn measure_content(node: &SceneNode, content_w: f64, content_h: f64, limit: Limi
 
 /// The box children lay out within: a `ScrollingFrame`'s `CanvasSize` (so content
 /// can exceed the window), then inset by `UIPadding`.
-fn content_box(node: &SceneNode, rect: Rect) -> Rect {
+fn content_box(node: &SceneNode, rect: Rect, inner: f64) -> Rect {
     let mut content = rect;
     if node.class_name == "ScrollingFrame" {
         if let Some(cs) = node
@@ -421,13 +508,13 @@ fn content_box(node: &SceneNode, rect: Rect) -> Rect {
             .get("CanvasSize")
             .and_then(PropertyValue::as_udim2)
         {
-            let cw = resolve_axis(cs.x, rect.width);
-            let ch = resolve_axis(cs.y, rect.height);
+            let cw = resolve_axis(cs.x, rect.width, inner);
+            let ch = resolve_axis(cs.y, rect.height, inner);
             content.width = if cw > 0.0 { cw } else { rect.width };
             content.height = if ch > 0.0 { ch } else { rect.height };
         }
     }
-    let (l, r, t, b) = padding_insets(node, content.width, content.height);
+    let (l, r, t, b) = padding_insets(node, content.width, content.height, inner);
     Rect {
         x: content.x + l,
         y: content.y + t,
@@ -506,6 +593,7 @@ fn list_metrics(
     children: &[(usize, &SceneNode)],
     auto_axes: (bool, bool),
     limit: Limits,
+    inner: f64,
 ) -> ListMetrics {
     let vertical = enum_name(list, "FillDirection") != Some("Horizontal");
     let (main_content, _cross_content) = if vertical {
@@ -513,7 +601,7 @@ fn list_metrics(
     } else {
         (content.width, content.height)
     };
-    let gap = udim_prop(list, "Padding").map_or(0.0, |u| resolve_axis(u, main_content));
+    let gap = udim_prop(list, "Padding").map_or(0.0, |u| resolve_axis(u, main_content, inner));
     // `Wraps` breaks the flow onto a new line once an item no longer fits along
     // the fill direction — CSS `flex-wrap: wrap`, and Roblox's own flex model.
     //
@@ -567,7 +655,7 @@ fn list_metrics(
             line.end = i + 1;
             continue;
         }
-        let (w, h) = resolve_size(child, content, limit);
+        let (w, h) = resolve_size(child, content, limit, inner);
         let (main, cross) = if vertical { (h, w) } else { (w, h) };
         let advance = if line.visible_count == 0 {
             main
@@ -671,9 +759,10 @@ fn place_with_list(
     limit: Limits,
     parent_path: &str,
     out: &mut BTreeMap<String, LayoutNode>,
+    inner: f64,
 ) -> Result<(), LayoutError> {
     let order = flow_order(children, list);
-    let m = list_metrics(content, list, &order, (false, false), limit);
+    let m = list_metrics(content, list, &order, (false, false), limit, inner);
     let vertical = m.vertical;
     let main_content = if vertical {
         content.height
@@ -757,7 +846,7 @@ fn place_with_list(
         let between = spacing.as_ref().map_or(0.0, |s| s.between);
 
         for &(idx, child) in &order[line.start..line.end] {
-            let (w, h) = resolve_size(child, content, limit);
+            let (w, h) = resolve_size(child, content, limit, inner);
             let (mut main_size, mut cross_size) = if vertical { (h, w) } else { (w, h) };
             if child.visible() && per_weight > 0.0 {
                 let weight = if fill_all {
@@ -786,7 +875,7 @@ fn place_with_list(
                     height: cross_size,
                 }
             };
-            place_node(child, rect, format!("{parent_path}/{idx}"), out)?;
+            place_node(child, rect, format!("{parent_path}/{idx}"), out, inner)?;
             // `Visible = false` children still get a rect (the renderer hides
             // them via CSS), but they must not consume flow space — mirror
             // Roblox by advancing the cursor only for visible items so the rest
@@ -814,29 +903,31 @@ struct GridMetrics {
     block_h: f64,
 }
 
-fn grid_metrics(content: Rect, grid: &SceneNode, count: usize) -> GridMetrics {
+fn grid_metrics(content: Rect, grid: &SceneNode, count: usize, inner: f64) -> GridMetrics {
     let cell = grid
         .properties
         .get("CellSize")
         .and_then(PropertyValue::as_udim2)
         .map(|u| {
             (
-                resolve_axis(u.x, content.width),
-                resolve_axis(u.y, content.height),
+                resolve_axis(u.x, content.width, inner),
+                resolve_axis(u.y, content.height, inner),
             )
         })
-        .unwrap_or((100.0, 100.0)); // Roblox default CellSize {0,100},{0,100}
+        // Roblox default CellSize {0,100},{0,100} — offsets like any other, so a
+        // scaled grid gets scaled default cells.
+        .unwrap_or((100.0 * inner, 100.0 * inner));
     let cellpad = grid
         .properties
         .get("CellPadding")
         .and_then(PropertyValue::as_udim2)
         .map(|u| {
             (
-                resolve_axis(u.x, content.width),
-                resolve_axis(u.y, content.height),
+                resolve_axis(u.x, content.width, inner),
+                resolve_axis(u.y, content.height, inner),
             )
         })
-        .unwrap_or((5.0, 5.0)); // Roblox default CellPadding {0,5},{0,5}
+        .unwrap_or((5.0 * inner, 5.0 * inner)); // Roblox default CellPadding {0,5},{0,5}
     let (cell_w, cell_h) = cell;
     let (pad_x, pad_y) = cellpad;
     let vertical = enum_name(grid, "FillDirection") == Some("Vertical");
@@ -900,9 +991,10 @@ fn place_with_grid(
     children: &[(usize, &SceneNode)],
     parent_path: &str,
     out: &mut BTreeMap<String, LayoutNode>,
+    inner: f64,
 ) -> Result<(), LayoutError> {
     let order = flow_order(children, grid);
-    let g = grid_metrics(content, grid, order.len());
+    let g = grid_metrics(content, grid, order.len(), inner);
     let h_align = enum_name(grid, "HorizontalAlignment").unwrap_or("Left");
     let v_align = enum_name(grid, "VerticalAlignment").unwrap_or("Top");
     let start_x = align_offset(content.width, g.block_w, h_align);
@@ -924,7 +1016,7 @@ fn place_with_grid(
             width: g.cell_w,
             height: g.cell_h,
         };
-        place_node(child, rect, format!("{parent_path}/{idx}"), out)?;
+        place_node(child, rect, format!("{parent_path}/{idx}"), out, inner)?;
     }
     Ok(())
 }
@@ -977,6 +1069,7 @@ fn place_with_page(
     limit: Limits,
     parent_path: &str,
     out: &mut BTreeMap<String, LayoutNode>,
+    inner: f64,
 ) -> Result<(), LayoutError> {
     let order = flow_order(children, page);
     let vertical = enum_name(page, "FillDirection") == Some("Vertical");
@@ -985,14 +1078,14 @@ fn place_with_page(
     } else {
         content.width
     };
-    let stride =
-        main_content + udim_prop(page, "Padding").map_or(0.0, |u| resolve_axis(u, main_content));
+    let stride = main_content
+        + udim_prop(page, "Padding").map_or(0.0, |u| resolve_axis(u, main_content, inner));
     let current = page_index(page, order.len());
     let h_align = enum_name(page, "HorizontalAlignment").unwrap_or("Left");
     let v_align = enum_name(page, "VerticalAlignment").unwrap_or("Top");
 
     for (i, &(idx, child)) in order.iter().enumerate() {
-        let (w, h) = resolve_size(child, content, limit);
+        let (w, h) = resolve_size(child, content, limit, inner);
         let offset = (i as f64 - current as f64) * stride;
         let x = content.x
             + align_offset(content.width, w, h_align)
@@ -1010,6 +1103,7 @@ fn place_with_page(
             },
             format!("{parent_path}/{idx}"),
             out,
+            inner,
         )?;
     }
     Ok(())
@@ -1140,14 +1234,15 @@ fn table_metrics(
     table: &SceneNode,
     lines: &[TableLine<'_>],
     limit: Limits,
+    inner: f64,
 ) -> TableMetrics {
     let column_major = enum_name(table, "MajorAxis") == Some("ColumnMajor");
     let padding = table
         .properties
         .get("Padding")
         .and_then(PropertyValue::as_udim2);
-    let pad_x = padding.map_or(0.0, |p| resolve_axis(p.x, content.width));
-    let pad_y = padding.map_or(0.0, |p| resolve_axis(p.y, content.height));
+    let pad_x = padding.map_or(0.0, |p| resolve_axis(p.x, content.width, inner));
+    let pad_y = padding.map_or(0.0, |p| resolve_axis(p.y, content.height, inner));
 
     let across = lines.iter().map(|l| l.cells.len()).max().unwrap_or(0);
     let (n_rows, n_cols) = if column_major {
@@ -1164,7 +1259,7 @@ fn table_metrics(
     };
     for (line, entry) in lines.iter().enumerate() {
         for (cell, &(_, node)) in entry.cells.iter().enumerate() {
-            let (w, h) = resolve_size(node, content, limit);
+            let (w, h) = resolve_size(node, content, limit, inner);
             let (row, col) = m.track_of(line, cell);
             m.columns[col] = m.columns[col].max(w);
             m.rows[row] = m.rows[row].max(h);
@@ -1180,7 +1275,9 @@ fn table_metrics(
 /// the line frames themselves. Cells then land on the track intersections. The
 /// line's own `Size` is ignored (the table sizes it), and so is any `UIPadding`
 /// on it: the tracks are measured against the table's content box, so insetting
-/// each line separately would slide its cells off the columns they define.
+/// each line separately would slide its cells off the columns they define. A
+/// `UIScale` on a line falls out the same way — the cells are the table's to
+/// place, so they are laid out at the table's own scale.
 fn place_with_table(
     content: Rect,
     table: &SceneNode,
@@ -1188,9 +1285,10 @@ fn place_with_table(
     limit: Limits,
     parent_path: &str,
     out: &mut BTreeMap<String, LayoutNode>,
+    inner: f64,
 ) -> Result<(), LayoutError> {
     let lines = table_lines(table, children);
-    let mut m = table_metrics(content, table, &lines, limit);
+    let mut m = table_metrics(content, table, &lines, limit, inner);
     m.fill(content, table);
     let (block_w, block_h) = m.block();
     let start_x = content.x
@@ -1238,6 +1336,7 @@ fn place_with_table(
                 },
                 format!("{line_path}/{cell_idx}"),
                 out,
+                inner,
             )?;
         }
         // Hidden cells take no track, so they keep their own Position inside the
@@ -1247,14 +1346,14 @@ fn place_with_table(
             .iter()
             .filter(|(_, c)| !c.visible())
         {
-            let rect = child_rect(node, line_rect, line_limit);
-            place_node(node, rect, format!("{line_path}/{cell_idx}"), out)?;
+            let rect = child_rect(node, line_rect, line_limit, inner);
+            place_node(node, rect, format!("{line_path}/{cell_idx}"), out, inner)?;
         }
     }
     // Same for a hidden line: out of the flow, placed from its own Position.
     for &(idx, line) in children.iter().filter(|(_, c)| !c.visible()) {
-        let rect = child_rect(line, content, limit);
-        place_node(line, rect, format!("{parent_path}/{idx}"), out)?;
+        let rect = child_rect(line, content, limit, inner);
+        place_node(line, rect, format!("{parent_path}/{idx}"), out, inner)?;
     }
     Ok(())
 }
@@ -1262,13 +1361,19 @@ fn place_with_table(
 // --- placement ---------------------------------------------------------------
 
 /// Resolve a free-positioned child's rect (size + anchor/position).
-fn child_rect(node: &SceneNode, parent_content: Rect, limit: Limits) -> Rect {
-    let (w, h) = resolve_size(node, parent_content, limit);
+///
+/// `unit` is the scale of the parent's content box, so it converts the child's
+/// `Position` offsets — but never the child's *own* `UIScale`, which belongs to
+/// its size. A `Scale` tween on a button therefore grows it about its anchor
+/// point and leaves the point itself where its parent put it, which is what the
+/// engine does and why an anchored-centre button pops symmetrically.
+fn child_rect(node: &SceneNode, parent_content: Rect, limit: Limits, unit: f64) -> Rect {
+    let (w, h) = resolve_size(node, parent_content, limit, unit);
     let pos = node.position();
     let anchor = node.anchor_point();
     Rect {
-        x: parent_content.x + resolve_axis(pos.x, parent_content.width) - anchor.x * w,
-        y: parent_content.y + resolve_axis(pos.y, parent_content.height) - anchor.y * h,
+        x: parent_content.x + resolve_axis(pos.x, parent_content.width, unit) - anchor.x * w,
+        y: parent_content.y + resolve_axis(pos.y, parent_content.height, unit) - anchor.y * h,
         width: w,
         height: h,
     }
@@ -1294,34 +1399,41 @@ fn record(
 }
 
 /// Place `node` at the already-resolved `rect`, store it, then lay out children.
+///
+/// `unit` is the scale the caller placed this node at; `rect` already carries the
+/// node's own `UIScale` (whoever resolved the size applied it), so all that is
+/// left here is to hand the product down — everything the node holds, from its
+/// padding to its grandchildren's offsets, renders through it.
 fn place_node(
     node: &SceneNode,
     rect: Rect,
     path: String,
     out: &mut BTreeMap<String, LayoutNode>,
+    unit: f64,
 ) -> Result<(), LayoutError> {
     record(node, rect, &path, out)?;
 
-    let content = content_box(node, rect);
+    let inner = unit * own_scale(node);
+    let content = content_box(node, rect, inner);
     let children = layout_children(node);
     // Placement runs against the node's final rect, so its content box is a real
     // ceiling for the children — whatever `AutomaticSize` asked for has already
     // been resolved into it. The one container that is not its children's
     // ceiling is a scrolling canvas (see [`content_limits`]).
-    let limit = content_limits(node, rect, content);
+    let limit = content_limits(node, rect, content, inner);
 
     if let Some(list) = find_modifier(node, "UIListLayout") {
-        place_with_list(content, list, &children, limit, &path, out)?;
+        place_with_list(content, list, &children, limit, &path, out, inner)?;
     } else if let Some(grid) = find_modifier(node, "UIGridLayout") {
-        place_with_grid(content, grid, &children, &path, out)?;
+        place_with_grid(content, grid, &children, &path, out, inner)?;
     } else if let Some(table) = find_modifier(node, "UITableLayout") {
-        place_with_table(content, table, &children, limit, &path, out)?;
+        place_with_table(content, table, &children, limit, &path, out, inner)?;
     } else if let Some(page) = find_modifier(node, "UIPageLayout") {
-        place_with_page(content, page, &children, limit, &path, out)?;
+        place_with_page(content, page, &children, limit, &path, out, inner)?;
     } else {
         for &(idx, child) in &children {
-            let r = child_rect(child, content, limit);
-            place_node(child, r, format!("{path}/{idx}"), out)?;
+            let r = child_rect(child, content, limit, inner);
+            place_node(child, r, format!("{path}/{idx}"), out, inner)?;
         }
     }
     Ok(())
@@ -1337,7 +1449,10 @@ pub fn compute_layout(root: &SceneNode, viewport: Viewport) -> Result<LayoutResu
         width: viewport.width,
         height: viewport.height,
     };
-    place_node(root, vp_rect, "0".to_string(), &mut rects)?;
+    // Nothing sits above the root, so one scene offset is one real pixel here. A
+    // `UIScale` on the root still scales everything inside it; the root's own rect
+    // is the viewport by fiat, so there is no size of its own left to multiply.
+    place_node(root, vp_rect, "0".to_string(), &mut rects, 1.0)?;
     Ok(LayoutResult { rects })
 }
 
@@ -3275,5 +3390,451 @@ mod tests {
         assert_eq!(r.rects["0/0/1"].rect.y, 0.0); // Ant
         assert_eq!(r.rects["0/0/0"].rect.y, 20.0); // Bee
         assert_eq!(r.rects["0/0/2"].rect.y, 40.0); // Cat
+    }
+    // --- UIScale -------------------------------------------------------------
+
+    /// A `UIScale` child with the given `Scale`.
+    fn ui_scale(v: f64) -> SceneNode {
+        with("UIScale", "Scale", &[("Scale", num(v))])
+    }
+
+    #[test]
+    fn ui_scale_multiplies_the_object_and_everything_under_it() {
+        let child = with(
+            "Frame",
+            "Child",
+            &[
+                ("Size", udim2(0.0, 40.0, 0.0, 10.0)),
+                ("Position", udim2(0.0, 10.0, 0.0, 5.0)),
+            ],
+        );
+        let mut card = with(
+            "Frame",
+            "Card",
+            &[
+                ("Size", udim2(0.0, 200.0, 0.0, 100.0)),
+                ("Position", udim2(0.0, 50.0, 0.0, 20.0)),
+            ],
+        );
+        card.children = vec![ui_scale(2.0), child];
+        let r = compute_layout(&screen(vec![card]), VP).unwrap();
+        // The card itself doubles — a UIScale is not only about its descendants —
+        // but it does not move: its parent already decided where it goes.
+        assert_eq!(
+            r.rects["0/0"].rect,
+            Rect {
+                x: 50.0,
+                y: 20.0,
+                width: 400.0,
+                height: 200.0
+            }
+        );
+        // The child's own offsets double with it, size and position alike, so the
+        // subtree is the same picture drawn twice as big.
+        assert_eq!(
+            r.rects["0/0/0"].rect,
+            Rect {
+                x: 70.0,
+                y: 30.0,
+                width: 80.0,
+                height: 20.0
+            }
+        );
+        // The UIScale is a modifier: no rect of its own, and no positional id spent.
+        assert!(!r.rects.contains_key("0/0/1"));
+    }
+
+    #[test]
+    fn ui_scale_scales_padding_and_list_gaps() {
+        let mut card = with("Frame", "Card", &[("Size", udim2(0.0, 300.0, 0.0, 400.0))]);
+        card.children = vec![
+            ui_scale(1.5),
+            with(
+                "UIPadding",
+                "Pad",
+                &[
+                    ("PaddingLeft", udim(0.0, 10.0)),
+                    ("PaddingTop", udim(0.0, 10.0)),
+                ],
+            ),
+            with(
+                "UIListLayout",
+                "List",
+                &[
+                    ("FillDirection", enum_item("FillDirection", "Vertical")),
+                    ("Padding", udim(0.0, 8.0)),
+                ],
+            ),
+        ];
+        for name in ["A", "B", "C"] {
+            card.children.push(with(
+                "Frame",
+                name,
+                &[("Size", udim2(0.0, 50.0, 0.0, 20.0))],
+            ));
+        }
+        let r = compute_layout(&screen(vec![card]), VP).unwrap();
+        assert_eq!(r.rects["0/0"].rect.width, 450.0);
+        assert_eq!(r.rects["0/0"].rect.height, 600.0);
+        // 10px of padding is 15 real px, 50x20 items are 75x30, and the 8px gap is 12.
+        assert_eq!(
+            r.rects["0/0/0"].rect,
+            Rect {
+                x: 15.0,
+                y: 15.0,
+                width: 75.0,
+                height: 30.0
+            }
+        );
+        assert_eq!(r.rects["0/0/1"].rect.y, 57.0);
+        assert_eq!(r.rects["0/0/2"].rect.y, 99.0);
+    }
+
+    #[test]
+    fn nested_ui_scales_multiply() {
+        let mut inner = with("Frame", "Inner", &[("Size", udim2(0.0, 100.0, 0.0, 50.0))]);
+        inner.children = vec![
+            ui_scale(1.5),
+            with(
+                "Frame",
+                "Leaf",
+                &[
+                    ("Size", udim2(0.0, 10.0, 0.0, 10.0)),
+                    ("Position", udim2(0.0, 4.0, 0.0, 0.0)),
+                ],
+            ),
+        ];
+        let mut outer = with("Frame", "Outer", &[("Size", udim2(0.0, 400.0, 0.0, 300.0))]);
+        outer.children = vec![ui_scale(2.0), inner];
+        let r = compute_layout(&screen(vec![outer]), VP).unwrap();
+        // 2 above and 1.5 of its own: the inner frame renders at 3x its written size.
+        assert_eq!(
+            r.rects["0/0/0"].rect,
+            Rect {
+                x: 0.0,
+                y: 0.0,
+                width: 300.0,
+                height: 150.0
+            }
+        );
+        // And so does everything below it — 10px square at x=4 becomes 30 at x=12.
+        assert_eq!(
+            r.rects["0/0/0/0"].rect,
+            Rect {
+                x: 12.0,
+                y: 0.0,
+                width: 30.0,
+                height: 30.0
+            }
+        );
+    }
+
+    #[test]
+    fn ui_scale_grows_an_automatic_size_parent_by_the_scale() {
+        let mut card = with(
+            "Frame",
+            "Card",
+            &[("AutomaticSize", enum_item("AutomaticSize", "XY"))],
+        );
+        card.children = vec![
+            ui_scale(2.0),
+            with(
+                "UIPadding",
+                "Pad",
+                &[
+                    ("PaddingLeft", udim(0.0, 5.0)),
+                    ("PaddingRight", udim(0.0, 5.0)),
+                    ("PaddingTop", udim(0.0, 5.0)),
+                    ("PaddingBottom", udim(0.0, 5.0)),
+                ],
+            ),
+            with("Frame", "Child", &[("Size", udim2(0.0, 60.0, 0.0, 30.0))]),
+        ];
+        let r = compute_layout(&screen(vec![card]), VP).unwrap();
+        // The card hugs what it actually renders: a 120x60 child inside 10px insets,
+        // not the 60x30 plus 5px the scene text says.
+        assert_eq!(
+            r.rects["0/0"].rect,
+            Rect {
+                x: 0.0,
+                y: 0.0,
+                width: 140.0,
+                height: 80.0
+            }
+        );
+        assert_eq!(
+            r.rects["0/0/0"].rect,
+            Rect {
+                x: 10.0,
+                y: 10.0,
+                width: 120.0,
+                height: 60.0
+            }
+        );
+    }
+
+    #[test]
+    fn a_scaled_auto_size_still_stops_at_the_room_its_parent_has() {
+        let mut card = with(
+            "Frame",
+            "Card",
+            &[
+                ("Size", udim2(0.0, 0.0, 0.0, 40.0)),
+                ("AutomaticSize", enum_item("AutomaticSize", "X")),
+            ],
+        );
+        card.children = vec![
+            ui_scale(2.0),
+            with("Frame", "Child", &[("Size", udim2(0.0, 150.0, 0.0, 20.0))]),
+        ];
+        let mut column = with(
+            "Frame",
+            "Column",
+            &[("Size", udim2(0.0, 200.0, 0.0, 400.0))],
+        );
+        column.children = vec![card];
+        let r = compute_layout(&screen(vec![column]), VP).unwrap();
+        // The scaled content wants 300; the column only has 200, and the ceiling is
+        // in real pixels, so the grown axis clamps there. The explicit height is the
+        // one part the scale still doubles.
+        assert_eq!(
+            r.rects["0/0/0"].rect,
+            Rect {
+                x: 0.0,
+                y: 0.0,
+                width: 200.0,
+                height: 80.0
+            }
+        );
+        // The child keeps its scaled size and overflows, exactly as it would with no
+        // scale and a 300px child — clamping the parent is not clamping the content.
+        assert_eq!(r.rects["0/0/0/0"].rect.width, 300.0);
+    }
+
+    #[test]
+    fn ui_scale_multiplies_a_size_constraint() {
+        let mut own = with("Frame", "Own", &[("Size", udim2(0.0, 500.0, 0.0, 100.0))]);
+        own.children = vec![
+            ui_scale(2.0),
+            with(
+                "UISizeConstraint",
+                "Limit",
+                &[("MaxSize", vector2(300.0, 80.0))],
+            ),
+        ];
+
+        let mut constrained = with(
+            "Frame",
+            "Constrained",
+            &[("Size", udim2(0.0, 10.0, 0.0, 10.0))],
+        );
+        constrained.children = vec![with(
+            "UISizeConstraint",
+            "Floor",
+            &[("MinSize", vector2(100.0, 20.0))],
+        )];
+        let mut host = with("Frame", "Host", &[("Size", udim2(0.0, 400.0, 0.0, 300.0))]);
+        host.children = vec![ui_scale(2.0), constrained];
+
+        let r = compute_layout(&screen(vec![own, host]), VP).unwrap();
+        // The clamp applies to the size the object asked for; its own scale multiplies
+        // the clamped result, so a Scale tween still moves a fully-constrained box.
+        assert_eq!(
+            r.rects["0/0"].rect,
+            Rect {
+                x: 0.0,
+                y: 0.0,
+                width: 600.0,
+                height: 160.0
+            }
+        );
+        // A bound inherited from a scale above is a scaled bound: 100x20 of floor in a
+        // doubled subtree is 200x40, so the box stays in proportion with its siblings.
+        assert_eq!(
+            r.rects["0/1/0"].rect,
+            Rect {
+                x: 0.0,
+                y: 0.0,
+                width: 200.0,
+                height: 40.0
+            }
+        );
+    }
+
+    #[test]
+    fn ui_scale_scales_a_grids_default_cells() {
+        let mut board = with("Frame", "Board", &[("Size", udim2(0.0, 400.0, 0.0, 300.0))]);
+        board.children = vec![
+            ui_scale(2.0),
+            with("UIGridLayout", "Grid", &[]),
+            frame("A"),
+            frame("B"),
+        ];
+        let r = compute_layout(&screen(vec![board]), VP).unwrap();
+        // Default CellSize {0,100} and CellPadding {0,5} are offsets like any other:
+        // 200px cells 10px apart in an 800x600 board.
+        assert_eq!(
+            r.rects["0/0/0"].rect,
+            Rect {
+                x: 0.0,
+                y: 0.0,
+                width: 200.0,
+                height: 200.0
+            }
+        );
+        assert_eq!(r.rects["0/0/1"].rect.x, 210.0);
+    }
+
+    #[test]
+    fn ui_scale_scales_measured_text_bounds() {
+        let mut label = with(
+            "TextLabel",
+            "Label",
+            &[
+                ("AutomaticSize", enum_item("AutomaticSize", "XY")),
+                ("TextBounds", vector2(60.0, 18.0)),
+            ],
+        );
+        label.children = vec![ui_scale(1.5)];
+        let r = compute_layout(&screen(vec![label]), VP).unwrap();
+        // The adapter measures the text at its own TextSize, knowing nothing of the
+        // scale above it, so the label has to hug 1.5x what it was handed.
+        assert_eq!(
+            r.rects["0/0"].rect,
+            Rect {
+                x: 0.0,
+                y: 0.0,
+                width: 90.0,
+                height: 27.0
+            }
+        );
+    }
+
+    #[test]
+    fn ui_scale_scales_a_scrolling_canvas() {
+        let mut scroll = with(
+            "ScrollingFrame",
+            "Scroll",
+            &[
+                ("Size", udim2(0.0, 200.0, 0.0, 200.0)),
+                ("CanvasSize", udim2(0.0, 0.0, 0.0, 300.0)),
+            ],
+        );
+        scroll.children = vec![
+            ui_scale(2.0),
+            with("Frame", "Item", &[("Size", udim2(1.0, 0.0, 1.0, 0.0))]),
+        ];
+        let r = compute_layout(&screen(vec![scroll]), VP).unwrap();
+        // A 300px canvas in a doubled frame is 600px of scrollable content, against a
+        // 400px window — the scroll bar has to survive the scale.
+        assert_eq!(
+            r.rects["0/0/0"].rect,
+            Rect {
+                x: 0.0,
+                y: 0.0,
+                width: 400.0,
+                height: 600.0
+            }
+        );
+    }
+
+    #[test]
+    fn a_scale_tween_grows_a_centred_button_about_its_own_middle() {
+        let mut button = with(
+            "TextButton",
+            "Button",
+            &[
+                ("Size", udim2(0.0, 100.0, 0.0, 40.0)),
+                ("Position", udim2(0.5, 0.0, 0.5, 0.0)),
+                ("AnchorPoint", vector2(0.5, 0.5)),
+            ],
+        );
+        button.children = vec![ui_scale(1.25)];
+        let r = compute_layout(&screen(vec![button]), VP).unwrap();
+        let rect = r.rects["0/0"].rect;
+        assert_eq!(
+            rect,
+            Rect {
+                x: 337.5,
+                y: 275.0,
+                width: 125.0,
+                height: 50.0
+            }
+        );
+        // The anchor point is what re-centres it: the hover "pop" idiom grows the
+        // button in place instead of sliding it down and to the right.
+        assert_eq!(rect.x + rect.width / 2.0, 400.0);
+        assert_eq!(rect.y + rect.height / 2.0, 300.0);
+    }
+
+    #[test]
+    fn a_ui_scale_defaults_to_one_and_never_goes_negative() {
+        let mut plain = with("Frame", "Plain", &[("Size", udim2(0.0, 100.0, 0.0, 50.0))]);
+        plain.children = vec![with("UIScale", "Scale", &[])];
+        let mut inverted = with(
+            "Frame",
+            "Inverted",
+            &[("Size", udim2(0.0, 100.0, 0.0, 50.0))],
+        );
+        inverted.children = vec![ui_scale(-2.0)];
+        let r = compute_layout(&screen(vec![plain, inverted]), VP).unwrap();
+        // Roblox's own default Scale is 1, so a UIScale nobody has written to yet is
+        // not a subtree collapsed to nothing.
+        assert_eq!(r.rects["0/0"].rect.width, 100.0);
+        assert_eq!(r.rects["0/0"].rect.height, 50.0);
+        // A negative scale has no meaning for a box with a width; it collapses.
+        assert_eq!(r.rects["0/1"].rect.width, 0.0);
+        assert_eq!(r.rects["0/1"].rect.height, 0.0);
+    }
+
+    #[test]
+    fn a_container_assigned_extent_outranks_a_childs_own_scale() {
+        // The documented compromise (see the module header): a grid hands its cell
+        // size down, so the cell is the cell — but everything inside the scaled
+        // child still renders at 2x. Pinned here so the day it can be checked
+        // against a running engine, the disagreement is a failing test rather than
+        // a silent one.
+        let mut cell = frame("A");
+        cell.children = vec![
+            ui_scale(2.0),
+            with("Frame", "Inside", &[("Size", udim2(0.0, 20.0, 0.0, 20.0))]),
+        ];
+        let mut board = with("Frame", "Board", &[("Size", udim2(0.0, 400.0, 0.0, 300.0))]);
+        board.children = vec![
+            with(
+                "UIGridLayout",
+                "Grid",
+                &[("CellSize", udim2(0.0, 100.0, 0.0, 100.0))],
+            ),
+            cell,
+        ];
+        let r = compute_layout(&screen(vec![board]), VP).unwrap();
+        assert_eq!(r.rects["0/0/0"].rect.width, 100.0);
+        assert_eq!(r.rects["0/0/0/0"].rect.width, 40.0);
+    }
+
+    #[test]
+    fn a_ui_scale_on_the_root_scales_what_is_inside_it() {
+        let r = compute_layout(
+            &screen(vec![
+                ui_scale(2.0),
+                with("Frame", "Card", &[("Size", udim2(0.0, 100.0, 0.0, 50.0))]),
+            ]),
+            VP,
+        )
+        .unwrap();
+        // The top node is the viewport by fiat, so there is no size of its own left
+        // to multiply — but everything it holds still scales.
+        assert_eq!(r.rects["0"].rect.width, 800.0);
+        assert_eq!(r.rects["0"].rect.height, 600.0);
+        assert_eq!(
+            r.rects["0/0"].rect,
+            Rect {
+                x: 0.0,
+                y: 0.0,
+                width: 200.0,
+                height: 100.0
+            }
+        );
     }
 }
