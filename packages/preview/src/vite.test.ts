@@ -16,12 +16,19 @@ import { type Alias, resolveConfig, type ViteDevServer } from "vite";
 import { afterAll, describe, expect, it } from "vitest";
 import {
 	GLOBALS_PATH,
+	REACT_COMPAT_PATH,
 	REACT_RIPPLE_COMPAT_PATH,
 	RIPPLE_COMPAT_PATH,
 	SERVICES_PATH,
 	UI_LABS_COMPAT_PATH,
 } from "./paths.ts";
-import { loomPreview, resolveShimTarget, shimAliases } from "./vite.ts";
+import {
+	loomPreview,
+	resolveShimTarget,
+	shimAliases,
+	tsconfigAliases,
+	tsconfigBaseUrl,
+} from "./vite.ts";
 
 describe("resolveShimTarget", () => {
 	it("anchors relative targets to the project root, not the importer", () => {
@@ -1086,5 +1093,895 @@ export const preset = config.stiff;
 		// states the invariant they exist to protect.
 		expect(REACT_RIPPLE_COMPAT_PATH).toMatch(/compat[/\\]react-ripple\.ts$/);
 		expect(RIPPLE_COMPAT_PATH).toMatch(/compat[/\\]ripple\.ts$/);
+	});
+});
+
+/**
+ * tsconfig path mapping, as a unit over real fixture directories.
+ *
+ * roblox-ts projects import non-relatively — `import { Button } from
+ * "shared/ui/button"` — and nothing but the project's own `baseUrl`/`paths`
+ * says what that means. These assertions are the translation itself: which
+ * specifiers each entry claims, where they land, and in what order Vite gets to
+ * try them.
+ */
+describe("tsconfigAliases", () => {
+	const root = realpathSync(mkdtempSync(join(tmpdir(), "loom-tsconfig-")));
+	afterAll(() => rmSync(root, { recursive: true, force: true }));
+
+	/** A fixture project directory with the given files written into it. */
+	const project = (name: string, files: Record<string, string>): string => {
+		const dir = join(root, name);
+		mkdirSync(dir, { recursive: true });
+		for (const [rel, content] of Object.entries(files)) {
+			const file = join(dir, rel);
+			mkdirSync(dirname(file), { recursive: true });
+			writeFileSync(file, content);
+		}
+		return dir;
+	};
+
+	it("emits nothing when the project has no tsconfig at all", () => {
+		expect(tsconfigAliases(project("no-tsconfig", {}))).toEqual([]);
+	});
+
+	it("emits nothing when the tsconfig declares neither baseUrl nor paths", () => {
+		const dir = project("no-mapping", {
+			"tsconfig.json": JSON.stringify({
+				compilerOptions: { strict: true, jsx: "react-jsx" },
+			}),
+		});
+		expect(tsconfigAliases(dir)).toEqual([]);
+	});
+
+	it("reads baseUrl as a directory, and emits no alias for it", () => {
+		const dir = project("base-url", {
+			"tsconfig.json": JSON.stringify({ compilerOptions: { baseUrl: "src" } }),
+		});
+		expect(tsconfigBaseUrl(dir)).toBe(join(dir, "src"));
+		// An alias pre-empts every resolver there is, and `baseUrl` is a fallback
+		// — so it gets none. The lookup lives in a normal-phase `resolveId`, below
+		// in "a project whose tsconfig sets baseUrl at its root".
+		expect(tsconfigAliases(dir)).toEqual([]);
+	});
+
+	it("leaves relative, absolute, virtual, scheme and Vite's own ids alone", () => {
+		const dir = project("paths-guard", {
+			// `"*"` is a legal pattern, and the one shape of `paths` that is every
+			// bit as greedy as the old `baseUrl` alias was.
+			"tsconfig.json": JSON.stringify({
+				compilerOptions: { paths: { "*": ["src/*"] } },
+			}),
+		});
+		const aliases = tsconfigAliases(dir);
+		expect(applyAliases(aliases, "shared/ui")).toBe(join(dir, "src/shared/ui"));
+		// A catch-all that swallowed these would rewrite the entire module graph —
+		// every relative import, the plugin's `virtual:loom-globals`, and (the one
+		// that takes the page down outright) Vite's own client and env.
+		for (const id of [
+			"./sibling.ts",
+			"../parent.ts",
+			"/src/main.client.tsx",
+			"\0virtual:loom-globals",
+			"virtual:loom-targets",
+			"node:fs",
+			"data:text/javascript,0",
+			"https://example.com/x.js",
+			"@vite/env",
+			"@vite/client",
+			"/@vite/client",
+			"@id/__x00__virtual:loom-globals",
+			"@react-refresh",
+		])
+			expect(applyAliases(aliases, id)).toBeUndefined();
+	});
+
+	it("translates paths patterns, exact first and longest prefix next", () => {
+		// No `baseUrl`: the patterns are the whole mapping, so what does *not*
+		// match is as visible as what does.
+		const dir = project("paths", {
+			"tsconfig.json": JSON.stringify({
+				compilerOptions: {
+					paths: {
+						"shared/*": ["src/shared/*"],
+						"shared/ui/*": ["src/ui/*"],
+						config: ["src/config.ts"],
+					},
+				},
+			}),
+		});
+		const aliases = tsconfigAliases(dir);
+		// The order *is* the rule: Vite's alias plugin takes the first match, so
+		// `shared/*` sitting above `shared/ui/*` would swallow every UI import.
+		expect(applyAliases(aliases, "config")).toBe(join(dir, "src/config.ts"));
+		expect(applyAliases(aliases, "shared/ui/button")).toBe(
+			join(dir, "src/ui/button"),
+		);
+		expect(applyAliases(aliases, "shared/math")).toBe(
+			join(dir, "src/shared/math"),
+		);
+		// An exact pattern is exact: no subpaths, no prefix lookalikes.
+		expect(applyAliases(aliases, "config/deep")).toBeUndefined();
+		expect(applyAliases(aliases, "configuration")).toBeUndefined();
+	});
+
+	it("keeps a `*` literal in the target of an exact pattern", () => {
+		const dir = project("exact-star", {
+			"tsconfig.json": JSON.stringify({
+				compilerOptions: { paths: { glob: ["src/*"] } },
+			}),
+		});
+		// TypeScript substitutes nothing into a pattern that has no wildcard.
+		expect(applyAliases(tsconfigAliases(dir), "glob")).toBe(join(dir, "src/*"));
+	});
+
+	it("anchors paths at baseUrl when both are declared", () => {
+		const dir = project("paths-under-base", {
+			"tsconfig.json": JSON.stringify({
+				compilerOptions: { baseUrl: "src", paths: { "@app/*": ["app/*"] } },
+			}),
+		});
+		expect(applyAliases(tsconfigAliases(dir), "@app/store")).toBe(
+			join(dir, "src/app/store"),
+		);
+	});
+
+	it("anchors paths at the config's own directory when baseUrl is absent", () => {
+		const dir = project("paths-no-base", {
+			"tsconfig.json": JSON.stringify({
+				compilerOptions: { paths: { "@app/*": ["src/app/*"] } },
+			}),
+		});
+		const aliases = tsconfigAliases(dir);
+		// TypeScript 4.1+: `paths` with no `baseUrl` is legal and resolves against
+		// the tsconfig. And with no baseUrl there is no catch-all — an unmapped
+		// bare specifier is still a package.
+		expect(aliases).toHaveLength(1);
+		expect(applyAliases(aliases, "@app/store")).toBe(
+			join(dir, "src/app/store"),
+		);
+		expect(applyAliases(aliases, "shared/ui")).toBeUndefined();
+	});
+
+	it("follows extends, anchoring the base's paths to the base's directory", () => {
+		project("extends-base", {
+			"tsconfig.base.json": JSON.stringify({
+				compilerOptions: {
+					baseUrl: ".",
+					paths: { "shared/*": ["src/shared/*"] },
+				},
+			}),
+		});
+		const dir = project("extends-child", {
+			"tsconfig.json": JSON.stringify({
+				extends: "../extends-base/tsconfig.base.json",
+			}),
+		});
+		// Inherited, and pointing at the *base's* tree — a relative path in a
+		// tsconfig means the file that wrote it, not the file that extends it.
+		expect(applyAliases(tsconfigAliases(dir), "shared/math")).toBe(
+			join(root, "extends-base/src/shared/math"),
+		);
+	});
+
+	it("lets the extending config override what it extends", () => {
+		project("override-base", {
+			"tsconfig.base.json": JSON.stringify({
+				compilerOptions: {
+					baseUrl: ".",
+					paths: { "shared/*": ["base-only/*"] },
+				},
+			}),
+		});
+		const dir = project("override-child", {
+			"tsconfig.json": JSON.stringify({
+				extends: "../override-base/tsconfig.base.json",
+				compilerOptions: {
+					baseUrl: "src",
+					paths: { "shared/*": ["child/*"] },
+				},
+			}),
+		});
+		const aliases = tsconfigAliases(dir);
+		expect(applyAliases(aliases, "shared/math")).toBe(
+			join(dir, "src/child/math"),
+		);
+		// `paths` is inherited as a unit, so the base's pattern is gone rather
+		// than merged in underneath — one entry, not two.
+		expect(aliases.filter(({ find }) => find instanceof RegExp)).toHaveLength(
+			1,
+		);
+		expect(applyAliases(aliases, "unmapped/thing")).toBeUndefined();
+		// The child's `baseUrl` wins over the base's the same way.
+		expect(tsconfigBaseUrl(dir)).toBe(join(dir, "src"));
+	});
+
+	it("resolves an extends chain through a directory and a bare `.json`", () => {
+		project("chain-root", {
+			// Named without the extension, and extended as a directory below.
+			"tsconfig.json": JSON.stringify({
+				compilerOptions: { baseUrl: "lib" },
+			}),
+		});
+		const dir = project("chain-child", {
+			"tsconfig.json": JSON.stringify({ extends: "../chain-root" }),
+		});
+		expect(tsconfigBaseUrl(dir)).toBe(join(root, "chain-root/lib"));
+	});
+
+	it("survives a cyclic extends instead of recursing forever", () => {
+		const dir = project("cycle-a", {
+			"tsconfig.json": JSON.stringify({
+				extends: "../cycle-b/tsconfig.json",
+				compilerOptions: { baseUrl: "src" },
+			}),
+		});
+		project("cycle-b", {
+			"tsconfig.json": JSON.stringify({ extends: "../cycle-a/tsconfig.json" }),
+		});
+		expect(tsconfigBaseUrl(dir)).toBe(join(dir, "src"));
+	});
+
+	it("reads a tsconfig with comments and trailing commas", () => {
+		const dir = project("jsonc", {
+			"tsconfig.json": `{
+	// roblox-ts writes these by hand, comments and all.
+	"compilerOptions": {
+		/* the project's own source root */
+		"baseUrl": "src",
+		"paths": {
+			// a slash-slash inside a string is data, not a comment
+			"shared/*": ["shared/*"],
+			"weird//*": ["odd/*"],
+		},
+	},
+}
+`,
+		});
+		const aliases = tsconfigAliases(dir);
+		expect(applyAliases(aliases, "shared/math")).toBe(
+			join(dir, "src/shared/math"),
+		);
+		expect(applyAliases(aliases, "weird//thing")).toBe(
+			join(dir, "src/odd/thing"),
+		);
+	});
+
+	it("warns, and stays silent otherwise, when a tsconfig cannot be parsed", () => {
+		const dir = project("broken", {
+			"tsconfig.json": '{ "compilerOptions": { "baseUrl": "src" ',
+		});
+		const warnings: string[] = [];
+		expect(tsconfigAliases(dir, (message) => warnings.push(message))).toEqual(
+			[],
+		);
+		// Silently dropping a project's path mapping is the failure this warning
+		// exists to prevent.
+		expect(warnings).toHaveLength(1);
+		expect(warnings[0]).toContain("tsconfig.json");
+	});
+
+	it("warns about an extends that points at nothing", () => {
+		const dir = project("missing-extends", {
+			"tsconfig.json": JSON.stringify({
+				extends: "./nowhere.json",
+				compilerOptions: { baseUrl: "src" },
+			}),
+		});
+		const warnings: string[] = [];
+		// The file's own mapping still works — only the missing base is lost.
+		expect(tsconfigBaseUrl(dir, (message) => warnings.push(message))).toBe(
+			join(dir, "src"),
+		);
+		expect(warnings).toHaveLength(1);
+		expect(warnings[0]).toContain("nowhere.json");
+	});
+
+	it("drops a pattern with two wildcards, and says so", () => {
+		const dir = project("two-stars", {
+			"tsconfig.json": JSON.stringify({
+				compilerOptions: {
+					paths: { "a/*/b/*": ["src/*"], "ok/*": ["src/ok/*"] },
+				},
+			}),
+		});
+		const warnings: string[] = [];
+		const aliases = tsconfigAliases(dir, (message) => warnings.push(message));
+		// Invalid in TypeScript too — the rest of the mapping is unaffected.
+		expect(aliases).toHaveLength(1);
+		expect(applyAliases(aliases, "ok/thing")).toBe(join(dir, "src/ok/thing"));
+		expect(warnings[0]).toContain('"a/*/b/*"');
+	});
+});
+
+/**
+ * The same mapping, through the real Vite pipeline.
+ *
+ * The unit tests above say which alias entries exist; only a running server can
+ * say that an import written the roblox-ts way actually resolves, that a
+ * mapping which matches nothing hands the specifier back to ordinary
+ * resolution, and — the reason the entries are emitted last — that a project
+ * mapping `@rbxts/*` at its own node_modules still reaches loom's adapters.
+ */
+describe("a project with tsconfig path mapping", () => {
+	const root = realpathSync(mkdtempSync(join(tmpdir(), "loom-tsconfig-e2e-")));
+	afterAll(() => rmSync(root, { recursive: true, force: true }));
+
+	const write = (rel: string, code: string): void => {
+		const file = join(root, rel);
+		mkdirSync(dirname(file), { recursive: true });
+		writeFileSync(file, code);
+	};
+
+	// The roblox-ts template's own shape: `baseUrl: "src"`, plus the `@rbxts/*`
+	// mapping such a project routinely carries, plus a `paths` pattern whose
+	// first target does not exist.
+	write(
+		"tsconfig.json",
+		`{
+	// written the way roblox-ts writes it
+	"compilerOptions": {
+		"baseUrl": "src",
+		"paths": {
+			"@rbxts/*": ["../node_modules/@rbxts/*"],
+			"lib/*": ["missing/*", "lib/*"],
+		},
+	},
+}
+`,
+	);
+	write("src/shared/ui/button.ts", `export const label = "shared button";\n`);
+	write("src/lib/math.ts", "export const answer = 42;\n");
+	// The project's own `@rbxts/react`, which the mapping above points at. If a
+	// tsconfig could outrank loom's aliases, this is the module that would load.
+	write(
+		"node_modules/@rbxts/react/index.ts",
+		`export const useState = "the project's own @rbxts/react";\n`,
+	);
+	write(
+		"src/app.ts",
+		`import { label } from "shared/ui/button";
+import { answer } from "lib/math";
+import { UserInputService } from "@rbxts/services";
+
+export { answer, label };
+export const hasInput = typeof UserInputService.GetMouseLocation === "function";
+`,
+	);
+	write(
+		"src/missing-package.ts",
+		`export { q } from "not-installed-anywhere";\n`,
+	);
+
+	const withServer = async (
+		fn: (server: ViteDevServer) => Promise<void>,
+	): Promise<void> => {
+		const { createServer } = await import("vite");
+		const server = await createServer({
+			root,
+			configFile: false,
+			logLevel: "silent",
+			server: { middlewareMode: true },
+			// Transform + SSR evaluation only; a cold esbuild scan of react and the
+			// reconciler would be paid for nothing here.
+			optimizeDeps: { noDiscovery: true, include: [] },
+			plugins: [loomPreview({ html: false })],
+		});
+		try {
+			await fn(server);
+		} finally {
+			await server.close();
+		}
+	};
+
+	it("resolves baseUrl and paths imports, and evaluates them", async () => {
+		await withServer(async (server) => {
+			const mod = await server.ssrLoadModule("/src/app.ts");
+			// baseUrl: `shared/ui/button` is `src/shared/ui/button.ts`.
+			expect(mod.label).toBe("shared button");
+			// paths: the first target (`missing/*`) is not there, so the second is
+			// used — TypeScript tries them in order, and so does loom.
+			expect(mod.answer).toBe(42);
+			// …and `@rbxts/services` still reaches loom's own service singletons.
+			expect(mod.hasInput).toBe(true);
+		});
+	});
+
+	it("still sends @rbxts/react to loom's facade, not the project's mapping", async () => {
+		const aliases = (
+			await resolveConfig(
+				{
+					root,
+					configFile: false,
+					logLevel: "silent",
+					plugins: [loomPreview({ html: false })],
+				},
+				"serve",
+			)
+		).resolve.alias as Alias[];
+		// Loom's entry matches first, so the project's `@rbxts/*` never applies.
+		expect(applyAliases(aliases, "@rbxts/react")).toBe(REACT_COMPAT_PATH);
+		expect(applyAliases(aliases, "@rbxts/services")).toBe(SERVICES_PATH);
+		// The mapping is present all the same — below loom's entries, where it
+		// answers for the `@rbxts` packages loom does not adapt.
+		const mapped = aliases.findIndex(
+			({ find }) => find instanceof RegExp && find.test("@rbxts/anything"),
+		);
+		const loom = aliases.findIndex(
+			({ find }) => find instanceof RegExp && find.test("@rbxts/react"),
+		);
+		expect(mapped).toBeGreaterThan(loom);
+
+		await withServer(async (server) => {
+			write("src/uses-react.ts", `export { Change } from "@rbxts/react";\n`);
+			// Transform, not evaluate: the facade pulls in the CJS
+			// react-reconciler, which Vite's SSR runner cannot execute (in the
+			// browser the dep optimizer converts it first). Resolution is the claim
+			// under test, and the rewritten import is where it shows.
+			const transformed = await server.transformRequest("/src/uses-react.ts");
+			expect(transformed?.code).toContain("compat/react.ts");
+			expect(transformed?.code).not.toContain("node_modules/@rbxts/react");
+			const ids = [...server.moduleGraph.idToModuleMap.keys()];
+			expect(ids).toContain(REACT_COMPAT_PATH);
+			expect(
+				ids.filter((id) => id.includes("node_modules/@rbxts/react")),
+			).toEqual([]);
+		});
+	});
+
+	it("hands an unmapped package back to ordinary resolution", async () => {
+		await withServer(async (server) => {
+			// `baseUrl` makes every bare specifier a candidate, so the catch-all has
+			// to fall through — otherwise this would fail as a missing file inside
+			// `src/`, naming a path the project never wrote.
+			const error = await server
+				.transformRequest("/src/missing-package.ts")
+				.then(() => undefined)
+				.catch((failure: Error) => failure);
+			expect(error?.message).toContain("not-installed-anywhere");
+			expect(error?.message).not.toContain("src/not-installed-anywhere");
+		});
+	});
+
+	it("bundles a gallery target that imports through baseUrl", async () => {
+		// The default configuration: the html plugin on, targets discovered, the
+		// page generated. `baseUrl` makes every bare specifier a candidate, so
+		// this is where a catch-all that answered for the generated entry — or for
+		// `index.html` itself — would take the build down.
+		write(
+			"src/targets/Scene.loom.tsx",
+			`import { label } from "shared/ui/button";
+
+export const preview = {
+	title: "baseUrl scene",
+	render: () => <textlabel Text={label} Size={UDim2.fromOffset(120, 40)} />,
+} as const;
+`,
+		);
+		const { build } = await import("vite");
+		await build({
+			root,
+			configFile: false,
+			logLevel: "silent",
+			plugins: [loomPreview({ targets: "src/targets" })],
+			build: { outDir: "dist-gallery", emptyOutDir: true, minify: false },
+		});
+		const assets = join(root, "dist-gallery/assets");
+		const all = readdirSync(assets)
+			.filter((name) => name.endsWith(".js"))
+			.map((name) => readFileSync(join(assets, name), "utf8"))
+			.join("\n");
+		expect(all).toContain("shared button");
+		expect(all).not.toMatch(/from\s*["']shared\/ui\/button["']/);
+	});
+
+	it("bundles the same tree with vite build", async () => {
+		const { build } = await import("vite");
+		await build({
+			root,
+			configFile: false,
+			logLevel: "silent",
+			plugins: [loomPreview({ html: false })],
+			build: {
+				outDir: "dist-tsconfig",
+				emptyOutDir: true,
+				minify: false,
+				rollupOptions: {
+					input: join(root, "src/app.ts"),
+					preserveEntrySignatures: "strict",
+					output: { entryFileNames: "bundle.js" },
+				},
+			},
+		});
+		const code = readFileSync(join(root, "dist-tsconfig/bundle.js"), "utf8");
+		// Nothing left as an unresolved bare import: the mapping applies under
+		// Rollup exactly as it does under the dev server.
+		expect(code).not.toMatch(/from\s*["'](shared\/ui\/button|lib\/math)["']/);
+		expect(code).toContain("shared button");
+		expect(code).toContain("42");
+	});
+});
+
+/**
+ * The regression that took the gallery demo down. `"baseUrl": "."` is three
+ * words a tsconfig writes without a thought; as a `resolve.alias` it became a
+ * catch-all that claimed every bare specifier on the page — Vite's own
+ * `@vite/env` included. `GET /@vite/client` answered 500 with
+ * `Failed to resolve import "@vite/env"`, nothing mounted, `document.body` was
+ * empty, and the project had done nothing wrong.
+ *
+ * `baseUrl` is a *fallback* in TypeScript: node resolution runs first and it
+ * fills in only for what was not found. So the claims here are that a real
+ * installed package still beats it, that what only it can find still resolves,
+ * and that the ids Vite answers for itself were never its business.
+ */
+describe("a project whose tsconfig sets baseUrl at its root", () => {
+	const root = realpathSync(mkdtempSync(join(tmpdir(), "loom-baseurl-")));
+	afterAll(() => rmSync(root, { recursive: true, force: true }));
+
+	const write = (rel: string, code: string): void => {
+		const file = join(root, rel);
+		mkdirSync(dirname(file), { recursive: true });
+		writeFileSync(file, code);
+	};
+
+	write("tsconfig.json", JSON.stringify({ compilerOptions: { baseUrl: "." } }));
+	// A real installed package…
+	write(
+		"node_modules/real-package/package.json",
+		JSON.stringify({
+			name: "real-package",
+			version: "1.0.0",
+			type: "module",
+			main: "index.js",
+		}),
+	);
+	write(
+		"node_modules/real-package/index.js",
+		`export const from = "node_modules";\n`,
+	);
+	// …and a directory of the same name sitting under `baseUrl`. This is what
+	// would load if the lookup pre-empted resolution the way an alias does.
+	write("real-package/index.ts", `export const from = "baseUrl";\n`);
+	// And something only `baseUrl` can find, so a "fix" that deleted the feature
+	// outright fails here rather than passing quietly.
+	write("only-under-base/index.ts", `export const only = "baseUrl";\n`);
+	write(
+		"src/app.ts",
+		`export { from } from "real-package";
+export { only } from "only-under-base";
+`,
+	);
+
+	const withServer = async (
+		fn: (server: ViteDevServer) => Promise<void>,
+	): Promise<void> => {
+		const { createServer } = await import("vite");
+		const server = await createServer({
+			root,
+			configFile: false,
+			logLevel: "silent",
+			server: { middlewareMode: true },
+			optimizeDeps: { noDiscovery: true, include: [] },
+			plugins: [loomPreview({ html: false })],
+		});
+		try {
+			await fn(server);
+		} finally {
+			await server.close();
+		}
+	};
+
+	it("serves Vite's own client, whose first import is @vite/env", async () => {
+		await withServer(async (server) => {
+			// The exact request that 500'd. A throw here is the bug, and its
+			// message names the import that could not be resolved.
+			const client = await server.transformRequest("/@vite/client");
+			expect(client?.code).toContain("import");
+		});
+	});
+
+	it("keeps Vite's own alias entries reachable, not shadowed", async () => {
+		const aliases = (
+			await resolveConfig(
+				{
+					root,
+					configFile: false,
+					logLevel: "silent",
+					plugins: [loomPreview({ html: false })],
+				},
+				"serve",
+			)
+		).resolve.alias as Alias[];
+		// Vite's alias plugin takes the first `find` that matches and never
+		// reconsiders: an entry above these that matched and then declined the id
+		// would not fall through, it would bury them.
+		expect(applyAliases(aliases, "@vite/env")).toContain(
+			"vite/dist/client/env.mjs",
+		);
+		expect(applyAliases(aliases, "@vite/client")).toContain(
+			"vite/dist/client/client.mjs",
+		);
+	});
+
+	it("lets node_modules win, and still finds what only baseUrl can", async () => {
+		await withServer(async (server) => {
+			const app = await server.transformRequest("/src/app.ts");
+			// The installed package, not the same-named directory under `baseUrl`
+			// — the rewritten specifier is where the winner shows.
+			expect(app?.code).toContain("/node_modules/real-package/index.js");
+			expect(app?.code).not.toContain('"/real-package/index.ts"');
+			// …and the fallback still does its job for what nothing else can find.
+			expect(app?.code).toContain("/only-under-base/index.ts");
+			const ids = [...server.moduleGraph.idToModuleMap.keys()];
+			expect(ids).not.toContain(join(root, "real-package/index.ts"));
+			expect(ids).toContain(join(root, "only-under-base/index.ts"));
+		});
+	});
+
+	it("emits no alias entry for baseUrl at all", () => {
+		expect(tsconfigAliases(root)).toEqual([]);
+		expect(tsconfigBaseUrl(root)).toBe(root);
+	});
+});
+
+/**
+ * The zero-config regression: a project with no tsconfig at all must produce
+ * precisely the alias list it did before path mapping existed. The plugin's
+ * whole promise is that it works dropped in with no setup, and the `loom` CLI
+ * runs it with `configFile: false` against whatever directory it was pointed at.
+ */
+describe("a project with no tsconfig", () => {
+	const root = realpathSync(mkdtempSync(join(tmpdir(), "loom-no-tsconfig-")));
+	afterAll(() => rmSync(root, { recursive: true, force: true }));
+
+	it("adds no alias entries and still resolves loom's own", async () => {
+		const config = await resolveConfig(
+			{
+				root,
+				configFile: false,
+				logLevel: "silent",
+				plugins: [loomPreview({ html: false })],
+			},
+			"serve",
+		);
+		const aliases = config.resolve.alias as Alias[];
+		// Every entry loom emits is a plain find/replacement pair; the tsconfig
+		// ones are the only entries that carry a custom resolver.
+		expect(aliases.filter(({ customResolver }) => customResolver)).toEqual([]);
+		expect(applyAliases(aliases, "@rbxts/services")).toBe(SERVICES_PATH);
+		expect(applyAliases(aliases, "@rbxts/react")).toBe(REACT_COMPAT_PATH);
+		// A bare package is left entirely alone — no catch-all without a baseUrl.
+		expect(applyAliases(aliases, "some-package/deep")).toBeUndefined();
+	});
+});
+
+/**
+ * The Roblox `Promise`, as a module-scope binding.
+ *
+ * roblox-ts apps mean evaera's Promise by the bare name, and the browser's has
+ * none of its surface — so the preview injects an aliased import into each app
+ * module rather than overwriting `globalThis.Promise`, which the page shares
+ * with React, the Vite client and loom's own code. Every claim below is one
+ * half of that bargain: app source gets Roblox semantics, and nothing else
+ * changes at all.
+ */
+describe("the Roblox Promise in previewed app code", () => {
+	const root = realpathSync(mkdtempSync(join(tmpdir(), "loom-promise-")));
+	afterAll(() => rmSync(root, { recursive: true, force: true }));
+
+	const write = (rel: string, code: string): void => {
+		const file = join(root, rel);
+		mkdirSync(dirname(file), { recursive: true });
+		writeFileSync(file, code);
+	};
+
+	// The app: evaera's API by the bare name, exactly as roblox-ts writes it.
+	write(
+		"src/app.ts",
+		`import { UserInputService } from "@rbxts/services";
+
+export const seen: string[] = [];
+export const hasDelay = typeof Promise.delay === "function";
+export const hasInput = typeof UserInputService.GetMouseLocation === "function";
+
+export const waited = Promise.delay(0.02).andThen((elapsed) => {
+	seen.push(elapsed > 0 ? "waited" : "instant");
+	return "roblox";
+});
+
+// The page global, read through \`globalThis\` so the injected binding cannot
+// answer for it: the whole point is that these are two different things.
+export const shadowsGlobal = (Promise as unknown) !== globalThis.Promise;
+export const pageGlobal = globalThis.Promise;
+`,
+	);
+	// A module that brings its own `Promise`. Injecting here is not a no-op, it
+	// is `Identifier 'Promise' has already been declared` and the module is gone.
+	write(
+		"src/own-promise.ts",
+		`class Promise {
+	static readonly mine = true;
+	readonly kind = "the module's own";
+}
+
+export const kind = new Promise().kind;
+export const isOwn = Promise.mine === true;
+export const hasDelay = "delay" in Promise;
+`,
+	);
+	// A module that never says the word: nothing to inject, nothing to import.
+	write(
+		"src/quiet.ts",
+		`export const answer = 42;
+export const doubled = answer * 2;
+`,
+	);
+	// An ordinary npm dependency, which means the *browser's* Promise the way
+	// every npm package does.
+	write(
+		"node_modules/js-dep/package.json",
+		JSON.stringify({
+			name: "js-dep",
+			version: "1.0.0",
+			type: "module",
+			main: "index.ts",
+		}),
+	);
+	write(
+		"node_modules/js-dep/index.ts",
+		`export const settled = Promise.allSettled([Promise.resolve(7)]);
+export const hasDelay = "delay" in Promise;
+`,
+	);
+	write("src/uses-dep.ts", `export { settled, hasDelay } from "js-dep";\n`);
+
+	const withServer = async (
+		fn: (server: ViteDevServer) => Promise<void>,
+	): Promise<void> => {
+		const { createServer } = await import("vite");
+		const server = await createServer({
+			root,
+			configFile: false,
+			logLevel: "silent",
+			server: { middlewareMode: true },
+			optimizeDeps: { noDiscovery: true, include: [] },
+			// The dependency is TypeScript in `node_modules`; node cannot import it
+			// directly, and externalising it would take it out of the pipeline this
+			// test is about.
+			ssr: { noExternal: ["js-dep"] },
+			plugins: [loomPreview({ html: false })],
+		});
+		try {
+			await fn(server);
+		} finally {
+			await server.close();
+		}
+	};
+
+	it("hands app code evaera's Promise, and runs it (dev)", async () => {
+		await withServer(async (server) => {
+			const mod = await server.ssrLoadModule("/src/app.ts");
+			// `delay` does not exist on the browser's Promise at all.
+			expect(mod.hasDelay).toBe(true);
+			// `andThen` is the method whose absence kills a roblox-ts app on load.
+			expect(await mod.waited).toBe("roblox");
+			expect(mod.seen).toEqual(["waited"]);
+			// The rest of the preview is untouched by the injection.
+			expect(mod.hasInput).toBe(true);
+		});
+	});
+
+	it("shadows the page global without replacing it", async () => {
+		await withServer(async (server) => {
+			const mod = await server.ssrLoadModule("/src/app.ts");
+			expect(mod.shadowsGlobal).toBe(true);
+			// Same realm, so this is the very `Promise` this test file sees — and
+			// it still resolves `allSettled` to JS records rather than to the
+			// `Promise.Status` values Roblox yields. Installing evaera's Promise
+			// as the global is what this replaces, and this is what it cost.
+			expect(mod.pageGlobal).toBe(Promise);
+			await expect(
+				(mod.pageGlobal as PromiseConstructor).allSettled([Promise.resolve(7)]),
+			).resolves.toEqual([{ status: "fulfilled", value: 7 }]);
+		});
+	});
+
+	it("leaves a module that declares its own Promise alone", async () => {
+		await withServer(async (server) => {
+			// A duplicate binding is a SyntaxError, so the module simply would not
+			// evaluate — the assertions below never get to run if this regresses.
+			const mod = await server.ssrLoadModule("/src/own-promise.ts");
+			expect(mod.kind).toBe("the module's own");
+			expect(mod.isOwn).toBe(true);
+			expect(mod.hasDelay).toBe(false);
+			const id = join(root, "src/own-promise.ts");
+			expect(
+				server.moduleGraph.getModuleById(id)?.ssrTransformResult?.code,
+			).not.toContain("RobloxPromise");
+		});
+	});
+
+	it("skips a module that never mentions Promise", async () => {
+		await withServer(async (server) => {
+			const mod = await server.ssrLoadModule("/src/quiet.ts");
+			expect(mod.doubled).toBe(84);
+			// No rewrite, and no module-graph edge to the runtime either: the cheap
+			// `includes("Promise")` guard is what keeps this off the whole tree.
+			const code = server.moduleGraph.getModuleById(join(root, "src/quiet.ts"))
+				?.ssrTransformResult?.code;
+			expect(code).toBeTypeOf("string");
+			expect(code).not.toContain("RobloxPromise");
+			expect(code).not.toContain("runtime");
+		});
+	});
+
+	it("never injects into node_modules or into loom's own sources", async () => {
+		await withServer(async (server) => {
+			const mod = await server.ssrLoadModule("/src/uses-dep.ts");
+			// The dependency kept the browser's Promise: JS-shaped records, no
+			// `delay`. An injection here would have changed both.
+			expect(mod.hasDelay).toBe(false);
+			await expect(mod.settled).resolves.toEqual([
+				{ status: "fulfilled", value: 7 },
+			]);
+			expect(
+				server.moduleGraph.getModuleById(
+					join(root, "node_modules/js-dep/index.ts"),
+				)?.ssrTransformResult?.code,
+			).not.toContain("RobloxPromise");
+
+			// And loom's own. In this workspace checkout `services.ts` is a real
+			// path *outside* node_modules, so the node_modules test alone waves it
+			// through — injecting there would be circular, since the very module
+			// the import points at lives in the same tree.
+			await server.ssrLoadModule("/src/app.ts");
+			const services =
+				server.moduleGraph.getModuleById(SERVICES_PATH)?.ssrTransformResult
+					?.code;
+			expect(services).toBeTypeOf("string");
+			expect(services).not.toContain("RobloxPromise");
+			// …while the app module next to it, through the very same server, did
+			// get the binding. Scoping is the claim; a transform that had simply
+			// stopped running would satisfy every "not" above on its own.
+			expect(
+				server.moduleGraph.getModuleById(join(root, "src/app.ts"))
+					?.ssrTransformResult?.code,
+			).toContain("RobloxPromise");
+		});
+	});
+
+	it("survives a static vite build", async () => {
+		const { build } = await import("vite");
+		await build({
+			root,
+			configFile: false,
+			logLevel: "silent",
+			plugins: [loomPreview({ html: false })],
+			build: {
+				outDir: "dist-promise",
+				emptyOutDir: true,
+				minify: false,
+				rollupOptions: {
+					input: join(root, "src/app.ts"),
+					preserveEntrySignatures: "strict",
+					output: { entryFileNames: "bundle.js" },
+				},
+			},
+		});
+		const file = join(root, "dist-promise/bundle.js");
+		// Nothing left dangling: Rollup resolved the injected specifier the same
+		// way the dev server did.
+		expect(readFileSync(file, "utf8")).not.toMatch(
+			/from\s*["']@loom-dev\/runtime["']/,
+		);
+		const mod = (await import(pathToFileURL(file).href)) as Record<
+			string,
+			unknown
+		>;
+		expect(mod.hasDelay).toBe(true);
+		expect(await mod.waited).toBe("roblox");
+		expect(mod.seen).toEqual(["waited"]);
+		expect(mod.shadowsGlobal).toBe(true);
 	});
 });
