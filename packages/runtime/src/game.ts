@@ -17,6 +17,7 @@
  * problem. Now the call itself says which service and which member loom does
  * not implement.
  */
+import { Enum } from "./enums";
 import {
 	createInstance,
 	type LoomInstance,
@@ -328,3 +329,10 @@ registerPropertyReader("DataModel", "PlaceId", () => 0);
 registerPropertyReader("DataModel", "GameId", () => 0);
 registerPropertyReader("DataModel", "JobId", () => "");
 registerPropertyReader("DataModel", "Loaded", () => loaded);
+// The same nothing, for the rest of the place identity. `PlaceVersion` is 0
+// for an unpublished place, and the creator fields describe an owner a preview
+// does not have — `CreatorType` answers with the enum item rather than a bare
+// number so `game.CreatorType == Enum.CreatorType.User` compares correctly.
+registerPropertyReader("DataModel", "PlaceVersion", () => 0);
+registerPropertyReader("DataModel", "CreatorId", () => 0);
+registerPropertyReader("DataModel", "CreatorType", () => Enum.CreatorType.User);

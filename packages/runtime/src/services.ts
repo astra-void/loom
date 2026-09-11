@@ -311,10 +311,47 @@ export function setMouseLocation(position: Vector2): void {
 const keysDown = new Map<string, EnumItem<"KeyCode">>();
 const mouseButtonsDown = new Map<string, EnumItem<"UserInputType">>();
 
+/**
+ * The device the last input came from, and the signal that announces a change.
+ *
+ * Roblox exposes this so a UI can swap its prompts between keyboard glyphs and
+ * gamepad buttons the moment the player switches device; a preview can answer
+ * it truthfully because it sees every input the page delivers.
+ */
+let lastInputType: EnumItem<"UserInputType"> = Enum.UserInputType.None;
+const lastInputTypeChanged = new LoomSignal<[EnumItem<"UserInputType">]>({
+	name: "UserInputService.LastInputTypeChanged",
+});
+
+function noteLastInputType(inputType: EnumItem<"UserInputType">): void {
+	if (inputType === lastInputType) return;
+	lastInputType = inputType;
+	lastInputTypeChanged.fire(inputType);
+}
+
+// A reader rather than a stored property: the value changes on every input, and
+// a reader cannot go stale the way a copy written at construction would.
+registerPropertyReader(
+	"UserInputService",
+	"LastInputType",
+	() => lastInputType,
+);
+
 /** DOM bridge hook: a key went down (`true`) or came back up (`false`). */
 export function setKeyState(key: EnumItem<"KeyCode">, down: boolean): void {
 	if (down) keysDown.set(key.Name, key);
 	else keysDown.delete(key.Name);
+	noteLastInputType(Enum.UserInputType.Keyboard);
+	dispatchAction(
+		makeInputObject({
+			UserInputType: Enum.UserInputType.Keyboard,
+			UserInputState: down
+				? Enum.UserInputState.Begin
+				: Enum.UserInputState.End,
+			KeyCode: key,
+		}),
+		down ? Enum.UserInputState.Begin : Enum.UserInputState.End,
+	);
 }
 
 /** DOM bridge hook: a mouse button went down (`true`) or came up (`false`). */
@@ -324,6 +361,16 @@ export function setMouseButtonState(
 ): void {
 	if (down) mouseButtonsDown.set(button.Name, button);
 	else mouseButtonsDown.delete(button.Name);
+	noteLastInputType(button);
+	dispatchAction(
+		makeInputObject({
+			UserInputType: button,
+			UserInputState: down
+				? Enum.UserInputState.Begin
+				: Enum.UserInputState.End,
+		}),
+		down ? Enum.UserInputState.Begin : Enum.UserInputState.End,
+	);
 }
 
 /**
@@ -382,6 +429,7 @@ registerClassMethods("UserInputService", {
 	 * bridge builds the ones it dispatches, with state `Begin`, because every
 	 * key in the list is by definition still held.
 	 */
+	GetLastInputType: () => lastInputType,
 	GetKeysPressed: (): InputObject[] =>
 		[...keysDown.values()].map((keyCode) =>
 			makeInputObject({
@@ -394,6 +442,7 @@ registerClassMethods("UserInputService", {
 
 registerService("UserInputService", () => {
 	const service = createInstance("UserInputService", "UserInputService");
+	setRawProperty(service, "LastInputTypeChanged", lastInputTypeChanged);
 	// Measured, not asserted. UI code branches hard on these — control-scheme
 	// hints, hit-target sizes, whether a keyboard shortcut is worth showing at
 	// all — and a hardcoded `TouchEnabled = false` was a lie on every phone and
@@ -599,15 +648,146 @@ export function setViewportSize(size: Vector2): void {
 
 // --- ContextActionService ----------------------------------------------------
 
+/**
+ * One live `ContextActionService` binding.
+ *
+ * `BindAction` used to be a no-op that did not even keep the handler, so a
+ * keybind bound through it never fired — a silent dead control rather than a
+ * crash, which is the hardest kind to notice. Now that the renderer feeds real
+ * keyboard input to UserInputService, the bindings can be dispatched properly.
+ */
+interface ActionBinding {
+	readonly name: string;
+	readonly handler: (
+		actionName: string,
+		state: EnumItem<"UserInputState">,
+		input: InputObject,
+	) => unknown;
+	readonly inputs: readonly unknown[];
+	readonly priority: number;
+	/** Tie-break, so equal priorities dispatch newest-first as Roblox does. */
+	readonly sequence: number;
+}
+
+const actionBindings = new Map<string, ActionBinding>();
+let actionSequence = 0;
+
+/** Does this binding listen for the thing that just happened? */
+function bindingMatches(binding: ActionBinding, input: InputObject): boolean {
+	for (const wanted of binding.inputs) {
+		const name = enumName(wanted);
+		if (name === undefined) continue;
+		if (input.KeyCode !== undefined && name === input.KeyCode.Name) return true;
+		if (name === input.UserInputType.Name) return true;
+	}
+	return false;
+}
+
+/**
+ * Run the bindings that care about `input`, highest priority first, stopping at
+ * the first handler that sinks it — the engine's ordering, including the
+ * newest-wins tie-break between equal priorities.
+ */
+function dispatchAction(
+	input: InputObject,
+	state: EnumItem<"UserInputState">,
+): void {
+	const ordered = [...actionBindings.values()].sort(
+		(a, b) => b.priority - a.priority || b.sequence - a.sequence,
+	);
+	for (const binding of ordered) {
+		if (!bindingMatches(binding, input)) continue;
+		const result = binding.handler(binding.name, state, input);
+		// Roblox treats a handler that returns nothing as `Pass`, which is why so
+		// much handler code returns nothing at all.
+		if (result === Enum.ContextActionResult.Sink) return;
+	}
+}
+
 registerClassMethods("ContextActionService", {
-	BindAction: () => undefined,
+	BindAction: (
+		_self: LoomInstance,
+		actionName: unknown,
+		handler: unknown,
+		_createTouchButton: unknown,
+		...inputs: unknown[]
+	) => {
+		if (typeof handler !== "function") return undefined;
+		const name = String(actionName);
+		actionBindings.set(name, {
+			name,
+			handler: handler as ActionBinding["handler"],
+			inputs,
+			priority: 2000, // Enum.ContextActionPriority.Default
+			sequence: actionSequence++,
+		});
+		return undefined;
+	},
 	// `BindActionAtPriority` is `BindAction` plus a priority arg — the focus
-	// manager binds Tab / D-pad navigation through it. Previews don't route real
-	// ContextAction input, so a no-op is enough; omitting it threw
-	// "BindActionAtPriority is not a function" and crashed every FocusScope
-	// consumer (Select, Dialog, Tabs, …) the moment it opened.
-	BindActionAtPriority: () => undefined,
-	UnbindAction: () => undefined,
+	// manager binds Tab / D-pad navigation through it.
+	BindActionAtPriority: (
+		_self: LoomInstance,
+		actionName: unknown,
+		handler: unknown,
+		_createTouchButton: unknown,
+		priority: unknown,
+		...inputs: unknown[]
+	) => {
+		if (typeof handler !== "function") return undefined;
+		const name = String(actionName);
+		actionBindings.set(name, {
+			name,
+			handler: handler as ActionBinding["handler"],
+			inputs,
+			priority: typeof priority === "number" ? priority : 2000,
+			sequence: actionSequence++,
+		});
+		return undefined;
+	},
+	UnbindAction: (_self: LoomInstance, actionName: unknown) => {
+		actionBindings.delete(String(actionName));
+		return undefined;
+	},
+	/**
+	 * The symmetric partner of `BindAction`, and the standard teardown when a
+	 * menu closes or a scope unmounts. Missing, it threw inside an unmount path
+	 * — a React effect cleanup or a destructor with no `pcall` around it — which
+	 * is the worst place to throw from.
+	 */
+	UnbindAllActions: () => {
+		actionBindings.clear();
+		return undefined;
+	},
+	GetAllBoundActionInfo: () => {
+		const info = new Map<string, unknown>();
+		for (const binding of actionBindings.values()) {
+			info.set(binding.name, {
+				inputTypes: [...binding.inputs],
+				priorityLevel: binding.priority,
+				stackOrder: binding.sequence,
+			});
+		}
+		return info;
+	},
+	GetBoundActionInfo: (_self: LoomInstance, actionName: unknown) => {
+		const binding = actionBindings.get(String(actionName));
+		if (!binding) return undefined;
+		return {
+			inputTypes: [...binding.inputs],
+			priorityLevel: binding.priority,
+			stackOrder: binding.sequence,
+		};
+	},
+	// The touch-button half of the service. A preview has no auto-generated
+	// mobile button to fetch or style, but the calls are what touch-capable code
+	// reaches for right after binding, and throwing there crashed the binding it
+	// had just made. They answer honestly (`GetButton` has nothing to give) and
+	// the setters do nothing rather than pretending.
+	GetButton: () => undefined,
+	SetTitle: () => undefined,
+	SetImage: () => undefined,
+	SetPosition: () => undefined,
+	SetDescription: () => undefined,
 });
 
 registerService("ContextActionService", () =>

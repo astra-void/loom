@@ -579,6 +579,25 @@ const namespaces = {
 		None: 4,
 	}),
 	/**
+	 * What a `ContextActionService` handler returns to say whether the input it
+	 * just saw should carry on to the next binding. Returning nothing means
+	 * `Pass`, which is why so much handler code omits it entirely.
+	 */
+	ContextActionResult: makeEnum("ContextActionResult", { Sink: 0, Pass: 1 }),
+	/** `UserInputService.LastInputType` / `.LastInputTypeChanged`. */
+	TextDirection: makeEnum("TextDirection", {
+		Auto: 0,
+		LeftToRight: 1,
+		RightToLeft: 2,
+	}),
+	/** `game.CreatorType` — who owns the place. */
+	CreatorType: makeEnum("CreatorType", { User: 0, Group: 1 }),
+	/** `TextBox.TextEditingMode`. */
+	TextEditingMode: makeEnum("TextEditingMode", {
+		Default: 0,
+		KeyboardAndCursor: 1,
+	}),
+	/**
 	 * `StarterGui:SetCoreGuiEnabled(coreGuiType, enabled)` takes one of these.
 	 * A preview has no CoreGui to switch off, but the call has to be spellable
 	 * or the app crashes on boot — and `All` is 4, after the four it covers.

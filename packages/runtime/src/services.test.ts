@@ -752,7 +752,7 @@ describe("Workspace", () => {
 
 describe("ContextActionService", () => {
 	it("BindAction/BindActionAtPriority/UnbindAction are safe no-ops", () => {
-		const cas = game.GetService("ContextActionService");
+		const cas = contextActions();
 		expect(() => {
 			(cas.BindAction as (...args: unknown[]) => void)(
 				"action",
@@ -1083,5 +1083,175 @@ describe("StarterGui and the container services", () => {
 		}
 		expect(warnSpy).not.toHaveBeenCalled();
 		warnSpy.mockRestore();
+	});
+});
+
+/** The slice of ContextActionService these tests drive, typed past the index. */
+interface ContextActionApi {
+	BindAction(
+		name: string,
+		handler: (...args: never[]) => unknown,
+		touch: boolean,
+		...inputs: unknown[]
+	): void;
+	BindActionAtPriority(
+		name: string,
+		handler: (...args: never[]) => unknown,
+		touch: boolean,
+		priority: number,
+		...inputs: unknown[]
+	): void;
+	UnbindAction(name: string): void;
+	UnbindAllActions(): void;
+}
+
+const contextActions = (): ContextActionApi =>
+	game.GetService("ContextActionService") as unknown as ContextActionApi;
+
+describe("ContextActionService dispatch", () => {
+	afterEach(() => {
+		contextActions().UnbindAllActions();
+		clearInputState();
+	});
+
+	it("actually invokes the handler a keybind was bound with", () => {
+		// This used to be a no-op that did not even keep the handler, so a keybind
+		// bound through it was a dead control — silent, not a crash.
+		const cas = contextActions();
+		const handler = vi.fn();
+		cas.BindAction("jump", handler, false, Enum.KeyCode.Space);
+
+		setKeyState(Enum.KeyCode.Space as EnumItem<"KeyCode">, true);
+		expect(handler).toHaveBeenCalledTimes(1);
+		const [name, state, input] = handler.mock.calls[0] as [
+			string,
+			EnumItem<"UserInputState">,
+			InputObject,
+		];
+		expect(name).toBe("jump");
+		expect(state).toBe(Enum.UserInputState.Begin);
+		expect(input.KeyCode).toBe(Enum.KeyCode.Space);
+
+		setKeyState(Enum.KeyCode.Space as EnumItem<"KeyCode">, false);
+		expect(handler).toHaveBeenCalledTimes(2);
+		expect(handler.mock.calls[1]?.[1]).toBe(Enum.UserInputState.End);
+	});
+
+	it("ignores a key the action did not bind", () => {
+		const cas = contextActions();
+		const handler = vi.fn();
+		cas.BindAction("jump", handler, false, Enum.KeyCode.Space);
+
+		setKeyState(Enum.KeyCode.A as EnumItem<"KeyCode">, true);
+		expect(handler).not.toHaveBeenCalled();
+	});
+
+	it("runs higher priority first and stops at the handler that sinks", () => {
+		// Ordering is the reason BindActionAtPriority exists at all.
+		const cas = contextActions();
+		const order: string[] = [];
+		cas.BindActionAtPriority(
+			"low",
+			() => {
+				order.push("low");
+			},
+			false,
+			100,
+			Enum.KeyCode.Space,
+		);
+		cas.BindActionAtPriority(
+			"high",
+			() => {
+				order.push("high");
+				return Enum.ContextActionResult.Sink;
+			},
+			false,
+			500,
+			Enum.KeyCode.Space,
+		);
+
+		setKeyState(Enum.KeyCode.Space as EnumItem<"KeyCode">, true);
+		expect(order).toEqual(["high"]);
+	});
+
+	it("passes through to the next binding when a handler returns nothing", () => {
+		const cas = contextActions();
+		const order: string[] = [];
+		cas.BindActionAtPriority(
+			"low",
+			() => {
+				order.push("low");
+			},
+			false,
+			100,
+			Enum.KeyCode.Space,
+		);
+		cas.BindActionAtPriority(
+			"high",
+			() => {
+				order.push("high");
+			},
+			false,
+			500,
+			Enum.KeyCode.Space,
+		);
+
+		setKeyState(Enum.KeyCode.Space as EnumItem<"KeyCode">, true);
+		expect(order).toEqual(["high", "low"]);
+	});
+
+	it("stops dispatching after UnbindAction and UnbindAllActions", () => {
+		const cas = contextActions();
+		const handler = vi.fn();
+		cas.BindAction("jump", handler, false, Enum.KeyCode.Space);
+		cas.UnbindAction("jump");
+		setKeyState(Enum.KeyCode.Space as EnumItem<"KeyCode">, true);
+		expect(handler).not.toHaveBeenCalled();
+
+		cas.BindAction("jump", handler, false, Enum.KeyCode.Space);
+		cas.UnbindAllActions();
+		setKeyState(Enum.KeyCode.Space as EnumItem<"KeyCode">, true);
+		expect(handler).not.toHaveBeenCalled();
+	});
+});
+
+describe("UserInputService.LastInputType", () => {
+	afterEach(() => clearInputState());
+
+	it("tracks the device the last input came from", () => {
+		const uis = game.GetService("UserInputService");
+		// Other tests in this file drive input too, so take a known baseline
+		// rather than assuming the module starts untouched.
+		setMouseButtonState(
+			Enum.UserInputType.MouseButton1 as EnumItem<"UserInputType">,
+			true,
+		);
+		expect(uis.LastInputType).toBe(Enum.UserInputType.MouseButton1);
+
+		const seen: Array<EnumItem<"UserInputType">> = [];
+		const connection = (
+			uis.LastInputTypeChanged as LoomSignal<[EnumItem<"UserInputType">]>
+		).Connect((t) => seen.push(t));
+
+		setKeyState(Enum.KeyCode.A as EnumItem<"KeyCode">, true);
+		expect((uis.GetLastInputType as () => unknown)()).toBe(
+			Enum.UserInputType.Keyboard,
+		);
+		expect(uis.LastInputType).toBe(Enum.UserInputType.Keyboard);
+
+		setMouseButtonState(
+			Enum.UserInputType.MouseButton1 as EnumItem<"UserInputType">,
+			true,
+		);
+		expect(seen).toEqual([
+			Enum.UserInputType.Keyboard,
+			Enum.UserInputType.MouseButton1,
+		]);
+
+		// Same device twice in a row is not a change.
+		setKeyState(Enum.KeyCode.B as EnumItem<"KeyCode">, true);
+		setKeyState(Enum.KeyCode.C as EnumItem<"KeyCode">, true);
+		expect(seen).toHaveLength(3);
+		connection.Disconnect();
 	});
 });
