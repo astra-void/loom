@@ -8,7 +8,7 @@
  * Property writes mark the instance dirty so the scheduler re-flushes the world.
  */
 import { DEFAULTS, fontSizeToPx } from "@loom-dev/scene";
-import { Color3, Rect, UDim, UDim2, Vector2 } from "./datatypes";
+import { Color3, Rect, robloxEquals, UDim, UDim2, Vector2 } from "./datatypes";
 import { Enum, enumName } from "./enums";
 import { classChain, isA } from "./registry";
 import { markDirty } from "./scheduler";
@@ -436,6 +436,7 @@ function collectDescendants(impl: InstanceImpl, out: LoomInstance[]): void {
 function destroyImpl(impl: InstanceImpl, detach: boolean): void {
 	if (impl.destroyed) return;
 	impl.eventSignals.get("Destroying")?.fire();
+	const hadParent = impl.parent !== undefined;
 	if (detach && impl.parent) {
 		const parent = impl.parent;
 		const index = parent.children.indexOf(impl);
@@ -444,6 +445,16 @@ function destroyImpl(impl: InstanceImpl, detach: boolean): void {
 		markDirty(parent.proxy);
 	}
 	impl.parent = undefined;
+	// Roblox defines Destroy as "set Parent to nil and lock it", so it raises
+	// everything a Parent write raises — before the signals are torn down below.
+	// The pre-`Destroying` teardown idiom is watching AncestryChanged or
+	// GetPropertyChangedSignal("Parent"), and older libraries still use it, so
+	// staying silent here leaked exactly the connections Destroy should end.
+	if (detach && hadParent) {
+		impl.propSignals.get("Parent")?.fire();
+		fireChanged(impl, "Parent");
+		fireAncestryChanged(impl, impl.proxy, undefined);
+	}
 	for (const child of [...impl.children]) destroyImpl(child, false);
 	impl.children.length = 0;
 	for (const signal of impl.propSignals.values()) signal.disconnectAll();
@@ -922,20 +933,56 @@ function makeTextBoxMethod(
 // --- property writes ---------------------------------------------------------
 
 function rawSet(impl: InstanceImpl, key: string, value: unknown): void {
-	if (impl.props.get(key) === value) return;
+	// `robloxEquals`, not `===`: Roblox does not raise Changed when a value-type
+	// property is written with an equal value, and every imperative write path
+	// allocates a fresh datatype each time. A tween stepping `Position`, a vide
+	// effect recomputing `UDim2.new(0, 0, 0, 0)`, or an animation loop writing
+	// the same `Color3` would otherwise fire the property signal, fire Changed
+	// and re-flush the whole world at 60Hz for a value that never moved.
+	if (robloxEquals(impl.props.get(key), value)) return;
 	impl.props.set(key, value);
 	impl.propSignals.get(key)?.fire();
-	impl.eventSignals.get("Changed")?.fire(key);
+	fireChanged(impl, key);
 	markDirty(impl.proxy);
 }
 
+/**
+ * `Changed`, with the one class-shaped exception the engine makes.
+ *
+ * On a `ValueBase` (IntValue, StringValue, …) Roblox deliberately overrides
+ * Changed to carry the NEW VALUE rather than the property name, because the
+ * whole point of those objects is `value.Changed:Connect(v => …)`. Handing
+ * that callback the string "Value" is a silent wrong answer: the label reads
+ * "Value" forever instead of the number.
+ */
+function fireChanged(impl: InstanceImpl, key: string): void {
+	const signal = impl.eventSignals.get("Changed");
+	if (!signal) return;
+	if (key === "Value" && isA(impl.className, "ValueBase")) {
+		signal.fire(impl.props.get(key));
+		return;
+	}
+	signal.fire(key);
+}
+
+/**
+ * Raise AncestryChanged across a subtree.
+ *
+ * Roblox fires it on every descendant with the SAME pair — the instance whose
+ * Parent actually changed, and that instance's new parent — so `moved` is held
+ * fixed as this walks down. Passing each descendant itself produced a pair that
+ * never existed in the tree (a grandchild is not a child of the moved node's
+ * new parent), which broke any handler that reads the arguments to work out
+ * what moved rather than just noticing that something did.
+ */
 function fireAncestryChanged(
 	impl: InstanceImpl,
+	moved: LoomInstance,
 	parentProxy: LoomInstance | undefined,
 ): void {
-	impl.eventSignals.get("AncestryChanged")?.fire(impl.proxy, parentProxy);
+	impl.eventSignals.get("AncestryChanged")?.fire(moved, parentProxy);
 	for (const child of impl.children) {
-		fireAncestryChanged(child, parentProxy);
+		fireAncestryChanged(child, moved, parentProxy);
 	}
 }
 
@@ -947,6 +994,17 @@ function setParent(impl: InstanceImpl, value: unknown): void {
 	if (value !== undefined && value !== null && !newParent) {
 		throw new TypeError(
 			`${getName(impl)}.Parent must be a LoomInstance or undefined`,
+		);
+	}
+	// Roblox's Destroy is "set Parent to nil and LOCK it", and the lock is load
+	// bearing here: this instance's signal maps were cleared on destroy, so a
+	// node that silently re-entered the tree would be encoded into Scene IR and
+	// painted as a zombie with every listener gone. `moveChildBefore` already
+	// assumes this throws.
+	if (impl.destroyed && newParent !== undefined) {
+		throw new Error(
+			`The Parent property of ${getName(impl)} is locked, current parent: NULL, ` +
+				`new parent ${getName(newParent)}`,
 		);
 	}
 	if (newParent === impl.parent) return;
@@ -969,7 +1027,12 @@ function setParent(impl: InstanceImpl, value: unknown): void {
 		newParent.eventSignals.get("ChildAdded")?.fire(impl.proxy);
 	}
 	impl.propSignals.get("Parent")?.fire();
-	fireAncestryChanged(impl, newParent?.proxy);
+	// Roblox's Changed fires for Parent too, and the classic removal detector is
+	// `inst.Changed:Connect(p => { if (p === "Parent" && !inst.Parent) … })`.
+	// GetPropertyChangedSignal("Parent") already worked, which is exactly what
+	// made the omission hard to see.
+	fireChanged(impl, "Parent");
+	fireAncestryChanged(impl, impl.proxy, newParent?.proxy);
 	if (oldParent) markDirty(oldParent.proxy);
 	if (newParent) markDirty(newParent.proxy);
 	markDirty(impl.proxy);
@@ -1242,14 +1305,22 @@ export function updateAbsoluteGeometry(
 	if (!impl) {
 		throw new Error("updateAbsoluteGeometry: value is not a LoomInstance");
 	}
+	// Both signals fire, and so does `Changed` — in the engine a geometry change
+	// is an ordinary property change, and code that funnels every reflow reaction
+	// through one `inst.Changed:Connect(prop => …)` rather than a
+	// GetPropertyChangedSignal per property saw nothing at all on a resize.
+	// `setFeedbackProperty` in this file already fires both; the asymmetry here
+	// was what made the omission read as accidental.
 	const prevPosition = impl.absolutePosition;
 	if (prevPosition.X !== position.X || prevPosition.Y !== position.Y) {
 		impl.absolutePosition = position;
 		impl.propSignals.get("AbsolutePosition")?.fire();
+		fireChanged(impl, "AbsolutePosition");
 	}
 	const prevSize = impl.absoluteSize;
 	if (prevSize.X !== size.X || prevSize.Y !== size.Y) {
 		impl.absoluteSize = size;
 		impl.propSignals.get("AbsoluteSize")?.fire();
+		fireChanged(impl, "AbsoluteSize");
 	}
 }

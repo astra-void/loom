@@ -758,3 +758,129 @@ describe("attributes", () => {
 		expect(getDirtyCount()).toBe(before);
 	});
 });
+
+describe("Changed, the way the engine raises it", () => {
+	it("does not fire when a value-type property is rewritten with an equal value", () => {
+		// Every imperative write path (a tween step, a vide effect, an animation
+		// loop) allocates a fresh datatype each frame. Comparing by identity made
+		// each of those a change, re-flushing the world at 60Hz for a value that
+		// never moved.
+		const frame = createInstance("Frame");
+		frame.Position = new UDim2(0, 10, 0, 20);
+		const changed = vi.fn();
+		const perProperty = vi.fn();
+		(frame.Changed as LoomSignal<[string]>).Connect(changed);
+		frame.GetPropertyChangedSignal("Position").Connect(perProperty);
+
+		frame.Position = new UDim2(0, 10, 0, 20);
+		expect(changed).not.toHaveBeenCalled();
+		expect(perProperty).not.toHaveBeenCalled();
+
+		frame.Position = new UDim2(0, 10, 0, 21);
+		expect(changed).toHaveBeenCalledWith("Position");
+		expect(perProperty).toHaveBeenCalledTimes(1);
+	});
+
+	it("fires for Parent, which is how non-React code detects removal", () => {
+		const parent = createInstance("Frame");
+		const child = createInstance("Frame");
+		child.Parent = parent;
+		const seen: string[] = [];
+		(child.Changed as LoomSignal<[string]>).Connect((prop) => seen.push(prop));
+
+		child.Parent = undefined;
+		expect(seen).toContain("Parent");
+	});
+
+	it("fires for AbsolutePosition and AbsoluteSize after a reflow", () => {
+		const frame = createInstance("Frame");
+		const seen: string[] = [];
+		(frame.Changed as LoomSignal<[string]>).Connect((prop) => seen.push(prop));
+
+		updateAbsoluteGeometry(frame, new Vector2(4, 5), new Vector2(60, 70));
+		expect(seen).toEqual(["AbsolutePosition", "AbsoluteSize"]);
+
+		// Change-gated: an identical reflow says nothing.
+		seen.length = 0;
+		updateAbsoluteGeometry(frame, new Vector2(4, 5), new Vector2(60, 70));
+		expect(seen).toEqual([]);
+	});
+
+	it("carries the new value, not the property name, on a ValueBase", () => {
+		// Roblox overrides Changed on IntValue/StringValue/… deliberately:
+		// `value.Changed:Connect(v => label.Text = tostring(v))` is the entire
+		// point of those objects. Handing that callback "Value" is a silent wrong
+		// answer — the label reads "Value" forever.
+		const value = createInstance("IntValue");
+		const seen: unknown[] = [];
+		(value.Changed as unknown as LoomSignal<[unknown]>).Connect((v) =>
+			seen.push(v),
+		);
+
+		value.Value = 7;
+		expect(seen).toEqual([7]);
+
+		// A non-Value property on the same object still reports its name.
+		value.Name = "Coins";
+		expect(seen).toEqual([7, "Name"]);
+	});
+});
+
+describe("Destroy, defined as 'set Parent to nil and lock it'", () => {
+	it("raises AncestryChanged and the Parent signals before tearing them down", () => {
+		const parent = createInstance("Frame");
+		const child = createInstance("Frame");
+		child.Parent = parent;
+		const ancestry = vi.fn();
+		const parentSignal = vi.fn();
+		const changed = vi.fn();
+		(
+			child.AncestryChanged as LoomSignal<
+				[LoomInstance, LoomInstance | undefined]
+			>
+		).Connect(ancestry);
+		child.GetPropertyChangedSignal("Parent").Connect(parentSignal);
+		(child.Changed as LoomSignal<[string]>).Connect(changed);
+
+		child.Destroy();
+		expect(ancestry).toHaveBeenCalledWith(child, undefined);
+		expect(parentSignal).toHaveBeenCalledTimes(1);
+		expect(changed).toHaveBeenCalledWith("Parent");
+	});
+
+	it("locks Parent afterwards instead of letting a zombie back into the tree", () => {
+		const host = createInstance("Frame");
+		const child = createInstance("Frame");
+		child.Parent = host;
+		child.Destroy();
+
+		// The signal maps were cleared on destroy, so a node that silently
+		// re-entered would be encoded into Scene IR and painted with every
+		// listener gone.
+		expect(() => {
+			child.Parent = host;
+		}).toThrow(/locked/);
+		expect(host.GetChildren()).toHaveLength(0);
+	});
+});
+
+describe("AncestryChanged arguments", () => {
+	it("reports the instance that moved, not each descendant", () => {
+		// Roblox fires the same pair on every descendant. Passing the descendant
+		// itself produced a pair that never existed in the tree.
+		const root = createInstance("Frame");
+		const moved = createInstance("Frame");
+		const grandchild = createInstance("Frame");
+		grandchild.Parent = moved;
+
+		const seen: Array<[LoomInstance, LoomInstance | undefined]> = [];
+		(
+			grandchild.AncestryChanged as LoomSignal<
+				[LoomInstance, LoomInstance | undefined]
+			>
+		).Connect((child, parent) => seen.push([child, parent]));
+
+		moved.Parent = root;
+		expect(seen).toEqual([[moved, root]]);
+	});
+});
