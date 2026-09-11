@@ -37,8 +37,8 @@ export type TargetsInput = string | string[] | true;
  * (anything but `/`). Everything else is matched literally.
  */
 export function globToRegExp(glob: string): RegExp {
-	const GLOBSTAR_SLASH = ""; // placeholder for `**/`
-	const GLOBSTAR = ""; // placeholder for `**`
+	const GLOBSTAR_SLASH = "\u0001"; // placeholder for `**/`
+	const GLOBSTAR = "\u0002"; // placeholder for `**`
 	const escaped = glob.replace(/[.+^${}()|[\]\\]/g, "\\$&");
 	const source = escaped
 		.replaceAll("**/", GLOBSTAR_SLASH)

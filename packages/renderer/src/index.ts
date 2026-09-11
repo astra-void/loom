@@ -575,7 +575,7 @@ export function shapedTextWidth(
 		const metrics = metricsOf(glyph);
 		total += metrics.advance;
 		if (previous !== undefined) {
-			const pair = `${previous} ${glyph}`;
+			const pair = `${previous}\u0000${glyph}`;
 			let kern = kerns.get(pair);
 			if (kern === undefined) {
 				kern =
@@ -767,7 +767,7 @@ export function scaledTextSize(request: {
 	const lineHeight = request.lineHeight ?? 1;
 	const key = `${min}-${max} ${width}x${height} ${lineHeight} ${
 		request.font.italic ? "italic " : ""
-	}${request.font.weight} ${request.font.family} ${text}`;
+	}${request.font.weight} ${request.font.family}\u0000${text}`;
 	const cached = scaledSizeCache.get(key);
 	if (cached !== undefined) return cached;
 

@@ -1098,7 +1098,7 @@ function localePart(
 	options: Intl.DateTimeFormatOptions,
 	part: string,
 ): string {
-	const key = `${locale} ${timeZone ?? ""} ${JSON.stringify(options)}`;
+	const key = `${locale}\u0000${timeZone ?? ""}\u0000${JSON.stringify(options)}`;
 	let formatter = FORMATTER_CACHE.get(key);
 	if (formatter === undefined) {
 		formatter = new Intl.DateTimeFormat(

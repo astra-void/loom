@@ -778,7 +778,7 @@ export function createDebugPanel(
 			row.chips?.map((chip) => `${chip.text}:${chip.kind ?? ""}`).join(",") ??
 				"",
 			row.onSelect ? "!" : "",
-		].join(" ");
+		].join("\u0000");
 	}
 
 	function fillChips(host: HTMLElement, chips: readonly Chip[]): void {
