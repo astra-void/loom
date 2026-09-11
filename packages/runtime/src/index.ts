@@ -31,8 +31,10 @@ import {
 	Color3,
 	ColorSequence,
 	ColorSequenceKeypoint,
+	Content,
 	DateTime,
 	Font,
+	NumberRange,
 	NumberSequence,
 	NumberSequenceKeypoint,
 	Random,
@@ -90,6 +92,8 @@ export function installGlobals(
 	target.ColorSequenceKeypoint = ColorSequenceKeypoint;
 	target.NumberSequence = NumberSequence;
 	target.NumberSequenceKeypoint = NumberSequenceKeypoint;
+	target.NumberRange = NumberRange;
+	target.Content = Content;
 	target.Rect = Rect;
 	target.CFrame = CFrame;
 	target.TweenInfo = TweenInfo;

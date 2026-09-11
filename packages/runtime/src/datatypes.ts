@@ -37,6 +37,16 @@ export class UDim2 {
 	readonly X: UDim;
 	readonly Y: UDim;
 	/**
+	 * `Width`/`Height` are the engine's aliases of `X`/`Y`, and they read far
+	 * better where a UDim2 is describing a size rather than a position.
+	 */
+	get Width(): UDim {
+		return this.X;
+	}
+	get Height(): UDim {
+		return this.Y;
+	}
+	/**
 	 * Matches roblox-ts's two `UDim2.new` forms, both of which compile to
 	 * `new UDim2(...)`: two `UDim`s (`new UDim2(xUDim, yUDim)`) or four numbers
 	 * (`new UDim2(xScale, xOffset, yScale, yOffset)`). Component code uses the
@@ -157,6 +167,38 @@ export class Vector2 {
 			? new Vector2(this.X / other, this.Y / other)
 			: new Vector2(this.X / other.X, this.Y / other.Y);
 	}
+	/** Each component rounded up, as `Vector2:Ceil()`. */
+	Ceil(): Vector2 {
+		return new Vector2(Math.ceil(this.X), Math.ceil(this.Y));
+	}
+	/** Each component rounded down. */
+	Floor(): Vector2 {
+		return new Vector2(Math.floor(this.X), Math.floor(this.Y));
+	}
+	/** Each component replaced by its sign: -1, 0 or 1. */
+	Sign(): Vector2 {
+		return new Vector2(Math.sign(this.X), Math.sign(this.Y));
+	}
+	/**
+	 * The angle between the two vectors in radians.
+	 *
+	 * Unsigned by default (0..pi, the shortest way round). `isSigned` gives the
+	 * signed angle instead, positive counter-clockwise, which is what code
+	 * rotating a handle toward the cursor actually wants.
+	 */
+	Angle(other: Vector2, isSigned = false): number {
+		const cross = this.X * other.Y - this.Y * other.X;
+		const dot = this.X * other.X + this.Y * other.Y;
+		const angle = Math.atan2(Math.abs(cross), dot);
+		return isSigned && cross < 0 ? -angle : angle;
+	}
+	/** Component-wise comparison within `epsilon`, for float drift. */
+	FuzzyEq(other: Vector2, epsilon = 1e-5): boolean {
+		return (
+			Math.abs(this.X - other.X) <= epsilon &&
+			Math.abs(this.Y - other.Y) <= epsilon
+		);
+	}
 	/** Roblox `tostring`: `"2, 8"`. */
 	toString(): string {
 		return `${this.X}, ${this.Y}`;
@@ -215,6 +257,45 @@ export class Vector3 {
 		return typeof other === "number"
 			? new Vector3(this.X * other, this.Y * other, this.Z * other)
 			: new Vector3(this.X * other.X, this.Y * other.Y, this.Z * other.Z);
+	}
+	/** roblox-ts `/` operator macro (vector or scalar). */
+	div(other: Vector3 | number): Vector3 {
+		return typeof other === "number"
+			? new Vector3(this.X / other, this.Y / other, this.Z / other)
+			: new Vector3(this.X / other.X, this.Y / other.Y, this.Z / other.Z);
+	}
+	/** Each component rounded up. */
+	Ceil(): Vector3 {
+		return new Vector3(Math.ceil(this.X), Math.ceil(this.Y), Math.ceil(this.Z));
+	}
+	/** Each component rounded down. */
+	Floor(): Vector3 {
+		return new Vector3(
+			Math.floor(this.X),
+			Math.floor(this.Y),
+			Math.floor(this.Z),
+		);
+	}
+	/** Each component replaced by its sign: -1, 0 or 1. */
+	Sign(): Vector3 {
+		return new Vector3(Math.sign(this.X), Math.sign(this.Y), Math.sign(this.Z));
+	}
+	/** The angle between the two vectors in radians, 0..pi. */
+	Angle(other: Vector3, axis?: Vector3): number {
+		const cross = this.Cross(other);
+		const dot = this.Dot(other);
+		const angle = Math.atan2(cross.Magnitude, dot);
+		// With an axis given, the sign says which side of it the rotation went.
+		if (axis && cross.Dot(axis) < 0) return -angle;
+		return angle;
+	}
+	/** Component-wise comparison within `epsilon`, for float drift. */
+	FuzzyEq(other: Vector3, epsilon = 1e-5): boolean {
+		return (
+			Math.abs(this.X - other.X) <= epsilon &&
+			Math.abs(this.Y - other.Y) <= epsilon &&
+			Math.abs(this.Z - other.Z) <= epsilon
+		);
 	}
 	/** Roblox `tostring`: `"1, 2, 3"`. */
 	toString(): string {
@@ -350,6 +431,21 @@ export class Font {
 		);
 	}
 
+	/**
+	 * `Font.fromId(12345678, …)` — a family uploaded to Roblox rather than one
+	 * the engine ships. The preview cannot fetch an asset-id font, so the family
+	 * is recorded as its `rbxassetid://` URI and the renderer falls back to a
+	 * system face for it, warning once the way it does for any family with no
+	 * face loaded.
+	 */
+	static fromId(
+		assetId: number,
+		weight?: EnumItem<"FontWeight">,
+		style?: EnumItem<"FontStyle">,
+	): Font {
+		return new Font(`rbxassetid://${assetId}`, weight, style);
+	}
+
 	/** `Font.fromName("SourceSansPro", …)` — family by bare name, not URI. */
 	static fromName(
 		name: string,
@@ -459,10 +555,20 @@ export class Color3 {
 	 * would render a color the same source never shows in Studio.
 	 */
 	static fromHex(hex: string): Color3 {
-		const value = hex.startsWith("#") ? hex.slice(1) : hex;
+		const raw = hex.startsWith("#") ? hex.slice(1) : hex;
+		// The engine takes the CSS three-digit shorthand too, where each digit is
+		// doubled: `#fff` is white, not an error.
+		const value =
+			raw.length === 3
+				? raw
+						.split("")
+						.map((digit) => digit + digit)
+						.join("")
+				: raw;
 		if (!/^[0-9a-fA-F]{6}$/.test(value)) {
 			throw new Error(
-				`[loom] Color3.fromHex expected exactly 6 hexadecimal digits, received "${hex}"`,
+				"[loom] Color3.fromHex expected three or six hexadecimal digits, " +
+					`received "${hex}"`,
 			);
 		}
 		return Color3.fromRGB(
@@ -555,6 +661,10 @@ export class ColorSequenceKeypoint {
 		readonly Time: number,
 		readonly Value: Color3,
 	) {}
+	/** roblox-ts spells every datatype construction `.new`, including this one. */
+	static new(time: number, value: Color3): ColorSequenceKeypoint {
+		return new ColorSequenceKeypoint(time, value);
+	}
 }
 
 /** A Roblox `ColorSequence` (gradient color ramp). */
@@ -589,6 +699,14 @@ export class NumberSequenceKeypoint {
 		readonly Value: number,
 		readonly Envelope: number = 0,
 	) {}
+	/** roblox-ts spells every datatype construction `.new`, including this one. */
+	static new(
+		time: number,
+		value: number,
+		envelope = 0,
+	): NumberSequenceKeypoint {
+		return new NumberSequenceKeypoint(time, value, envelope);
+	}
 }
 
 /**
@@ -1291,6 +1409,66 @@ function formatDateTime(
  * Falls back to `Object.is` for everything else, so primitives, functions and
  * plain objects keep their usual identity semantics.
  */
+/**
+ * `NumberRange` — an inclusive numeric span.
+ *
+ * Constructible in roblox-ts (`new NumberRange(0, 1)`), and reached from GUI
+ * code two ways: a shared config module that also describes non-GUI systems and
+ * gets imported at module scope, and any decorative emitter a ViewportFrame or
+ * a Studio-style property panel drives. Its sibling `NumberSequence` was added
+ * for exactly this reason; the missing global was the same ReferenceError.
+ */
+export class NumberRange {
+	readonly Min: number;
+	readonly Max: number;
+	constructor(min: number, max = min) {
+		if (max < min) {
+			throw new Error(
+				`[loom] NumberRange: Max (${max}) must be at least Min (${min})`,
+			);
+		}
+		this.Min = min;
+		this.Max = max;
+	}
+	static new(min: number, max?: number): NumberRange {
+		return new NumberRange(min, max);
+	}
+	/** Roblox `tostring`: `"0 1"`. */
+	toString(): string {
+		return `${this.Min} ${this.Max}`;
+	}
+}
+
+/**
+ * `Content` — the modern asset value behind `ImageLabel.ImageContent`,
+ * `ImageButton.ImageContent` and `VideoFrame.VideoContent`, which is where
+ * Roblox is steering the old `Image`/`Video` string properties.
+ *
+ * loom already builds those instances, so an app could make the object and not
+ * the value its content property now takes: `Content.fromUri("rbxassetid://1")`
+ * was a ReferenceError at render.
+ */
+export class Content {
+	private constructor(
+		readonly SourceType: "None" | "Uri" | "Object",
+		readonly Uri: string | undefined,
+		// biome-ignore lint/suspicious/noShadowRestrictedNames: `Object` is the engine's name for this property, and a datatype that renamed it would not be the datatype. It is a class field, so nothing here loses the global.
+		readonly Object: unknown,
+	) {}
+	/** The empty content, which is what an unset content property reads as. */
+	static readonly none = new Content("None", undefined, undefined);
+	static fromUri(uri: string): Content {
+		return new Content("Uri", uri, undefined);
+	}
+	static fromObject(object: unknown): Content {
+		return new Content("Object", undefined, object);
+	}
+	toString(): string {
+		if (this.SourceType === "Uri") return `Content(${this.Uri})`;
+		return `Content(${this.SourceType})`;
+	}
+}
+
 export function robloxEquals(a: unknown, b: unknown): boolean {
 	if (Object.is(a, b)) return true;
 	if (
@@ -1315,6 +1493,14 @@ export function robloxEquals(a: unknown, b: unknown): boolean {
 		return a.R === b.R && a.G === b.G && a.B === b.B;
 	if (a instanceof Rect && b instanceof Rect)
 		return robloxEquals(a.Min, b.Min) && robloxEquals(a.Max, b.Max);
+	if (a instanceof NumberRange && b instanceof NumberRange)
+		return a.Min === b.Min && a.Max === b.Max;
+	if (a instanceof Content && b instanceof Content)
+		return (
+			a.SourceType === b.SourceType &&
+			a.Uri === b.Uri &&
+			Object.is(a.Object, b.Object)
+		);
 	if (a instanceof Font && b instanceof Font)
 		return (
 			a.Family === b.Family && a.Weight === b.Weight && a.Style === b.Style

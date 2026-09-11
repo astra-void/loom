@@ -20,8 +20,10 @@ import {
 	Color3,
 	ColorSequence,
 	ColorSequenceKeypoint,
+	Content,
 	DateTime,
 	Font,
+	NumberRange,
 	NumberSequence,
 	NumberSequenceKeypoint,
 	Random,
@@ -68,6 +70,8 @@ export function typeOf(value: unknown): string {
 	if (value instanceof Color3) return "Color3";
 	if (value instanceof ColorSequence) return "ColorSequence";
 	if (value instanceof ColorSequenceKeypoint) return "ColorSequenceKeypoint";
+	if (value instanceof NumberRange) return "NumberRange";
+	if (value instanceof Content) return "Content";
 	if (value instanceof NumberSequence) return "NumberSequence";
 	if (value instanceof NumberSequenceKeypoint) return "NumberSequenceKeypoint";
 	// `Font` is the modern FontFace datatype. A component that accepts either it

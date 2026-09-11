@@ -3,8 +3,10 @@ import {
 	Color3,
 	ColorSequence,
 	ColorSequenceKeypoint,
+	Content,
 	DateTime,
 	Font,
+	NumberRange,
 	NumberSequence,
 	NumberSequenceKeypoint,
 	Random,
@@ -140,14 +142,13 @@ describe("Color3.fromHex", () => {
 		expect(a).toEqual(b);
 	});
 
-	it("rejects everything that is not exactly six hex digits", () => {
-		// CSS shorthand, alpha, `0x` notation, stray whitespace and non-hex digits
-		// are all refused rather than silently reinterpreted.
+	it("rejects everything that is not three or six hex digits", () => {
+		// Alpha, `0x` notation, stray whitespace and non-hex digits are all
+		// refused rather than silently reinterpreted. The three-digit CSS
+		// shorthand IS accepted — the engine takes it — and is covered below.
 		for (const hex of [
 			"",
 			"#",
-			"FFF",
-			"#FFF",
 			"FFFFFFFF",
 			"#FFFFFFFF",
 			"GG0000",
@@ -156,7 +157,7 @@ describe("Color3.fromHex", () => {
 			" FF0000 ",
 		]) {
 			expect(() => Color3.fromHex(hex)).toThrow(
-				`[loom] Color3.fromHex expected exactly 6 hexadecimal digits, received "${hex}"`,
+				`[loom] Color3.fromHex expected three or six hexadecimal digits, received "${hex}"`,
 			);
 		}
 	});
@@ -864,5 +865,79 @@ describe("DateTime", () => {
 		).toBe(false);
 		expect(robloxEquals(stamp, new UDim(0, 0))).toBe(false);
 		expect(toPropertyValue(stamp)).toBeUndefined();
+	});
+});
+
+describe("datatype members the audit found missing", () => {
+	it("aliases UDim2.X/Y as Width/Height", () => {
+		const size = new UDim2(0, 120, 1, -8);
+		expect(size.Width).toBe(size.X);
+		expect(size.Height).toBe(size.Y);
+	});
+
+	it("takes the three-digit hex shorthand, as the engine does", () => {
+		expect(Color3.fromHex("#fff")).toEqual(Color3.fromHex("#ffffff"));
+		expect(Color3.fromHex("0af")).toEqual(Color3.fromHex("00aaff"));
+		expect(() => Color3.fromHex("#ff")).toThrow(/three or six/);
+	});
+
+	it("rounds, signs and compares Vector2s", () => {
+		expect(new Vector2(1.2, -1.2).Ceil()).toEqual(new Vector2(2, -1));
+		expect(new Vector2(1.8, -1.8).Floor()).toEqual(new Vector2(1, -2));
+		expect(new Vector2(-3, 0).Sign()).toEqual(new Vector2(-1, 0));
+		expect(new Vector2(1, 0).FuzzyEq(new Vector2(1 + 1e-7, 0))).toBe(true);
+	});
+
+	it("measures the angle between two Vector2s, signed on request", () => {
+		const right = new Vector2(1, 0);
+		expect(right.Angle(new Vector2(0, 1))).toBeCloseTo(Math.PI / 2);
+		// Unsigned takes the short way round; signed says which way.
+		expect(right.Angle(new Vector2(0, -1))).toBeCloseTo(Math.PI / 2);
+		expect(right.Angle(new Vector2(0, -1), true)).toBeCloseTo(-Math.PI / 2);
+	});
+
+	it("gives Vector3 the / operator macro roblox-ts compiles to", () => {
+		expect(new Vector3(6, 8, 10).div(2)).toEqual(new Vector3(3, 4, 5));
+		expect(new Vector3(6, 8, 10).div(new Vector3(2, 4, 5))).toEqual(
+			new Vector3(3, 2, 2),
+		);
+	});
+
+	it("constructs the sequence keypoints the roblox-ts way", () => {
+		expect(ColorSequenceKeypoint.new(0.5, Color3.fromRGB(1, 2, 3)).Time).toBe(
+			0.5,
+		);
+		const stop = NumberSequenceKeypoint.new(0.25, 1, 0.1);
+		expect([stop.Time, stop.Value, stop.Envelope]).toEqual([0.25, 1, 0.1]);
+	});
+
+	it("builds a Font from an uploaded asset id", () => {
+		const font = Font.fromId(1234, Enum.FontWeight.Bold);
+		expect(font.Family).toBe("rbxassetid://1234");
+		expect(font.Weight).toBe(Enum.FontWeight.Bold);
+	});
+
+	it("has NumberRange, with Max defaulting to Min", () => {
+		expect(new NumberRange(5).Max).toBe(5);
+		const range = new NumberRange(0, 10);
+		expect([range.Min, range.Max]).toEqual([0, 10]);
+		expect(() => new NumberRange(10, 0)).toThrow(/at least Min/);
+	});
+
+	it("has Content, the value the modern image properties take", () => {
+		const uri = Content.fromUri("rbxassetid://9");
+		expect(uri.SourceType).toBe("Uri");
+		expect(uri.Uri).toBe("rbxassetid://9");
+		expect(Content.none.SourceType).toBe("None");
+	});
+
+	it("compares the new value types by value", () => {
+		expect(robloxEquals(new NumberRange(0, 1), new NumberRange(0, 1))).toBe(
+			true,
+		);
+		expect(robloxEquals(new NumberRange(0, 1), new NumberRange(0, 2))).toBe(
+			false,
+		);
+		expect(robloxEquals(Content.fromUri("a"), Content.fromUri("a"))).toBe(true);
 	});
 });

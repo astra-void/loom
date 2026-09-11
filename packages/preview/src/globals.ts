@@ -106,6 +106,8 @@ declare global {
 	const CFrame: typeof runtime.CFrame;
 	const TweenInfo: typeof runtime.TweenInfo;
 	const Font: typeof runtime.Font;
+	const NumberRange: typeof runtime.NumberRange;
+	const Content: typeof runtime.Content;
 	const Random: typeof runtime.Random;
 	const DateTime: typeof runtime.DateTime;
 	const Enum: typeof runtime.Enum;
