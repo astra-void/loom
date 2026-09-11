@@ -21,6 +21,9 @@ import {
 	ColorSequence,
 	ColorSequenceKeypoint,
 	DateTime,
+	Font,
+	NumberSequence,
+	NumberSequenceKeypoint,
 	Random,
 	Rect,
 	TweenInfo,
@@ -65,6 +68,12 @@ export function typeOf(value: unknown): string {
 	if (value instanceof Color3) return "Color3";
 	if (value instanceof ColorSequence) return "ColorSequence";
 	if (value instanceof ColorSequenceKeypoint) return "ColorSequenceKeypoint";
+	if (value instanceof NumberSequence) return "NumberSequence";
+	if (value instanceof NumberSequenceKeypoint) return "NumberSequenceKeypoint";
+	// `Font` is the modern FontFace datatype. A component that accepts either it
+	// or an `Enum.Font` branches on `typeIs(props.font, "Font")`, and answering
+	// "table" sent every such component down the wrong branch.
+	if (value instanceof Font) return "Font";
 	if (value instanceof Rect) return "Rect";
 	if (value instanceof CFrame) return "CFrame";
 	if (value instanceof TweenInfo) return "TweenInfo";
@@ -138,9 +147,52 @@ export function print(...args: unknown[]): void {
 	console.log(...args);
 }
 
+/**
+ * Luau's number→string conversion, which is `%.14g`, not JavaScript's
+ * shortest-round-trip.
+ *
+ * The difference is visible in the preview's whole reason for existing: the
+ * engine renders `0.1 + 0.2` as `0.3` and `100 / 3` as `33.333333333333`,
+ * where `String(n)` gives `0.30000000000000004` and `33.333333333333336`. A
+ * label bound to either shows different text in loom than in Roblox.
+ *
+ * `%g` also means integers print without a decimal point and large or tiny
+ * magnitudes switch to exponent form at the same thresholds C uses.
+ */
+export function luaNumberToString(n: number): string {
+	if (Number.isNaN(n)) return "nan";
+	if (n === Number.POSITIVE_INFINITY) return "inf";
+	if (n === Number.NEGATIVE_INFINITY) return "-inf";
+	if (Number.isInteger(n) && Math.abs(n) < 1e15) {
+		// Luau prints whole doubles without a decimal point, and `-0` as `-0`.
+		return Object.is(n, -0) ? "-0" : String(n);
+	}
+	const PRECISION = 14;
+	const exponent = Math.floor(Math.log10(Math.abs(n)));
+	// C's `%g` picks fixed notation when -4 <= exponent < precision.
+	if (exponent < -4 || exponent >= PRECISION) {
+		// Exponent form, with the trailing zeros of the mantissa trimmed and at
+		// least two exponent digits, as C prints it.
+		const [mantissa, exp] = n.toExponential(PRECISION - 1).split("e") as [
+			string,
+			string,
+		];
+		const trimmed = mantissa.includes(".")
+			? mantissa.replace(/\.?0+$/, "")
+			: mantissa;
+		const sign = exp.startsWith("-") ? "-" : "+";
+		const digits = exp.replace(/^[+-]/, "").padStart(2, "0");
+		return `${trimmed}e${sign}${digits}`;
+	}
+	const fixed = n.toFixed(Math.max(0, PRECISION - 1 - exponent));
+	return fixed.includes(".") ? fixed.replace(/\.?0+$/, "") : fixed;
+}
+
 /** Luau `tostring` — `nil` for nullish, `Enum.X.Y` for enum items. */
 export function tostring(value: unknown): string {
 	if (value === undefined || value === null) return "nil";
+	// Numbers go through Luau's `%.14g`, not JavaScript's `String`.
+	if (typeof value === "number") return luaNumberToString(value);
 	return String(value);
 }
 
@@ -342,23 +394,44 @@ function escapeRegExpSetChar(c: string): string {
 	return /[\\\]^[-]/.test(c) ? `\\${c}` : c;
 }
 
+/**
+ * The character-set body of each Lua class, without its brackets — the one
+ * place the ranges are written down, so the in-set, out-of-set and negated
+ * spellings cannot drift apart.
+ *
+ * Lua's classes are ASCII, not Unicode: `%a` is `isalpha` in the C locale, so
+ * `é` is not a letter and `%s` is the six ASCII space characters rather than
+ * JavaScript's `\s` (which includes NBSP and the Unicode separators). Matching
+ * the engine matters more here than matching JavaScript's intuition.
+ */
+const LUA_CLASS_BODY: Readonly<Record<string, string>> = {
+	a: "A-Za-z",
+	d: "0-9",
+	l: "a-z",
+	u: "A-Z",
+	w: "A-Za-z0-9",
+	s: " \\t\\n\\v\\f\\r",
+	// `%p`: printable, not alphanumeric, not space — the ASCII punctuation runs.
+	p: "!-/:-@\\[-`{-~",
+	x: "0-9A-Fa-f",
+	c: "\\x00-\\x1f\\x7f",
+	// `%g`: printable except space, i.e. everything from `!` to `~`.
+	g: "!-~",
+};
+
+/**
+ * One Lua character class as a regex fragment. An upper-case letter is the
+ * complement of its lower-case class (`%D` is "not a digit"), which regex can
+ * only spell as a negated set — so a negated class has no in-set form, and the
+ * caller has to reject `[%D]` rather than mistranslate it.
+ */
 function luaClass(c: string, inSet: boolean): string | undefined {
-	switch (c) {
-		case "a":
-			return inSet ? "A-Za-z" : "[A-Za-z]";
-		case "d":
-			return inSet ? "0-9" : "[0-9]";
-		case "l":
-			return inSet ? "a-z" : "[a-z]";
-		case "u":
-			return inSet ? "A-Z" : "[A-Z]";
-		case "w":
-			return inSet ? "A-Za-z0-9" : "[A-Za-z0-9]";
-		case "s":
-			return inSet ? "\\s" : "[\\s]";
-		default:
-			return undefined;
-	}
+	const lower = c.toLowerCase();
+	const body = LUA_CLASS_BODY[lower];
+	if (body === undefined) return undefined;
+	const negated = c !== lower;
+	if (negated) return inSet ? undefined : `[^${body}]`;
+	return inSet ? body : `[${body}]`;
 }
 
 /**
@@ -374,12 +447,12 @@ function luaPatternToRegExp(pattern: string): RegExp | undefined {
 		if (ch === "%") {
 			const next = pattern.charAt(i + 1);
 			if (next === "") return undefined;
-			if (/[a-z]/.test(next)) {
+			if (/[1-9]/.test(next)) {
+				out += `\\${next}`; // %1-%9 back-reference to a capture
+			} else if (/[a-zA-Z]/.test(next)) {
 				const cls = luaClass(next, false);
-				if (cls === undefined) return undefined; // %b, %f, … unsupported
+				if (cls === undefined) return undefined; // %b, %f — not regular
 				out += cls;
-			} else if (/[A-Z]/.test(next)) {
-				return undefined; // negated classes unsupported
 			} else {
 				out += escapeRegExpChar(next); // %-, %., %% → literal
 			}
@@ -402,12 +475,13 @@ function luaPatternToRegExp(pattern: string): RegExp | undefined {
 				if (c === "%") {
 					const next = pattern.charAt(i + 1);
 					if (next === "") return undefined;
-					if (/[a-z]/.test(next)) {
+					if (/[a-zA-Z]/.test(next)) {
+						// A negated class inside a set (`[%D%s]`) has no regex
+						// spelling — a character class cannot hold a complement — so
+						// this bails rather than mistranslating it.
 						const cls = luaClass(next, true);
 						if (cls === undefined) return undefined;
 						set += cls;
-					} else if (/[A-Z]/.test(next)) {
-						return undefined;
 					} else {
 						set += escapeRegExpSetChar(next);
 					}
@@ -446,6 +520,34 @@ function luaPatternToRegExp(pattern: string): RegExp | undefined {
 
 function escapeWholePattern(pattern: string): RegExp {
 	return new RegExp(pattern.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&"), "g");
+}
+
+/** The characters that make a string a Lua *pattern* rather than plain text. */
+const LUA_MAGIC = /[$%^*+?.()[\]-]/;
+
+/**
+ * What to do with a pattern {@link luaPatternToRegExp} could not translate.
+ *
+ * Falling back to a literal search is right for a pattern that never was one —
+ * `string.find(path, "/")` — and quietly wrong for anything else. `%b()` or
+ * `[%D]` matched literally finds nothing, and nothing is a perfectly ordinary
+ * answer from `find`/`match`, so the failure reaches the UI as an empty label
+ * or a parser that skipped a line, with no diagnostic anywhere. Since the
+ * pattern text says which case this is, a pattern carrying magic characters
+ * throws by name instead of guessing.
+ */
+function untranslatablePattern(
+	pattern: string,
+	fn: string,
+): RegExp | undefined {
+	if (!LUA_MAGIC.test(pattern)) return escapeWholePattern(pattern);
+	throw new Error(
+		`[loom] string.${fn}: the Lua pattern ${JSON.stringify(pattern)} uses a ` +
+			"construct loom cannot translate to a JavaScript RegExp — `%b`, `%f`, " +
+			"or a negated class inside a set like `[%D]`. Matching it as literal " +
+			"text would silently find the wrong thing, so this throws instead. " +
+			"Rewrite the pattern, or do the match with a RegExp directly.",
+	);
 }
 
 /**
@@ -804,14 +906,23 @@ export const string = {
 		pattern: string,
 		init = 1,
 		plain = false,
-	): [number, number] | [] {
+	): [number, number, ...string[]] | [] {
 		const from = searchStart(init, s.length);
 		if (!plain) {
-			const re = luaPatternToRegExp(pattern);
+			const re =
+				luaPatternToRegExp(pattern) ?? untranslatablePattern(pattern, "find");
 			if (re) {
 				re.lastIndex = from;
 				const match = re.exec(s);
-				return match ? [match.index + 1, match.index + match[0].length] : [];
+				if (!match) return [];
+				// Luau returns `start, end, cap1, cap2, …`, and roblox-ts reads the
+				// whole thing as a LuaTuple — `const [s, e, key] = string.find(…)`.
+				// Dropping the captures made every such destructure yield nil for
+				// the part the caller actually wanted.
+				const caps = match
+					.slice(1)
+					.map((capture) => (capture === undefined ? "" : capture));
+				return [match.index + 1, match.index + match[0].length, ...caps];
 			}
 		}
 		const index = s.indexOf(pattern, from);
@@ -843,7 +954,9 @@ export const string = {
 		maxCount?: number,
 	): [string, number] {
 		const limit = maxCount ?? Number.POSITIVE_INFINITY;
-		const re = luaPatternToRegExp(pattern) ?? escapeWholePattern(pattern);
+		const re =
+			luaPatternToRegExp(pattern) ?? untranslatablePattern(pattern, "gsub");
+		if (!re) return [s, 0];
 		let count = 0;
 		const result = s.replace(re, (...args) => {
 			const match = args[0] as string;
@@ -878,7 +991,8 @@ export const string = {
 	 */
 	match(s: string, pattern: string, init = 1): string[] {
 		const from = searchStart(init, s.length);
-		const re = luaPatternToRegExp(pattern);
+		const re =
+			luaPatternToRegExp(pattern) ?? untranslatablePattern(pattern, "match");
 		if (re) {
 			re.lastIndex = from;
 			const found = re.exec(s);
@@ -891,7 +1005,9 @@ export const string = {
 	 * `match` returns them, so `for (const [k, v] of string.gmatch(s, …))` works.
 	 */
 	*gmatch(s: string, pattern: string): IterableIterator<string[]> {
-		const re = luaPatternToRegExp(pattern) ?? escapeWholePattern(pattern);
+		const re =
+			luaPatternToRegExp(pattern) ?? untranslatablePattern(pattern, "gmatch");
+		if (!re) return;
 		re.lastIndex = 0;
 		let found = re.exec(s);
 		while (found) {

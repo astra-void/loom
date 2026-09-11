@@ -1,5 +1,14 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { CFrame, Color3, Rect, UDim2, Vector2, Vector3 } from "./datatypes";
+import {
+	CFrame,
+	Color3,
+	Font,
+	NumberSequence,
+	Rect,
+	UDim2,
+	Vector2,
+	Vector3,
+} from "./datatypes";
 import { Enum } from "./enums";
 import { createInstance } from "./instance";
 import {
@@ -1350,5 +1359,87 @@ describe("the Array.prototype.sort patch", () => {
 		expect(
 			Object.prototype.propertyIsEnumerable.call(Array.prototype, "sort"),
 		).toBe(false);
+	});
+});
+
+describe("Luau number formatting", () => {
+	// The engine converts with `%.14g`, not JavaScript's shortest round-trip, and
+	// the preview's whole job is showing the text the engine will show.
+	it("prints what the engine prints, not what String() prints", () => {
+		expect(tostring(0.1 + 0.2)).toBe("0.3");
+		expect(String(0.1 + 0.2)).toBe("0.30000000000000004");
+		expect(tostring(100 / 3)).toBe("33.333333333333");
+	});
+
+	it("keeps whole numbers integral and spells the specials Lua's way", () => {
+		expect(tostring(5)).toBe("5");
+		expect(tostring(-0)).toBe("-0");
+		expect(tostring(Number.POSITIVE_INFINITY)).toBe("inf");
+		expect(tostring(Number.NEGATIVE_INFINITY)).toBe("-inf");
+		expect(tostring(Number.NaN)).toBe("nan");
+	});
+
+	it("switches to exponent form at C's thresholds, with two exponent digits", () => {
+		expect(tostring(1e20)).toBe("1e+20");
+		expect(tostring(0.00001)).toBe("1e-05");
+		// Just inside the fixed-notation window.
+		expect(tostring(0.0001)).toBe("0.0001");
+	});
+});
+
+describe("Lua pattern classes", () => {
+	it("supports the classes that used to fall through to literal matching", () => {
+		expect(string.gsub("a.b,c!", "%p", "")[0]).toBe("abc");
+		expect(string.match("ff0a", "%x+")[0]).toBe("ff0a");
+		expect(string.match("hi there", "%g+")[0]).toBe("hi");
+	});
+
+	it("supports negated classes outside a set", () => {
+		expect(string.match("abc123", "%D+")[0]).toBe("abc");
+		expect(string.gsub("a1b2", "%A", "")[0]).toBe("ab");
+		expect(string.gsub("a b\tc", "%S", "")[0]).toBe(" \t");
+	});
+
+	it("supports %1-%9 back-references", () => {
+		expect(string.match("abab", "(ab)%1")[0]).toBe("ab");
+	});
+
+	it("matches Lua's ASCII classes rather than JavaScript's Unicode ones", () => {
+		// `\s` in JS includes NBSP; Lua's %s is the six ASCII space characters.
+		expect(string.gsub("a\u00a0b", "%s", "")[0]).toBe("a\u00a0b");
+	});
+
+	it("throws on a pattern it cannot translate instead of matching it literally", () => {
+		// `%b` and a negated class inside a set have no RegExp spelling. Matching
+		// the pattern text literally finds nothing, and "nothing" is an ordinary
+		// answer from match/find — so the wrongness would never surface.
+		expect(() => string.match("(a(b))", "%b()")).toThrow(/cannot translate/);
+		expect(() => string.gsub("x", "[%D]", "")).toThrow(/cannot translate/);
+	});
+
+	it("still treats a pattern-free string as literal text", () => {
+		expect(string.find("a/b", "/")[0]).toBe(2);
+		expect(string.gsub("a/b", "/", "-")[0]).toBe("a-b");
+	});
+});
+
+describe("string.find captures", () => {
+	// Luau returns `start, end, cap1, …` and roblox-ts destructures the lot.
+	it("returns the captures after the [start, end] pair", () => {
+		const found = string.find("key=value", "(%w+)=");
+		expect(found[0]).toBe(1);
+		expect(found[1]).toBe(4);
+		expect(found[2]).toBe("key");
+	});
+
+	it("returns just the span when the pattern captures nothing", () => {
+		expect(string.find("key=value", "=")).toEqual([4, 4]);
+	});
+});
+
+describe("typeOf on the datatypes loom ships", () => {
+	it("names Font and the number sequences instead of saying table", () => {
+		expect(typeOf(new Font("rbxasset://fonts/x.json"))).toBe("Font");
+		expect(typeOf(new NumberSequence(0))).toBe("NumberSequence");
 	});
 });
