@@ -107,6 +107,29 @@ describe("mountSync world", () => {
 		expect(label?.textContent).toBe("hi");
 	});
 
+	it("names an instance after its key, as React-Lua does", () => {
+		function Panel(): ReactElement {
+			// No key of its own: the nearest keyed ancestor's key names it.
+			return createElement("frame", {});
+		}
+		const root = mountWith(
+			createElement(
+				"frame",
+				{ key: "Card" },
+				createElement("textlabel", { key: "Title", Text: "hi" }),
+				createElement(Panel, { key: "Body" }),
+				createElement("frame", { key: "Ignored", Name: "Explicit" }),
+			),
+		);
+		const card = root.world.defaultGui.FindFirstChild("Card") as LoomInstance;
+		expect(card).toBeDefined();
+		expect(card.FindFirstChild("Title")?.ClassName).toBe("TextLabel");
+		expect(card.FindFirstChild("Body")?.ClassName).toBe("Frame");
+		// An explicit `Name` prop still wins over the key.
+		expect(card.FindFirstChild("Explicit")).toBeDefined();
+		expect(card.FindFirstChild("Ignored")).toBeUndefined();
+	});
+
 	it("maps modifier intrinsics the fallback casing would mangle", () => {
 		const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 		const root = mountWith(

@@ -1185,6 +1185,27 @@ function containerTarget(
 		: container.defaultGui;
 }
 
+/** The slice of a React fiber {@link nameFromKey} walks. */
+interface KeyedFiber {
+	key: string | null;
+	return: KeyedFiber | null;
+}
+
+/**
+ * The `Name` React-Lua gives a new host instance: its element's `key`, or else
+ * the key of the nearest keyed ancestor fiber, component or host alike
+ * (`ReactRobloxHostConfig.createInstance`, a deviation kept for Roact
+ * compatibility). roblox-ts code leans on it — `<frame key="Content">` is how
+ * `FindFirstChild("Content")` finds anything — so without it every instance
+ * kept its class name. An explicit `Name` prop is applied afterwards and wins.
+ */
+function nameFromKey(fiber: KeyedFiber | null | undefined): string | undefined {
+	for (let node = fiber; node; node = node.return) {
+		if (node.key !== null && node.key !== undefined) return node.key;
+	}
+	return undefined;
+}
+
 const hostConfig = {
 	supportsMutation: true,
 	supportsPersistence: false,
@@ -1194,8 +1215,16 @@ const hostConfig = {
 	scheduleTimeout: setTimeout,
 	cancelTimeout: clearTimeout,
 
-	createInstance(type: string, props: Props): LoomInstance {
+	createInstance(
+		type: string,
+		props: Props,
+		_root: HostContainer,
+		_context: object,
+		fiber: KeyedFiber,
+	): LoomInstance {
 		const instance = createLoomInstance(classNameOf(type));
+		const name = nameFromKey(fiber);
+		if (name !== undefined) instance.Name = name;
 		applyProps(instance, {}, props);
 		return instance;
 	},
