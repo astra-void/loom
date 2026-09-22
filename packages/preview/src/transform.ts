@@ -4,8 +4,9 @@
  * both are unit-testable without a Vite server.
  *
  * 1. `import X = require("m")` → an ESM namespace import.
- * 2. `.size()` / `.isEmpty()` → the symbol-keyed macro methods the runtime
- *    installs.
+ * 2. `.size()` / `.isEmpty()`, the Map methods `.get()` / `.set()` /
+ *    `.has()` / `.delete()`, and a string's `.match()` → the symbol-keyed
+ *    methods the runtime installs.
  */
 
 // Anchored to (indented) line starts so `const x = require(...)` and
@@ -38,6 +39,10 @@ export function rewriteImportEquals(code: string): string | undefined {
 // not valid JavaScript).
 const LUAU_MACRO_RE = /(\?)?\.(size|isEmpty)\(\)/g;
 
+// The Map methods and `match` take arguments, so only the `.name(` head is
+// replaced and the argument list is left exactly as written.
+const LUAU_MAP_RE = /(\?)?\.(get|set|has|delete|match)\(/g;
+
 /**
  * Rewrite the roblox-ts `.size()` / `.isEmpty()` macros to the symbol-keyed
  * methods `@loom-dev/runtime` installs on `Object.prototype`. Returns
@@ -58,14 +63,33 @@ const LUAU_MACRO_RE = /(\?)?\.(size|isEmpty)\(\)/g;
  * `size()`, so a project's unrelated method keeps working either way.
  */
 export function rewriteLuauMacros(code: string): string | undefined {
-	// Fast path: most files call neither.
-	if (!code.includes(".size()") && !code.includes(".isEmpty()")) {
-		return undefined;
+	const macros = code.includes(".size()") || code.includes(".isEmpty()");
+	const maps = /\.(?:get|set|has|delete|match)\(/.test(code);
+	// Fast path: most files call none of them.
+	if (!macros && !maps) return undefined;
+	let out = code;
+	if (macros) {
+		LUAU_MACRO_RE.lastIndex = 0;
+		out = out.replace(
+			LUAU_MACRO_RE,
+			(_match, optional: string | undefined, name: string) =>
+				`${optional ? "?." : ""}[Symbol.for("loom.${name}")]()`,
+		);
 	}
-	LUAU_MACRO_RE.lastIndex = 0;
-	return code.replace(
-		LUAU_MACRO_RE,
-		(_match, optional: string | undefined, name: string) =>
-			`${optional ? "?." : ""}[Symbol.for("loom.${name}")]()`,
-	);
+	if (maps) {
+		// roblox-ts `Map`s are Luau tables, and code leans on that: a plain table
+		// cast to `Map` and read with `.get(key)` compiles to `t[key]` there but
+		// throws here. The runtime's symbol methods defer to a receiver's own
+		// `get`/`set`/`has`/`delete`, so real `Map`s, `URLSearchParams` and user
+		// classes are untouched, and only a method-less table falls back to
+		// indexing. `.match(` rides along: on a string it is Luau's pattern
+		// match, which JS's RegExp `match` is not.
+		LUAU_MAP_RE.lastIndex = 0;
+		out = out.replace(
+			LUAU_MAP_RE,
+			(_match, optional: string | undefined, name: string) =>
+				`${optional ? "?." : ""}[Symbol.for("loom.${name}")](`,
+		);
+	}
+	return out;
 }

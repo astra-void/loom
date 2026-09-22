@@ -980,14 +980,19 @@ export function loomPreview(options: LoomPreviewOptions = {}): Plugin[] {
 
 	// The roblox-ts source rewrites (see `./transform.ts`): `import X =
 	// require("m")` before vite:esbuild lowers it to a bare `require()` call
-	// (which would throw in the browser), and the `.size()`/`.isEmpty()` macros.
+	// (which would throw in the browser), the `.size()`/`.isEmpty()` macros and
+	// the Map methods.
 	//
 	// Applies to any TypeScript outside node_modules — previewed workspace
 	// sources typically resolve through symlinks to real paths outside
 	// node_modules. Confining it there is what makes the macro rewrite safe: it
 	// is the previewed project that writes roblox-ts, and its dependencies,
-	// React and loom's own packages are all left alone. Runs in both serve and
-	// build, since esbuild and Rollup need the same source either way.
+	// React and loom's own packages are all left alone. Loom's own sources are
+	// excluded explicitly, as for the Promise injection below: in an in-repo
+	// preview they resolve outside node_modules too, and the `.get(` rewrite
+	// would reach modules that run before the runtime has installed the methods
+	// it rewrites to. Runs in both serve and build, since esbuild and Rollup
+	// need the same source either way.
 	const rbxtsSyntax: Plugin = {
 		name: "loom-preview:rbxts-syntax",
 		enforce: "pre",
@@ -995,6 +1000,7 @@ export function loomPreview(options: LoomPreviewOptions = {}): Plugin[] {
 			const file = id.split("?")[0] ?? id;
 			if (!/\.tsx?$/.test(file)) return;
 			if (file.includes("/node_modules/")) return;
+			if (isLoomSource(file)) return;
 			const withImports = rewriteImportEquals(code) ?? code;
 			const rewritten = rewriteLuauMacros(withImports) ?? withImports;
 			if (rewritten === code) return;

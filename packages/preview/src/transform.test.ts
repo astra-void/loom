@@ -83,6 +83,7 @@ describe("rewriteImportEquals", () => {
 
 describe("rewriteLuauMacros", () => {
 	const SIZE = 'Symbol.for("loom.size")';
+	const GET = 'Symbol.for("loom.get")';
 
 	it("rewrites a size() call to the symbol-keyed macro", () => {
 		expect(rewriteLuauMacros("if (entries.size() === 0) {}")).toBe(
@@ -107,7 +108,7 @@ describe("rewriteLuauMacros", () => {
 		// Only the `.size()` suffix is replaced, so an arbitrarily nested receiver
 		// comes through untouched — the reason this needs no parser.
 		expect(rewriteLuauMacros("entries.current.get(key.name)!.size()")).toBe(
-			`entries.current.get(key.name)![${SIZE}]()`,
+			`entries.current[${GET}](key.name)![${SIZE}]()`,
 		);
 	});
 
@@ -130,5 +131,26 @@ describe("rewriteLuauMacros", () => {
 	it("is idempotent", () => {
 		const once = rewriteLuauMacros("m.size()") as string;
 		expect(rewriteLuauMacros(once)).toBeUndefined();
+	});
+
+	it("rewrites the Map methods, keeping their arguments", () => {
+		expect(
+			rewriteLuauMacros("props.get(k); m.set(k, v); m?.has(k); m.delete(k);"),
+		).toBe(
+			'props[Symbol.for("loom.get")](k); m[Symbol.for("loom.set")](k, v); ' +
+				'm?.[Symbol.for("loom.has")](k); m[Symbol.for("loom.delete")](k);',
+		);
+	});
+
+	it("rewrites a string's match to the Luau one", () => {
+		expect(rewriteLuauMacros("text.match(pattern)[0]")).toBe(
+			'text[Symbol.for("loom.match")](pattern)[0]',
+		);
+	});
+
+	it("leaves a method that merely starts with a Map name alone", () => {
+		expect(
+			rewriteLuauMacros("tween.setGoal(1); x.getValue();"),
+		).toBeUndefined();
 	});
 });
