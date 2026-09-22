@@ -2288,6 +2288,32 @@ function definePatch(
 export const LUAU_SIZE = Symbol.for("loom.size");
 export const LUAU_IS_EMPTY = Symbol.for("loom.isEmpty");
 
+/**
+ * The symbol keys the same transform rewrites `.get()`, `.set()`, `.has()` and
+ * `.delete()` to.
+ *
+ * In roblox-ts a `Map` *is* a Luau table, so code routinely casts a plain
+ * table to one — `element.props as unknown as Map<…>` — and calls `.get(key)`,
+ * which compiles to `t[key]`. In the browser that table is a plain object with
+ * no `get`, and the call throws. Receivers that have the method (a real `Map`,
+ * `URLSearchParams`, a user class) keep their own; anything else is read as a
+ * table, the way Luau would.
+ */
+export const LUAU_MAP_GET = Symbol.for("loom.get");
+export const LUAU_MAP_SET = Symbol.for("loom.set");
+export const LUAU_MAP_HAS = Symbol.for("loom.has");
+export const LUAU_MAP_DELETE = Symbol.for("loom.delete");
+
+/**
+ * The symbol key the transform rewrites `.match()` to. On a string it is Luau's
+ * `string.match` — a Lua pattern in, a tuple out, empty when it misses — which
+ * is what `str.match(pattern)` compiles to in roblox-ts. JS's own
+ * `String.prototype.match` takes a RegExp and answers `null` on a miss, so the
+ * usual `str.match(p)[0] === undefined` test threw instead. A RegExp argument,
+ * or a receiver with its own `match`, keeps the JS method.
+ */
+export const LUAU_MATCH = Symbol.for("loom.match");
+
 /** A comparator the patched `sort` accepts: Lua's predicate or JS's number. */
 type SortComparator = (a: unknown, b: unknown) => unknown;
 
@@ -2344,6 +2370,63 @@ export function applyPrototypePatches(): void {
 			return (typeof size === "function" ? size.call(this) : size) === 0;
 		},
 	);
+	// The Map methods, same shape: the receiver's own method when it has one —
+	// called with every argument, since a user object's `get(a, b)` is not
+	// Map's — otherwise table semantics (`t[k]`, `t[k] = v`, `t[k] ~= nil`).
+	type Table = Record<PropertyKey, unknown>;
+	const mapMethod = (
+		key: symbol,
+		name: string,
+		fallback: (self: Table, ...args: unknown[]) => unknown,
+	): void => {
+		definePatch(
+			Object.prototype,
+			key,
+			function (this: Table, ...args: unknown[]) {
+				const method = this[name];
+				return typeof method === "function"
+					? method.apply(this, args)
+					: fallback(this, ...args);
+			},
+		);
+	};
+	mapMethod(LUAU_MAP_GET, "get", (self, key) => self[key as PropertyKey]);
+	mapMethod(LUAU_MAP_SET, "set", (self, key, value) => {
+		if (value === undefined) delete self[key as PropertyKey];
+		else self[key as PropertyKey] = value;
+		return self;
+	});
+	mapMethod(
+		LUAU_MAP_HAS,
+		"has",
+		(self, key) => self[key as PropertyKey] !== undefined,
+	);
+	definePatch(
+		Object.prototype,
+		LUAU_MATCH,
+		function (this: unknown, pattern: unknown, ...rest: unknown[]) {
+			if (
+				(typeof this === "string" || this instanceof String) &&
+				!(pattern instanceof RegExp)
+			) {
+				return string.match(
+					String(this),
+					String(pattern),
+					rest[0] as number | undefined,
+				);
+			}
+			const method = (this as Table).match;
+			if (typeof method !== "function") {
+				throw new TypeError("match is not a function");
+			}
+			return method.call(this, pattern, ...rest);
+		},
+	);
+	mapMethod(LUAU_MAP_DELETE, "delete", (self, key) => {
+		const had = self[key as PropertyKey] !== undefined;
+		delete self[key as PropertyKey];
+		return had;
+	});
 	definePatch(Array.prototype, "size", function (this: unknown[]) {
 		return this.length;
 	});
@@ -2483,6 +2566,7 @@ export function applyPrototypePatches(): void {
 	// RegExp, and `null` when it misses), and these patches land on the page's
 	// one shared prototype — forcing it the way `sub` is forced would rewrite
 	// `match` for React, Vite and every other library in the page, not just for
-	// previewed source. `string.match(s, pattern)`, the form roblox-ts code
-	// overwhelmingly writes for the Luau one, is unaffected.
+	// previewed source. The method form reaches Luau's through the transform
+	// instead (see {@link LUAU_MATCH}), and `string.match(s, pattern)` is
+	// unaffected either way.
 }

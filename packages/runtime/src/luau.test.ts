@@ -20,6 +20,11 @@ import {
 	debug,
 	ipairs,
 	LUAU_IS_EMPTY,
+	LUAU_MAP_DELETE,
+	LUAU_MAP_GET,
+	LUAU_MAP_HAS,
+	LUAU_MAP_SET,
+	LUAU_MATCH,
 	LUAU_SIZE,
 	LuauThread,
 	math,
@@ -900,6 +905,49 @@ describe("the size/isEmpty macro keys", () => {
 		expect(emptyOf(new Set([1]))).toBe(false);
 		expect(emptyOf([])).toBe(true);
 		expect(emptyOf([1])).toBe(false);
+	});
+
+	it("reads a plain table through the Map methods", () => {
+		const call = (value: object, key: symbol, ...args: unknown[]): unknown =>
+			(
+				(value as Record<symbol, unknown>)[key] as (...a: unknown[]) => unknown
+			).apply(value, args);
+		const table: Record<string, unknown> = { a: 1 };
+		expect(call(table, LUAU_MAP_GET, "a")).toBe(1);
+		expect(call(table, LUAU_MAP_HAS, "b")).toBe(false);
+		call(table, LUAU_MAP_SET, "b", 2);
+		expect(table.b).toBe(2);
+		expect(call(table, LUAU_MAP_DELETE, "a")).toBe(true);
+		expect("a" in table).toBe(false);
+		// Assigning nil removes the key, as in Luau.
+		call(table, LUAU_MAP_SET, "b", undefined);
+		expect("b" in table).toBe(false);
+	});
+
+	it("defers to a receiver's own Map methods, with every argument", () => {
+		const map = new Map([["a", 1]]);
+		const get = (value: object, ...args: unknown[]): unknown =>
+			(
+				(value as Record<symbol, unknown>)[LUAU_MAP_GET] as (
+					...a: unknown[]
+				) => unknown
+			).apply(value, args);
+		expect(get(map, "a")).toBe(1);
+		const registry = { get: (a: string, b: string) => `${a}:${b}` };
+		expect(get(registry, "x", "y")).toBe("x:y");
+	});
+
+	it("matches a string with a Lua pattern, keeping RegExp for JS", () => {
+		const match = (value: string, ...args: unknown[]): unknown =>
+			(
+				(Object(value) as Record<symbol, unknown>)[LUAU_MATCH] as (
+					...a: unknown[]
+				) => unknown
+			).apply(value, args);
+		expect(match("abc123", "%d+")).toEqual(["123"]);
+		// A miss is the empty tuple, so `[0] === undefined` holds rather than throws.
+		expect(match("abc", "%d+")).toEqual([]);
+		expect((match("abc123", /\d+/) as RegExpMatchArray)[0]).toBe("123");
 	});
 
 	it("stays invisible to enumeration and serialization", () => {
