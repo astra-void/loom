@@ -705,6 +705,24 @@ describe("createDomSession", () => {
 		session.dispose();
 	});
 
+	it("shows a Text a listener rewrote while the keystroke was landing", () => {
+		const { inst, session, input } = mountTextBox({
+			Text: prop.string("42"),
+		});
+		// The validation idiom: reject anything that is not digits.
+		inst.GetPropertyChangedSignal("Text").Connect(() => {
+			const text = String(inst.Text);
+			if (!/^\d*$/.test(text)) inst.Text = text.replace(/\D/g, "");
+		});
+		input.value = "42a";
+		input.dispatchEvent(new Event("input", { bubbles: true }));
+		expect(inst.Text).toBe("42");
+		// Typed-then-reverted nets out to no scene change, so the next patch would
+		// never touch the input; the keystroke has to be undone here.
+		expect(input.value).toBe("42");
+		session.dispose();
+	});
+
 	it("clears on focus by default (ClearTextOnFocus) and fires Focused/FocusLost", () => {
 		const { inst, session, input } = mountTextBox({
 			Text: prop.string("abc"),

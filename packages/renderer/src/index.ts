@@ -2460,6 +2460,19 @@ function createTextBoxBinding(
 		} finally {
 			binding.applying = false;
 		}
+		// A `Text` listener may have rewritten the value on the spot — the input
+		// validation idiom, `rbx.Text = lastValid` inside `Changed`. The engine
+		// shows the rewritten text, but here the typed-then-reverted value nets
+		// out to no change by the next patch, which then never touches the input,
+		// and the rejected keystroke stays on screen. So echo it back now, keeping
+		// the caret where it was relative to the end of the text.
+		const text = typeof inst.Text === "string" ? inst.Text : "";
+		if (text !== el.value) {
+			const fromEnd = el.value.length - (el.selectionEnd ?? el.value.length);
+			el.value = text;
+			const caret = Math.max(0, text.length - fromEnd);
+			el.setSelectionRange(caret, caret);
+		}
 		updateTextBounds(inst, el.value, binding.textSize);
 	};
 	const onFocus = (): void => {
