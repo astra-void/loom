@@ -81,14 +81,70 @@ describe("resolveAssetUrl", () => {
 
 	it("throws when the lookup fails", async () => {
 		await expect(
-			resolveAssetUrl("1818", "420x420", () =>
-				Promise.resolve({
+			resolveAssetUrl(
+				"1818",
+				"420x420",
+				() =>
+					Promise.resolve({
+						ok: false,
+						status: 429,
+						statusText: "Too Many Requests",
+					} as Response),
+				{ retryDelays: [] },
+			),
+		).rejects.toThrow("429");
+	});
+
+	it("retries a throttled lookup instead of failing it", async () => {
+		let calls = 0;
+		const fetchImpl = (() => {
+			calls += 1;
+			if (calls === 1) {
+				return Promise.resolve({
 					ok: false,
 					status: 429,
 					statusText: "Too Many Requests",
-				} as Response),
-			),
-		).rejects.toThrow("429");
+					headers: new Headers(),
+				} as Response);
+			}
+			return okThumbnail("https://tr.rbxcdn.test/abc")();
+		}) as typeof fetch;
+		const url = await resolveAssetUrl("1818", "420x420", fetchImpl, {
+			retryDelays: [0],
+		});
+		expect(url).toBe("https://tr.rbxcdn.test/abc");
+		expect(calls).toBe(2);
+	});
+
+	it("asks for lookups made together in one request", async () => {
+		const requested: string[] = [];
+		const fetchImpl = ((input: RequestInfo | URL) => {
+			const url = new URL(String(input));
+			requested.push(url.searchParams.get("assetIds") ?? "");
+			const ids = (url.searchParams.get("assetIds") ?? "").split(",");
+			return Promise.resolve({
+				ok: true,
+				status: 200,
+				statusText: "OK",
+				json: () =>
+					Promise.resolve({
+						data: ids.map((id) => ({
+							targetId: Number(id),
+							state: "Completed",
+							imageUrl: `https://cdn.test/${id}`,
+						})),
+					}),
+			} as Response);
+		}) as typeof fetch;
+		const urls = await Promise.all(
+			["1", "2", "3"].map((id) => resolveAssetUrl(id, "420x420", fetchImpl)),
+		);
+		expect(urls).toEqual([
+			"https://cdn.test/1",
+			"https://cdn.test/2",
+			"https://cdn.test/3",
+		]);
+		expect(requested).toEqual(["1,2,3"]);
 	});
 
 	it("throws when the thumbnail is not ready", async () => {
@@ -127,16 +183,20 @@ describe("loomAssetBundle", () => {
 		return ((input: RequestInfo | URL) => {
 			const url = String(input);
 			if (url.startsWith("https://thumbnails.roblox.com")) {
-				const id = new URL(url).searchParams.get("assetIds");
+				const ids = (new URL(url).searchParams.get("assetIds") ?? "").split(
+					",",
+				);
 				return Promise.resolve({
 					ok: true,
 					status: 200,
 					statusText: "OK",
 					json: () =>
 						Promise.resolve({
-							data: [
-								{ state: "Completed", imageUrl: `https://cdn.test/${id}` },
-							],
+							data: ids.map((id) => ({
+								targetId: Number(id),
+								state: "Completed",
+								imageUrl: `https://cdn.test/${id}`,
+							})),
 						}),
 				} as Response);
 			}

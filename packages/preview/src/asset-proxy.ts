@@ -22,6 +22,16 @@ import type { Plugin, ViteDevServer } from "vite";
 export const ASSET_ROUTE = "__loom/asset/";
 
 /**
+ * Batch lookup route for the dev server: `<base>__loom/assets?ids=1,2,3`
+ * answers `{ "1": url | null, … }`. The page asks it for every id a render
+ * turned up at once — a browser holds only six connections to one host, so
+ * one redirect per `<img>` reaches the server six ids at a time and a page of
+ * icons becomes dozens of thumbnail requests and a rate limit. `./globals.ts`
+ * spells the path out again, being page code.
+ */
+export const ASSET_BATCH_ROUTE = "__loom/assets";
+
+/**
  * Where the baked manifest lands in a build, appended to the configured base.
  * `./globals.ts` spells this out again rather than importing it: that module is
  * bundled into the page, and this one is server code.
@@ -41,47 +51,214 @@ const cache = new Map<string, CacheEntry>();
 /** Exposed for tests; the dev server never needs to clear this itself. */
 export function clearAssetCache(): void {
 	cache.clear();
+	inflight.clear();
+}
+
+/** How long lookups wait for company before going out as one request. */
+const BATCH_WINDOW_MS = 10;
+
+/** The most ids the thumbnail endpoint takes in one `assetIds` list. */
+const BATCH_LIMIT = 100;
+
+/**
+ * Pauses between attempts when the thumbnail API answers 429 or 5xx. A page
+ * of icons asks for dozens of ids at once, and one request per id is exactly
+ * what trips Roblox's rate limit — so lookups are batched below, and the ones
+ * that still get throttled wait and try again instead of leaving a hole where
+ * the image should be for the rest of the session.
+ */
+const DEFAULT_RETRY_DELAYS_MS = [500, 1000, 2000, 4000];
+
+export interface ResolveAssetOptions {
+	/** Pauses between retries of a throttled lookup; `[]` fails on the first. */
+	retryDelays?: readonly number[];
+}
+
+interface Waiter {
+	resolve: (url: string) => void;
+	reject: (err: Error) => void;
+}
+
+interface Batch {
+	ids: Map<string, Waiter[]>;
+	timer: ReturnType<typeof setTimeout> | undefined;
+	retryDelays: readonly number[];
+}
+
+/** Open batches, per fetch implementation and thumbnail size. */
+const batches = new Map<typeof fetch, Map<string, Batch>>();
+
+/** Lookups already on their way, so a repeat joins instead of re-asking. */
+const inflight = new Map<string, Promise<string>>();
+
+const sleep = (ms: number): Promise<void> =>
+	new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * At most this many thumbnail requests in the air at once. A page of several
+ * hundred icons is still several full batches, and sending them all together
+ * is its own burst — the rate limit counts requests, not ids.
+ */
+const MAX_CONCURRENT_LOOKUPS = 2;
+let activeLookups = 0;
+const lookupQueue: Array<() => void> = [];
+
+/** Run `task` once a lookup slot is free. */
+async function withLookupSlot<T>(task: () => Promise<T>): Promise<T> {
+	if (activeLookups >= MAX_CONCURRENT_LOOKUPS) {
+		// The finishing lookup hands its slot straight over, so the count holds.
+		await new Promise<void>((resolve) => lookupQueue.push(resolve));
+	} else {
+		activeLookups += 1;
+	}
+	try {
+		return await task();
+	} finally {
+		const next = lookupQueue.shift();
+		if (next) next();
+		else activeLookups -= 1;
+	}
+}
+
+/** `Retry-After` in milliseconds, when the response carries a usable one. */
+function retryAfterMs(response: Response): number | undefined {
+	const raw = response.headers?.get?.("retry-after");
+	if (!raw) return undefined;
+	const seconds = Number(raw);
+	return Number.isFinite(seconds) && seconds >= 0 ? seconds * 1000 : undefined;
+}
+
+/** The thumbnail endpoint, retried while it says to come back later. */
+async function fetchThumbnails(
+	ids: readonly string[],
+	size: string,
+	fetchImpl: typeof fetch,
+	retryDelays: readonly number[],
+): Promise<Array<{ targetId?: number; state?: string; imageUrl?: string }>> {
+	const endpoint = new URL("https://thumbnails.roblox.com/v1/assets");
+	endpoint.searchParams.set("assetIds", ids.join(","));
+	endpoint.searchParams.set("size", size);
+	endpoint.searchParams.set("format", "Png");
+	endpoint.searchParams.set("isCircular", "false");
+
+	for (let attempt = 0; ; attempt++) {
+		const response = await fetchImpl(endpoint);
+		if (response.ok) {
+			const body = (await response.json()) as {
+				data?: Array<{ targetId?: number; state?: string; imageUrl?: string }>;
+			};
+			return body.data ?? [];
+		}
+		const throttled = response.status === 429 || response.status >= 500;
+		const delay = retryDelays[attempt];
+		if (!throttled || delay === undefined) {
+			throw new Error(
+				`thumbnail lookup failed (${response.status} ${response.statusText})`,
+			);
+		}
+		await sleep(retryAfterMs(response) ?? delay);
+	}
+}
+
+/** Send one batch and settle every lookup waiting on it. */
+async function flushBatch(
+	batch: Batch,
+	size: string,
+	fetchImpl: typeof fetch,
+): Promise<void> {
+	const ids = [...batch.ids.keys()];
+	try {
+		const data = await withLookupSlot(() =>
+			fetchThumbnails(ids, size, fetchImpl, batch.retryDelays),
+		);
+		for (const id of ids) {
+			// Matched by `targetId`; a lone id can only be the one entry there is.
+			const thumbnail =
+				data.find((entry) => String(entry.targetId) === id) ??
+				(ids.length === 1 ? data[0] : undefined);
+			const waiters = batch.ids.get(id) ?? [];
+			if (thumbnail?.imageUrl && thumbnail.state === "Completed") {
+				cache.set(`${id}@${size}`, {
+					url: thumbnail.imageUrl,
+					expires: Date.now() + CACHE_TTL_MS,
+				});
+				for (const waiter of waiters) waiter.resolve(thumbnail.imageUrl);
+			} else {
+				const err = new Error(
+					`no thumbnail for asset ${id} (state: ${thumbnail?.state ?? "missing"})`,
+				);
+				for (const waiter of waiters) waiter.reject(err);
+			}
+		}
+	} catch (err) {
+		const error = err instanceof Error ? err : new Error(String(err));
+		for (const waiters of batch.ids.values()) {
+			for (const waiter of waiters) waiter.reject(error);
+		}
+	}
+}
+
+/** Queue `assetId` on the open batch for its size, opening one if needed. */
+function enqueue(
+	assetId: string,
+	size: string,
+	fetchImpl: typeof fetch,
+	retryDelays: readonly number[],
+): Promise<string> {
+	let bySize = batches.get(fetchImpl);
+	if (!bySize) {
+		bySize = new Map();
+		batches.set(fetchImpl, bySize);
+	}
+	let batch = bySize.get(size);
+	if (!batch) {
+		batch = { ids: new Map(), timer: undefined, retryDelays };
+		bySize.set(size, batch);
+	}
+	const open = batch;
+	const send = (): void => {
+		if (open.timer !== undefined) clearTimeout(open.timer);
+		if (bySize.get(size) === open) bySize.delete(size);
+		if (bySize.size === 0) batches.delete(fetchImpl);
+		void flushBatch(open, size, fetchImpl);
+	};
+	const promise = new Promise<string>((resolve, reject) => {
+		const waiters = open.ids.get(assetId) ?? [];
+		waiters.push({ resolve, reject });
+		open.ids.set(assetId, waiters);
+	});
+	if (open.ids.size >= BATCH_LIMIT) send();
+	else if (open.timer === undefined)
+		open.timer = setTimeout(send, BATCH_WINDOW_MS);
+	return promise;
 }
 
 /**
  * `assetId` → CDN image URL via Roblox's thumbnail API. Throws with a readable
  * message on anything the caller should see as a 502.
+ *
+ * Lookups made within a few milliseconds of each other share one request, and
+ * a throttled request is retried (see {@link DEFAULT_RETRY_DELAYS_MS}).
  */
 export async function resolveAssetUrl(
 	assetId: string,
 	size = "420x420",
 	fetchImpl: typeof fetch = fetch,
+	options: ResolveAssetOptions = {},
 ): Promise<string> {
 	const key = `${assetId}@${size}`;
 	const hit = cache.get(key);
 	if (hit && hit.expires > Date.now()) return hit.url;
-
-	const endpoint = new URL("https://thumbnails.roblox.com/v1/assets");
-	endpoint.searchParams.set("assetIds", assetId);
-	endpoint.searchParams.set("size", size);
-	endpoint.searchParams.set("format", "Png");
-	endpoint.searchParams.set("isCircular", "false");
-
-	const response = await fetchImpl(endpoint);
-	if (!response.ok) {
-		throw new Error(
-			`thumbnail lookup failed (${response.status} ${response.statusText})`,
-		);
-	}
-	const body = (await response.json()) as {
-		data?: Array<{ state?: string; imageUrl?: string }>;
-	};
-	const thumbnail = body.data?.[0];
-	if (!thumbnail?.imageUrl || thumbnail.state !== "Completed") {
-		throw new Error(
-			`no thumbnail for asset ${assetId} (state: ${thumbnail?.state ?? "missing"})`,
-		);
-	}
-	cache.set(key, {
-		url: thumbnail.imageUrl,
-		expires: Date.now() + CACHE_TTL_MS,
-	});
-	return thumbnail.imageUrl;
+	const pending = inflight.get(key);
+	if (pending) return pending;
+	const lookup = enqueue(
+		assetId,
+		size,
+		fetchImpl,
+		options.retryDelays ?? DEFAULT_RETRY_DELAYS_MS,
+	).finally(() => inflight.delete(key));
+	inflight.set(key, lookup);
+	return lookup;
 }
 
 /** `/__loom/asset/12345` → `"12345"`; undefined when the path is not ours. */
@@ -108,7 +285,33 @@ export function loomAssetProxy(): Plugin {
 		},
 		configureServer(server: ViteDevServer) {
 			server.middlewares.use((req, res, next) => {
-				const path = (req.url ?? "/").split("?")[0] ?? "/";
+				const [path = "/", query = ""] = (req.url ?? "/").split("?");
+				if (path === `${base}${ASSET_BATCH_ROUTE}`) {
+					const ids = (new URLSearchParams(query).get("ids") ?? "")
+						.split(",")
+						.filter((id) => /^\d+$/.test(id));
+					void Promise.allSettled(ids.map((id) => resolveAssetUrl(id))).then(
+						(results) => {
+							const body: Record<string, string | null> = {};
+							for (const [index, result] of results.entries()) {
+								const id = ids[index] as string;
+								if (result.status === "fulfilled") body[id] = result.value;
+								else {
+									body[id] = null;
+									const reason = result.reason;
+									console.warn(
+										`[loom] asset ${id}: ${reason instanceof Error ? reason.message : String(reason)}`,
+									);
+								}
+							}
+							res.statusCode = 200;
+							res.setHeader("Content-Type", "application/json");
+							res.setHeader("Cache-Control", "no-store");
+							res.end(JSON.stringify(body));
+						},
+					);
+					return;
+				}
 				const assetId = assetIdFromPath(path, base);
 				if (assetId === undefined) return next();
 				resolveAssetUrl(assetId)

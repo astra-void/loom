@@ -42,11 +42,62 @@ function manifest(base: string): Promise<Record<string, string> | undefined> {
 }
 
 /**
+ * Dev-server lookups, batched: every id asked for within a few milliseconds
+ * goes to `__loom/assets?ids=…` together (see `./asset-proxy.ts` for why one
+ * redirect per image is not enough), and each answer is kept for the session.
+ * An id the server could not resolve falls back to the redirect route, which
+ * tries again on its own.
+ */
+const devAssets = new Map<string, Promise<string>>();
+let devQueue: Array<{ id: string; resolve: (url: string) => void }> = [];
+let devTimer: ReturnType<typeof setTimeout> | undefined;
+function devAsset(base: string, id: string): Promise<string> {
+	let known = devAssets.get(id);
+	if (known) return known;
+	known = new Promise<string>((resolve) => {
+		devQueue.push({ id, resolve });
+	});
+	devAssets.set(id, known);
+	if (devTimer !== undefined) return known;
+	devTimer = setTimeout(() => {
+		devTimer = undefined;
+		const queue = devQueue;
+		devQueue = [];
+		for (let i = 0; i < queue.length; i += 100) {
+			const chunk = queue.slice(i, i + 100);
+			const fallback = (entry: (typeof chunk)[number]): void =>
+				entry.resolve(`${base}__loom/asset/${entry.id}`);
+			fetch(`${base}__loom/assets?ids=${chunk.map((e) => e.id).join(",")}`)
+				.then((response): Promise<Record<string, string | null>> | object =>
+					response.ok ? response.json() : {},
+				)
+				.then((body) => body as Record<string, string | null>)
+				.then((urls) => {
+					for (const entry of chunk) {
+						const url = urls[entry.id];
+						if (typeof url === "string") entry.resolve(url);
+						else {
+							devAssets.delete(entry.id);
+							fallback(entry);
+						}
+					}
+				})
+				.catch(() => {
+					for (const entry of chunk) {
+						devAssets.delete(entry.id);
+						fallback(entry);
+					}
+				});
+		}
+	}, 10);
+	return known;
+}
+
+/**
  * Resolve `rbxassetid://<id>` to something the browser can load.
  *
- * Under the **dev server**, the asset route (see `./asset-proxy.ts`), which
- * redirects to the CDN image — synchronous, because the server does the lookup
- * and the browser only follows a redirect. In a **static build** there is no
+ * Under the **dev server**, the CDN image the server looked up, asked for in
+ * batches (see {@link devAsset}). In a **static build** there is no
  * server, so the answer comes from the manifest the build baked, one lookup for
  * the whole page. Anything that is not an asset id is left alone — the renderer
  * already loads plain URLs.
@@ -70,7 +121,7 @@ setImageResolver((image) => {
 	).env;
 	const raw = env?.BASE_URL ?? "/";
 	const base = raw.endsWith("/") ? raw : `${raw}/`;
-	if (env?.PROD !== true) return `${base}__loom/asset/${id}`;
+	if (env?.PROD !== true) return devAsset(base, id);
 	return manifest(base).then((baked) => {
 		const file = baked?.[id];
 		return file === undefined ? undefined : `${base}${file}`;
