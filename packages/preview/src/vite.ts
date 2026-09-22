@@ -50,6 +50,8 @@ import {
 	LOOM_REPO_ROOT,
 	PREVIEW_SRC,
 	REACT_COMPAT_PATH,
+	REACT_JSX_COMPAT_PATH,
+	REACT_JSX_DEV_COMPAT_PATH,
 	SERVICES_PATH,
 } from "./paths.ts";
 import {
@@ -1141,8 +1143,10 @@ export function loomPreview(options: LoomPreviewOptions = {}): Plugin[] {
 			tsconfigBase = tsconfigBaseUrl(projectRoot);
 			return {
 				// Automatic JSX runtime: roblox-ts source never imports React, so the
-				// classic transform would throw "React is not defined".
-				esbuild: { jsx: "automatic" },
+				// classic transform would throw "React is not defined". Imported from
+				// `@rbxts/react`, which the alias below turns into loom's wrapped
+				// runtime — the one place JSX can pick up React-Lua's ref semantics.
+				esbuild: { jsx: "automatic", jsxImportSource: "@rbxts/react" },
 				optimizeDeps: {
 					// react resolves through the `resolve.alias` entries below (the
 					// optimizer honors them), so the bare ids land on loom's own copy.
@@ -1185,10 +1189,13 @@ export function loomPreview(options: LoomPreviewOptions = {}): Plugin[] {
 						// @rbxts/services -> the preview's service singletons.
 						{ find: /^@rbxts\/services$/, replacement: SERVICES_PATH },
 						// @rbxts/react (+ jsx runtimes) and bare react -> loom's react.
-						{ find: /^@rbxts\/react\/jsx-runtime$/, replacement: REACT_JSX },
+						{
+							find: /^@rbxts\/react\/jsx-runtime$/,
+							replacement: REACT_JSX_COMPAT_PATH,
+						},
 						{
 							find: /^@rbxts\/react\/jsx-dev-runtime$/,
-							replacement: REACT_JSX_DEV,
+							replacement: REACT_JSX_DEV_COMPAT_PATH,
 						},
 						// @rbxts/react -> the compatibility facade: loom's one react
 						// instance forwarded by identity, plus the Roblox-only surface

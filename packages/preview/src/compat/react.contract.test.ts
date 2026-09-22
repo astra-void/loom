@@ -298,19 +298,21 @@ describe("React identity", () => {
 		// only show up at runtime.
 		expect(compat.Component).toBe(BrowserReact.Component);
 		expect(compat.PureComponent).toBe(BrowserReact.PureComponent);
-		expect(compat.createElement).toBe(BrowserReact.createElement);
 		expect(compat.useState).toBe(BrowserReact.useState);
 		expect(compat.useEffect).toBe(BrowserReact.useEffect);
 		expect(compat.useMemo).toBe(BrowserReact.useMemo);
-		expect(compat.useRef).toBe(BrowserReact.useRef);
 		expect(compat.createContext).toBe(BrowserReact.createContext);
-		expect(compat.createRef).toBe(BrowserReact.createRef);
 		expect(compat.forwardRef).toBe(BrowserReact.forwardRef);
 		expect(compat.memo).toBe(BrowserReact.memo);
 		expect(compat.Fragment).toBe(BrowserReact.Fragment);
 		expect(compat.version).toBe(BrowserReact.version);
-		// `Children` is the deliberate exception — see the suite below.
+		// The deliberate exceptions, each for a React-Lua semantic roblox-ts code
+		// relies on — see their suites below.
 		expect(compat.Children).not.toBe(BrowserReact.Children);
+		expect(compat.cloneElement).not.toBe(BrowserReact.cloneElement);
+		expect(compat.createElement).not.toBe(BrowserReact.createElement);
+		expect(compat.useRef).not.toBe(BrowserReact.useRef);
+		expect(compat.createRef).not.toBe(BrowserReact.createRef);
 	});
 });
 

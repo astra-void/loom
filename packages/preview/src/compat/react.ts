@@ -10,10 +10,14 @@
  *
  * 1. **Standard React**, forwarded from the one pinned browser `react` the
  *    `@loom-dev/react` reconciler renders with. Forwarded by *identity*:
- *    `Component`, `createElement`, `useState` and friends are the very same
+ *    `Component`, `useState`, `forwardRef` and friends are the very same
  *    values `import … from "react"` yields, never wrappers. Hook dispatch,
  *    `instanceof Component` checks and element-type comparisons therefore all
- *    behave, and there is exactly one React in the graph.
+ *    behave, and there is exactly one React in the graph. The exceptions are
+ *    the few calls where React-Lua's own semantics differ and roblox-ts code
+ *    depends on the difference — `Children`, `cloneElement`, `createElement`,
+ *    `useRef`, `createRef` — each wrapping the browser original rather than
+ *    replacing it.
  * 2. **Roblox additions** browser React has no notion of: the `ReactComponent`
  *    / `ReactPureComponent` class decorators, the `Event` / `Change` keyed-prop
  *    namespaces, `Tag`, and `None`.
@@ -37,12 +41,12 @@
  * Destructuring the namespace into `export const`s makes each name a real,
  * statically visible ESM binding.
  *
- * ### What is deliberately *not* forwarded
+ * ### What `createElement` does and does not do
  *
- * `createElement` stays browser React's own. Upstream wraps it to lower-case
- * host tags and to fold `Event` / `Change` / `Tag` props into keyed props;
- * under loom the renderer reads those props directly (see `@loom-dev/react`),
- * so wrapping would only cost the identity the contract depends on.
+ * Upstream wraps it to lower-case host tags and to fold `Event` / `Change` /
+ * `Tag` props into keyed props; under loom the renderer reads those props
+ * directly (see `@loom-dev/react`), so none of that is copied. The only thing
+ * the wrapper here changes is the `null` a callback ref receives (`./refs.ts`).
  */
 import {
 	CHANGE_PROP_PREFIX,
@@ -53,6 +57,7 @@ import {
 	useBinding,
 } from "@loom-dev/react";
 import React, { type ReactElement as ReactElementType } from "react";
+import { luauRef, withLuauRef } from "./refs.ts";
 
 // --- 1. standard React, by identity ------------------------------------------
 
@@ -74,11 +79,8 @@ export const {
 	StrictMode,
 	Suspense,
 	act,
-	cloneElement,
 	createContext,
-	createElement,
 	createFactory,
-	createRef,
 	forwardRef,
 	isValidElement,
 	lazy,
@@ -95,7 +97,6 @@ export const {
 	useLayoutEffect,
 	useMemo,
 	useReducer,
-	useRef,
 	useState,
 	useSyncExternalStore,
 	useTransition,
@@ -105,8 +106,9 @@ export const {
 /**
  * `React.Children`, with **1-based** `map`/`forEach` indices.
  *
- * The one place this facade wraps a standard React value instead of forwarding
- * it, because React-Lua deviates here on purpose. `ReactChildren.lua`'s
+ * One of the few places this facade wraps a standard React value instead of
+ * forwarding it (`cloneElement`, `createElement`, `useRef` and `createRef`
+ * below are the others), because React-Lua deviates here on purpose. `ReactChildren.lua`'s
  * `mapChildren` starts its counter at `1` and passes it to the callback (its
  * own comment marks the spot as a ROBLOX DEVIATION), and `forEachChildren`
  * delegates to it — so roblox-ts code is written against 1-based indices, and
@@ -140,6 +142,52 @@ export const Children: typeof React.Children = {
 		);
 	}) as typeof React.Children.forEach,
 };
+
+/**
+ * `cloneElement`, accepting a `Map` as the config.
+ *
+ * The second place this facade wraps rather than forwards. A roblox-ts `Map`
+ * is a Luau table, so upstream's `cloneElement(element, config)` reads a
+ * `new Map()` config exactly as it reads `{}` — and libraries build one when
+ * the keys are computed (`React.Event[name]`). Browser React only copies own
+ * enumerable properties, of which a `Map` has none, so every prop in it would
+ * be dropped without a word. The entries are spread into a plain object first;
+ * any other config passes through untouched.
+ */
+export const cloneElement: typeof React.cloneElement = ((
+	element: ReactElementType,
+	config?: unknown,
+	...children: unknown[]
+) =>
+	(React.cloneElement as (...args: unknown[]) => unknown)(
+		element,
+		withLuauRef(config instanceof Map ? Object.fromEntries(config) : config),
+		...children,
+	)) as typeof React.cloneElement;
+
+/**
+ * `createElement`, with a callback `ref` called with `undefined` where browser
+ * React passes `null` (see `./refs.ts`). JSX reaches the same wrapper through
+ * `./jsx-runtime.ts`; this covers code that calls `React.createElement`.
+ */
+export const createElement: typeof React.createElement = ((
+	type: unknown,
+	props?: unknown,
+	...children: unknown[]
+) =>
+	(React.createElement as (...args: unknown[]) => unknown)(
+		type,
+		withLuauRef(props),
+		...children,
+	)) as typeof React.createElement;
+
+/** `useRef`, with React-Lua's `nil` for a detached ref (see {@link luauRef}). */
+export const useRef: typeof React.useRef = ((initial?: unknown) =>
+	luauRef(React.useRef(initial))) as typeof React.useRef;
+
+/** `createRef`, with React-Lua's `nil` for a detached ref (see {@link luauRef}). */
+export const createRef: typeof React.createRef = (() =>
+	luauRef({ current: undefined })) as typeof React.createRef;
 
 // --- 2. Roblox additions ------------------------------------------------------
 
@@ -347,6 +395,9 @@ const merged = Object.assign({}, React, {
 	// to be the same 1-based one the named export is, or `React.Children.map`
 	// and `Children.map` would disagree inside one file.
 	Children,
+	cloneElement,
+	createElement,
+	createRef,
 	Event,
 	None,
 	ReactComponent,
@@ -355,6 +406,7 @@ const merged = Object.assign({}, React, {
 	createBinding,
 	joinBindings,
 	useBinding,
+	useRef,
 });
 
 export default merged;

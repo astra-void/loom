@@ -32,6 +32,20 @@ export const SERVICES_PATH = join(PREVIEW_SRC, "services.ts");
  * `Tag`, `None`) and loom's bindings. See `./compat/react.ts`.
  */
 export const REACT_COMPAT_PATH = join(PREVIEW_SRC, "compat", "react.ts");
+/**
+ * `@rbxts/react/jsx-runtime` (and its dev twin): React's automatic runtime
+ * with React-Lua's callback-ref semantics. See `./compat/jsx-runtime.ts`.
+ */
+export const REACT_JSX_COMPAT_PATH = join(
+	PREVIEW_SRC,
+	"compat",
+	"jsx-runtime.ts",
+);
+export const REACT_JSX_DEV_COMPAT_PATH = join(
+	PREVIEW_SRC,
+	"compat",
+	"jsx-dev-runtime.ts",
+);
 /** Installs the Roblox datatype globals; imported first by every entry. */
 export const GLOBALS_PATH = join(PREVIEW_SRC, "globals.ts");
 

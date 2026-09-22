@@ -161,7 +161,6 @@ export const identity = {
 		React.Tag === Tag,
 	namedMatchesBrowserReact:
 		Component === ReactNamespace.Component &&
-		createElement === ReactNamespace.createElement &&
 		useState === ReactNamespace.useState,
 };
 `,

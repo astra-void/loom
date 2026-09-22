@@ -24,6 +24,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import React, {
 	Change,
 	Component,
+	cloneElement,
 	createBinding,
 	createContext,
 	createElement,
@@ -38,6 +39,8 @@ import React, {
 	ReactPureComponent,
 	Tag,
 	useContext,
+	useRef,
+	useState,
 } from "./react.ts";
 
 /** Stub layout: every node gets x=0, y=0 and one fixed size. */
@@ -288,6 +291,81 @@ describe("the rest of the React surface, through the renderer", () => {
 		// frame rather than a React commit — that is the point of a binding.
 		flushDirtyNow();
 		expect(node("Bound")?.textContent).toBe("after");
+	});
+});
+
+describe("React-Lua semantics the facade keeps", () => {
+	it("hands a detached ref back as undefined, not null", () => {
+		const ref = createRef<LoomInstance>();
+		const root = render(createElement("frame", { Name: "Held", ref }));
+		expect(ref.current?.ClassName).toBe("Frame");
+		root.unmount();
+		roots = roots.filter((r) => r !== root);
+		// React-Lua sets it back to nil; code checks `ref.current !== undefined`.
+		expect(ref.current).toBeUndefined();
+	});
+
+	it("does the same for useRef", () => {
+		let seen: { current: LoomInstance | undefined } | undefined;
+		function Holder(): ReactElement {
+			const ref = useRef<LoomInstance>();
+			seen = ref;
+			return createElement("frame", { Name: "Held", ref });
+		}
+		const root = render(createElement(Holder));
+		expect(seen?.current?.ClassName).toBe("Frame");
+		root.unmount();
+		roots = roots.filter((r) => r !== root);
+		expect(seen?.current).toBeUndefined();
+	});
+
+	it("calls a callback ref with undefined on detach, not null", () => {
+		const seen: unknown[] = [];
+		const ref = (rbx: unknown): void => {
+			seen.push(rbx === undefined ? "undefined" : (rbx as LoomInstance).Name);
+		};
+		const root = render(createElement("frame", { Name: "Held", ref }));
+		root.unmount();
+		roots = roots.filter((r) => r !== root);
+		expect(seen).toEqual(["Held", "undefined"]);
+	});
+
+	it("keeps a stable callback ref stable across renders", async () => {
+		const seen: unknown[] = [];
+		const ref = (rbx: unknown): void => {
+			seen.push(rbx === undefined ? "undefined" : "attached");
+		};
+		let bump: (() => void) | undefined;
+		function Holder(): ReactElement {
+			const [n, setN] = useState(0);
+			bump = () => setN(n + 1);
+			return createElement("frame", { Name: `Held${n}`, ref });
+		}
+		render(createElement(Holder));
+		const { act } = await import("react");
+		act(() => bump?.());
+		// Same callback both renders: React never detaches it in between.
+		expect(seen).toEqual(["attached"]);
+	});
+
+	it("maps callback refs through the JSX runtime too", async () => {
+		const { jsx } = await import("./jsx-runtime.ts");
+		const seen: unknown[] = [];
+		const ref = (rbx: unknown): void => {
+			seen.push(rbx);
+		};
+		const root = render(jsx("frame", { Name: "Held", ref }) as ReactElement);
+		root.unmount();
+		roots = roots.filter((r) => r !== root);
+		expect(seen.at(-1)).toBeUndefined();
+		expect(seen).not.toContain(null);
+	});
+
+	it("accepts a Map as cloneElement's config", () => {
+		const config = new Map<string, unknown>([["Text", "cloned"]]);
+		const original = createElement("textlabel", { Name: "Clone", Text: "x" });
+		render(cloneElement(original, config as never));
+		expect(node("Clone")?.textContent).toBe("cloned");
 	});
 });
 
