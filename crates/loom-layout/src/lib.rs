@@ -346,7 +346,7 @@ fn base_size(node: &SceneNode, parent: Rect, unit: f64) -> (f64, f64) {
 }
 
 /// Final resolved `(width, height)` of a node: base size grown by AutomaticSize,
-/// never past the room `limit` says its parent has (see [`Limits`]).
+/// never wider than the room `limit` says its parent has (see [`Limits`]).
 ///
 /// `unit` is the scale of the space the node is placed in — its parent's inner
 /// scale. Its own `UIScale` multiplies on top of that, and everything it holds
@@ -411,16 +411,19 @@ fn resolve_size(node: &SceneNode, parent: Rect, limit: Limits, unit: f64) -> (f6
 
     // `Size` stays the floor even when it is itself past the ceiling — Roblox
     // never shrinks an object below it — so only the *grown* part is capped.
+    //
+    // Only the width is. Height grows past the parent: the engine's own idiom
+    // for an expanding panel is an `AutomaticSize.Y` content frame inside a
+    // `ClipsDescendants` frame whose height is tweened toward the content's
+    // `AbsoluteSize.Y`, and that only works if the content reports its full
+    // height while the clip is still short. Capping it there reads the clip back
+    // as the content's height and the tween settles wherever it happened to be.
     let new_w = if ax {
         w.max(Limits::cap(limit.x, measured_w))
     } else {
         w
     };
-    let new_h = if ay {
-        h.max(Limits::cap(limit.y, measured_h))
-    } else {
-        h
-    };
+    let new_h = if ay { h.max(measured_h) } else { h };
     (new_w, new_h)
 }
 
@@ -2157,18 +2160,18 @@ mod tests {
     /// ScrollingFrame".
     #[test]
     fn a_fixed_canvas_still_caps_automatic_size_children() {
-        let mut column = with(
+        let mut row = with(
             "Frame",
-            "Column",
+            "Row",
             &[
-                ("Size", udim2(1.0, 0.0, 0.0, 0.0)),
-                ("AutomaticSize", enum_item("AutomaticSize", "Y")),
+                ("Size", udim2(0.0, 0.0, 1.0, 0.0)),
+                ("AutomaticSize", enum_item("AutomaticSize", "X")),
             ],
         );
-        column.children.push(with(
+        row.children.push(with(
             "Frame",
-            "Tall",
-            &[("Size", udim2(1.0, 0.0, 0.0, 500.0))],
+            "Wide",
+            &[("Size", udim2(0.0, 1200.0, 1.0, 0.0))],
         ));
         let mut scroll = with(
             "ScrollingFrame",
@@ -2178,9 +2181,39 @@ mod tests {
                 ("CanvasSize", udim2(0.0, 800.0, 0.0, 300.0)),
             ],
         );
-        scroll.children.push(column);
+        scroll.children.push(row);
         let r = compute_layout(&screen(vec![scroll]), VP).unwrap();
-        assert_eq!(r.rects["0/0/0"].rect.height, 300.0);
+        assert_eq!(r.rects["0/0/0"].rect.width, 800.0);
+    }
+
+    /// An expanding panel: `AutomaticSize.Y` content inside a clipping frame
+    /// whose height is animated toward the content's height. The content has to
+    /// report its full height while the clip is still short, or the animation
+    /// reads the clip back as its target and stops there.
+    #[test]
+    fn automatic_height_grows_past_a_short_clipping_parent() {
+        let mut content = with(
+            "Frame",
+            "Content",
+            &[
+                ("Size", udim2(1.0, 0.0, 0.0, 0.0)),
+                ("AutomaticSize", enum_item("AutomaticSize", "Y")),
+            ],
+        );
+        content.children.push(with(
+            "Frame",
+            "Body",
+            &[("Size", udim2(1.0, 0.0, 0.0, 120.0))],
+        ));
+        let mut clip = with(
+            "Frame",
+            "ContentClip",
+            &[("Size", udim2(1.0, 0.0, 0.0, 30.0))],
+        );
+        clip.children.push(content);
+        let r = compute_layout(&screen(vec![clip]), VP).unwrap();
+        assert_eq!(r.rects["0/0"].rect.height, 30.0);
+        assert_eq!(r.rects["0/0/0"].rect.height, 120.0);
     }
 
     #[test]
