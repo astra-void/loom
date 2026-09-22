@@ -160,7 +160,9 @@ describe("mountSync world", () => {
 					AutomaticSize: Enum.AutomaticSize.XY,
 				}),
 			);
-			const label = root.world.defaultGui.FindFirstChild("Late") as LoomInstance;
+			const label = root.world.defaultGui.FindFirstChild(
+				"Late",
+			) as LoomInstance;
 			label
 				.GetPropertyChangedSignal("AbsoluteSize")
 				.Connect(() => sizes.push(label.AbsoluteSize));
