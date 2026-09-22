@@ -1489,17 +1489,55 @@ function createTextLayer(
 	const wrapped = getTextWrapped(node) || getTextScaled(node);
 	const preBreak = wrapped && width > 0;
 	inner.style.whiteSpace = wrapped && !preBreak ? "pre-wrap" : "pre";
+	let painted: string[] | undefined;
 	if (getRichText(node)) {
-		paintRichText(inner, text, node, preBreak ? width : 0, textSize);
+		painted = paintRichText(inner, text, node, preBreak ? width : 0, textSize);
 	} else {
 		// `RichText = false` means the markup is not markup: `<b>` is two angle
 		// brackets and a letter, and `textContent` is what shows it as such.
-		inner.textContent = preBreak
-			? wrapLines(text, width, widthMeasurer(font, textSize)).lines.join("\n")
-			: text;
+		painted = preBreak
+			? wrapLines(text, width, widthMeasurer(font, textSize)).lines
+			: text.split("\n");
+		inner.textContent = painted.join("\n");
+	}
+	if (painted) {
+		const spacing = engineLetterSpacing(painted, font, textSize);
+		if (spacing < 0) inner.style.letterSpacing = `${spacing}px`;
 	}
 	layer.appendChild(inner);
 	return layer;
+}
+
+/**
+ * The (negative) `letter-spacing` that keeps every painted line inside the
+ * width the engine gives it, or 0 when none needs it.
+ *
+ * The box around a label is the engine's width ({@link shapedTextWidth}), but
+ * the glyphs are shaped by the browser, whose run can come out a pixel or two
+ * wider — enough to lose the last letter to a clipping parent ("Bank Transfe"
+ * at the edge of a table), where the engine fits the string exactly. Tightening
+ * the spacing by the overshoot spread over the line's glyphs puts the text back
+ * in its box without touching the glyphs themselves. A browser run narrower
+ * than the engine's is left alone: nothing overflows, and widening would only
+ * add a difference of its own.
+ */
+function engineLetterSpacing(
+	lines: readonly string[],
+	font: ResolvedFont,
+	textSize: number,
+): number {
+	const ctx = measureContext();
+	if (!ctx) return 0;
+	const shorthand = fontShorthand(font, textSize);
+	if (ctx.font !== shorthand) ctx.font = shorthand;
+	let spacing = 0;
+	for (const line of lines) {
+		const glyphs = [...graphemes(line)].length;
+		if (glyphs === 0) continue;
+		const overshoot = ctx.measureText(line).width - shapedTextWidth(ctx, line);
+		if (overshoot > 0) spacing = Math.min(spacing, -overshoot / glyphs);
+	}
+	return spacing;
 }
 
 /**
@@ -1577,7 +1615,7 @@ function paintRichText(
 	width: number,
 	/** The size untagged runs paint at — `TextSize`, or what `TextScaled` chose. */
 	baseTextSize: number,
-): void {
+): string[] | undefined {
 	const baseColor = getTextColor3(node);
 	const baseTransparency = getTextTransparency(node);
 	const baseFont = nodeFont(node);
@@ -1639,6 +1677,29 @@ function paintRichText(
 		span.appendChild(document.createTextNode(broken?.[index] ?? segment.text));
 		inner.appendChild(span);
 	}
+	// The painted lines, for {@link engineLetterSpacing} — but only when every
+	// run is in the label's own font. A run that changes the face, size, weight
+	// or case measures in another font, and a correction computed in the base
+	// one would be a guess.
+	const mixed = segments.some(
+		(segment) =>
+			segment.kind === "text" &&
+			(segment.style.size !== undefined ||
+				segment.style.family !== undefined ||
+				segment.style.face !== undefined ||
+				segment.style.weight !== undefined ||
+				segment.style.bold === true ||
+				segment.style.italic === true ||
+				segment.style.uppercase === true ||
+				segment.style.smallcaps === true),
+	);
+	if (mixed) return undefined;
+	return segments
+		.map((segment, i) =>
+			segment.kind === "break" ? "\n" : (broken?.[i] ?? segment.text),
+		)
+		.join("")
+		.split("\n");
 }
 
 /**
