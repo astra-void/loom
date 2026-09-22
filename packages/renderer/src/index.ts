@@ -103,6 +103,7 @@ import {
 	familyIsAvailable,
 	familyStack,
 	onFontsChanged,
+	requestFontFor,
 	warnMissingFace,
 } from "./fonts.ts";
 import { parseRichText, type RichStyle } from "./richtext.ts";
@@ -115,6 +116,7 @@ export {
 	type FontRegistration,
 	familyIsAvailable,
 	familyKey,
+	fontsPending,
 	onFontsChanged,
 	registerFont,
 } from "./fonts.ts";
@@ -547,6 +549,7 @@ export function shapedTextWidth(
 	run: string,
 ): number {
 	const fontKey = ctx.font;
+	requestFontFor(fontKey, run);
 	let advances = advanceCache.get(fontKey);
 	if (advances === undefined) {
 		advances = new Map();

@@ -130,6 +130,54 @@ describe("mountSync world", () => {
 		expect(card.FindFirstChild("Ignored")).toBeUndefined();
 	});
 
+	it("holds the first layout until a web face the text needs has loaded", async () => {
+		let loaded = false;
+		let finish: () => void = () => {};
+		const done = new Promise<void>((resolve) => {
+			finish = () => {
+				loaded = true;
+				resolve();
+			};
+		});
+		const original = Object.getOwnPropertyDescriptor(document, "fonts");
+		Object.defineProperty(document, "fonts", {
+			configurable: true,
+			value: {
+				addEventListener: () => {},
+				check: () => loaded,
+				load: () => done,
+			},
+		});
+		// A registration resets the renderer's record of which faces are ready.
+		clearRegisteredFonts();
+		await Promise.resolve();
+		try {
+			const sizes: unknown[] = [];
+			const root = mountWith(
+				createElement("textlabel", {
+					Name: "Late",
+					Text: "held",
+					AutomaticSize: Enum.AutomaticSize.XY,
+				}),
+			);
+			const label = root.world.defaultGui.FindFirstChild("Late") as LoomInstance;
+			label
+				.GetPropertyChangedSignal("AbsoluteSize")
+				.Connect(() => sizes.push(label.AbsoluteSize));
+			// Measured against the fallback: nothing laid out, nothing read back.
+			expect(mount.querySelector('[data-loom-name="Late"]')).toBeNull();
+			expect(sizes).toEqual([]);
+			finish();
+			await new Promise((resolve) => setTimeout(resolve, 0));
+			flushDirtyNow();
+			expect(mount.querySelector('[data-loom-name="Late"]')).not.toBeNull();
+			expect(sizes.length).toBe(1);
+		} finally {
+			if (original) Object.defineProperty(document, "fonts", original);
+			else delete (document as { fonts?: unknown }).fonts;
+		}
+	});
+
 	it("maps modifier intrinsics the fallback casing would mangle", () => {
 		const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 		const root = mountWith(

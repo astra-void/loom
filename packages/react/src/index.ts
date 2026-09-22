@@ -19,6 +19,7 @@ import {
 	createDomSession,
 	type DomSession,
 	fontShorthand,
+	fontsPending,
 	instanceFont,
 	onFontsChanged,
 	parseRichText,
@@ -931,6 +932,17 @@ class WorldImpl implements World {
 		};
 	}
 
+	/** The font wait a held flush is parked on, so it is only scheduled once. */
+	private fontWait: Promise<void> | undefined;
+
+	private waitForFonts(fonts: Promise<void>): void {
+		if (this.fontWait) return;
+		this.fontWait = fonts.then(() => {
+			this.fontWait = undefined;
+			if (!this.disposed) markDirty(this.rootInstance);
+		});
+	}
+
 	flushSync(): void {
 		if (this.disposed) return;
 		if (this.depth >= MAX_FLUSH_DEPTH) {
@@ -959,6 +971,16 @@ class WorldImpl implements World {
 			let scene = this.encodeRoot();
 			if (!scene) {
 				this.session.clear();
+				return;
+			}
+			// Encoding measured the text, and measuring asked for any web face that
+			// was not loaded yet. Laying out now would hand the fallback's widths to
+			// every `AbsoluteSize` listener, and a component that sizes itself from
+			// those can lock them in; so hold this frame until the faces arrive
+			// (bounded — see `fontsPending`) and flush again then.
+			const fonts = fontsPending();
+			if (fonts) {
+				this.waitForFonts(fonts);
 				return;
 			}
 			let layout = this.computeLayout(scene, { width, height });

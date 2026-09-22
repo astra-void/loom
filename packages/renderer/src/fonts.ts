@@ -271,6 +271,10 @@ function fireNotify(): void {
 
 function scheduleNotify(): void {
 	watchFontLoads();
+	// A registration changes what a shorthand resolves to, so a font that read
+	// as ready (a system face) may now name a web face still to download.
+	readyFonts.clear();
+	requestedFonts.clear();
 	if (notifyQueued) return;
 	notifyQueued = true;
 	// For the stack change. The face itself is almost certainly not loaded yet:
@@ -471,4 +475,72 @@ function scheduleAudit(): void {
 			);
 		}
 	});
+}
+
+/** How long a measurement waits for a face before settling for the fallback. */
+const FONT_LOAD_WAIT_MS = 1500;
+
+/** Font shorthands known to be ready, so the check below runs once per font. */
+const readyFonts = new Set<string>();
+/** Font shorthands whose download this module already started. */
+const requestedFonts = new Set<string>();
+/** Downloads still in flight (each capped at {@link FONT_LOAD_WAIT_MS}). */
+const pendingLoads = new Set<Promise<void>>();
+
+interface FontLoading {
+	check(font: string, text?: string): boolean;
+	load(font: string, text?: string): Promise<unknown>;
+}
+
+/**
+ * Start downloading the face a measurement is about to use, if it is a
+ * declared web font that has not loaded yet.
+ *
+ * `measureText` never starts a download — it paints nothing — so the first
+ * measurement of a label silently takes the fallback face, and a component that
+ * reads the resulting `AbsoluteSize` back (a table sizing its columns, a panel
+ * sizing itself to its content) can settle on it for good: the next, correct
+ * measurement is then held in by the width it just fixed. Asking for the face
+ * here, and letting the adapter hold its first layout until it arrives (see
+ * {@link fontsPending}), keeps the fallback out of anything that reads it back.
+ */
+export function requestFontFor(font: string, sample: string): void {
+	if (readyFonts.has(font) || requestedFonts.has(font)) return;
+	const fonts = (globalThis as { document?: { fonts?: FontLoading } }).document
+		?.fonts;
+	if (!fonts?.check || !fonts.load) {
+		readyFonts.add(font);
+		return;
+	}
+	let ready: boolean;
+	try {
+		ready = fonts.check(font, sample);
+	} catch {
+		ready = true;
+	}
+	if (ready) {
+		readyFonts.add(font);
+		return;
+	}
+	requestedFonts.add(font);
+	const settled = Promise.race([
+		fonts.load(font, sample).then(
+			() => undefined,
+			() => undefined,
+		),
+		new Promise<void>((resolve) => setTimeout(resolve, FONT_LOAD_WAIT_MS)),
+	]).then(() => {
+		readyFonts.add(font);
+		pendingLoads.delete(settled);
+	});
+	pendingLoads.add(settled);
+}
+
+/**
+ * Resolves once every face {@link requestFontFor} started has arrived (or
+ * given up waiting), or `undefined` when nothing is in flight.
+ */
+export function fontsPending(): Promise<void> | undefined {
+	if (pendingLoads.size === 0) return undefined;
+	return Promise.all([...pendingLoads]).then(() => undefined);
 }

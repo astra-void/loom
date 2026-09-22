@@ -8,8 +8,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
 	clearRegisteredFonts,
 	familyKey,
+	fontsPending,
 	onFontsChanged,
 	registerFont,
+	requestFontFor,
 } from "./fonts.ts";
 import { fontFamily, measureText, shapedTextWidth } from "./index.ts";
 
@@ -447,5 +449,56 @@ describe("engine face metrics", () => {
 		} finally {
 			restore();
 		}
+	});
+});
+
+describe("requestFontFor / fontsPending", () => {
+	/** A `document.fonts` whose one web face loads when told to. */
+	function stubFonts(): { finish: () => void; loads: string[] } {
+		let loaded = false;
+		let finish: () => void = () => {};
+		const done = new Promise<void>((resolve) => {
+			finish = () => {
+				loaded = true;
+				resolve();
+			};
+		});
+		const loads: string[] = [];
+		Object.defineProperty(document, "fonts", {
+			configurable: true,
+			value: {
+				addEventListener: () => {},
+				check: (font: string) => loaded || !font.includes("WebFace"),
+				load: (font: string) => {
+					loads.push(font);
+					return done;
+				},
+			},
+		});
+		return { finish, loads };
+	}
+
+	it("starts the download a measurement needs and reports it pending", async () => {
+		const { finish, loads } = stubFonts();
+		// A registration resets what counts as ready, so start from a clean slate.
+		clearRegisteredFonts();
+		await Promise.resolve();
+		requestFontFor("16px WebFace", "abc");
+		requestFontFor("16px WebFace", "abc");
+		requestFontFor("16px SystemFace", "abc");
+		expect(loads).toEqual(["16px WebFace"]);
+		const pending = fontsPending();
+		expect(pending).toBeDefined();
+		finish();
+		await pending;
+		expect(fontsPending()).toBeUndefined();
+	});
+
+	it("has nothing pending when every face is already there", async () => {
+		stubFonts();
+		clearRegisteredFonts();
+		await Promise.resolve();
+		requestFontFor("16px SystemFace", "abc");
+		expect(fontsPending()).toBeUndefined();
 	});
 });
