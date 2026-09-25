@@ -15,6 +15,10 @@
  * #11, where a body sized for two lines was painted with four and showed a
  * one-line slice of the middle.
  */
+// Reading the wasm off disk is the only Node this package touches, so the types
+// come in here rather than through tsconfig `types`, which the published
+// declarations are also built with.
+/// <reference types="node" />
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { registerFont } from "@loom-dev/renderer";
