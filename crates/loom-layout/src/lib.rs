@@ -12,6 +12,11 @@
 //!   `ScrollingFrame` lays children out against its `CanvasSize`, and is the one
 //!   container that does not cap their `AutomaticSize` at its own box — content
 //!   taller (or wider) than the window is what there is to scroll.
+//! - `UIListLayout` flex: whichever of `HorizontalFlex`/`VerticalFlex` matches the
+//!   fill direction either spreads the line's leftover space between the items
+//!   (`SpaceBetween`/`SpaceAround`/`SpaceEvenly`) or resizes them (`Fill`) — growing
+//!   them into room the line has left and shrinking them back when they declare more
+//!   than it holds. A child's own `UIFlexItem` ratios override that for the child.
 //! - `UIScale` multiplies the size of the object it is parented to *and* of
 //!   everything under it — child offsets, padding and layout gaps alike — so the
 //!   subtree renders `Scale` times bigger about that object's own top-left. It
@@ -470,15 +475,27 @@ fn measure_content(
         }
     } else {
         // Free children: bounding box via the SAME placement math as child_rect (so
-        // AnchorPoint is honored and the measured extent matches where children land).
+        // the measured extent matches where children land), with the near edge
+        // clamped to the content origin.
+        //
+        // A child never contributes less than its own size: `AnchorPoint` decides
+        // where a child sits, not how much room its parent has to hug. An icon at
+        // the origin with `AnchorPoint = {0.5, 0.5}` — the idiom for rotating about
+        // its own centre — hangs half of itself off the top-left, and the engine
+        // still grows the parent to the icon's full 14x14 rather than the 7x7
+        // quarter that happens to land inside. Measuring to `r.x + r.width` read
+        // that overhang as negative room and came out half size. Clamping keeps
+        // both halves of the rule: what hangs off the near edge is not measured,
+        // and an offset past the far edge still pushes the box out.
+        //
         // NOTE: scale Position on the auto axis resolves against a ~0 content size and
         // is dropped (consistent with the deferred scale-on-auto-axis limitation).
         let mut max_w: f64 = 0.0;
         let mut max_h: f64 = 0.0;
         for &(_, child) in &children {
             let r = child_rect(child, content, limit, inner);
-            max_w = max_w.max(r.x + r.width);
-            max_h = max_h.max(r.y + r.height);
+            max_w = max_w.max((r.x - content.x).max(0.0) + r.width);
+            max_h = max_h.max((r.y - content.y).max(0.0) + r.height);
         }
         (max_w, max_h)
     };
@@ -718,6 +735,29 @@ fn flex_grow_weight(child: &SceneNode) -> f64 {
     }
 }
 
+/// A child's share of the main-axis *overflow* — the shrink half of flex.
+///
+/// `UIFlexItem.FlexMode`: `Shrink`/`Fill` take an equal share, `Custom` uses
+/// `ShrinkRatio`, and `None` keeps the child at its resolved size. A child with
+/// no `UIFlexItem` at all takes its ratio from the list, where `Fill` means
+/// every item flexes — so it shrinks with weight 1.
+///
+/// Read per child, unlike [`flex_grow_weight`]'s row-level fallback, because a
+/// `UIFlexItem` that sets only `GrowRatio` has already said what its shrink
+/// ratio is (zero): a row of those grows the marked child and leaves the rest
+/// at the widths Studio gives them, overflow or not.
+fn flex_shrink_weight(child: &SceneNode, main_flex: &str) -> f64 {
+    let item = match find_modifier(child, "UIFlexItem") {
+        Some(item) => item,
+        None => return if main_flex == "Fill" { 1.0 } else { 0.0 },
+    };
+    match enum_name(item, "FlexMode") {
+        Some("Shrink") | Some("Fill") => 1.0,
+        Some("Custom") => num_prop(item, "ShrinkRatio").unwrap_or(0.0).max(0.0),
+        _ => 0.0,
+    }
+}
+
 /// How `UIListLayout`'s flex spreads leftover main-axis space: an offset before
 /// the first item and an extra gap between items. Alignment still decides the
 /// offset when there is no flex (or nothing left to spread).
@@ -811,7 +851,11 @@ fn place_with_list(
         } else {
             cross_content
         };
-        let free = (main_content - line.main_total).max(0.0);
+        // What the line has left over, and what it is short by when the items
+        // declared more than it holds. Only one of the two is ever non-zero.
+        let slack = main_content - line.main_total;
+        let free = slack.max(0.0);
+        let deficit = (-slack).max(0.0);
 
         // `Fill` on the main axis grows every item, which is the same
         // distribution a per-child `UIFlexItem` asks for — so an explicit
@@ -835,6 +879,40 @@ fn place_with_list(
             0.0
         };
 
+        // The other half of `Fill`: when the items declare more main axis than
+        // the line holds, Roblox compresses them back down to fit instead of
+        // letting the row run off the end. That is what makes the standard idiom
+        // work — a middle item sized `{1, trailingWidth}` with a fixed trailing
+        // icon after it reserves room for the icon without hardcoding a
+        // percentage — and growing alone left the icon outside the row (and so
+        // invisible under `ClipsDescendants`).
+        //
+        // Each item gives up a share of the overflow proportional to its own main
+        // size times its ratio, like every flex model: the oversized item gives up
+        // nearly all of it and a 14px icon stays an icon. Dividing the overflow
+        // evenly instead would drive the icon straight past zero.
+        let shrink_basis: f64 = if deficit > 0.0 {
+            order[line.start..line.end]
+                .iter()
+                .filter(|(_, c)| c.visible())
+                .map(|&(_, c)| {
+                    let (w, h) = resolve_size(c, content, limit, inner);
+                    let main = if vertical { h } else { w };
+                    main * flex_shrink_weight(c, main_flex)
+                })
+                .sum()
+        } else {
+            0.0
+        };
+        // Capped at 1 so nothing shrinks past nothing: the gaps between items can
+        // overflow a line on their own, leaving a deficit no amount of item
+        // shrinking can absorb.
+        let shrink_frac = if shrink_basis > 0.0 {
+            (deficit / shrink_basis).min(1.0)
+        } else {
+            0.0
+        };
+
         // Growing consumes the leftover space, so the two never apply at once.
         let spacing = if weight_sum > 0.0 {
             None
@@ -844,6 +922,10 @@ fn place_with_list(
 
         let mut cursor = match &spacing {
             Some(s) => s.start,
+            // A shrunk line fills the box, so there is nothing to align it
+            // against — and aligning the *declared* total, which is longer than
+            // the box, would push the compressed row back off the near edge.
+            None if shrink_frac > 0.0 => 0.0,
             None => align_offset(main_content, line.main_total, main_align),
         };
         let between = spacing.as_ref().map_or(0.0, |s| s.between);
@@ -858,6 +940,12 @@ fn place_with_list(
                     flex_grow_weight(child)
                 };
                 main_size += weight * per_weight;
+            } else if child.visible() && shrink_frac > 0.0 {
+                // Its own share of the overflow, clamped so an uneven
+                // `ShrinkRatio` cannot push one item through zero and leave the
+                // line longer than the box it was compressed into.
+                let weight = flex_shrink_weight(child, main_flex);
+                main_size = (main_size - main_size * weight * shrink_frac).max(0.0);
             }
             if cross_flex == "Fill" {
                 cross_size = line_cross;
@@ -2353,6 +2441,34 @@ mod tests {
         assert_eq!(r.rects["0/0"].rect.height, 60.0);
     }
 
+    #[test]
+    fn auto_size_hugs_a_centre_anchored_child_whole() {
+        // A 14x14 icon at the origin with AnchorPoint {0.5, 0.5} — the idiom for
+        // rotating about its own centre — hangs half of itself off the top-left.
+        // Roblox hugs the whole icon, so the parent is 14x14, not the 7x7 that
+        // lands inside the box.
+        let child = with(
+            "ImageLabel",
+            "Icon",
+            &[
+                ("Size", udim2(0.0, 14.0, 0.0, 14.0)),
+                ("AnchorPoint", vector2(0.5, 0.5)),
+            ],
+        );
+        let mut container = with(
+            "Frame",
+            "Container",
+            &[
+                ("Size", udim2(0.0, 0.0, 0.0, 0.0)),
+                ("AutomaticSize", enum_item("AutomaticSize", "XY")),
+            ],
+        );
+        container.children.push(child);
+        let r = compute_layout(&screen(vec![container]), VP).unwrap();
+        assert_eq!(r.rects["0/0"].rect.width, 14.0);
+        assert_eq!(r.rects["0/0"].rect.height, 14.0);
+    }
+
     /// A 600-wide row of three 100-wide items: 300px of it is leftover space,
     /// which is what every flex value below divides up.
     fn flex_row(flex_property: &str, flex_value: &str) -> LayoutResult {
@@ -2404,6 +2520,123 @@ mod tests {
             assert_eq!(r.rects[id].rect.x, x);
             assert_eq!(r.rects[id].rect.width, 200.0);
         }
+    }
+
+    /// A horizontal `UIListLayout`, with `HorizontalFlex` only when asked for.
+    fn h_list(flex: Option<&str>) -> SceneNode {
+        let mut list = with(
+            "UIListLayout",
+            "List",
+            &[("FillDirection", enum_item("FillDirection", "Horizontal"))],
+        );
+        if let Some(flex) = flex {
+            list.properties
+                .insert("HorizontalFlex".into(), enum_item("UIFlexAlignment", flex));
+        }
+        list
+    }
+
+    fn custom_flex(name: &str, ratio: &str, value: f64) -> SceneNode {
+        with(
+            "UIFlexItem",
+            name,
+            &[
+                ("FlexMode", enum_item("UIFlexMode", "Custom")),
+                (ratio, num(value)),
+            ],
+        )
+    }
+
+    /// A 300-wide row holding a `{1, 60}` item and a fixed 90 one: 450 declared
+    /// into 300, so 150 of overflow. This is the Roblox idiom for reserving room
+    /// for a trailing icon without hardcoding a percentage — the row's own width
+    /// plus the icon, shrunk back to fit.
+    fn overflow_row(
+        list: SceneNode,
+        a_flex: Option<SceneNode>,
+        b_flex: Option<SceneNode>,
+    ) -> LayoutResult {
+        let mut a = with("Frame", "A", &[("Size", udim2(1.0, 60.0, 0.0, 50.0))]);
+        a.children.extend(a_flex);
+        let mut b = with("Frame", "B", &[("Size", udim2(0.0, 90.0, 0.0, 50.0))]);
+        b.children.extend(b_flex);
+        let mut row = with("Frame", "Row", &[("Size", udim2(0.0, 300.0, 0.0, 200.0))]);
+        row.children = vec![list, a, b];
+        compute_layout(&screen(vec![row]), VP).unwrap()
+    }
+
+    #[test]
+    fn horizontal_flex_fill_shrinks_an_overflowing_row() {
+        // Fill grows *and* shrinks: 450 of declared width compressed back into the
+        // 300 the row has, each item giving up a share of the 150 proportional to
+        // its own width (A 360/450 of it, B 90/450).
+        let r = overflow_row(h_list(Some("Fill")), None, None);
+        let b = r.rects["0/0/1"].rect;
+        assert_eq!(r.rects["0/0/0"].rect.width, 240.0, "A");
+        assert_eq!(b.x, 240.0, "B.x");
+        assert_eq!(b.width, 60.0, "B");
+        // The trailing item lands inside the row rather than past its clip.
+        assert_eq!(b.x + b.width, 300.0, "B right edge");
+    }
+
+    #[test]
+    fn an_overflowing_row_without_flex_keeps_overflowing() {
+        // No flex, no compression: Roblox lets the row run off the end, and the
+        // shrink pass must not start doing it uninvited.
+        let r = overflow_row(h_list(None), None, None);
+        assert_eq!(r.rects["0/0/0"].rect.width, 360.0);
+        assert_eq!(r.rects["0/0/1"].rect.x, 360.0);
+    }
+
+    #[test]
+    fn a_grow_only_flex_item_never_shrinks() {
+        // `FlexMode = Custom` with a `GrowRatio` and no `ShrinkRatio` has already
+        // said its shrink ratio is zero, so the row keeps the widths it declared
+        // even under the list's `Fill`.
+        let r = overflow_row(
+            h_list(Some("Fill")),
+            Some(custom_flex("AFlex", "GrowRatio", 1.0)),
+            Some(custom_flex("BFlex", "GrowRatio", 0.0)),
+        );
+        assert_eq!(r.rects["0/0/0"].rect.width, 360.0);
+        assert_eq!(r.rects["0/0/1"].rect.x, 360.0);
+        assert_eq!(r.rects["0/0/1"].rect.width, 90.0);
+    }
+
+    #[test]
+    fn a_shrink_ratio_takes_the_whole_overflow() {
+        // Only A carries a shrink ratio, so A absorbs all 150 of the overflow and
+        // B keeps its 90 — the row fits without the icon giving anything up.
+        let r = overflow_row(
+            h_list(Some("Fill")),
+            Some(custom_flex("AFlex", "ShrinkRatio", 1.0)),
+            Some(custom_flex("BFlex", "ShrinkRatio", 0.0)),
+        );
+        assert_eq!(r.rects["0/0/0"].rect.width, 210.0);
+        assert_eq!(r.rects["0/0/1"].rect.x, 210.0);
+        assert_eq!(r.rects["0/0/1"].rect.width, 90.0);
+    }
+
+    #[test]
+    fn vertical_flex_fill_shrinks_an_overflowing_column() {
+        // The same compression down the fill direction of a vertical list.
+        let list = with(
+            "UIListLayout",
+            "List",
+            &[("VerticalFlex", enum_item("UIFlexAlignment", "Fill"))],
+        );
+        let a = with("Frame", "A", &[("Size", udim2(0.0, 50.0, 1.0, 60.0))]);
+        let b = with("Frame", "B", &[("Size", udim2(0.0, 50.0, 0.0, 90.0))]);
+        let mut col = with(
+            "Frame",
+            "Column",
+            &[("Size", udim2(0.0, 200.0, 0.0, 300.0))],
+        );
+        col.children = vec![list, a, b];
+        let r = compute_layout(&screen(vec![col]), VP).unwrap();
+        assert_eq!(r.rects["0/0/0"].rect.height, 240.0);
+        assert_eq!(r.rects["0/0/1"].rect.y, 240.0);
+        assert_eq!(r.rects["0/0/1"].rect.height, 60.0);
     }
 
     #[test]

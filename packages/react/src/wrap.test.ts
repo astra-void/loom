@@ -574,6 +574,37 @@ describe("wrapped text against the real layout engine", () => {
 		expect(sweep(tree, "Body", BODY, range(600, 200))).toEqual([]);
 	});
 
+	it("settles a label in a Fill row that was pulled back in", () => {
+		// The idiom `Fill` exists for: a title sized past its row so the row pulls
+		// it back to leave the trailing icon its 14px. The label inside the title
+		// has to wrap at the width the row settled on, not at the row's own.
+		const tree = inBox(
+			createElement(
+				"frame",
+				{
+					Name: "Title",
+					LayoutOrder: 0,
+					Size: UDim2.new(1, 14, 0, 0),
+					AutomaticSize: Enum.AutomaticSize.Y,
+				},
+				label("Body", BODY, BODY_SIZE, BODY_LINE_HEIGHT),
+			),
+			[
+				createElement("uilistlayout", {
+					FillDirection: Enum.FillDirection.Horizontal,
+					HorizontalFlex: Enum.UIFlexAlignment.Fill,
+					SortOrder: Enum.SortOrder.LayoutOrder,
+				}),
+				createElement("frame", {
+					Name: "Icon",
+					LayoutOrder: 1,
+					Size: UDim2.fromOffset(14, 14),
+				}),
+			],
+		);
+		expect(sweep(tree, "Body", BODY, range(600, 200))).toEqual([]);
+	});
+
 	it("lands where a face present from the start would, arriving late", async () => {
 		// #11's shape: the first measurement runs against whatever the browser has
 		// *now*, and a registered face is almost never loaded by then — nothing has

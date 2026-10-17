@@ -533,6 +533,46 @@ function horizontalPadding(inst: LoomInstance, widthRef: number): number {
 }
 
 /**
+ * The width a horizontal list has *assigned* `node`, when the list can compress
+ * it below the size it resolved for itself — else `undefined`.
+ *
+ * Mirrors `flex_shrink_weight` in `crates/loom-layout`: a `UIFlexItem` speaks for
+ * its own child (`Shrink`/`Fill`, or `Custom` with a `ShrinkRatio`), and a child
+ * with none takes the list's `HorizontalFlex = Fill`. Only along the fill
+ * direction — a vertical list's `HorizontalFlex` is its cross axis, where `Fill`
+ * stretches an item to the line instead of compressing it to fit.
+ *
+ * This is the one width an `AutomaticSize` ancestor can have that its content did
+ * *not* decide, so it is the one the wrap width has to respect: the engine shrinks
+ * such an item to the room its line has left, and text measured against anything
+ * wider is painted with more lines than the box it ends up in.
+ */
+function compressedWidth(node: LoomInstance): number | undefined {
+	const parent = node.Parent;
+	if (!parent) return undefined;
+	const list = parent.FindFirstChildOfClass("UIListLayout");
+	if (!list) return undefined;
+	if (enumName(list.FillDirection) !== "Horizontal") return undefined;
+	const item = node.FindFirstChildOfClass("UIFlexItem");
+	let shrinks: boolean;
+	if (item) {
+		const mode = enumName(item.FlexMode);
+		const ratio = item.ShrinkRatio;
+		shrinks =
+			mode === "Shrink" ||
+			mode === "Fill" ||
+			(mode === "Custom" && typeof ratio === "number" && ratio > 0);
+	} else {
+		shrinks = enumName(list.HorizontalFlex) === "Fill";
+	}
+	if (!shrinks) return undefined;
+	// Last frame's width, like every other width here; 0 is "not laid out yet",
+	// which is no constraint at all (the first pass measures unwrapped).
+	const assigned = (node.AbsoluteSize as { X?: number } | undefined)?.X ?? 0;
+	return assigned > 0 ? assigned : undefined;
+}
+
+/**
  * The width `TextWrapped` text wraps at, or `undefined` when it does not wrap.
  * `TextWrap` is the engine's own deprecated alias for the same property.
  *
@@ -568,6 +608,11 @@ function wrapWidth(inst: LoomInstance, autoName: string): number | undefined {
 	// with a real width — is where the room actually runs out.
 	let available = 0;
 	let inset = 0;
+	// A flex item its line compressed is the exception to the climb: its width
+	// came from the list, not from this label, so the room it leaves is a real
+	// ceiling even though its axis is automatic. The climb goes on past it — the
+	// container may be narrower still — and the tightest ceiling wins.
+	let ceiling = Number.POSITIVE_INFINITY;
 	for (let node = inst.Parent; node; node = node.Parent) {
 		// An automatic axis has no width for a scale inset to resolve against —
 		// see `horizontalPadding` — and it is also the case where the walk keeps
@@ -577,12 +622,20 @@ function wrapWidth(inst: LoomInstance, autoName: string): number | undefined {
 			? 0
 			: ((node.AbsoluteSize as { X?: number } | undefined)?.X ?? 0);
 		inset += horizontalPadding(node, own);
+		if (auto) {
+			const compressed = compressedWidth(node);
+			// `inset` already carries this node's own padding and every one below
+			// it, which is exactly the room taken out of the width it was given.
+			if (compressed !== undefined) {
+				ceiling = Math.min(ceiling, compressed - inset);
+			}
+		}
 		if (!auto) {
 			available = own;
 			break;
 		}
 	}
-	const width = available - inset;
+	const width = Math.min(available - inset, ceiling);
 	return width > 0 ? width : undefined;
 }
 
