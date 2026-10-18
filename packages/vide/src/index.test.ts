@@ -7,7 +7,7 @@
  * `world.test.ts` — the two adapters feed the same Scene IR to the same engine,
  * so the same scene has to measure the same way through either.
  */
-import { Enum, UDim } from "@loom-dev/runtime";
+import { Enum, UDim, UDim2 } from "@loom-dev/runtime";
 import type { LayoutResult, SceneNode, Viewport } from "@loom-dev/scene";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { type ComputeLayout, create, mount, source } from "./index";
@@ -162,6 +162,99 @@ describe("vide adapter text measurement", () => {
 		// 500, and not the 133 the string measures on one line.
 		expect(last?.x).toBeLessThanOrEqual(80);
 		expect(last?.y).toBeGreaterThan(10);
+	});
+
+	it("wraps an item a Fill row shrinks at the room the row leaves it", () => {
+		// Once the row overflows, the body box is sized by the row rather than by
+		// the label inside it, so the label wraps inside what the icon leaves.
+		const measured: Array<{ x: number; y: number }> = [];
+		unmounts.push(
+			mount(
+				() =>
+					create("ScreenGui")({
+						1: create("Frame")({
+							Name: "Row",
+							1: create("UIListLayout")({
+								FillDirection: Enum.FillDirection.Horizontal,
+								HorizontalFlex: Enum.UIFlexAlignment.Fill,
+							}),
+							2: create("Frame")({
+								Name: "Body",
+								AutomaticSize: Enum.AutomaticSize.XY,
+								1: create("TextLabel")({
+									Name: "Wrapped",
+									Text: TEXT,
+									AutomaticSize: Enum.AutomaticSize.XY,
+									TextSize: 10,
+									TextWrapped: true,
+								}),
+							}),
+							3: create("Frame")({
+								Name: "Icon",
+								Size: UDim2.fromOffset(60, 14),
+							}),
+						}),
+					}),
+				host,
+				{
+					computeLayout: makeLayout(
+						(node) => (node.name === "Row" ? 120 : undefined),
+						measured,
+					),
+				},
+			),
+		);
+		const last = measured.at(-1);
+		// 120 of row less the icon's own 60 (the stub lays it out at 500, which is
+		// why the room reads its `Size`): "aaaa bbbb" is the widest line that fits,
+		// not the "aaaa bbbb cccc" that 120 would allow.
+		expect(last?.x).toBeLessThanOrEqual(60);
+		expect(last?.y).toBeGreaterThan(10);
+	});
+
+	it("leaves a row on an automatic canvas its whole width", () => {
+		// A canvas that grows to its items never makes them shrink, so the icon
+		// takes nothing away from the text beside it.
+		const measured: Array<{ x: number; y: number }> = [];
+		unmounts.push(
+			mount(
+				() =>
+					create("ScreenGui")({
+						1: create("ScrollingFrame")({
+							Name: "Row",
+							AutomaticCanvasSize: Enum.AutomaticSize.X,
+							1: create("UIListLayout")({
+								FillDirection: Enum.FillDirection.Horizontal,
+								HorizontalFlex: Enum.UIFlexAlignment.Fill,
+							}),
+							2: create("Frame")({
+								Name: "Body",
+								AutomaticSize: Enum.AutomaticSize.XY,
+								1: create("TextLabel")({
+									Name: "Wrapped",
+									Text: TEXT,
+									AutomaticSize: Enum.AutomaticSize.XY,
+									TextSize: 10,
+									TextWrapped: true,
+								}),
+							}),
+							3: create("Frame")({
+								Name: "Icon",
+								Size: UDim2.fromOffset(60, 14),
+							}),
+						}),
+					}),
+				host,
+				{
+					computeLayout: makeLayout(
+						(node) => (node.name === "Row" ? 120 : undefined),
+						measured,
+					),
+				},
+			),
+		);
+		// Wrapped at the frame's 120: "aaaa bbbb cccc" on the first line.
+		expect(measured.at(-1)?.x).toBeGreaterThan(60);
 	});
 
 	it("keeps the renderer's half-pixel text width", () => {

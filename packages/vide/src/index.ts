@@ -24,6 +24,7 @@ import {
 	fontSizeToPx,
 	type LayoutResult,
 	type PropertyValue,
+	participatesInLayout,
 	prop,
 	type SceneNode,
 	type Viewport,
@@ -221,6 +222,121 @@ function wrapWidth(
 	return width !== undefined && width > 0 ? width : undefined;
 }
 
+/** Whether a row can shrink `item`. Mirrors the react adapter's `shrinksInRow`. */
+function shrinksInRow(item: LiveNode, listFills: boolean): boolean {
+	const flex = item.children
+		.flatMap((slot) => slot.nodes)
+		.find((child) => child.className === "UIFlexItem");
+	if (!flex) return listFills;
+	switch (enumName(flex.props.get("FlexMode"))) {
+		case "Shrink":
+		case "Fill":
+			return true;
+		case "Custom": {
+			const ratio = flex.props.get("ShrinkRatio");
+			return typeof ratio === "number" && ratio > 0;
+		}
+		default:
+			return false;
+	}
+}
+
+/**
+ * A row item's width before flex grows or shrinks it. Mirrors the react
+ * adapter's `basisWidth`: its `Size` (clamped by a `UISizeConstraint`) when that
+ * is a width of its own, else what it was laid out at.
+ */
+function basisWidth(
+	item: LiveNode,
+	content: number,
+	laidOut: number | undefined,
+): number {
+	const size = item.props.get("Size") as
+		| { X?: { Scale?: unknown; Offset?: unknown } }
+		| undefined;
+	const x = size?.X;
+	if (autoOnX(item) || typeof x?.Offset !== "number") return laidOut ?? 0;
+	let width = x.Offset + (typeof x.Scale === "number" ? x.Scale : 0) * content;
+	const constraint = item.children
+		.flatMap((slot) => slot.nodes)
+		.find((child) => child.className === "UISizeConstraint");
+	const min = (constraint?.props.get("MinSize") as { X?: unknown } | undefined)
+		?.X;
+	const max = (constraint?.props.get("MaxSize") as { X?: unknown } | undefined)
+		?.X;
+	if (typeof max === "number") width = Math.min(width, max);
+	if (typeof min === "number") width = Math.max(width, min);
+	return Math.max(0, width);
+}
+
+/**
+ * The width a row shrinks its items into: its own laid-out width, or a
+ * `ScrollingFrame`'s canvas when that is fixed. `undefined` before the first
+ * layout, and for a canvas the engine lets grow to its items (automatic, or with
+ * no width), where nothing shrinks. Mirrors the react adapter's `flexRoom`.
+ */
+function shrinkableWidth(
+	row: LiveNode,
+	own: number | undefined,
+): number | undefined {
+	if (own === undefined || own <= 0) return undefined;
+	if (row.className !== "ScrollingFrame") return own;
+	const auto = enumName(row.props.get("AutomaticCanvasSize"));
+	const x = (
+		row.props.get("CanvasSize") as
+			| { X?: { Scale?: unknown; Offset?: unknown } }
+			| undefined
+	)?.X;
+	const canvas =
+		(typeof x?.Offset === "number" ? x.Offset : 0) +
+		(typeof x?.Scale === "number" ? x.Scale : 0) * own;
+	return auto === "X" || auto === "XY" || canvas <= 0 ? undefined : canvas;
+}
+
+/**
+ * The room a horizontal flex row leaves each item it can shrink, by id: the
+ * row's `content` width less every other item's width before flex and the gaps
+ * between them. `undefined` when `children` hold no horizontal list that
+ * shrinks. Mirrors the react adapter's `flexRoom`.
+ */
+function flexRooms(
+	children: LiveNode[],
+	content: number,
+	ctx: SnapshotContext,
+): Map<string, number> | undefined {
+	const list = children.find((child) => child.className === "UIListLayout");
+	if (
+		!list ||
+		enumName(list.props.get("FillDirection")) !== "Horizontal" ||
+		list.props.get("Wraps") === true
+	)
+		return undefined;
+	const listFills = enumName(list.props.get("HorizontalFlex")) === "Fill";
+	const items = children.filter(
+		(child) =>
+			participatesInLayout(child.className) &&
+			child.props.get("Visible") !== false,
+	);
+	const pad = list.props.get("Padding") as
+		| { Offset?: unknown; Scale?: unknown }
+		| undefined;
+	const gap =
+		(typeof pad?.Offset === "number" ? pad.Offset : 0) +
+		(typeof pad?.Scale === "number" ? pad.Scale : 0) * content;
+	const bases = items.map((item) =>
+		basisWidth(item, content, ctx.rects[item.id]?.rect.width),
+	);
+	const total = bases.reduce((sum, width) => sum + width, 0);
+	const rooms = new Map<string, number>();
+	items.forEach((item, i) => {
+		if (!shrinksInRow(item, listFills)) return;
+		const others = total - (bases[i] ?? 0);
+		const room = content - others - gap * Math.max(0, items.length - 1);
+		rooms.set(item.id, Math.max(room, 1));
+	});
+	return rooms;
+}
+
 /**
  * Measure an auto-sizing text node with the font the renderer paints and emit a
  * `TextBounds` Vector2 the layout engine reads for AutomaticSize (font metrics
@@ -343,7 +459,16 @@ function toScene(
 		const base = autoOnX(live) ? room : own;
 		const inner =
 			base === undefined ? undefined : base - horizontalPadding(live);
-		node.children = children.map((child) => toScene(child, ctx, inner));
+		// An item a horizontal flex row can shrink is sized by the row, so it
+		// gets the room the row leaves it rather than the whole content box.
+		const canvas = shrinkableWidth(live, own);
+		const rooms =
+			autoOnX(live) || canvas === undefined
+				? undefined
+				: flexRooms(children, canvas - horizontalPadding(live), ctx);
+		node.children = children.map((child) =>
+			toScene(child, ctx, rooms?.get(child.id) ?? inner),
+		);
 	}
 	return node;
 }

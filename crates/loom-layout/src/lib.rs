@@ -758,6 +758,64 @@ fn flex_shrink_weight(child: &SceneNode, main_flex: &str) -> f64 {
     }
 }
 
+/// The smallest main-axis size shrinking may take `child` to: its
+/// `UISizeConstraint.MinSize` on that axis, at the scale `resolve_size` clamps
+/// it at, or zero.
+fn shrink_floor(child: &SceneNode, vertical: bool, unit: f64) -> f64 {
+    let min = find_modifier(child, "UISizeConstraint")
+        .and_then(|sc| vec2_prop(sc, "MinSize"))
+        .map_or(0.0, |min| if vertical { min.y } else { min.x });
+    min.max(0.0) * unit * own_scale(child)
+}
+
+/// How much each item of an overflowing line gives up so the line fits its
+/// container again: flexbox's flexible-length resolution, for negative free
+/// space.
+///
+/// The overflow is shared in proportion to each item's shrink weight *times its
+/// size* (CSS's "scaled flex shrink factor"), so a title stretched past its row
+/// absorbs nearly all of it and a 14px icon beside it stays an icon — dividing
+/// it evenly would drive the icon straight past zero. Roblox documents that
+/// `Fill` and `Shrink` items shrink to fit a line that does not wrap, but not
+/// how the overflow is divided; the CSS weighting follows the flexbox model the
+/// rest of its flex API mirrors, and has not been measured in Studio yet.
+///
+/// An item that would pass its floor stops there, and what it could not absorb
+/// is shared out again among the others. Once every item sits on its floor the
+/// rest stays overflow — the gaps between items alone can overflow a line, and
+/// no amount of item shrinking absorbs that.
+fn shrink_line(sizes: &[f64], weights: &[f64], floors: &[f64], overflow: f64) -> Vec<f64> {
+    let mut cuts = vec![0.0; sizes.len()];
+    let mut open: Vec<usize> = (0..sizes.len())
+        .filter(|&i| weights[i] > 0.0 && sizes[i] > floors[i])
+        .collect();
+    let mut remaining = overflow;
+    while remaining > EPS && !open.is_empty() {
+        let scaled: f64 = open.iter().map(|&i| weights[i] * sizes[i]).sum();
+        let shares: Vec<(usize, f64)> = open
+            .iter()
+            .map(|&i| (i, remaining * weights[i] * sizes[i] / scaled))
+            .collect();
+        let pinned: Vec<usize> = shares
+            .iter()
+            .filter(|&&(i, share)| sizes[i] - share < floors[i])
+            .map(|&(i, _)| i)
+            .collect();
+        if pinned.is_empty() {
+            for (i, share) in shares {
+                cuts[i] = share;
+            }
+            break;
+        }
+        for &i in &pinned {
+            cuts[i] = sizes[i] - floors[i];
+            remaining -= cuts[i];
+        }
+        open.retain(|i| !pinned.contains(i));
+    }
+    cuts
+}
+
 /// How `UIListLayout`'s flex spreads leftover main-axis space: an offset before
 /// the first item and an extra gap between items. Alignment still decides the
 /// offset when there is no flex (or nothing left to spread).
@@ -834,6 +892,13 @@ fn place_with_list(
     let main_flex = if vertical { v_flex } else { h_flex };
     let cross_flex = if vertical { h_flex } else { v_flex };
 
+    // Only a line that has to fit can shrink. A `Wraps` list breaks an overflow
+    // onto a new line instead (Roblox shrinks only a list that does not wrap),
+    // and a main axis with no ceiling (no size of its own yet, or a scrolling
+    // canvas free to grow) is not a box to squeeze the items into.
+    let main_limit = if vertical { limit.y } else { limit.x };
+    let can_shrink = !m.wraps && main_limit.is_some();
+
     // Where the stack of lines starts on the cross axis. One line keeps the
     // whole content box and sits at 0, so a non-wrapping list aligns its items
     // against the container exactly as before; several lines align as a block
@@ -857,12 +922,19 @@ fn place_with_list(
         let free = slack.max(0.0);
         let deficit = (-slack).max(0.0);
 
+        let items = &order[line.start..line.end];
+        // Resolved once: the flex below and the placement after it both read them.
+        let sizes: Vec<(f64, f64)> = items
+            .iter()
+            .map(|&(_, c)| resolve_size(c, content, limit, inner))
+            .collect();
+
         // `Fill` on the main axis grows every item, which is the same
         // distribution a per-child `UIFlexItem` asks for — so an explicit
         // `UIFlexItem` anywhere in the row wins, and `Fill` is the fallback that
         // gives each item weight 1. Wrapping makes this per line, like flexbox:
         // each line spreads only its own leftover space.
-        let explicit_weight: f64 = order[line.start..line.end]
+        let explicit_weight: f64 = items
             .iter()
             .filter(|(_, c)| c.visible())
             .map(|&(_, c)| flex_grow_weight(c))
@@ -885,33 +957,34 @@ fn place_with_list(
         // work — a middle item sized `{1, trailingWidth}` with a fixed trailing
         // icon after it reserves room for the icon without hardcoding a
         // percentage — and growing alone left the icon outside the row (and so
-        // invisible under `ClipsDescendants`).
-        //
-        // Each item gives up a share of the overflow proportional to its own main
-        // size times its ratio, like every flex model: the oversized item gives up
-        // nearly all of it and a 14px icon stays an icon. Dividing the overflow
-        // evenly instead would drive the icon straight past zero.
-        let shrink_basis: f64 = if deficit > 0.0 {
-            order[line.start..line.end]
+        // invisible under `ClipsDescendants`). See `shrink_line` for how the
+        // overflow is divided.
+        let cuts = if can_shrink && deficit > EPS {
+            let mains: Vec<f64> = sizes
                 .iter()
-                .filter(|(_, c)| c.visible())
+                .map(|&(w, h)| if vertical { h } else { w })
+                .collect();
+            let weights: Vec<f64> = items
+                .iter()
                 .map(|&(_, c)| {
-                    let (w, h) = resolve_size(c, content, limit, inner);
-                    let main = if vertical { h } else { w };
-                    main * flex_shrink_weight(c, main_flex)
+                    if c.visible() {
+                        flex_shrink_weight(c, main_flex)
+                    } else {
+                        0.0
+                    }
                 })
-                .sum()
+                .collect();
+            let floors: Vec<f64> = items
+                .iter()
+                .map(|&(_, c)| shrink_floor(c, vertical, inner))
+                .collect();
+            shrink_line(&mains, &weights, &floors, deficit)
         } else {
-            0.0
+            vec![0.0; items.len()]
         };
-        // Capped at 1 so nothing shrinks past nothing: the gaps between items can
-        // overflow a line on their own, leaving a deficit no amount of item
-        // shrinking can absorb.
-        let shrink_frac = if shrink_basis > 0.0 {
-            (deficit / shrink_basis).min(1.0)
-        } else {
-            0.0
-        };
+        // What the line spans once shrunk: the box itself when the items could
+        // absorb the whole overflow, and longer when floors or gaps left some.
+        let line_main = line.main_total - cuts.iter().sum::<f64>();
 
         // Growing consumes the leftover space, so the two never apply at once.
         let spacing = if weight_sum > 0.0 {
@@ -922,16 +995,15 @@ fn place_with_list(
 
         let mut cursor = match &spacing {
             Some(s) => s.start,
-            // A shrunk line fills the box, so there is nothing to align it
-            // against — and aligning the *declared* total, which is longer than
-            // the box, would push the compressed row back off the near edge.
-            None if shrink_frac > 0.0 => 0.0,
-            None => align_offset(main_content, line.main_total, main_align),
+            // Aligned by what the line spans after shrinking — aligning the
+            // *declared* total, longer than the box, would push a compressed row
+            // back off the near edge.
+            None => align_offset(main_content, line_main, main_align),
         };
         let between = spacing.as_ref().map_or(0.0, |s| s.between);
 
-        for &(idx, child) in &order[line.start..line.end] {
-            let (w, h) = resolve_size(child, content, limit, inner);
+        for (k, &(idx, child)) in items.iter().enumerate() {
+            let (w, h) = sizes[k];
             let (mut main_size, mut cross_size) = if vertical { (h, w) } else { (w, h) };
             if child.visible() && per_weight > 0.0 {
                 let weight = if fill_all {
@@ -940,13 +1012,8 @@ fn place_with_list(
                     flex_grow_weight(child)
                 };
                 main_size += weight * per_weight;
-            } else if child.visible() && shrink_frac > 0.0 {
-                // Its own share of the overflow, clamped so an uneven
-                // `ShrinkRatio` cannot push one item through zero and leave the
-                // line longer than the box it was compressed into.
-                let weight = flex_shrink_weight(child, main_flex);
-                main_size = (main_size - main_size * weight * shrink_frac).max(0.0);
             }
+            main_size -= cuts[k];
             if cross_flex == "Fill" {
                 cross_size = line_cross;
             }
@@ -2637,6 +2704,190 @@ mod tests {
         assert_eq!(r.rects["0/0/0"].rect.height, 240.0);
         assert_eq!(r.rects["0/0/1"].rect.y, 240.0);
         assert_eq!(r.rects["0/0/1"].rect.height, 60.0);
+    }
+
+    /// `items` in a 300-wide row laid out by a horizontal `UIListLayout` that
+    /// also carries `list_props`.
+    fn row_300(list_props: &[(&str, PropertyValue)], items: Vec<SceneNode>) -> LayoutResult {
+        let mut list = with(
+            "UIListLayout",
+            "List",
+            &[("FillDirection", enum_item("FillDirection", "Horizontal"))],
+        );
+        for (k, v) in list_props {
+            list.properties.insert((*k).into(), v.clone());
+        }
+        let mut row = with("Frame", "Row", &[("Size", udim2(0.0, 300.0, 0.0, 40.0))]);
+        row.children = std::iter::once(list).chain(items).collect();
+        compute_layout(&screen(vec![row]), VP).unwrap()
+    }
+
+    fn wide(name: &str, w: f64) -> SceneNode {
+        with("Frame", name, &[("Size", udim2(0.0, w, 0.0, 20.0))])
+    }
+
+    fn flexing(name: &str, w: f64, flex: &[(&str, PropertyValue)]) -> SceneNode {
+        let mut item = wide(name, w);
+        item.children.push(with("UIFlexItem", "Flex", flex));
+        item
+    }
+
+    fn fill() -> (&'static str, PropertyValue) {
+        ("HorizontalFlex", enum_item("UIFlexAlignment", "Fill"))
+    }
+
+    /// #15: `Fill` shrinks as well as grows. 400 of items in a 300 row gives up
+    /// the 100 of overflow 3:1, in proportion to size — CSS's split, which
+    /// Roblox's docs leave open (not yet measured in Studio).
+    #[test]
+    fn fill_shrinks_an_overflowing_row_in_proportion_to_size() {
+        let r = row_300(&[fill()], vec![wide("A", 300.0), wide("B", 100.0)]);
+        close(r.rects["0/0/0"].rect.width, 225.0);
+        close(r.rects["0/0/1"].rect.x, 225.0);
+        close(r.rects["0/0/1"].rect.width, 75.0);
+    }
+
+    /// A `MinSize` is as far as an item shrinks; the overflow it can't absorb
+    /// comes out of the items that still can.
+    #[test]
+    fn a_min_size_stops_shrinking_and_the_sibling_gives_the_rest() {
+        let mut a = wide("A", 300.0);
+        a.children.push(with(
+            "UISizeConstraint",
+            "Min",
+            &[("MinSize", vector2(280.0, 0.0))],
+        ));
+        let r = row_300(&[fill()], vec![a, wide("B", 100.0)]);
+        close(r.rects["0/0/0"].rect.width, 280.0);
+        close(r.rects["0/0/1"].rect.x, 280.0);
+        close(r.rects["0/0/1"].rect.width, 20.0);
+    }
+
+    #[test]
+    fn a_shrink_flex_item_shrinks_without_the_lists_fill() {
+        let shrink = ("FlexMode", enum_item("UIFlexMode", "Shrink"));
+        let r = row_300(&[], vec![flexing("A", 300.0, &[shrink]), wide("B", 100.0)]);
+        close(r.rects["0/0/0"].rect.width, 200.0);
+        close(r.rects["0/0/1"].rect.x, 200.0);
+        close(r.rects["0/0/1"].rect.width, 100.0);
+    }
+
+    /// `Grow` is a 1:0 grow/shrink ratio: it never gives anything up, even in a
+    /// list whose `Fill` shrinks the item beside it.
+    #[test]
+    fn a_grow_flex_item_never_shrinks() {
+        let grow = ("FlexMode", enum_item("UIFlexMode", "Grow"));
+        let r = row_300(
+            &[fill()],
+            vec![flexing("A", 250.0, &[grow]), wide("B", 100.0)],
+        );
+        close(r.rects["0/0/0"].rect.width, 250.0);
+        close(r.rects["0/0/1"].rect.width, 50.0);
+    }
+
+    /// Ratio times size: 1 × 300 against 3 × 100 is an even split of the 100.
+    #[test]
+    fn custom_shrink_ratios_weight_each_items_share() {
+        let custom = |ratio: f64| {
+            [
+                ("FlexMode", enum_item("UIFlexMode", "Custom")),
+                ("ShrinkRatio", num(ratio)),
+            ]
+        };
+        let r = row_300(
+            &[],
+            vec![
+                flexing("A", 300.0, &custom(1.0)),
+                flexing("B", 100.0, &custom(3.0)),
+            ],
+        );
+        close(r.rects["0/0/0"].rect.width, 250.0);
+        close(r.rects["0/0/1"].rect.width, 50.0);
+    }
+
+    /// Roblox shrinks only a list that does not wrap: one that wraps gives an
+    /// oversized item a line of its own at its full size.
+    #[test]
+    fn a_wrapping_list_never_shrinks() {
+        let wraps = ("Wraps", PropertyValue::Known(KnownProperty::Bool(true)));
+        let r = row_300(&[fill(), wraps], vec![wide("A", 400.0)]);
+        close(r.rects["0/0/0"].rect.width, 400.0);
+    }
+
+    /// A canvas that grows to its content has no width to shrink the row into:
+    /// the items keep their size and the frame scrolls.
+    #[test]
+    fn an_automatic_canvas_scrolls_instead_of_shrinking() {
+        let mut scroll = with(
+            "ScrollingFrame",
+            "Scroll",
+            &[
+                ("Size", udim2(0.0, 300.0, 0.0, 40.0)),
+                ("CanvasSize", udim2(0.0, 0.0, 0.0, 0.0)),
+                ("AutomaticCanvasSize", enum_item("AutomaticSize", "X")),
+            ],
+        );
+        scroll.children = vec![
+            with(
+                "UIListLayout",
+                "List",
+                &[
+                    ("FillDirection", enum_item("FillDirection", "Horizontal")),
+                    fill(),
+                ],
+            ),
+            wide("A", 300.0),
+            wide("B", 100.0),
+        ];
+        let r = compute_layout(&screen(vec![scroll]), VP).unwrap();
+        close(r.rects["0/0/0"].rect.width, 300.0);
+        close(r.rects["0/0/1"].rect.width, 100.0);
+    }
+
+    /// #15's repro, rbxts-react-clean-ui's accordion header: the title is sized
+    /// `UDim2(1, 14, 0, 0)`, deliberately wider than its row, and relies on
+    /// `Fill` shrinking it so the chevron after it stays inside the row. Without
+    /// shrinking, the chevron was laid out past the row and clipped away.
+    #[test]
+    fn the_accordion_header_keeps_its_chevron_inside_the_row() {
+        let mut title = with(
+            "Frame",
+            "A",
+            &[
+                ("Size", udim2(1.0, 14.0, 0.0, 0.0)),
+                ("AutomaticSize", enum_item("AutomaticSize", "Y")),
+            ],
+        );
+        title.children.push(with(
+            "Frame",
+            "Text",
+            &[("Size", udim2(0.0, 120.0, 0.0, 18.0))],
+        ));
+        let mut chevron = with(
+            "Frame",
+            "B",
+            &[
+                ("Size", udim2(0.0, 0.0, 0.0, 0.0)),
+                ("AutomaticSize", enum_item("AutomaticSize", "XY")),
+            ],
+        );
+        chevron.children.push(with(
+            "Frame",
+            "Icon",
+            &[
+                ("Size", udim2(0.0, 14.0, 0.0, 14.0)),
+                ("AnchorPoint", vector2(0.5, 0.5)),
+            ],
+        ));
+        let r = row_300(&[fill(), ("Padding", udim(0.0, 4.0))], vec![title, chevron]);
+        let title = r.rects["0/0/0"].rect;
+        let chevron = r.rects["0/0/1"].rect;
+        assert!(title.width < 300.0, "title kept its overflow: {title:?}");
+        assert!(
+            chevron.x + chevron.width <= 300.0 + 1e-9,
+            "chevron left the row: {chevron:?}"
+        );
+        close(chevron.x, title.width + 4.0);
     }
 
     #[test]

@@ -605,6 +605,50 @@ describe("wrapped text against the real layout engine", () => {
 		expect(sweep(tree, "Body", BODY, range(600, 200))).toEqual([]);
 	});
 
+	/**
+	 * `HorizontalFlex = Fill` shrinks every item of a row that overflows and
+	 * grows every item of one with room to spare, so the icon beside the label
+	 * is laid out at whatever the label leaves over. The row is a share of the
+	 * stage, so the sweep drags the room through every width.
+	 */
+	const fillRow = (...items: ReactElement[]) =>
+		createElement(
+			"screengui",
+			{ Name: "Gui" },
+			createElement(
+				"frame",
+				{ Name: "Row", Size: UDim2.new(1, -100, 0, 400) },
+				createElement("uilistlayout", {
+					FillDirection: Enum.FillDirection.Horizontal,
+					HorizontalFlex: Enum.UIFlexAlignment.Fill,
+					Padding: new UDim(0, 8),
+				}),
+				...items,
+			),
+		);
+	const icon = createElement("frame", {
+		Name: "Icon",
+		Size: UDim2.fromOffset(14, 14),
+	});
+
+	it("settles a label in a Fill row beside a fixed icon", () => {
+		const tree = fillRow(wrapped("Body"), icon);
+		expect(sweep(tree, "Body", BODY, range(600, 200))).toEqual([]);
+	});
+
+	it("lays a Fill row out the same however its width was reached", () => {
+		const tree = fillRow(wrapped("Body"), icon);
+		expect(sweepBothWays(tree, "Body", BODY, range(600, 200))).toEqual([]);
+	});
+
+	it("settles a label that is itself the item a Fill row shrinks", () => {
+		const tree = fillRow(
+			label("Body", BODY, BODY_SIZE, BODY_LINE_HEIGHT),
+			icon,
+		);
+		expect(sweep(tree, "Body", BODY, range(600, 200))).toEqual([]);
+	});
+
 	it("lands where a face present from the start would, arriving late", async () => {
 		// #11's shape: the first measurement runs against whatever the browser has
 		// *now*, and a registered face is almost never loaded by then — nothing has

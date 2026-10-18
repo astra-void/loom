@@ -1045,6 +1045,16 @@ Every `UIGridStyleLayout` the engine has is implemented: `UIListLayout` (with
 > stable), which is why a tree that never sets `Name` is unaffected. Set
 > `SortOrder={Enum.SortOrder.LayoutOrder}` for source/`LayoutOrder` order.
 
+> **Flex shrinks as well as grows.** A `UIListLayout` line that does not wrap
+> and overflows its container gives the overflow back from its `Fill` items (and
+> any `UIFlexItem` set to `Shrink`, or `Custom` with a `ShrinkRatio`), never below
+> a `UISizeConstraint.MinSize`; any other `UIFlexItem` keeps its size. A list that
+> wraps breaks the overflow onto a new line instead, and a row with no width of
+> its own (or an automatic scrolling canvas) lets it run on. One part of this is
+> inferred rather than measured: Roblox documents that items shrink but not how
+> the overflow is divided, and loom splits it in proportion to each item's size
+> times its shrink ratio, as CSS flexbox does.
+
 ### `UITableLayout`
 
 The layout's siblings are the table's *lines* — rows, or columns under
