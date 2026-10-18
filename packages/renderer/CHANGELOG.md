@@ -1,5 +1,22 @@
 # @loom-dev/renderer
 
+## 0.13.1
+
+### Patch Changes
+
+- [#18](https://github.com/astra-void/loom/pull/18) [`441a52e`](https://github.com/astra-void/loom/commit/441a52e588d6a6f4e6b2945bec1bd8ce6fd2306f) Thanks [@Shadercloud](https://github.com/Shadercloud)! - Keep a node's own image, text and `TextBox` input painted beneath its children.
+
+  The layers were given the node's own `ZIndex`, which put them in the same
+  z-index space as its children — so an `ImageLabel` with `ZIndex = 2` painted its
+  image over the default-`ZIndex` content inside it, and a themed card header hid
+  its own title behind its background plaque. `ZIndexBehavior.Sibling` (the
+  renderer's model) orders siblings only: a descendant always draws above its
+  ancestors.
+
+- Updated dependencies []:
+  - @loom-dev/scene@0.13.1
+  - @loom-dev/runtime@0.13.1
+
 ## 0.13.0
 
 ### Patch Changes

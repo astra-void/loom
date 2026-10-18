@@ -1,5 +1,14 @@
 # @loom-dev/preview
 
+## 0.13.1
+
+### Patch Changes
+
+- Updated dependencies [[`441a52e`](https://github.com/astra-void/loom/commit/441a52e588d6a6f4e6b2945bec1bd8ce6fd2306f), [`63a77e2`](https://github.com/astra-void/loom/commit/63a77e25c10f70d025209fb4d9aca5aad0577ff0)]:
+  - @loom-dev/renderer@0.13.1
+  - @loom-dev/react@0.13.1
+  - @loom-dev/runtime@0.13.1
+
 ## 0.13.0
 
 ### Patch Changes
