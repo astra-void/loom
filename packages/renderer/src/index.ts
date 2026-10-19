@@ -62,6 +62,7 @@ import {
 	asColorSequence,
 	asEnum,
 	asNumber,
+	asNumberSequence,
 	asString,
 	asUDim,
 	asUDim2,
@@ -1013,22 +1014,155 @@ function applyShadows(
 	s.boxShadow = layers.join(", ");
 }
 
+/** One sampled point of a `UIGradient`: both of its ramps at `time`. */
+interface GradientStop {
+	time: number;
+	color: Color3;
+	transparency: number;
+}
+
+/** A node's enabled `UIGradient`, read as the CSS angle and its stops. */
+interface Gradient {
+	/** Roblox Rotation 0 runs left -> right, which is CSS `90deg`. */
+	angle: string;
+	stops: GradientStop[];
+	/** Whether a `Transparency` ramp was set — the case that masks own paint. */
+	masks: boolean;
+}
+
+/** `keys` (sorted by time) at `t`: linear between keypoints, flat past the ends. */
+function sampleRamp<T>(
+	keys: readonly { time: number; v: T }[],
+	t: number,
+	lerp: (a: T, b: T, f: number) => T,
+): T {
+	const first = keys[0] as { time: number; v: T };
+	if (t <= first.time) return first.v;
+	for (let i = 1; i < keys.length; i++) {
+		const b = keys[i] as { time: number; v: T };
+		if (t <= b.time) {
+			const a = keys[i - 1] as { time: number; v: T };
+			const span = b.time - a.time;
+			return span <= 0 ? b.v : lerp(a.v, b.v, (t - a.time) / span);
+		}
+	}
+	return (keys[keys.length - 1] as { time: number; v: T }).v;
+}
+
 /**
- * `UIGradient` -> a CSS `linear-gradient` over the background. Roblox Rotation 0
- * is left->right (CSS 90deg). Transparency (a NumberSequence) is deferred; the
- * gradient overlays rather than multiplies the BackgroundColor3 (approximation).
+ * A node's `UIGradient`, with its `Color` and `Transparency` ramps sampled at
+ * every keypoint either one has — so a hard step written as two keypoints a
+ * hair apart (`0.4999 -> 0.5`, `Pie`'s half-disc mask) stays a hard step.
+ * A missing ramp is the engine default: white, and fully opaque.
  */
-function applyGradient(s: CSSStyleDeclaration, node: SceneNode): void {
+function nodeGradient(node: SceneNode): Gradient | undefined {
 	const grad = findModifier(node, "UIGradient");
-	if (!grad) return;
-	if (asBool(grad.properties?.Enabled) === false) return;
-	const seq = asColorSequence(grad.properties?.Color);
-	if (!seq || seq.keypoints.length === 0) return;
+	if (!grad) return undefined;
+	if (asBool(grad.properties?.Enabled) === false) return undefined;
+	const colors = (asColorSequence(grad.properties?.Color)?.keypoints ?? []).map(
+		(k) => ({ time: k.time, v: k.color }),
+	);
+	const alphas = (
+		asNumberSequence(grad.properties?.Transparency)?.keypoints ?? []
+	).map((k) => ({ time: k.time, v: k.value }));
+	if (colors.length === 0 && alphas.length === 0) return undefined;
+	const white: Color3 = { r: 1, g: 1, b: 1 };
+	const times = [
+		...new Set([
+			0,
+			1,
+			...colors.map((k) => k.time),
+			...alphas.map((k) => k.time),
+		]),
+	]
+		.map((t) => Math.min(1, Math.max(0, t)))
+		.sort((a, b) => a - b);
+	const stops = times.map((time) => ({
+		time,
+		color:
+			colors.length === 0
+				? white
+				: sampleRamp(colors, time, (a, b, f) => ({
+						r: a.r + (b.r - a.r) * f,
+						g: a.g + (b.g - a.g) * f,
+						b: a.b + (b.b - a.b) * f,
+					})),
+		transparency:
+			alphas.length === 0
+				? 0
+				: Math.min(
+						1,
+						Math.max(
+							0,
+							sampleRamp(alphas, time, (a, b, f) => a + (b - a) * f),
+						),
+					),
+	}));
 	const rotation = asNumber(grad.properties?.Rotation) ?? 0;
-	const stops = seq.keypoints
-		.map((k) => `${cssColor(k.color, 0)} ${(k.time * 100).toFixed(3)}%`)
+	return { angle: `${90 + rotation}deg`, stops, masks: alphas.length > 0 };
+}
+
+const stopAt = (time: number): string => `${(time * 100).toFixed(3)}%`;
+
+/**
+ * `UIGradient` over the node's own background, as the engine composes it: the
+ * ramp's colour *multiplies* `BackgroundColor3` and its transparency multiplies
+ * the background's opacity. Baked into the `linear-gradient` itself rather than
+ * a CSS mask on the node, because the node's div also holds its children, and a
+ * `UIGradient` (outside a `CanvasGroup`) only ever touches its parent's own
+ * paint. A fully transparent background stays invisible, gradient or not.
+ *
+ * Rotation is applied in pixel space, CSS's model; the engine's runs in the
+ * box's normalised space, so the two agree on a square box and on the axis-
+ * aligned angles, and drift apart at a diagonal across a long one.
+ */
+function applyGradient(
+	s: CSSStyleDeclaration,
+	node: SceneNode,
+	background: Color3,
+	backgroundTransparency: number,
+): void {
+	const gradient = nodeGradient(node);
+	if (!gradient || backgroundTransparency >= 1) return;
+	const stops = gradient.stops
+		.map(({ time, color, transparency }) => {
+			const tinted = {
+				r: background.r * color.r,
+				g: background.g * color.g,
+				b: background.b * color.b,
+			};
+			const opacity = (1 - backgroundTransparency) * (1 - transparency);
+			return `${cssColor(tinted, 1 - opacity)} ${stopAt(time)}`;
+		})
 		.join(", ");
-	s.backgroundImage = `linear-gradient(${90 + rotation}deg, ${stops})`;
+	s.backgroundColor = "transparent";
+	s.backgroundImage = `linear-gradient(${gradient.angle}, ${stops})`;
+}
+
+/**
+ * The CSS mask a `UIGradient`'s `Transparency` ramp lays over the node's own
+ * image and text layers — the paint that is the node itself. Those layers hold
+ * no children, so masking them fades exactly what the engine fades. `undefined`
+ * when the node has no transparency ramp to apply.
+ */
+function gradientMask(node: SceneNode): string | undefined {
+	const gradient = nodeGradient(node);
+	if (!gradient?.masks) return undefined;
+	const stops = gradient.stops
+		.map(
+			({ time, transparency }) =>
+				`rgba(0, 0, 0, ${1 - transparency}) ${stopAt(time)}`,
+		)
+		.join(", ");
+	return `linear-gradient(${gradient.angle}, ${stops})`;
+}
+
+/** Mask an own-paint layer with the node's gradient transparency, if any. */
+function applyGradientMask(s: CSSStyleDeclaration, node: SceneNode): void {
+	const mask = gradientMask(node);
+	if (mask === undefined) return;
+	s.setProperty("mask-image", mask);
+	s.setProperty("-webkit-mask-image", mask);
 }
 
 /**
@@ -1126,11 +1260,10 @@ function applyBoxStyle(
 		s.touchAction = "none";
 	}
 	if (!isRoot && !isLayerCollector(node.className)) {
-		s.background = cssColor(
-			getBackgroundColor3(node),
-			getBackgroundTransparency(node),
-		);
-		applyGradient(s, node);
+		const background = getBackgroundColor3(node);
+		const backgroundTransparency = getBackgroundTransparency(node);
+		s.background = cssColor(background, backgroundTransparency);
+		applyGradient(s, node, background, backgroundTransparency);
 		applyCorner(s, node, rect);
 		applyShadows(s, node, rect);
 		// CanvasGroup.GroupTransparency fades the whole subtree as one — CSS
@@ -1437,6 +1570,7 @@ function createTextLayer(
 	const textSize = effectiveTextSize(node, rect);
 	s.position = "absolute";
 	s.inset = "0";
+	applyGradientMask(s, node);
 	s.display = "flex";
 	s.flexDirection = "column";
 	s.justifyContent = yAlignFlex(getTextYAlignment(node));
@@ -1778,6 +1912,7 @@ function textLayerKey(node: SceneNode, rect: Rect): string {
 		getTextXAlignment(node),
 		getTextYAlignment(node),
 		getZIndex(node),
+		gradientMask(node) ?? "",
 	].join(" ");
 }
 
@@ -2199,6 +2334,7 @@ function createImageLayer(
 	// `Pixelated` is the engine's own opt-out of smoothing when an image is
 	// scaled up — pixel art, and every UI built on a 1px-per-texel sheet.
 	if (getResampleMode(node) === "Pixelated") s.imageRendering = "pixelated";
+	applyGradientMask(s, node);
 
 	const known = directImageUrl(image) ?? resolvedImages.get(image);
 	if (known !== undefined) startPaint(el, node, known, rect);
@@ -2259,6 +2395,7 @@ function imageLayerKey(node: SceneNode, rect: Rect): string {
 		getSliceScale(node),
 		`${tile.x.scale},${tile.x.offset},${tile.y.scale},${tile.y.offset}`,
 		needsNodeRect(node) ? `${rect.width}x${rect.height}` : "",
+		gradientMask(node) ?? "",
 	].join(" ");
 }
 

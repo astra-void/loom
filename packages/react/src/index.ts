@@ -34,6 +34,7 @@ import type {
 	Font,
 	LoomConnection,
 	LoomInstance,
+	NumberSequence,
 	Rect,
 	UDim,
 	UDim2,
@@ -1905,9 +1906,10 @@ export interface UIFlexItemProps {
 	ShrinkRatio?: Bindable<number>;
 	key?: Key;
 }
-/** `UIGradient` props (Transparency NumberSequence is deferred). */
+/** `UIGradient` props. */
 export interface UIGradientProps {
 	Color?: Bindable<ColorSequence>;
+	Transparency?: Bindable<NumberSequence>;
 	Rotation?: Bindable<number>;
 	Offset?: Bindable<Vector2>;
 	Enabled?: Bindable<boolean>;

@@ -790,3 +790,91 @@ describe("TextScaled", () => {
 		);
 	});
 });
+
+describe("UIGradient", () => {
+	const halfMask = prop.numberSequence({
+		keypoints: [
+			{ time: 0, value: 1, envelope: 0 },
+			{ time: 0.4999, value: 1, envelope: 0 },
+			{ time: 0.5, value: 0, envelope: 0 },
+			{ time: 1, value: 0, envelope: 0 },
+		],
+	});
+	const gradient = (properties: SceneNode["properties"]): SceneNode => ({
+		className: "UIGradient",
+		name: "Gradient",
+		properties,
+	});
+
+	it("fades the background along its Transparency ramp, hard steps intact", () => {
+		// `Pie`'s half-disc: transparent up to the middle, opaque after it.
+		const s = cardStyle([
+			gradient({ Transparency: halfMask, Rotation: prop.number(90) }),
+		]);
+		expect(s.backgroundImage).toBe(
+			"linear-gradient(180deg, rgba(255, 0, 0, 0) 0.000%, rgba(255, 0, 0, 0) 49.990%, rgba(255, 0, 0, 1) 50.000%, rgba(255, 0, 0, 1) 100.000%)",
+		);
+		expect(s.backgroundColor).toBe("transparent");
+	});
+
+	it("multiplies BackgroundColor3 by its Color ramp", () => {
+		const s = cardStyle([
+			gradient({
+				Color: prop.colorSequence({
+					keypoints: [
+						{ time: 0, color: color3FromRGB(255, 255, 255) },
+						{ time: 1, color: color3FromRGB(0, 0, 255) },
+					],
+				}),
+			}),
+		]);
+		// A red background times blue is black, not blue painted over the red.
+		expect(s.backgroundImage).toBe(
+			"linear-gradient(90deg, rgba(255, 0, 0, 1) 0.000%, rgba(0, 0, 0, 1) 100.000%)",
+		);
+	});
+
+	it("leaves a fully transparent background invisible", () => {
+		const mount = document.createElement("div");
+		const scene = sceneWith([gradient({ Transparency: halfMask })]);
+		const card = scene.children?.[0] as SceneNode;
+		card.properties = {
+			...card.properties,
+			BackgroundTransparency: prop.number(1),
+		};
+		renderScene(scene, LAYOUT, mount);
+		const el = mount.querySelector<HTMLElement>('[data-loom-name="Card"]');
+		expect(el?.style.backgroundImage).not.toContain("linear-gradient");
+	});
+
+	it("masks the node's own image, never the node's children", () => {
+		const mount = document.createElement("div");
+		renderScene(
+			{
+				className: "Frame",
+				name: "Root",
+				id: "root",
+				children: [
+					{
+						className: "ImageLabel",
+						name: "Icon",
+						id: "icon",
+						properties: {
+							Image: prop.string("https://example.test/icon.png"),
+						},
+						children: [gradient({ Transparency: halfMask })],
+					},
+				],
+			},
+			LAYOUT_WITH_ICON,
+			mount,
+		);
+		const icon = mount.querySelector<HTMLElement>('[data-loom-name="Icon"]');
+		const layer = mount.querySelector<HTMLElement>('[data-loom-layer="image"]');
+		// jsdom keeps only the prefixed spelling; the renderer sets both.
+		expect(layer?.style.getPropertyValue("-webkit-mask-image")).toContain(
+			"rgba(0, 0, 0, 1) 50.000%",
+		);
+		expect(icon?.style.getPropertyValue("-webkit-mask-image")).toBe("");
+	});
+});

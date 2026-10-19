@@ -101,6 +101,25 @@ describe("ColorSequence constructor", () => {
 			},
 		});
 	});
+
+	it("encodes a NumberSequence to the transparency-ramp IR", () => {
+		expect(
+			toPropertyValue(
+				new NumberSequence([
+					new NumberSequenceKeypoint(0, 1),
+					new NumberSequenceKeypoint(1, 0.25, 0.1),
+				]),
+			),
+		).toEqual({
+			type: "NumberSequence",
+			value: {
+				keypoints: [
+					{ time: 0, value: 1, envelope: 0 },
+					{ time: 1, value: 0.25, envelope: 0.1 },
+				],
+			},
+		});
+	});
 });
 
 describe("Color3.fromHex", () => {

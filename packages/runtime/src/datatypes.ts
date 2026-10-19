@@ -712,12 +712,6 @@ export class NumberSequenceKeypoint {
 /**
  * A Roblox `NumberSequence` (a ramp of numbers over 0..1) — `UIGradient`'s
  * `Transparency`, `Pie`-style masks, particle curves.
- *
- * The Scene IR has no slot for one yet, so `toPropertyValue` still drops it and
- * the renderer paints the un-ramped value. It exists here because the datatype
- * has to *construct*: roblox-ts code builds these at render time, and a missing
- * global takes the whole scene down with a `ReferenceError` long before anything
- * could have consumed the ramp.
  */
 export class NumberSequence {
 	readonly Keypoints: readonly NumberSequenceKeypoint[];
@@ -1561,6 +1555,15 @@ export function toPropertyValue(v: unknown): PropertyValue | undefined {
 			keypoints: v.Keypoints.map((k) => ({
 				time: k.Time,
 				color: { r: k.Value.R, g: k.Value.G, b: k.Value.B },
+			})),
+		});
+	}
+	if (v instanceof NumberSequence) {
+		return prop.numberSequence({
+			keypoints: v.Keypoints.map((k) => ({
+				time: k.Time,
+				value: k.Value,
+				envelope: k.Envelope,
 			})),
 		});
 	}

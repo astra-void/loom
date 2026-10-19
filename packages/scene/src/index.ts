@@ -51,6 +51,24 @@ export interface ColorSequenceValue {
 }
 
 /**
+ * A `NumberSequence` keypoint — `UIGradient.Transparency`'s ramp. `envelope` is
+ * the particle-only random spread, carried so the value round-trips.
+ */
+export interface NumberSequenceKeypointValue {
+	time: number;
+	value: number;
+	envelope: number;
+}
+/**
+ * A `NumberSequence` payload. TypeScript-only, like {@link ColorSequenceValue}:
+ * the Rust engine degrades the tag to `Unknown` and ignores it, which is correct
+ * — a transparency ramp changes how a node is painted, never where it lands.
+ */
+export interface NumberSequenceValue {
+	keypoints: NumberSequenceKeypointValue[];
+}
+
+/**
  * A `Rect` datatype payload (`ImageLabel.SliceCenter`) — the two corners, in the
  * source image's own pixels.
  *
@@ -81,6 +99,7 @@ export type KnownProperty =
 	| { type: "Vector2"; value: Vector2 }
 	| { type: "Color3"; value: Color3 }
 	| { type: "ColorSequence"; value: ColorSequenceValue }
+	| { type: "NumberSequence"; value: NumberSequenceValue }
 	| { type: "Rect"; value: RectValue }
 	| { type: "Font"; value: FontValue }
 	| { type: "EnumItem"; value: EnumItemValue }
@@ -105,6 +124,7 @@ const KNOWN_TAGS = new Set<string>([
 	"Vector2",
 	"Color3",
 	"ColorSequence",
+	"NumberSequence",
 	"Rect",
 	"Font",
 	"EnumItem",
@@ -256,6 +276,13 @@ export function asColorSequence(
 ): ColorSequenceValue | undefined {
 	return p?.type === "ColorSequence"
 		? ((p as KnownProperty).value as ColorSequenceValue)
+		: undefined;
+}
+export function asNumberSequence(
+	p: PropertyValue | undefined,
+): NumberSequenceValue | undefined {
+	return p?.type === "NumberSequence"
+		? ((p as KnownProperty).value as NumberSequenceValue)
 		: undefined;
 }
 /** A `Rect` datatype property (`SliceCenter`), in source-image pixels. */
@@ -532,6 +559,10 @@ export const prop = {
 	color3: (v: Color3): PropertyValue => ({ type: "Color3", value: v }),
 	colorSequence: (v: ColorSequenceValue): PropertyValue => ({
 		type: "ColorSequence",
+		value: v,
+	}),
+	numberSequence: (v: NumberSequenceValue): PropertyValue => ({
+		type: "NumberSequence",
 		value: v,
 	}),
 	rect: (v: RectValue): PropertyValue => ({ type: "Rect", value: v }),
