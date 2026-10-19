@@ -720,13 +720,23 @@ fn list_metrics(
     }
 }
 
-/// `UIFlexItem.FlexMode` on a child → its share of the leftover main-axis space.
-/// `Grow`/`Fill` take an equal share; `Custom` uses `GrowRatio`; everything else
-/// (and no `UIFlexItem` at all) keeps its resolved size.
-fn flex_grow_weight(child: &SceneNode) -> f64 {
+/// A child's share of the main-axis *leftover* space — the grow half of flex.
+///
+/// `UIFlexItem.FlexMode`: `Grow`/`Fill` take an equal share, `Custom` uses
+/// `GrowRatio`, and `None` keeps the child at its resolved size. A child with no
+/// `UIFlexItem` at all takes its ratio from the list, where `Fill` means every
+/// item flexes — so it grows with weight 1.
+///
+/// Read per child, like [`flex_shrink_weight`]: a `UIFlexItem` that sets
+/// `GrowRatio = 0` has said it does not grow, and the list's `Fill` does not
+/// overrule it. rbxts-react-clean-ui's checkbox `Fieldset` marks both the box
+/// and its label `Custom` with zero ratios, and Studio keeps the label beside
+/// the box; reading "no item asked to grow" as "fall back to `Fill`" spread
+/// them across the row instead.
+fn flex_grow_weight(child: &SceneNode, main_flex: &str) -> f64 {
     let item = match find_modifier(child, "UIFlexItem") {
         Some(item) => item,
-        None => return 0.0,
+        None => return if main_flex == "Fill" { 1.0 } else { 0.0 },
     };
     match enum_name(item, "FlexMode") {
         Some("Grow") | Some("Fill") => 1.0,
@@ -742,10 +752,10 @@ fn flex_grow_weight(child: &SceneNode) -> f64 {
 /// no `UIFlexItem` at all takes its ratio from the list, where `Fill` means
 /// every item flexes — so it shrinks with weight 1.
 ///
-/// Read per child, unlike [`flex_grow_weight`]'s row-level fallback, because a
-/// `UIFlexItem` that sets only `GrowRatio` has already said what its shrink
-/// ratio is (zero): a row of those grows the marked child and leaves the rest
-/// at the widths Studio gives them, overflow or not.
+/// Read per child, like [`flex_grow_weight`]: a `UIFlexItem` that sets only
+/// `GrowRatio` has already said what its shrink ratio is (zero), so a row of
+/// those grows the marked child and leaves the rest at the widths Studio gives
+/// them, overflow or not.
 fn flex_shrink_weight(child: &SceneNode, main_flex: &str) -> f64 {
     let item = match find_modifier(child, "UIFlexItem") {
         Some(item) => item,
@@ -929,22 +939,15 @@ fn place_with_list(
             .map(|&(_, c)| resolve_size(c, content, limit, inner))
             .collect();
 
-        // `Fill` on the main axis grows every item, which is the same
-        // distribution a per-child `UIFlexItem` asks for — so an explicit
-        // `UIFlexItem` anywhere in the row wins, and `Fill` is the fallback that
-        // gives each item weight 1. Wrapping makes this per line, like flexbox:
-        // each line spreads only its own leftover space.
-        let explicit_weight: f64 = items
+        // `Fill` on the main axis grows every item with weight 1, and a child's
+        // own `UIFlexItem` overrides that for the child (see
+        // `flex_grow_weight`). Wrapping makes this per line, like flexbox: each
+        // line spreads only its own leftover space.
+        let weight_sum: f64 = items
             .iter()
             .filter(|(_, c)| c.visible())
-            .map(|&(_, c)| flex_grow_weight(c))
+            .map(|&(_, c)| flex_grow_weight(c, main_flex))
             .sum();
-        let fill_all = explicit_weight <= 0.0 && main_flex == "Fill";
-        let weight_sum = if fill_all {
-            line.visible_count as f64
-        } else {
-            explicit_weight
-        };
         let per_weight = if weight_sum > 0.0 {
             free / weight_sum
         } else {
@@ -1006,12 +1009,7 @@ fn place_with_list(
             let (w, h) = sizes[k];
             let (mut main_size, mut cross_size) = if vertical { (h, w) } else { (w, h) };
             if child.visible() && per_weight > 0.0 {
-                let weight = if fill_all {
-                    1.0
-                } else {
-                    flex_grow_weight(child)
-                };
-                main_size += weight * per_weight;
+                main_size += flex_grow_weight(child, main_flex) * per_weight;
             }
             main_size -= cuts[k];
             if cross_flex == "Fill" {
@@ -2954,6 +2952,40 @@ mod tests {
         // The marked child swallows all 400px of leftover space.
         assert_eq!(r.rects["0/0/1"].rect.x, 100.0);
         assert_eq!(r.rects["0/0/1"].rect.width, 500.0);
+    }
+
+    /// rbxts-react-clean-ui's checkbox `Fieldset`: a `Fill` row whose box and
+    /// label are both `UIFlexItem` `Custom` with zero ratios. Studio keeps the
+    /// label beside the box; the list's `Fill` does not overrule a ratio the
+    /// item set itself.
+    #[test]
+    fn zero_grow_ratios_keep_their_size_under_fill() {
+        let custom_zero = [
+            ("FlexMode", enum_item("UIFlexMode", "Custom")),
+            ("GrowRatio", num(0.0)),
+            ("ShrinkRatio", num(0.0)),
+        ];
+        let r = row_300(
+            &[fill()],
+            vec![
+                flexing("Box", 28.0, &custom_zero),
+                flexing("Label", 150.0, &custom_zero),
+            ],
+        );
+        close(r.rects["0/0/0"].rect.width, 28.0);
+        close(r.rects["0/0/1"].rect.x, 28.0);
+        close(r.rects["0/0/1"].rect.width, 150.0);
+    }
+
+    /// Under the list's `Fill` a child without a `UIFlexItem` still grows; one
+    /// with its own speaks for itself. Read per child, as the shrink half is.
+    #[test]
+    fn fill_grows_unmarked_items_beside_a_marked_one() {
+        let grow = ("FlexMode", enum_item("UIFlexMode", "Grow"));
+        let r = row_300(&[fill()], vec![flexing("A", 100.0, &[grow]), wide("B", 100.0)]);
+        close(r.rects["0/0/0"].rect.width, 150.0);
+        close(r.rects["0/0/1"].rect.x, 150.0);
+        close(r.rects["0/0/1"].rect.width, 150.0);
     }
 
     #[test]
