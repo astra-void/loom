@@ -1,5 +1,14 @@
 # @loom-dev/layout
 
+## 0.13.2
+
+### Patch Changes
+
+- [`d1ccb5b`](https://github.com/astra-void/loom/commit/d1ccb5b23c97a89a18bd1c5d0760385448590f96) Thanks [@astra-void](https://github.com/astra-void)! - A `UIFlexItem` with a zero `GrowRatio` keeps its size in a `Fill` row. When every item in a line had a `UIFlexItem` and none asked to grow, the list's `Fill` took over and grew them all, so rbxts-react-clean-ui's checkbox `Fieldset` spread its box and label across the row where Studio keeps the label beside the box. Grow ratios are now read per child, like shrink ratios: a child's own `UIFlexItem` speaks for it, and only a child without one follows the list's `Fill`.
+
+- Updated dependencies [[`764f2f0`](https://github.com/astra-void/loom/commit/764f2f03f940ab27286ec09baded0cc31c5cb30b)]:
+  - @loom-dev/scene@0.13.2
+
 ## 0.13.1
 
 ### Patch Changes

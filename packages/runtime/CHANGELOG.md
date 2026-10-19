@@ -1,5 +1,14 @@
 # @loom-dev/runtime
 
+## 0.13.2
+
+### Patch Changes
+
+- [`764f2f0`](https://github.com/astra-void/loom/commit/764f2f03f940ab27286ec09baded0cc31c5cb30b) Thanks [@astra-void](https://github.com/astra-void)! - `UIGradient.Transparency` is painted. The `NumberSequence` now reaches the scene, and the ramp fades the node's own background, image and text but not its children, as the engine does outside a `CanvasGroup`. The gradient's `Color` now multiplies `BackgroundColor3` instead of painting over it, so a transparent background stays transparent under a gradient. rbxts-react-clean-ui's `Pie` chart, built from half-disc gradient masks, had drawn each half as one solid colour.
+
+- Updated dependencies [[`764f2f0`](https://github.com/astra-void/loom/commit/764f2f03f940ab27286ec09baded0cc31c5cb30b)]:
+  - @loom-dev/scene@0.13.2
+
 ## 0.13.1
 
 ### Patch Changes
