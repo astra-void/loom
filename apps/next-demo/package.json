@@ -10,7 +10,7 @@
 	},
 	"dependencies": {
 		"loom-dev": "workspace:*",
-		"next": "^15.5.26",
+		"next": "^15.5.27",
 		"react": "catalog:",
 		"react-dom": "^18.3.1"
 	},
