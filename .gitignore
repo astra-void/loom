@@ -24,3 +24,6 @@ out/
 # scripts/next-base-path-test.mjs assembles its Next app here
 apps/.loom-base-path-fixture/
 .vscode/settings.json
+
+# graft's local graph cache — regenerable, not committed (run `graft build`).
+/graft/
