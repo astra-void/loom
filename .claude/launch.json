@@ -41,6 +41,37 @@
 			"autoPort": true
 		},
 		{
+			"name": "clean-ui-gallery",
+			"runtimeExecutable": "pnpm",
+			"runtimeArgs": [
+				"--filter",
+				"loom-dev",
+				"exec",
+				"tsx",
+				"src/cli.ts",
+				"preview",
+				"/Users/returnf4lse/Desktop/Workspace/typescript/rbxts-react-clean-ui",
+				"--targets",
+				"--port",
+				"5187"
+			],
+			"port": 5187
+		},
+		{
+			"name": "clean-ui-docs",
+			"runtimeExecutable": "npm",
+			"runtimeArgs": [
+				"--prefix",
+				"/Users/returnf4lse/Desktop/Workspace/typescript/rbxts-react-clean-ui/docs",
+				"run",
+				"dev",
+				"--",
+				"--port",
+				"3010"
+			],
+			"port": 3010
+		},
+		{
 			"name": "fumadocs-demo-prod",
 			"runtimeExecutable": "pnpm",
 			"runtimeArgs": ["--filter", "@loom-dev/fumadocs-demo", "start"],
