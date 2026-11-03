@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+	CFrame,
 	Color3,
 	ColorSequence,
 	ColorSequenceKeypoint,
@@ -958,5 +959,133 @@ describe("datatype members the audit found missing", () => {
 			false,
 		);
 		expect(robloxEquals(Content.fromUri("a"), Content.fromUri("a"))).toBe(true);
+	});
+});
+
+describe("CFrame rotation", () => {
+	const near = (a: Vector3, b: Vector3) =>
+		expect(a.FuzzyEq(b, 1e-9)).toBe(true);
+	const quarter = Math.PI / 2;
+
+	it("rotates the way the engine does", () => {
+		// `CFrame.Angles(0, math.rad(90), 0)` turns -Z (the look) onto -X.
+		const yaw = CFrame.Angles(0, quarter, 0);
+		near(yaw.LookVector, new Vector3(-1, 0, 0));
+		near(yaw.RightVector, new Vector3(0, 0, -1));
+		near(yaw.UpVector, Vector3.yAxis);
+		near(yaw.mul(new Vector3(1, 0, 0)), new Vector3(0, 0, -1));
+	});
+
+	it("keeps the identity, position-only forms it had", () => {
+		const cf = CFrame.new(1, 2, 3);
+		expect(cf.GetComponents()).toEqual([1, 2, 3, 1, 0, 0, 0, 1, 0, 0, 0, 1]);
+		expect(tostring(cf)).toBe("1, 2, 3, 1, 0, 0, 0, 1, 0, 0, 0, 1");
+		expect(CFrame.new(new Vector3(4, 5, 6)).Position).toEqual(
+			new Vector3(4, 5, 6),
+		);
+	});
+
+	it("reads the quaternion and twelve-component constructors", () => {
+		const s = Math.sin(quarter / 2);
+		const c = Math.cos(quarter / 2);
+		expect(
+			CFrame.new(0, 0, 0, 0, s, 0, c).FuzzyEq(CFrame.Angles(0, quarter, 0)),
+		).toBe(true);
+		const components = CFrame.Angles(0.3, -0.7, 1.1)
+			.add(new Vector3(1, 2, 3))
+			.GetComponents();
+		const rebuilt = CFrame.new(
+			...(components as [
+				number,
+				number,
+				number,
+				number,
+				number,
+				number,
+				number,
+				number,
+				number,
+				number,
+				number,
+				number,
+			]),
+		);
+		expect(rebuilt.GetComponents()).toEqual(components);
+	});
+
+	it("looks at a target with world up as the roll reference", () => {
+		const cf = CFrame.lookAt(new Vector3(0, 0, 0), new Vector3(10, 0, 0));
+		near(cf.LookVector, Vector3.xAxis);
+		near(cf.UpVector, Vector3.yAxis);
+		near(cf.RightVector, new Vector3(0, 0, 1));
+		near(
+			CFrame.new(Vector3.zero, new Vector3(0, 0, -5)).LookVector,
+			new Vector3(0, 0, -1),
+		);
+		// Straight up has no roll plane; it must still be a rotation, not NaN.
+		const up = CFrame.lookAt(Vector3.zero, new Vector3(0, 5, 0));
+		near(up.LookVector, Vector3.yAxis);
+		expect(up.GetComponents().every(Number.isFinite)).toBe(true);
+	});
+
+	it("inverts, and converts between object and world space", () => {
+		const cf = CFrame.new(5, -2, 7).mul(CFrame.Angles(0.4, 1.2, -0.5));
+		expect(cf.mul(cf.Inverse()).FuzzyEq(CFrame.identity)).toBe(true);
+		const point = new Vector3(3, 4, 5);
+		near(cf.PointToWorldSpace(cf.PointToObjectSpace(point)), point);
+		near(cf.VectorToObjectSpace(cf.VectorToWorldSpace(point)), point);
+		expect(cf.ToObjectSpace(cf).FuzzyEq(CFrame.identity)).toBe(true);
+	});
+
+	it("round-trips both Euler orders, orientation and axis-angle", () => {
+		const [x, y, z] = CFrame.Angles(0.3, -0.7, 1.1).ToEulerAnglesXYZ();
+		expect([x, y, z].map((v) => Number(v.toFixed(9)))).toEqual([
+			0.3, -0.7, 1.1,
+		]);
+		const yxz = CFrame.fromOrientation(0.3, -0.7, 1.1).ToOrientation();
+		expect(yxz.map((v) => Number(v.toFixed(9)))).toEqual([0.3, -0.7, 1.1]);
+		const [axis, angle] = CFrame.fromAxisAngle(
+			new Vector3(0, 2, 0),
+			0.8,
+		).ToAxisAngle();
+		near(axis, Vector3.yAxis);
+		expect(angle).toBeCloseTo(0.8, 12);
+		expect(
+			CFrame.fromAxisAngle(Vector3.yAxis, 0.8).FuzzyEq(
+				CFrame.Angles(0, 0.8, 0),
+			),
+		).toBe(true);
+	});
+
+	it("slerps rotation and lerps position", () => {
+		const from = CFrame.new(0, 0, 0);
+		const to = CFrame.new(10, 0, 0).mul(CFrame.Angles(0, quarter, 0));
+		const mid = from.Lerp(to, 0.5);
+		expect(
+			mid.FuzzyEq(CFrame.new(5, 0, 0).mul(CFrame.Angles(0, quarter / 2, 0))),
+		).toBe(true);
+		expect(from.Lerp(to, 0).FuzzyEq(from)).toBe(true);
+		expect(from.Lerp(to, 1).FuzzyEq(to)).toBe(true);
+	});
+
+	it("orthonormalizes a skewed basis, keeping XVector's direction", () => {
+		const skewed = CFrame.fromMatrix(
+			Vector3.zero,
+			new Vector3(2, 0, 0),
+			new Vector3(1, 3, 0),
+			new Vector3(0, 0, 0.5),
+		).Orthonormalize();
+		near(skewed.XVector, Vector3.xAxis);
+		near(skewed.YVector, Vector3.yAxis);
+		near(skewed.ZVector, Vector3.zAxis);
+	});
+
+	it("compares by value", () => {
+		expect(robloxEquals(CFrame.Angles(0, 1, 0), CFrame.Angles(0, 1, 0))).toBe(
+			true,
+		);
+		expect(robloxEquals(CFrame.Angles(0, 1, 0), CFrame.Angles(0, 1.1, 0))).toBe(
+			false,
+		);
 	});
 });

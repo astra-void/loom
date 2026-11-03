@@ -297,13 +297,23 @@ describe("spring datatypes", () => {
 		expect(spring.getPosition().y).toBe(0);
 	});
 
+	it("springs a CFrame's position and rotation onto the goal", () => {
+		const goal = CFrame.new(10, 0, 0).mul(CFrame.Angles(0, Math.PI / 2, 0));
+		const spring = createSpring(CFrame.new(0, 0, 0));
+		spring.setGoal(goal);
+		run(spring, 30);
+		const mid = spring.getPosition();
+		// Mid-flight the basis is still a rotation: Ripple orthonormalizes it.
+		expect(mid.XVector.Magnitude).toBeCloseTo(1, 9);
+		expect(mid.XVector.Dot(mid.YVector)).toBeCloseTo(0, 9);
+		expect(mid.X).toBeGreaterThan(0);
+		expect(mid.X).toBeLessThan(10);
+		run(spring, 900);
+		expect(spring.idle()).toBe(true);
+		expect(spring.getPosition().FuzzyEq(goal)).toBe(true);
+	});
+
 	it("refuses a datatype it cannot animate, by name", () => {
-		// `CFrame` is deliberately outside the `Animatable` union, so this is a
-		// cast: the point is that it fails at runtime with a named message rather
-		// than animating something loom cannot render.
-		expect(() => createSpring(new CFrame(0, 0, 0) as never)).toThrow(
-			/does not yet support animating CFrame/,
-		);
 		expect(() => createSpring("nope" as never)).toThrow(
 			/cannot animate a string value/,
 		);
@@ -314,6 +324,23 @@ describe("spring datatypes", () => {
 });
 
 describe("createTween", () => {
+	it("slerps a CFrame the way Ripple's Lerp does", () => {
+		const goal = CFrame.new(10, 0, 0).mul(CFrame.Angles(0, Math.PI / 2, 0));
+		const tween = createTween(CFrame.new(0, 0, 0), {
+			duration: 1,
+			easing: "linear",
+		});
+		tween.setGoal(goal);
+		run(tween, 30);
+		expect(
+			tween
+				.getPosition()
+				.FuzzyEq(CFrame.new(5, 0, 0).mul(CFrame.Angles(0, Math.PI / 4, 0))),
+		).toBe(true);
+		run(tween, 60);
+		expect(tween.getPosition().FuzzyEq(goal)).toBe(true);
+	});
+
 	it("walks from its position to the goal over the duration", () => {
 		const tween = createTween(0, { duration: 1 });
 		tween.setGoal(100);

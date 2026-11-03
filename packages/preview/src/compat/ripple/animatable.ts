@@ -30,6 +30,7 @@ export type AnimatablePrimitive = number | Vector3;
 export type AnimatableType =
 	| AnimatablePrimitive
 	| Vector2
+	| CFrame
 	| Color3
 	| UDim
 	| UDim2
@@ -144,6 +145,35 @@ const udim2Codec: Codec<UDim2> = {
 		UDim2.new(at(c, 0), Math.round(at(c, 1)), at(c, 2), Math.round(at(c, 3))),
 };
 
+// Ripple's encoding: the position and the three basis columns, each animated
+// as its own vector. The basis drifts off orthonormal mid-spring, so decoding
+// rebuilds through `fromMatrix` and orthonormalizes, exactly as upstream.
+const cframeCodec: Codec<CFrame> = {
+	encode(value, into) {
+		const vectors = [
+			value.Position,
+			value.XVector,
+			value.YVector,
+			value.ZVector,
+		];
+		vectors.forEach((vector, index) => {
+			into[index * 3] = vector.X;
+			into[index * 3 + 1] = vector.Y;
+			into[index * 3 + 2] = vector.Z;
+		});
+	},
+	decode(c) {
+		const vector = (index: number) =>
+			new Vector3(at(c, index * 3), at(c, index * 3 + 1), at(c, index * 3 + 2));
+		return CFrame.fromMatrix(
+			vector(0),
+			vector(1),
+			vector(2),
+			vector(3),
+		).Orthonormalize();
+	},
+};
+
 const rectCodec: Codec<Rect> = {
 	encode(value, into) {
 		into[0] = value.Min.X;
@@ -185,11 +215,7 @@ export function codecFor<T extends Animatable>(value: T): Codec<T> {
 	if (value instanceof UDim2) return udim2Codec as Codec<T>;
 	if (value instanceof UDim) return udimCodec as Codec<T>;
 	if (value instanceof Rect) return rectCodec as Codec<T>;
-	if (value instanceof CFrame) {
-		// loom's CFrame is position-only and the Scene IR has no slot for it, so
-		// even a correct interpolation could not reach a property.
-		throw new Error(`${PREFIX} does not yet support animating CFrame`);
-	}
+	if (value instanceof CFrame) return cframeCodec as Codec<T>;
 	if (isRecord(value)) {
 		for (const [key, entry] of Object.entries(value)) {
 			if (typeof entry !== "number") {
@@ -230,6 +256,10 @@ export function sameValue(a: unknown, b: unknown): boolean {
 	}
 	if (a instanceof Rect && b instanceof Rect) {
 		return sameValue(a.Min, b.Min) && sameValue(a.Max, b.Max);
+	}
+	if (a instanceof CFrame && b instanceof CFrame) {
+		const bc = b.GetComponents();
+		return a.GetComponents().every((value, index) => value === bc[index]);
 	}
 	if (isRecord(a) && isRecord(b)) {
 		const keys = Object.keys(a);
@@ -418,6 +448,11 @@ export function interpolate<T extends Animatable>(
 			lerpOffset(from.Y.Offset, to.Y.Offset, alpha),
 		) as T;
 	}
+	if (from instanceof CFrame && to instanceof CFrame) {
+		// Ripple tweens a CFrame through `from:Lerp(to, alpha)`: the rotation
+		// slerps rather than moving component-wise.
+		return from.Lerp(to, alpha) as T;
+	}
 	if (from instanceof Rect && to instanceof Rect) {
 		return Rect.new(
 			from.Min.X + (to.Min.X - from.Min.X) * alpha,
@@ -438,9 +473,6 @@ export function interpolate<T extends Animatable>(
 			result[key] = value;
 		}
 		return result as T;
-	}
-	if (from instanceof CFrame || to instanceof CFrame) {
-		throw new Error(`${PREFIX} does not yet support animating CFrame`);
 	}
 	throw new Error(
 		`${PREFIX} cannot interpolate ${typeNameOf(from)} with ${typeNameOf(to)}`,

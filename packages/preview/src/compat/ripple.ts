@@ -15,9 +15,7 @@
  * Roblox. What is *not* supported fails loudly — see `./ripple/animatable.ts`.
  *
  * Supported values: `number`, `Vector2`, `Vector3`, `Color3`, `UDim`, `UDim2`,
- * `Rect`, and records of numbers. `CFrame` throws: loom's `CFrame` carries no
- * rotation and the Scene IR has no property slot for one, so an interpolation
- * here could never reach the screen.
+ * `Rect`, `CFrame`, and records of numbers.
  */
 export type {
 	Animatable,

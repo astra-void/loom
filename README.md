@@ -705,20 +705,17 @@ Every documented option is honoured: `start`, `tension`, `friction`, `mass`,
 `reverses`, `position` (tween); `start`, `spring`, `tween` (motion).
 
 **Supported values.** `number`, `Vector2`, `Vector3`, `Color3`, `UDim`,
-`UDim2`, `Rect`, and records of numbers (which accept partial goals — keys you
-leave out don't move). `Color3` interpolates through Oklab, and `UDim`/`UDim2`
-offsets round to integers, both as Roblox does.
+`UDim2`, `Rect`, `CFrame`, and records of numbers (which accept partial goals —
+keys you leave out don't move). `Color3` interpolates through Oklab, and
+`UDim`/`UDim2` offsets round to integers, both as Roblox does. A `CFrame` springs
+its position and three basis vectors and is orthonormalized on the way out, and
+a `CFrame` tween slerps through `Lerp` — upstream's encoding, on loom's
+full-rotation `CFrame`. No GUI property takes a `CFrame`, so the value is for
+your own math (a camera, a derived position); it never reaches the Scene IR.
 
-**Not supported.** `CFrame` throws rather than animating:
-
-```text
-[loom] Ripple compatibility does not yet support animating CFrame
-```
-
-loom's `CFrame` carries position only and the Scene IR has no property slot for
-one, so an interpolation could not reach the screen. Anything else — a string,
-a record of non-numbers — throws by name too, instead of freezing or producing
-a corrupt value. Subpaths (`@rbxts/ripple/foo`) are not covered.
+**Not supported.** Anything else — a string, a record of non-numbers — throws
+by name rather than freezing or producing a corrupt value. Subpaths
+(`@rbxts/ripple/foo`) are not covered.
 
 Two deliberate differences from upstream, both in loom's favour:
 

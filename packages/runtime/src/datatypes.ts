@@ -353,17 +353,238 @@ export class Rect {
 	}
 }
 
+/** A row-major 3×3 rotation: `R00 R01 R02 R10 … R22`, as `GetComponents` lists it. */
+type Matrix3 = readonly [
+	number,
+	number,
+	number,
+	number,
+	number,
+	number,
+	number,
+	number,
+	number,
+];
+
+const IDENTITY: Matrix3 = [1, 0, 0, 0, 1, 0, 0, 0, 1];
+
+function multiply3(a: Matrix3, b: Matrix3): Matrix3 {
+	const out: number[] = [];
+	for (let row = 0; row < 3; row++) {
+		for (let col = 0; col < 3; col++) {
+			out.push(
+				(a[row * 3] as number) * (b[col] as number) +
+					(a[row * 3 + 1] as number) * (b[3 + col] as number) +
+					(a[row * 3 + 2] as number) * (b[6 + col] as number),
+			);
+		}
+	}
+	return out as unknown as Matrix3;
+}
+
+function transpose3(m: Matrix3): Matrix3 {
+	return [m[0], m[3], m[6], m[1], m[4], m[7], m[2], m[5], m[8]];
+}
+
+function rotateX(angle: number): Matrix3 {
+	const c = Math.cos(angle);
+	const s = Math.sin(angle);
+	return [1, 0, 0, 0, c, -s, 0, s, c];
+}
+
+function rotateY(angle: number): Matrix3 {
+	const c = Math.cos(angle);
+	const s = Math.sin(angle);
+	return [c, 0, s, 0, 1, 0, -s, 0, c];
+}
+
+function rotateZ(angle: number): Matrix3 {
+	const c = Math.cos(angle);
+	const s = Math.sin(angle);
+	return [c, -s, 0, s, c, 0, 0, 0, 1];
+}
+
+/** Unit quaternion `[x, y, z, w]` → rotation matrix. */
+function fromQuaternion(
+	qx: number,
+	qy: number,
+	qz: number,
+	qw: number,
+): Matrix3 {
+	const n = Math.hypot(qx, qy, qz, qw) || 1;
+	const x = qx / n;
+	const y = qy / n;
+	const z = qz / n;
+	const w = qw / n;
+	return [
+		1 - 2 * (y * y + z * z),
+		2 * (x * y - z * w),
+		2 * (x * z + y * w),
+		2 * (x * y + z * w),
+		1 - 2 * (x * x + z * z),
+		2 * (y * z - x * w),
+		2 * (x * z - y * w),
+		2 * (y * z + x * w),
+		1 - 2 * (x * x + y * y),
+	];
+}
+
+/** Rotation matrix → unit quaternion `[x, y, z, w]` (Shepperd's method). */
+function toQuaternion(m: Matrix3): [number, number, number, number] {
+	const [m00, m01, m02, m10, m11, m12, m20, m21, m22] = m;
+	const trace = m00 + m11 + m22;
+	if (trace > 0) {
+		const s = Math.sqrt(trace + 1) * 2;
+		return [(m21 - m12) / s, (m02 - m20) / s, (m10 - m01) / s, s / 4];
+	}
+	if (m00 > m11 && m00 > m22) {
+		const s = Math.sqrt(1 + m00 - m11 - m22) * 2;
+		return [s / 4, (m01 + m10) / s, (m02 + m20) / s, (m21 - m12) / s];
+	}
+	if (m11 > m22) {
+		const s = Math.sqrt(1 + m11 - m00 - m22) * 2;
+		return [(m01 + m10) / s, s / 4, (m12 + m21) / s, (m02 - m20) / s];
+	}
+	const s = Math.sqrt(1 + m22 - m00 - m11) * 2;
+	return [(m02 + m20) / s, (m12 + m21) / s, s / 4, (m10 - m01) / s];
+}
+
+/** `CFrame.new`'s engine overloads, as one tuple union (biome bars `new` overloads). */
+type CFrameArgs =
+	| []
+	| [x: number, y: number, z: number]
+	| [position: Vector3, lookAt?: Vector3]
+	| [
+			x: number,
+			y: number,
+			z: number,
+			qX: number,
+			qY: number,
+			qZ: number,
+			qW: number,
+	  ]
+	| [
+			x: number,
+			y: number,
+			z: number,
+			R00: number,
+			R01: number,
+			R02: number,
+			R10: number,
+			R11: number,
+			R12: number,
+			R20: number,
+			R21: number,
+			R22: number,
+	  ];
+
+/** Column vectors → row-major matrix. */
+function fromColumns(x: Vector3, y: Vector3, z: Vector3): Matrix3 {
+	return [x.X, y.X, z.X, x.Y, y.Y, z.Y, x.Z, y.Z, z.Z];
+}
+
 /**
- * A position-only Roblox `CFrame` — enough for the 2D motion code lattice
- * runs (`CFrame.Lerp` interpolation targets). No rotation support.
+ * A Roblox `CFrame`: a position plus a 3×3 rotation, with the engine's
+ * conventions — the matrix is row-major (`R00 … R22`), `XVector`/`YVector`/
+ * `ZVector` are its columns, and `LookVector` is `-ZVector`. GUI objects have
+ * no CFrame property, so nothing here reaches the Scene IR; it exists so the
+ * math authors run on CFrames (cameras, Ripple goals, `Lerp` targets) gives
+ * the engine's answers.
  */
 export class CFrame {
 	readonly Position: Vector3;
-	constructor(x = 0, y = 0, z = 0) {
+	private readonly r: Matrix3;
+	/** `new CFrame(x, y, z)` is identity-rotated; the nine `R` values follow. */
+	constructor(
+		x = 0,
+		y = 0,
+		z = 0,
+		...rotation:
+			| []
+			| [number, number, number, number, number, number, number, number, number]
+	) {
 		this.Position = new Vector3(x, y, z);
+		this.r = rotation.length === 9 ? rotation : IDENTITY;
 	}
-	static new(x = 0, y = 0, z = 0): CFrame {
-		return new CFrame(x, y, z);
+	/**
+	 * Every engine constructor: `()`, `(x, y, z)`, `(pos)`, `(pos, lookAt)`,
+	 * `(x, y, z, qX, qY, qZ, qW)` and the twelve-component form.
+	 */
+	static new(...args: CFrameArgs): CFrame {
+		const [a, b] = args;
+		if (a instanceof Vector3) {
+			return b instanceof Vector3
+				? CFrame.lookAt(a, b)
+				: new CFrame(a.X, a.Y, a.Z);
+		}
+		const n = args as number[];
+		if (n.length >= 12) {
+			return CFrame.fromPositionMatrix(
+				new Vector3(n[0] ?? 0, n[1] ?? 0, n[2] ?? 0),
+				n.slice(3, 12) as unknown as Matrix3,
+			);
+		}
+		if (n.length >= 7) {
+			return CFrame.fromPositionMatrix(
+				new Vector3(n[0] ?? 0, n[1] ?? 0, n[2] ?? 0),
+				fromQuaternion(n[3] ?? 0, n[4] ?? 0, n[5] ?? 0, n[6] ?? 1),
+			);
+		}
+		return new CFrame(n[0] ?? 0, n[1] ?? 0, n[2] ?? 0);
+	}
+	static readonly identity = new CFrame();
+	private static fromPositionMatrix(position: Vector3, m: Matrix3): CFrame {
+		return new CFrame(position.X, position.Y, position.Z, ...m);
+	}
+	/** Columns `vX`, `vY`, `vZ` (default `vX × vY`, normalised). */
+	static fromMatrix(
+		position: Vector3,
+		vX: Vector3,
+		vY: Vector3,
+		vZ: Vector3 = vX.Cross(vY).Unit,
+	): CFrame {
+		return CFrame.fromPositionMatrix(position, fromColumns(vX, vY, vZ));
+	}
+	/** Facing `target` from `at`, with `up` as the roll reference. */
+	static lookAt(at: Vector3, target: Vector3, up = Vector3.yAxis): CFrame {
+		const look = target.sub(at).Unit;
+		let right = look.Cross(up);
+		// Looking straight along `up` leaves no plane to roll in; the engine
+		// falls back to another axis rather than producing NaNs.
+		if (right.Magnitude < 1e-6) right = look.Cross(Vector3.zAxis);
+		if (right.Magnitude < 1e-6) right = look.Cross(Vector3.xAxis);
+		right = right.Unit;
+		const trueUp = right.Cross(look);
+		return CFrame.fromMatrix(at, right, trueUp, look.mul(-1));
+	}
+	/** `Rx * Ry * Rz`, the same as {@link CFrame.fromEulerAnglesXYZ}. */
+	static Angles(rx = 0, ry = 0, rz = 0): CFrame {
+		return CFrame.fromEulerAnglesXYZ(rx, ry, rz);
+	}
+	static fromEulerAnglesXYZ(rx = 0, ry = 0, rz = 0): CFrame {
+		return CFrame.fromPositionMatrix(
+			Vector3.zero,
+			multiply3(multiply3(rotateX(rx), rotateY(ry)), rotateZ(rz)),
+		);
+	}
+	/** `Ry * Rx * Rz` — the order `Orientation` uses. */
+	static fromEulerAnglesYXZ(rx = 0, ry = 0, rz = 0): CFrame {
+		return CFrame.fromPositionMatrix(
+			Vector3.zero,
+			multiply3(multiply3(rotateY(ry), rotateX(rx)), rotateZ(rz)),
+		);
+	}
+	static fromOrientation(rx = 0, ry = 0, rz = 0): CFrame {
+		return CFrame.fromEulerAnglesYXZ(rx, ry, rz);
+	}
+	static fromAxisAngle(axis: Vector3, angle: number): CFrame {
+		const unit = axis.Unit;
+		const half = angle / 2;
+		const s = Math.sin(half);
+		return CFrame.fromPositionMatrix(
+			Vector3.zero,
+			fromQuaternion(unit.X * s, unit.Y * s, unit.Z * s, Math.cos(half)),
+		);
 	}
 	get X(): number {
 		return this.Position.X;
@@ -374,19 +595,167 @@ export class CFrame {
 	get Z(): number {
 		return this.Position.Z;
 	}
-	Lerp(other: CFrame, alpha: number): CFrame {
-		return new CFrame(
-			this.X + (other.X - this.X) * alpha,
-			this.Y + (other.Y - this.Y) * alpha,
-			this.Z + (other.Z - this.Z) * alpha,
+	get XVector(): Vector3 {
+		return new Vector3(this.r[0], this.r[3], this.r[6]);
+	}
+	get YVector(): Vector3 {
+		return new Vector3(this.r[1], this.r[4], this.r[7]);
+	}
+	get ZVector(): Vector3 {
+		return new Vector3(this.r[2], this.r[5], this.r[8]);
+	}
+	get RightVector(): Vector3 {
+		return this.XVector;
+	}
+	get UpVector(): Vector3 {
+		return this.YVector;
+	}
+	get LookVector(): Vector3 {
+		return this.ZVector.mul(-1);
+	}
+	/** The same rotation at the origin. */
+	get Rotation(): CFrame {
+		return CFrame.fromPositionMatrix(Vector3.zero, this.r);
+	}
+	/** `x, y, z, R00, R01, …, R22` — a Luau tuple, so an array here. */
+	GetComponents(): number[] {
+		return [this.X, this.Y, this.Z, ...this.r];
+	}
+	Inverse(): CFrame {
+		const t = transpose3(this.r);
+		const p = this.Position;
+		return CFrame.fromPositionMatrix(
+			new Vector3(
+				-(t[0] * p.X + t[1] * p.Y + t[2] * p.Z),
+				-(t[3] * p.X + t[4] * p.Y + t[5] * p.Z),
+				-(t[6] * p.X + t[7] * p.Y + t[8] * p.Z),
+			),
+			t,
 		);
 	}
-	FuzzyEq(other: CFrame, epsilon = 1e-5): boolean {
-		return (
-			Math.abs(this.X - other.X) <= epsilon &&
-			Math.abs(this.Y - other.Y) <= epsilon &&
-			Math.abs(this.Z - other.Z) <= epsilon
+	/** roblox-ts `*` operator macro: compose with a CFrame, or move a point. */
+	mul(other: CFrame): CFrame;
+	mul(other: Vector3): Vector3;
+	mul(other: CFrame | Vector3): CFrame | Vector3 {
+		if (other instanceof Vector3) {
+			return this.Position.add(this.rotate(other));
+		}
+		return CFrame.fromPositionMatrix(
+			this.Position.add(this.rotate(other.Position)),
+			multiply3(this.r, other.r),
 		);
+	}
+	/** roblox-ts `+` operator macro: translate in world space. */
+	add(offset: Vector3): CFrame {
+		return CFrame.fromPositionMatrix(this.Position.add(offset), this.r);
+	}
+	/** roblox-ts `-` operator macro: translate in world space. */
+	sub(offset: Vector3): CFrame {
+		return CFrame.fromPositionMatrix(this.Position.sub(offset), this.r);
+	}
+	private rotate(v: Vector3): Vector3 {
+		const m = this.r;
+		return new Vector3(
+			m[0] * v.X + m[1] * v.Y + m[2] * v.Z,
+			m[3] * v.X + m[4] * v.Y + m[5] * v.Z,
+			m[6] * v.X + m[7] * v.Y + m[8] * v.Z,
+		);
+	}
+	ToWorldSpace(other: CFrame = CFrame.identity): CFrame {
+		return this.mul(other);
+	}
+	ToObjectSpace(other: CFrame = CFrame.identity): CFrame {
+		return this.Inverse().mul(other);
+	}
+	PointToWorldSpace(point: Vector3 = Vector3.zero): Vector3 {
+		return this.mul(point);
+	}
+	PointToObjectSpace(point: Vector3 = Vector3.zero): Vector3 {
+		return this.Inverse().mul(point);
+	}
+	VectorToWorldSpace(vector: Vector3 = Vector3.zero): Vector3 {
+		return this.rotate(vector);
+	}
+	VectorToObjectSpace(vector: Vector3 = Vector3.zero): Vector3 {
+		return this.Inverse().rotate(vector);
+	}
+	/** Position lerps; rotation slerps along the shorter arc. */
+	Lerp(other: CFrame, alpha: number): CFrame {
+		const a = toQuaternion(this.r);
+		const b = toQuaternion(other.r);
+		let dot = a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3];
+		if (dot < 0) {
+			dot = -dot;
+			for (let i = 0; i < 4; i++) b[i] = -(b[i] as number);
+		}
+		let wa = 1 - alpha;
+		let wb = alpha;
+		// Nearly parallel: slerp's sin(theta) denominator vanishes, and a plain
+		// normalised lerp is indistinguishable.
+		if (dot < 0.9995) {
+			const theta = Math.acos(dot);
+			const sin = Math.sin(theta);
+			wa = Math.sin((1 - alpha) * theta) / sin;
+			wb = Math.sin(alpha * theta) / sin;
+		}
+		return CFrame.fromPositionMatrix(
+			this.Position.Lerp(other.Position, alpha),
+			fromQuaternion(
+				a[0] * wa + b[0] * wb,
+				a[1] * wa + b[1] * wb,
+				a[2] * wa + b[2] * wb,
+				a[3] * wa + b[3] * wb,
+			),
+		);
+	}
+	/** Gram–Schmidt on the columns, keeping `XVector`'s direction. */
+	Orthonormalize(): CFrame {
+		const x = this.XVector.Unit;
+		const y = this.YVector.sub(x.mul(x.Dot(this.YVector))).Unit;
+		return CFrame.fromPositionMatrix(
+			this.Position,
+			fromColumns(x, y, x.Cross(y)),
+		);
+	}
+	/** The angles that rebuild this rotation through {@link CFrame.fromEulerAnglesXYZ}. */
+	ToEulerAnglesXYZ(): [number, number, number] {
+		const m = this.r;
+		return [
+			Math.atan2(-m[5], m[8]),
+			Math.asin(Math.max(-1, Math.min(1, m[2]))),
+			Math.atan2(-m[1], m[0]),
+		];
+	}
+	/** The angles that rebuild this rotation through {@link CFrame.fromEulerAnglesYXZ}. */
+	ToEulerAnglesYXZ(): [number, number, number] {
+		const m = this.r;
+		return [
+			Math.asin(Math.max(-1, Math.min(1, -m[5]))),
+			Math.atan2(m[2], m[8]),
+			Math.atan2(m[3], m[4]),
+		];
+	}
+	ToOrientation(): [number, number, number] {
+		return this.ToEulerAnglesYXZ();
+	}
+	/** `[axis, angle]`; an identity rotation reports the X axis and 0. */
+	ToAxisAngle(): [Vector3, number] {
+		const [x, y, z, w] = toQuaternion(this.r);
+		const angle = 2 * Math.acos(Math.max(-1, Math.min(1, w)));
+		const s = Math.sqrt(1 - w * w);
+		if (s < 1e-9) return [Vector3.xAxis, 0];
+		return [new Vector3(x / s, y / s, z / s), angle];
+	}
+	FuzzyEq(other: CFrame, epsilon = 1e-5): boolean {
+		const a = this.GetComponents();
+		const b = other.GetComponents();
+		return a.every(
+			(value, index) => Math.abs(value - (b[index] as number)) <= epsilon,
+		);
+	}
+	/** Roblox `tostring`: all twelve components. */
+	toString(): string {
+		return this.GetComponents().join(", ");
 	}
 }
 
@@ -1487,6 +1856,10 @@ export function robloxEquals(a: unknown, b: unknown): boolean {
 		return a.R === b.R && a.G === b.G && a.B === b.B;
 	if (a instanceof Rect && b instanceof Rect)
 		return robloxEquals(a.Min, b.Min) && robloxEquals(a.Max, b.Max);
+	if (a instanceof CFrame && b instanceof CFrame) {
+		const bc = b.GetComponents();
+		return a.GetComponents().every((value, index) => value === bc[index]);
+	}
 	if (a instanceof NumberRange && b instanceof NumberRange)
 		return a.Min === b.Min && a.Max === b.Max;
 	if (a instanceof Content && b instanceof Content)
