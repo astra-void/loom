@@ -475,18 +475,15 @@ fn measure_content(
         }
     } else {
         // Free children: bounding box via the SAME placement math as child_rect (so
-        // the measured extent matches where children land), with the near edge
-        // clamped to the content origin.
+        // the measured extent matches where children land), measured from the
+        // content origin to each child's far edge.
         //
-        // A child never contributes less than its own size: `AnchorPoint` decides
-        // where a child sits, not how much room its parent has to hug. An icon at
-        // the origin with `AnchorPoint = {0.5, 0.5}` — the idiom for rotating about
-        // its own centre — hangs half of itself off the top-left, and the engine
-        // still grows the parent to the icon's full 14x14 rather than the 7x7
-        // quarter that happens to land inside. Measuring to `r.x + r.width` read
-        // that overhang as negative room and came out half size. Clamping keeps
-        // both halves of the rule: what hangs off the near edge is not measured,
-        // and an offset past the far edge still pushes the box out.
+        // Only the far edge counts: whatever hangs off the near edge is not
+        // measured, and a child that lands wholly before the origin adds nothing.
+        // Measured in Studio (DEV-69): a 14x14 child with `AnchorPoint = {0.5, 0.5}`
+        // at the origin grows its parent to 7x7, at (20, 20) to 27x27, and with
+        // `AnchorPoint = {1, 1}` at the origin to 0x0. Clamping the near edge to
+        // the origin (63a77e2) gave 14x14 for the first and was reverted.
         //
         // NOTE: scale Position on the auto axis resolves against a ~0 content size and
         // is dropped (consistent with the deferred scale-on-auto-axis limitation).
@@ -494,8 +491,8 @@ fn measure_content(
         let mut max_h: f64 = 0.0;
         for &(_, child) in &children {
             let r = child_rect(child, content, limit, inner);
-            max_w = max_w.max((r.x - content.x).max(0.0) + r.width);
-            max_h = max_h.max((r.y - content.y).max(0.0) + r.height);
+            max_w = max_w.max(r.x - content.x + r.width);
+            max_h = max_h.max(r.y - content.y + r.height);
         }
         (max_w, max_h)
     };
@@ -2506,20 +2503,9 @@ mod tests {
         assert_eq!(r.rects["0/0"].rect.height, 60.0);
     }
 
-    #[test]
-    fn auto_size_hugs_a_centre_anchored_child_whole() {
-        // A 14x14 icon at the origin with AnchorPoint {0.5, 0.5} — the idiom for
-        // rotating about its own centre — hangs half of itself off the top-left.
-        // Roblox hugs the whole icon, so the parent is 14x14, not the 7x7 that
-        // lands inside the box.
-        let child = with(
-            "ImageLabel",
-            "Icon",
-            &[
-                ("Size", udim2(0.0, 14.0, 0.0, 14.0)),
-                ("AnchorPoint", vector2(0.5, 0.5)),
-            ],
-        );
+    /// The auto-sized extent of a container whose only children are square
+    /// `(size, pos, anchor)` icons at `(pos, pos)` with `AnchorPoint = (anchor, anchor)`.
+    fn auto_box_around(icons: &[(f64, f64, f64)]) -> f64 {
         let mut container = with(
             "Frame",
             "Container",
@@ -2528,10 +2514,38 @@ mod tests {
                 ("AutomaticSize", enum_item("AutomaticSize", "XY")),
             ],
         );
-        container.children.push(child);
+        for (k, &(size, pos, anchor)) in icons.iter().enumerate() {
+            container.children.push(with(
+                "ImageLabel",
+                &format!("Icon{k}"),
+                &[
+                    ("Size", udim2(0.0, size, 0.0, size)),
+                    ("Position", udim2(0.0, pos, 0.0, pos)),
+                    ("AnchorPoint", vector2(anchor, anchor)),
+                ],
+            ));
+        }
         let r = compute_layout(&screen(vec![container]), VP).unwrap();
-        assert_eq!(r.rects["0/0"].rect.width, 14.0);
-        assert_eq!(r.rects["0/0"].rect.height, 14.0);
+        assert_eq!(r.rects["0/0"].rect.width, r.rects["0/0"].rect.height);
+        r.rects["0/0"].rect.width
+    }
+
+    /// Only the far edge counts: what an anchored child hangs off the near edge
+    /// is not measured. Every number here is a Studio measurement (DEV-69).
+    #[test]
+    fn auto_size_measures_to_each_free_childs_far_edge() {
+        // A centre-anchored 14px icon at the origin: 7, not the whole 14.
+        assert_eq!(auto_box_around(&[(14.0, 0.0, 0.5)]), 7.0);
+        // The same icon at (20, 20): 27, not the 34 that ignoring the anchor gives.
+        assert_eq!(auto_box_around(&[(14.0, 20.0, 0.5)]), 27.0);
+        // Wholly before the origin adds nothing.
+        assert_eq!(auto_box_around(&[(14.0, 0.0, 1.0)]), 0.0);
+        assert_eq!(auto_box_around(&[(14.0, -5.0, 0.0)]), 9.0);
+        // An overhang does not widen the box past the farthest edge: 20, not 27.
+        assert_eq!(
+            auto_box_around(&[(14.0, 0.0, 0.5), (10.0, 10.0, 0.0)]),
+            20.0
+        );
     }
 
     /// A 600-wide row of three 100-wide items: 300px of it is leftover space,
@@ -2735,8 +2749,8 @@ mod tests {
     }
 
     /// #15: `Fill` shrinks as well as grows. 400 of items in a 300 row gives up
-    /// the 100 of overflow 3:1, in proportion to size — CSS's split, which
-    /// Roblox's docs leave open (not yet measured in Studio).
+    /// the 100 of overflow 3:1, in proportion to size — CSS's split. Roblox's
+    /// docs leave it open; Studio gives 225/75 (DEV-67), not an even 250/50.
     #[test]
     fn fill_shrinks_an_overflowing_row_in_proportion_to_size() {
         let r = row_300(&[fill()], vec![wide("A", 300.0), wide("B", 100.0)]);
@@ -2768,6 +2782,37 @@ mod tests {
         close(r.rects["0/0/0"].rect.width, 200.0);
         close(r.rects["0/0/1"].rect.x, 200.0);
         close(r.rects["0/0/1"].rect.width, 100.0);
+    }
+
+    /// Shrink items split the overflow by size too, with no list flex at all.
+    /// Measured in Studio (DEV-67): 225/75.
+    #[test]
+    fn shrink_flex_items_split_the_overflow_in_proportion_to_size() {
+        let shrink = ("FlexMode", enum_item("UIFlexMode", "Shrink"));
+        let r = row_300(
+            &[],
+            vec![
+                flexing("A", 300.0, &[shrink.clone()]),
+                flexing("B", 100.0, &[shrink]),
+            ],
+        );
+        close(r.rects["0/0/0"].rect.width, 225.0);
+        close(r.rects["0/0/1"].rect.width, 75.0);
+    }
+
+    /// `FlexMode = None` keeps the item at its own size: the list's `Fill` does
+    /// not reach it, so the sibling absorbs the whole overflow. Measured in
+    /// Studio (DEV-67): 300/0, not the 225/75 that following the list gives.
+    #[test]
+    fn a_none_flex_item_never_shrinks_under_fill() {
+        let none = ("FlexMode", enum_item("UIFlexMode", "None"));
+        let r = row_300(
+            &[fill()],
+            vec![flexing("A", 300.0, &[none]), wide("B", 100.0)],
+        );
+        close(r.rects["0/0/0"].rect.width, 300.0);
+        close(r.rects["0/0/1"].rect.x, 300.0);
+        close(r.rects["0/0/1"].rect.width, 0.0);
     }
 
     /// `Grow` is a 1:0 grow/shrink ratio: it never gives anything up, even in a
@@ -2979,10 +3024,14 @@ mod tests {
 
     /// Under the list's `Fill` a child without a `UIFlexItem` still grows; one
     /// with its own speaks for itself. Read per child, as the shrink half is.
+    /// Measured in Studio (DEV-68): 50 + 50 in a 300 row grows to 150/150.
     #[test]
     fn fill_grows_unmarked_items_beside_a_marked_one() {
         let grow = ("FlexMode", enum_item("UIFlexMode", "Grow"));
-        let r = row_300(&[fill()], vec![flexing("A", 100.0, &[grow]), wide("B", 100.0)]);
+        let r = row_300(
+            &[fill()],
+            vec![flexing("A", 100.0, &[grow]), wide("B", 100.0)],
+        );
         close(r.rects["0/0/0"].rect.width, 150.0);
         close(r.rects["0/0/1"].rect.x, 150.0);
         close(r.rects["0/0/1"].rect.width, 150.0);
