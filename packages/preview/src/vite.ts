@@ -1146,7 +1146,18 @@ export function loomPreview(options: LoomPreviewOptions = {}): Plugin[] {
 				// classic transform would throw "React is not defined". Imported from
 				// `@rbxts/react`, which the alias below turns into loom's wrapped
 				// runtime — the one place JSX can pick up React-Lua's ref semantics.
-				esbuild: { jsx: "automatic", jsxImportSource: "@rbxts/react" },
+				//
+				// `decorators: false` lowers TC39 standard decorators in serve mode,
+				// where `vite:esbuild` targets esnext and would otherwise hand
+				// `@ReactComponent` to a browser that cannot parse it. It only bites
+				// a tsconfig with an ES2022+ target and no `experimentalDecorators`
+				// (legacy decorators are always compiled); `vite build` lowers them
+				// anyway when it renders chunks to `build.target`.
+				esbuild: {
+					jsx: "automatic",
+					jsxImportSource: "@rbxts/react",
+					supported: { decorators: false },
+				},
 				optimizeDeps: {
 					// react resolves through the `resolve.alias` entries below (the
 					// optimizer honors them), so the bare ids land on loom's own copy.

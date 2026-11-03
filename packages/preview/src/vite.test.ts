@@ -753,6 +753,61 @@ export const preview = {
 });
 
 /**
+ * TC39 standard decorators in dev. `vite:esbuild` transforms with an esnext
+ * target in serve mode, so without loom lowering them `@ReactComponent`
+ * reaches the browser verbatim ("Invalid or unexpected token"). The leak needs
+ * a tsconfig with an ES2022+ target and no `experimentalDecorators` — without
+ * a tsconfig esbuild lowers the whole class and the bug hides.
+ */
+describe("standard class decorators (dev)", () => {
+	const root = realpathSync(mkdtempSync(join(tmpdir(), "loom-decorators-")));
+	afterAll(() => rmSync(root, { recursive: true, force: true }));
+
+	writeFileSync(
+		join(root, "tsconfig.json"),
+		JSON.stringify({
+			compilerOptions: { target: "ES2022", jsx: "react-jsx" },
+		}),
+	);
+	mkdirSync(join(root, "src"), { recursive: true });
+	writeFileSync(
+		join(root, "src/scene.tsx"),
+		`import { Component, ReactComponent } from "@rbxts/react";
+
+@ReactComponent
+export class Counter extends Component {
+	state = { count: 0 };
+	render() {
+		return <frame />;
+	}
+}
+`,
+	);
+
+	it("lowers them before the module is served", async () => {
+		const { createServer } = await import("vite");
+		const server = await createServer({
+			root,
+			configFile: false,
+			logLevel: "silent",
+			server: { middlewareMode: true },
+			optimizeDeps: { noDiscovery: true, include: [] },
+			plugins: [loomPreview({ html: false })],
+		});
+		try {
+			const code = (await server.transformRequest("/src/scene.tsx"))?.code;
+			expect(code).toBeTruthy();
+			expect(code).not.toMatch(/^\s*@ReactComponent/m);
+			// What the browser actually does with it: parse as a module.
+			const body = (code as string).replace(/^import .*$/gm, "");
+			expect(() => new Function(body.replace(/^export /gm, ""))).not.toThrow();
+		} finally {
+			await server.close();
+		}
+	});
+});
+
+/**
  * The generic case the built-in registry deliberately does *not* cover: a
  * package that ships Luau and nothing else. It must fail with loom's own
  * diagnostic — naming the package, the importer and `shims` — instead of
