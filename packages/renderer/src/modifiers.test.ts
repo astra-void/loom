@@ -871,10 +871,10 @@ describe("UIGradient", () => {
 		);
 		const icon = mount.querySelector<HTMLElement>('[data-loom-name="Icon"]');
 		const layer = mount.querySelector<HTMLElement>('[data-loom-layer="image"]');
-		// jsdom keeps only the prefixed spelling; the renderer sets both.
-		expect(layer?.style.getPropertyValue("-webkit-mask-image")).toContain(
+		// happy-dom keeps only the unprefixed spelling; the renderer sets both.
+		expect(layer?.style.getPropertyValue("mask-image")).toContain(
 			"rgba(0, 0, 0, 1) 50.000%",
 		);
-		expect(icon?.style.getPropertyValue("-webkit-mask-image")).toBe("");
+		expect(icon?.style.getPropertyValue("mask-image")).toBe("");
 	});
 });
