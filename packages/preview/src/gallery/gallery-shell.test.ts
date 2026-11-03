@@ -79,6 +79,35 @@ describe("gallery target diagnostics", () => {
 			document.querySelector(".loom-gallery-error")?.hasAttribute("hidden"),
 		).toBe(true);
 	});
+
+	// React 18's dev build reports a throw to `window` from inside its guarded
+	// callback before an error boundary catches it, so a target that catches its
+	// own throw must not paint the uncaught-error panel.
+	it("ignores a window error React is about to hand to a boundary", async () => {
+		startGallery({
+			[TARGET]: async () => ({
+				preview: { render: () => React.createElement("frame") } as const,
+			}),
+		});
+		await vi.waitFor(() => expect(client.render).toHaveBeenCalledOnce());
+		const panel = document.querySelector(".loom-gallery-error");
+
+		const report = () =>
+			window.dispatchEvent(
+				new ErrorEvent("error", { error: new Error("thrown on purpose") }),
+			);
+		function invokeGuardedCallbackDev(): void {
+			report();
+		}
+		invokeGuardedCallbackDev();
+		expect(panel?.hasAttribute("hidden")).toBe(true);
+
+		report();
+		expect(panel?.hasAttribute("hidden")).toBe(false);
+		expect(panel?.textContent).toContain(
+			`uncaught error while showing ${TARGET}`,
+		);
+	});
 });
 
 /**

@@ -74,6 +74,23 @@ class ErrorBoundary extends React.Component<
 	}
 }
 
+/**
+ * Whether a `window` error event is React 18's development build reporting a
+ * throw it is about to hand to an error boundary.
+ *
+ * The dev reconciler runs render and commit work through
+ * `invokeGuardedCallbackDev`, a fake DOM event dispatch, so the browser reports
+ * every throw to `window` before React decides who catches it. Those throws
+ * never escape: a target's own boundary catches them, or the shell's
+ * {@link ErrorBoundary} does and paints "render error" itself. The report
+ * fires synchronously inside that dispatch, so React's frames are still on the
+ * listener's stack — a few frames down, whatever depth the throw came from.
+ * Production React has no guarded callback, so there is nothing to skip there.
+ */
+function insideReactGuardedCallback(): boolean {
+	return /\binvokeGuardedCallback/.test(new Error().stack ?? "");
+}
+
 function byId(id: string): HTMLElement {
 	const el = document.getElementById(id);
 	if (el) return el;
@@ -489,7 +506,7 @@ export function startGallery(targets: TargetMap): void {
 	// from the render promise chain or target module side effects) still paint the
 	// panel instead of dying silently in the console.
 	window.addEventListener("error", (event) => {
-		if (activeKey !== undefined)
+		if (activeKey !== undefined && !insideReactGuardedCallback())
 			showError(
 				`uncaught error while showing ${activeKey}`,
 				event.error ?? event.message,
