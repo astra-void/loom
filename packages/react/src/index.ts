@@ -1010,46 +1010,45 @@ class WorldImpl implements World {
 	}
 
 	/**
-	 * Scene root: PlayerGui's LayerCollector children as sibling full-viewport
+	 * Scene root: the LayerCollectors under PlayerGui as sibling full-viewport
 	 * subtrees. A single layer encodes directly as the scene root (the layout
 	 * engine force-fills the top node); several get a synthetic transparent
 	 * wrapper, and each layer an explicit full-viewport `Size` when the app set
 	 * none (the engine only force-fills the TOP node — a nested ScreenGui would
 	 * otherwise fall back to the {0,0},{0,0} Size default and collapse).
-	 * Non-LayerCollector children of PlayerGui warn once and are skipped
-	 * (Roblox doesn't render them either); the world's own default ScreenGui is
-	 * elided while empty.
+	 *
+	 * A LayerCollector need not be a direct child: Roblox renders a ScreenGui
+	 * inside a `Folder` under PlayerGui, and libraries rely on it (Iris keeps its
+	 * window and popup ScreenGuis in an `Iris_Root` folder). So non-GUI
+	 * containers are searched through. A GuiObject outside any LayerCollector
+	 * warns once and is skipped (Roblox doesn't render it either); the world's
+	 * own default ScreenGui is elided while empty.
 	 */
 	private encodeRoot(): SceneNode | undefined {
 		this.byId.clear();
 		const layers: SceneNode[] = [];
-		for (const child of this.rootInstance.GetChildren()) {
-			if (!child.IsA("LayerCollector")) {
-				if (!this.warnedNonLayer.has(child)) {
-					this.warnedNonLayer.add(child);
-					console.warn(
-						`loom react: "${String(child.Name)}" (${child.ClassName}) is ` +
-							"parented directly to PlayerGui but is not a LayerCollector — " +
-							"skipped (put it inside a ScreenGui)",
-					);
+		const collect = (parent: LoomInstance): void => {
+			for (const child of parent.GetChildren()) {
+				if (child.IsA("LayerCollector")) {
+					if (child === this.defaultGui && child.GetChildren().length === 0) {
+						continue;
+					}
+					layers.push(this.encodeLayer(child));
+				} else if (child.IsA("GuiObject")) {
+					if (!this.warnedNonLayer.has(child)) {
+						this.warnedNonLayer.add(child);
+						console.warn(
+							`loom react: "${String(child.Name)}" (${child.ClassName}) is ` +
+								"under PlayerGui but not inside a LayerCollector — " +
+								"skipped (put it inside a ScreenGui)",
+						);
+					}
+				} else {
+					collect(child);
 				}
-				continue;
 			}
-			if (child === this.defaultGui && child.GetChildren().length === 0) {
-				continue;
-			}
-			const node = encodeInstance(child, this.byId);
-			if (!node.properties?.Size) {
-				node.properties = {
-					...node.properties,
-					Size: prop.udim2({
-						x: { scale: 1, offset: 0 },
-						y: { scale: 1, offset: 0 },
-					}),
-				};
-			}
-			layers.push(node);
-		}
+		};
+		collect(this.rootInstance);
 		const first = layers[0];
 		if (!first) return undefined;
 		if (layers.length === 1) return first;
@@ -1059,6 +1058,21 @@ class WorldImpl implements World {
 			id: "loom-root",
 			children: layers,
 		};
+	}
+
+	/** One LayerCollector as a scene layer, full-viewport unless sized. */
+	private encodeLayer(layer: LoomInstance): SceneNode {
+		const node = encodeInstance(layer, this.byId);
+		if (!node.properties?.Size) {
+			node.properties = {
+				...node.properties,
+				Size: prop.udim2({
+					x: { scale: 1, offset: 0 },
+					y: { scale: 1, offset: 0 },
+				}),
+			};
+		}
+		return node;
 	}
 
 	/** The font wait a held flush is parked on, so it is only scheduled once. */

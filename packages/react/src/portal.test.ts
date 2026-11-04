@@ -236,7 +236,7 @@ describe("createPortal + PlayerGui world root", () => {
 			loose.Parent = playerGui();
 			roots[0]?.world.flushSync();
 			expect(warn).toHaveBeenCalledWith(
-				expect.stringContaining("not a LayerCollector"),
+				expect.stringContaining("not inside a LayerCollector"),
 			);
 			// Skipped from the scene: root stays the single app gui.
 			expect(capture.root?.name).toBe("AppGui");
@@ -244,5 +244,23 @@ describe("createPortal + PlayerGui world root", () => {
 		} finally {
 			warn.mockRestore();
 		}
+	});
+
+	it("renders a ScreenGui kept in a Folder under PlayerGui", () => {
+		// Roblox renders it, and libraries depend on that: Iris parents its
+		// window and popup ScreenGuis to an `Iris_Root` folder.
+		mountWith(createElement("screengui", { Name: "AppGui" }));
+		const folder = createInstance("Folder", "Iris_Root");
+		const nested = createInstance("ScreenGui", "PopupScreenGui");
+		createInstance("Frame", "Popup").Parent = nested;
+		nested.Parent = folder;
+		folder.Parent = playerGui();
+		roots[0]?.world.flushSync();
+		expect(capture.root?.children?.map((child) => child.name)).toEqual([
+			"AppGui",
+			"PopupScreenGui",
+		]);
+		expect(mount.querySelector('[data-loom-name="Popup"]')).not.toBeNull();
+		folder.Destroy();
 	});
 });
