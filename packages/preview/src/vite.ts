@@ -149,16 +149,18 @@ const REACT_JSX_DEV = requireFromPreview.resolve("react/jsx-dev-runtime");
  * optimizer honors `resolve.alias`, which is the same trick that pins react.
  *
  * Why the adapter must be pre-bundled at all: it imports the CJS reconciler,
- * and Vite serves an excluded dep's imports raw. In a workspace checkout that
- * is harmless — the adapter resolves to TypeScript source outside node_modules,
- * so Vite discovers the reconciler while scanning and pre-bundles it. In a
- * published install it is fatal: the import comes from inside node_modules,
- * nothing registers it, raw CJS has no named exports, and the preview dies on
- * `does not provide an export named 'DefaultEventPriority'`.
+ * and Vite serves an excluded dep's imports raw. In a published install that is
+ * fatal: the import comes from inside node_modules, nothing registers it, raw
+ * CJS has no named exports, and the preview dies on `does not provide an export
+ * named 'DefaultEventPriority'`.
  *
- * Only done for an *installed* adapter. A workspace checkout resolves to source
- * outside node_modules, where pre-bundling would freeze loom's own packages
- * behind the optimizer and cost their HMR while developing loom itself.
+ * The adapter itself is pre-bundled only when *installed*. A workspace checkout
+ * resolves it to source outside node_modules, where pre-bundling would freeze
+ * loom's own packages behind the optimizer and cost their HMR while developing
+ * loom itself. The reconciler is pre-bundled either way: an excluded package is
+ * never crawled by the dependency scan, so left to discovery the reconciler
+ * would only turn up when the page first imports it — a re-optimize and a
+ * reload on every cold start.
  */
 function resolveAdapter(): {
 	adapter?: string;
@@ -167,13 +169,13 @@ function resolveAdapter(): {
 } {
 	try {
 		const adapter = requireFromPreview.resolve("@loom-dev/react");
-		if (!adapter.includes(`${sep}node_modules${sep}`)) return {};
 		const fromAdapter = createRequire(adapter);
-		return {
-			adapter,
+		const reconciler = {
 			reconciler: fromAdapter.resolve("react-reconciler"),
 			constants: fromAdapter.resolve("react-reconciler/constants"),
 		};
+		if (!adapter.includes(`${sep}node_modules${sep}`)) return reconciler;
+		return { adapter, ...reconciler };
 	} catch {
 		return {};
 	}
@@ -1170,7 +1172,11 @@ export function loomPreview(options: LoomPreviewOptions = {}): Plugin[] {
 						"react/jsx-dev-runtime",
 						...(ADAPTER.adapter ? ["@loom-dev/react"] : []),
 						...(ADAPTER.reconciler ? ["react-reconciler"] : []),
-						...(ADAPTER.constants ? ["react-reconciler/constants"] : []),
+						// Both spellings: the adapter imports `constants.js`, and the
+						// optimizer keys pre-bundled deps by the id as written.
+						...(ADAPTER.constants
+							? ["react-reconciler/constants", "react-reconciler/constants.js"]
+							: []),
 					],
 					exclude: ADAPTER.adapter
 						? LOOM_EXCLUDED_PACKAGES
@@ -1223,7 +1229,8 @@ export function loomPreview(options: LoomPreviewOptions = {}): Plugin[] {
 						...(ADAPTER.constants
 							? [
 									{
-										find: /^react-reconciler\/constants$/,
+										// The adapter spells it `react-reconciler/constants.js`.
+										find: /^react-reconciler\/constants(\.js)?$/,
 										replacement: ADAPTER.constants,
 									},
 								]

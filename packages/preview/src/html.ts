@@ -39,6 +39,7 @@ import { GALLERY_SHELL_URL } from "./gallery-plugin.ts";
 import { luauEntryUrl } from "./luau-plugin.ts";
 import { readLuauProject } from "./luau-project.ts";
 import { GALLERY_SHELL_PATH, GLOBALS_PATH } from "./paths.ts";
+import { fromViteFsUrl } from "./vite-fs-url.ts";
 
 /** roblox-ts client-entry conventions, in priority order. */
 export const ENTRY_CANDIDATES = [
@@ -215,6 +216,36 @@ export function loomIndexHtml(options: LoomHtmlOptions = {}): Plugin {
 		return generateIndexHtml(entry, title);
 	}
 
+	/**
+	 * Where Vite's dependency scan starts, in dev. Left alone it starts from the
+	 * project's `*.html` files, and a page loom generates has none on disk, so
+	 * the scan finds nothing: every dependency turns up only as the page first
+	 * imports it, and the optimizer re-bundles and reloads the page once per
+	 * cold start. The files the generated page loads are the entries instead.
+	 * Ones the scanner cannot read (`.luau` targets) Vite drops by itself; an
+	 * entry that does not resolve yet gets none, and the page says why.
+	 */
+	function scanEntries(projectRoot: string): string[] {
+		if (gallery) {
+			const targets = findLoomTargets(projectRoot, options.patterns ?? []);
+			return [
+				GLOBALS_PATH,
+				GALLERY_SHELL_PATH,
+				...targets.map((rel) => resolve(projectRoot, ...rel.split("/"))),
+			];
+		}
+		let entry: string | undefined;
+		try {
+			entry = options.entry ?? findEntry(projectRoot);
+		} catch {
+			return [];
+		}
+		if (entry === undefined) return [];
+		const file =
+			fromViteFsUrl(entry) ?? resolve(projectRoot, entry.replace(/^\.?\//, ""));
+		return [GLOBALS_PATH, file];
+	}
+
 	return {
 		name: "loom-preview:index-html",
 		// `pre` so the virtual html/entry ids are resolved before vite:resolve
@@ -225,7 +256,13 @@ export function loomIndexHtml(options: LoomHtmlOptions = {}): Plugin {
 				? resolve(userConfig.root)
 				: process.cwd();
 			const hasIndexHtml = existsSync(resolve(projectRoot, "index.html"));
-			if (env.command !== "build" || (hasIndexHtml && !gallery)) return;
+			if (hasIndexHtml && !gallery) return;
+			if (env.command !== "build") {
+				// A project that named its own scan entries keeps them.
+				if (userConfig.optimizeDeps?.entries !== undefined) return;
+				const entries = scanEntries(projectRoot);
+				return entries.length > 0 ? { optimizeDeps: { entries } } : undefined;
+			}
 			// Nothing to build from otherwise: hand Rollup the virtual document.
 			// An explicit `build.rollupOptions.input` is left alone — the user
 			// picked their own entry.
