@@ -11,7 +11,12 @@ import {
 	it,
 	vi,
 } from "vitest";
-import { type LuauMount, mountLuau } from "./mount.ts";
+import {
+	type LuauMount,
+	type LuauProjectMount,
+	mountLuau,
+	runLuauProject,
+} from "./mount.ts";
 
 // Under happy-dom emscripten takes the web loader and would fetch the .wasm;
 // hand it the bytes instead.
@@ -140,5 +145,82 @@ describe("mountLuau", () => {
 		mount.unmount();
 		mounted = undefined;
 		expect(target.querySelector('[data-loom-name="Gone"]')).toBeNull();
+	});
+});
+
+describe("runLuauProject", () => {
+	let mounted: LuauProjectMount | undefined;
+	afterEach(() => {
+		mounted?.unmount();
+		mounted = undefined;
+	});
+
+	it("starts the client: a LocalScript that requires a shared module paints its UI", async () => {
+		const target = document.createElement("div");
+		Object.defineProperty(target, "clientWidth", { value: 800 });
+		Object.defineProperty(target, "clientHeight", { value: 600 });
+		document.body.appendChild(target);
+		const capture: { root?: SceneNode } = {};
+		mounted = await runLuauProject(
+			{
+				tree: {
+					name: "DataModel",
+					className: "DataModel",
+					children: [
+						{
+							name: "ReplicatedStorage",
+							className: "ReplicatedStorage",
+							children: [
+								{
+									name: "ProjectBadge",
+									className: "ModuleScript",
+									source: `return function(parent)
+										local f = Instance.new("Frame")
+										f.Name = "ProjectBadge"
+										f.Parent = parent
+									end`,
+								},
+							],
+						},
+						{
+							name: "StarterPlayer",
+							className: "StarterPlayer",
+							children: [
+								{
+									name: "StarterPlayerScripts",
+									className: "StarterPlayerScripts",
+									children: [
+										{
+											name: "Main",
+											className: "LocalScript",
+											source: `
+												local gui = Instance.new("ScreenGui")
+												gui.Name = "ProjectGui"
+												require(game.ReplicatedStorage.ProjectBadge)(gui)
+												gui.Parent = game.Players.LocalPlayer:WaitForChild("PlayerGui")
+											`,
+										},
+									],
+								},
+							],
+						},
+					],
+				},
+			},
+			{
+				target,
+				wasmBinary,
+				computeLayout: capturing(capture),
+				onError: (error) => {
+					throw error;
+				},
+			},
+		);
+		expect(
+			mounted.scripts.map(({ script, result }) => [script.Name, result.status]),
+		).toContainEqual(["Main", "done"]);
+		expect(
+			target.querySelector('[data-loom-name="ProjectBadge"]'),
+		).not.toBeNull();
 	});
 });

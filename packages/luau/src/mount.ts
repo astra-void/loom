@@ -11,19 +11,48 @@ import { initLayout } from "@loom-dev/layout";
 import { createWorld, type World, type WorldOptions } from "@loom-dev/react";
 import { createInstance, type LoomInstance } from "@loom-dev/runtime";
 import { createRobloxBindings } from "./bindings.ts";
+import {
+	instantiateProject,
+	type LuauProject,
+	startClient,
+} from "./project.ts";
 import { type LuauError, LuauVM, type ThreadResult } from "./vm.ts";
 
-export interface MountLuauOptions extends WorldOptions {
-	/** The element to paint into; defaults to a fresh container under `#loom-root`. */
-	target?: HTMLElement;
-	/** The script's `Name`, which is also its chunk name in errors. */
-	name?: string;
+/** How a Roblox-flavoured Luau VM is made: shared by every entry point. */
+export interface LuauVMSetup {
 	/** Where an error that escapes a script thread goes. Defaults to `console.error`. */
 	onError?: (error: LuauError) => void;
 	/** Wall-clock milliseconds one entry into Luau may run. Defaults to 5000. */
 	budgetMs?: number;
 	/** The Luau VM's `.wasm` bytes, skipping the fetch (tests). */
 	wasmBinary?: ArrayBuffer | Uint8Array;
+}
+
+export interface MountLuauOptions extends LuauVMSetup, WorldOptions {
+	/** The element to paint into; defaults to a fresh container under `#loom-root`. */
+	target?: HTMLElement;
+	/** The script's `Name`, which is also its chunk name in errors. */
+	name?: string;
+}
+
+/** Print an escaped error the way the engine's output does: message, then stack. */
+function printError(error: LuauError): void {
+	console.error(
+		`${error.message}${error.traceback ? `\n${error.traceback}` : ""}`,
+	);
+}
+
+/** A fresh VM with Roblox's globals installed, ready to run scripts. */
+export async function createLuauVM(setup: LuauVMSetup = {}): Promise<LuauVM> {
+	const bindings = createRobloxBindings();
+	const vm = await LuauVM.create({
+		classify: bindings.classify,
+		budgetMs: setup.budgetMs ?? 5000,
+		...(setup.wasmBinary ? { wasmBinary: setup.wasmBinary } : {}),
+		onError: setup.onError ?? printError,
+	});
+	bindings.install(vm);
+	return vm;
 }
 
 export interface LuauMount {
@@ -77,19 +106,7 @@ export async function mountLuau(
 	options: MountLuauOptions = {},
 ): Promise<LuauMount> {
 	if (options.computeLayout === undefined) await initLayout();
-	const bindings = createRobloxBindings();
-	const vm = await LuauVM.create({
-		classify: bindings.classify,
-		budgetMs: options.budgetMs ?? 5000,
-		...(options.wasmBinary ? { wasmBinary: options.wasmBinary } : {}),
-		onError:
-			options.onError ??
-			((error) =>
-				console.error(
-					`${error.message}${error.traceback ? `\n${error.traceback}` : ""}`,
-				)),
-	});
-	bindings.install(vm);
+	const vm = await createLuauVM(options);
 
 	const { mount, owned } = resolveMount(options.target);
 	const world = createWorld(mount, options);
@@ -105,6 +122,59 @@ export async function mountLuau(
 		world,
 		script,
 		result,
+		unmount() {
+			world.dispose();
+			vm.close();
+			if (owned) mount.remove();
+		},
+	};
+}
+
+export interface RunLuauProjectOptions extends LuauVMSetup, WorldOptions {
+	/** The element to paint into; defaults to a fresh container under `#loom-root`. */
+	target?: HTMLElement;
+}
+
+export interface LuauProjectMount {
+	readonly vm: LuauVM;
+	readonly world: World;
+	/** Every LocalScript the client started, with how its thread first came back. */
+	readonly scripts: ReadonlyArray<{
+		readonly script: LoomInstance;
+		readonly result: ThreadResult;
+	}>;
+	unmount(): void;
+}
+
+/**
+ * Start a Rojo project the way a client joins a place: build the tree into
+ * `game`, then run every LocalScript a client runs (ReplicatedFirst, the
+ * StarterGui copy in PlayerGui, the StarterPlayerScripts copy in
+ * PlayerScripts) in one VM, so `require` shares each module between them.
+ */
+export async function runLuauProject(
+	project: LuauProject,
+	options: RunLuauProjectOptions = {},
+): Promise<LuauProjectMount> {
+	if (options.computeLayout === undefined) await initLayout();
+	const vm = await createLuauVM(options);
+	const { mount, owned } = resolveMount(options.target);
+	const world = createWorld(mount, options);
+
+	instantiateProject(project);
+	const scripts = startClient().map(({ script, source }) => ({
+		script,
+		result: vm.run(source, {
+			chunkname: `=${script.GetFullName()}`,
+			globals: { script },
+		}),
+	}));
+	world.flushSync();
+
+	return {
+		vm,
+		world,
+		scripts,
 		unmount() {
 			world.dispose();
 			vm.close();

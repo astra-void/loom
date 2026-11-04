@@ -262,6 +262,11 @@ export class LuauVM {
 	private depth = 0;
 	private frozen = false;
 	private closed = false;
+	/** `run`'s `onFinish` for each thread still on its way to the end. */
+	private readonly finishers = new Map<
+		number,
+		(result: ThreadResult) => void
+	>();
 
 	private constructor(module: LuauModule, options: LuauVMOptions) {
 		this.M = module;
@@ -317,11 +322,16 @@ export class LuauVM {
 	/**
 	 * Run `source` as a script: its own thread with its own global environment
 	 * (the frozen globals plus `globals`), the way Roblox runs a Script or
-	 * LocalScript. Returns how the thread first came back.
+	 * LocalScript. Returns how the thread first came back; `onFinish` hears how
+	 * it ended, after however many yields (`require` of a module that yields).
 	 */
 	run(
 		source: string,
-		options: { chunkname?: string; globals?: Record<string, unknown> } = {},
+		options: {
+			chunkname?: string;
+			globals?: Record<string, unknown>;
+			onFinish?: (result: ThreadResult) => void;
+		} = {},
 	): ThreadResult {
 		this.freeze();
 		const co = this.M._lb_newthread(this.L);
@@ -337,8 +347,11 @@ export class LuauVM {
 				const error = new LuauError(String(this.read(co, -1)));
 				this.M._lb_settop(co, 0);
 				this.onError(error);
-				return { status: "error", error };
+				const result: ThreadResult = { status: "error", error };
+				options.onFinish?.(result);
+				return result;
 			}
+			if (options.onFinish) this.finishers.set(co, options.onFinish);
 			return this.resume(co, 0);
 		} finally {
 			this.M._lb_unref(this.L, ref);
@@ -416,6 +429,11 @@ export class LuauVM {
 		this.closed = true;
 	}
 
+	/** Whether `close` has run: every entry into Luau throws afterwards. */
+	get isClosed(): boolean {
+		return this.closed;
+	}
+
 	/** How many JS objects Luau currently holds as userdata. */
 	get liveHostObjects(): number {
 		return this.handles.size;
@@ -479,6 +497,18 @@ export class LuauVM {
 
 	/** Resume `co` with the top `nargs` values of its stack. */
 	private resume(co: number, nargs: number): ThreadResult {
+		const result = this.resumeOnce(co, nargs);
+		if (result.status !== "yielded") {
+			const finish = this.finishers.get(co);
+			if (finish) {
+				this.finishers.delete(co);
+				finish(result);
+			}
+		}
+		return result;
+	}
+
+	private resumeOnce(co: number, nargs: number): ThreadResult {
 		const status = this.enter(() => this.M._lb_resume(co, 0, nargs));
 		if (status === LUA_OK) {
 			const values = this.readRange(co, 1, this.M._lb_gettop(co));

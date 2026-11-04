@@ -26,7 +26,8 @@
 		"src/wasm"
 	],
 	"exports": {
-		".": "./src/index.ts"
+		".": "./src/index.ts",
+		"./entry": "./src/entry.ts"
 	},
 	"types": "./src/index.ts",
 	"scripts": {
@@ -42,6 +43,7 @@
 	"devDependencies": {
 		"@loom-dev/scene": "workspace:*",
 		"@types/node": "^22.0.0",
+		"@types/react": "catalog:",
 		"typescript": "catalog:"
 	}
 }

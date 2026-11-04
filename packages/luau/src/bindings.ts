@@ -39,6 +39,7 @@ import {
 	Vector3,
 } from "@loom-dev/runtime";
 import { PRELUDE } from "./prelude.ts";
+import { getScriptSource } from "./project.ts";
 import {
 	type Classifier,
 	type HostClass,
@@ -47,7 +48,9 @@ import {
 	type LuauThread,
 	type LuauVM,
 	Suspend,
+	type ThreadResult,
 	Tuple,
+	tuple,
 } from "./vm.ts";
 
 type Datatype = Record<string, unknown>;
@@ -291,8 +294,12 @@ export function createRobloxBindings(): RobloxBindings {
 				case "ConnectParallel":
 				case "Once": {
 					const fn = args[0] as LuauFunction;
-					// Every handler runs in its own thread, so it may yield.
-					const handler = (...values: unknown[]) => current().spawn(fn, values);
+					// Every handler runs in its own thread, so it may yield. A VM that
+					// has been unmounted has no threads left to give it.
+					const handler = (...values: unknown[]) => {
+						const vm = current();
+						if (!vm.isClosed) vm.spawn(fn, values);
+					};
 					const connection =
 						member === "Once" ? self.Once(handler) : self.Connect(handler);
 					connections.add(connection);
@@ -371,6 +378,88 @@ export function createRobloxBindings(): RobloxBindings {
 		tostring: (self) => self.Name,
 	};
 
+	// --- require ---------------------------------------------------------------
+
+	type Loaded =
+		| { state: "running" }
+		| { state: "waiting"; waiters: Array<() => void> }
+		| { state: "done"; value: unknown }
+		| { state: "failed" };
+	const modules = new Map<LoomInstance, Loaded>();
+
+	/**
+	 * `require(moduleScript)`, as `(ok, valueOrMessage)` for the prelude's
+	 * `require` to raise from. A module runs once per VM, in its own thread, with
+	 * itself as `script`. Whoever requires it while it is still yielding waits
+	 * for it; requiring it again from inside its own first run is the recursion
+	 * Roblox reports.
+	 */
+	function requireModule(module: unknown): unknown {
+		if (!isLoomInstance(module) || !module.IsA("ModuleScript")) {
+			return tuple(
+				false,
+				"Attempted to call require with invalid argument(s).",
+			);
+		}
+		const loaded = modules.get(module);
+		if (loaded !== undefined) return settle(module, loaded);
+		const source = getScriptSource(module);
+		if (source === undefined) {
+			return tuple(false, `${module.GetFullName()} has no source loom can run`);
+		}
+		modules.set(module, { state: "running" });
+		const result = current().run(source, {
+			chunkname: `=${module.GetFullName()}`,
+			globals: { script: module },
+			onFinish: (ended) => finishModule(module, ended),
+		});
+		// Still running means it yielded: `onFinish` settles it later.
+		if (result.status === "yielded")
+			modules.set(module, { state: "waiting", waiters: [] });
+		return settle(module, modules.get(module) as Loaded);
+	}
+
+	/** `module`'s thread ended: keep what it returned and wake whoever waits on it. */
+	function finishModule(module: LoomInstance, result: ThreadResult): void {
+		const before = modules.get(module);
+		let after: Loaded = { state: "failed" };
+		if (result.status === "done") {
+			if (result.values.length === 1)
+				after = { state: "done", value: result.values[0] };
+			else {
+				current().report(
+					new LuauError(
+						`${module.GetFullName()}: Module code did not return exactly one value`,
+					),
+				);
+			}
+		}
+		modules.set(module, after);
+		if (before?.state === "waiting") for (const wake of before.waiters) wake();
+	}
+
+	/** What a `require` of `module`, currently `loaded`, hands back. */
+	function settle(module: LoomInstance, loaded: Loaded): unknown {
+		switch (loaded.state) {
+			case "done":
+				return tuple(true, loaded.value);
+			case "failed":
+				return tuple(
+					false,
+					"Requested module experienced an error while loading",
+				);
+			case "running":
+				return tuple(false, "Requested module was required recursively");
+			case "waiting":
+				return new Suspend((resume) => {
+					loaded.waiters.push(() => {
+						const now = settle(module, modules.get(module) as Loaded) as Tuple;
+						resume(...now.values);
+					});
+				});
+		}
+	}
+
 	/** The real `WaitForChild`: yield until the child turns up, or `timeout` runs out. */
 	function waitForChild(
 		parent: LoomInstance,
@@ -439,6 +528,7 @@ export function createRobloxBindings(): RobloxBindings {
 			},
 			print: (line: string) => console.log(line),
 			warn: (line: string) => console.warn(line),
+			require: requireModule,
 			tick: () => Date.now() / 1000,
 			time: () => (performance.now() - started) / 1000,
 		});

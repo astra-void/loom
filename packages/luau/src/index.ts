@@ -10,7 +10,29 @@
  * the react adapter renders, and `mountLuau` paints it through the same world.
  */
 export { createRobloxBindings, type RobloxBindings } from "./bindings.ts";
-export { type LuauMount, type MountLuauOptions, mountLuau } from "./mount.ts";
+export {
+	createLuauVM,
+	type LuauMount,
+	type LuauProjectMount,
+	type LuauVMSetup,
+	type MountLuauOptions,
+	mountLuau,
+	type RunLuauProjectOptions,
+	runLuauProject,
+} from "./mount.ts";
+export {
+	type LuauPreview,
+	type LuauPreviewOptions,
+	luauPreview,
+} from "./preview.ts";
+export {
+	cloneWithSources,
+	getScriptSource,
+	instantiateProject,
+	type LuauProject,
+	type LuauProjectNode,
+	setScriptSource,
+} from "./project.ts";
 export {
 	type Classifier,
 	type HostClass,

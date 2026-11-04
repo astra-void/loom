@@ -323,10 +323,11 @@ describe("globals", () => {
 		spy.mockRestore();
 	});
 
-	it("says require is not there yet", async () => {
+	it("rejects a require of anything but a ModuleScript, as Roblox does", async () => {
 		const vm = await roblox();
-		expect(done(vm.run("return pcall(require, 'x')"))[1]).toMatch(
-			/require is not supported/,
-		);
+		expect(done(vm.run("return pcall(require, 'x')"))).toEqual([
+			false,
+			expect.stringMatching(/Attempted to call require with invalid argument/),
+		]);
 	});
 });

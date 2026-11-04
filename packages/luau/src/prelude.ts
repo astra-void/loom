@@ -71,7 +71,11 @@ function warn(...)
 	host.warn(join(...))
 end
 
-function require()
-	error("require is not supported in loom's Luau preview yet", 2)
+function require(module)
+	local ok, value = host.require(module)
+	if not ok then
+		error(value, 2)
+	end
+	return value
 end
 `;

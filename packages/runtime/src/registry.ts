@@ -62,6 +62,10 @@ const CLASS_PARENTS: Record<string, string> = {
 	Script: "BaseScript",
 	LocalScript: "Script",
 	ModuleScript: "LuaSourceContainer",
+	// Where a client's LocalScripts start from and run in.
+	StarterPlayerScripts: "Instance",
+	StarterCharacterScripts: "StarterPlayerScripts",
+	PlayerScripts: "Instance",
 	Camera: "Instance",
 	Player: "Instance",
 	ServiceProvider: "Instance",
