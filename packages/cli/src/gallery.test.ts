@@ -2,7 +2,7 @@
 import { describe, expect, it } from "vitest";
 import {
 	DEFAULT_PORT,
-	DEFAULT_TARGETS_GLOB,
+	DEFAULT_TARGETS_GLOBS,
 	resolveGalleryOptions,
 } from "./gallery.ts";
 
@@ -16,7 +16,7 @@ describe("resolveGalleryOptions", () => {
 
 	it("enables gallery mode from the bare CLI flag", () => {
 		const decision = resolveGalleryOptions({ cliTargets: true });
-		expect(decision.patterns).toEqual([DEFAULT_TARGETS_GLOB]);
+		expect(decision.patterns).toEqual([...DEFAULT_TARGETS_GLOBS]);
 	});
 
 	it("uses config targets/port when CLI flags are absent", () => {
@@ -24,9 +24,9 @@ describe("resolveGalleryOptions", () => {
 			configPresent: true,
 			config: { targets: "src/preview-targets", port: 4175 },
 		});
-		expect(decision.patterns).toEqual([
-			`src/preview-targets/${DEFAULT_TARGETS_GLOB}`,
-		]);
+		expect(decision.patterns).toEqual(
+			DEFAULT_TARGETS_GLOBS.map((g) => `src/preview-targets/${g}`),
+		);
 		expect(decision.port).toBe(4175);
 		expect(decision.hint).toBeUndefined();
 	});
@@ -37,8 +37,8 @@ describe("resolveGalleryOptions", () => {
 			config: { targets: ["a", "b"] },
 		});
 		expect(decision.patterns).toEqual([
-			`a/${DEFAULT_TARGETS_GLOB}`,
-			`b/${DEFAULT_TARGETS_GLOB}`,
+			...DEFAULT_TARGETS_GLOBS.map((g) => `a/${g}`),
+			...DEFAULT_TARGETS_GLOBS.map((g) => `b/${g}`),
 		]);
 	});
 
@@ -49,7 +49,9 @@ describe("resolveGalleryOptions", () => {
 			configPresent: true,
 			config: { targets: "src/preview-targets", port: 4175 },
 		});
-		expect(decision.patterns).toEqual([`elsewhere/${DEFAULT_TARGETS_GLOB}`]);
+		expect(decision.patterns).toEqual(
+			DEFAULT_TARGETS_GLOBS.map((g) => `elsewhere/${g}`),
+		);
 		expect(decision.port).toBe(5401);
 	});
 
@@ -114,7 +116,7 @@ describe("resolveGalleryOptions", () => {
 			configPresent: true,
 			config: { projectName: "legacy" },
 		});
-		expect(decision.patterns).toEqual([DEFAULT_TARGETS_GLOB]);
+		expect(decision.patterns).toEqual([...DEFAULT_TARGETS_GLOBS]);
 		expect(decision.hint).toBeUndefined();
 	});
 });

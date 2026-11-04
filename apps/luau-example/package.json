@@ -3,14 +3,8 @@
 	"version": "0.0.0",
 	"private": true,
 	"type": "module",
-	"scripts": {
-		"typecheck": "tsc -p tsconfig.json --noEmit"
-	},
 	"dependencies": {
 		"@loom-dev/luau": "workspace:*",
 		"@loom-dev/preview": "workspace:*"
-	},
-	"devDependencies": {
-		"typescript": "catalog:"
 	}
 }

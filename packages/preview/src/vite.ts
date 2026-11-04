@@ -44,6 +44,7 @@ import {
 import { normalizeTargetsPatterns, type TargetsInput } from "./gallery.ts";
 import { loomGallery } from "./gallery-plugin.ts";
 import { loomIndexHtml } from "./html.ts";
+import { loomLuau } from "./luau-plugin.ts";
 import {
 	CLIENT_PATH,
 	GLOBALS_PATH,
@@ -1344,6 +1345,7 @@ export function loomPreview(options: LoomPreviewOptions = {}): Plugin[] {
 		tsconfigBaseUrlLookup,
 		serveGlobals,
 		loomAssetProxy(),
+		loomLuau(),
 	];
 
 	// Gallery mode: the target import map (dev) + the generated gallery page.

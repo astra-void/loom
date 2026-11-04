@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { GALLERY_BOOT_SCRIPT, GALLERY_BOOT_STYLE } from "./gallery/boot.ts";
 import {
-	DEFAULT_TARGETS_GLOB,
+	DEFAULT_TARGETS_GLOBS,
 	findLoomTargets,
 	generateBuildEntryModule,
 	generateBuildTargetsModule,
@@ -73,17 +73,17 @@ describe("globToRegExp", () => {
 });
 
 describe("normalizeTargetsPatterns", () => {
-	it("uses the default glob for a bare --targets flag", () => {
-		expect(normalizeTargetsPatterns(true)).toEqual([DEFAULT_TARGETS_GLOB]);
+	it("uses the default globs for a bare --targets flag", () => {
+		expect(normalizeTargetsPatterns(true)).toEqual([
+			"**/*.loom.tsx",
+			"**/*.loom.luau",
+		]);
 	});
 
-	it("expands a plain directory to <dir>/**/*.loom.tsx", () => {
-		expect(normalizeTargetsPatterns("src/preview-targets")).toEqual([
-			`src/preview-targets/${DEFAULT_TARGETS_GLOB}`,
-		]);
-		expect(normalizeTargetsPatterns("./src/preview-targets/")).toEqual([
-			`src/preview-targets/${DEFAULT_TARGETS_GLOB}`,
-		]);
+	it("expands a plain directory to the default globs under it", () => {
+		const under = DEFAULT_TARGETS_GLOBS.map((g) => `src/preview-targets/${g}`);
+		expect(normalizeTargetsPatterns("src/preview-targets")).toEqual(under);
+		expect(normalizeTargetsPatterns("./src/preview-targets/")).toEqual(under);
 	});
 
 	it("passes explicit globs through unchanged", () => {
@@ -92,10 +92,10 @@ describe("normalizeTargetsPatterns", () => {
 		]);
 	});
 
-	it("treats '.' as the default glob and supports arrays", () => {
-		expect(normalizeTargetsPatterns(".")).toEqual([DEFAULT_TARGETS_GLOB]);
+	it("treats '.' as the default globs and supports arrays", () => {
+		expect(normalizeTargetsPatterns(".")).toEqual([...DEFAULT_TARGETS_GLOBS]);
 		expect(normalizeTargetsPatterns(["a", "b/**/*.loom.tsx"])).toEqual([
-			`a/${DEFAULT_TARGETS_GLOB}`,
+			...DEFAULT_TARGETS_GLOBS.map((g) => `a/${g}`),
 			"b/**/*.loom.tsx",
 		]);
 	});

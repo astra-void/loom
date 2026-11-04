@@ -36,6 +36,8 @@ import {
 	generateBuildTargetsModule,
 } from "./gallery.ts";
 import { GALLERY_SHELL_URL } from "./gallery-plugin.ts";
+import { luauEntryUrl } from "./luau-plugin.ts";
+import { readLuauProject } from "./luau-project.ts";
 import { GALLERY_SHELL_PATH, GLOBALS_PATH } from "./paths.ts";
 
 /** roblox-ts client-entry conventions, in priority order. */
@@ -51,13 +53,16 @@ export const ENTRY_CANDIDATES = [
 ];
 
 /**
- * The project's client entry as a root-relative URL (`/src/main.client.tsx`),
- * or undefined when none of the conventional names exist.
+ * The project's client entry as a root-relative URL (`/src/main.client.tsx`).
+ * Without a TypeScript one, a Luau project (a Rojo `default.project.json`, or
+ * Luau scripts in the `rojo init` layout) gets `@loom-dev/luau/entry`, which
+ * runs its LocalScripts. Undefined when there is neither.
  */
 export function findEntry(root: string): string | undefined {
 	for (const candidate of ENTRY_CANDIDATES) {
 		if (existsSync(resolve(root, candidate))) return `/${candidate}`;
 	}
+	if (readLuauProject(root) !== undefined) return luauEntryUrl(root);
 	return undefined;
 }
 
@@ -203,8 +208,8 @@ export function loomIndexHtml(options: LoomHtmlOptions = {}): Plugin {
 		if (!entry) {
 			throw new Error(
 				`loom: no index.html and no client entry found in ${root}\n` +
-					`      looked for: ${ENTRY_CANDIDATES.join(", ")}\n` +
-					`      (pass { entry } to loomPreview(), or { targets } to browse *.loom.tsx as a gallery)`,
+					`      looked for: ${ENTRY_CANDIDATES.join(", ")}, or a Luau project (default.project.json / src/*.client.luau)\n` +
+					`      (pass { entry } to loomPreview(), or { targets } to browse *.loom.tsx and *.loom.luau as a gallery)`,
 			);
 		}
 		return generateIndexHtml(entry, title);

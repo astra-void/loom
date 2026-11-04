@@ -194,10 +194,6 @@ importers:
       '@loom-dev/preview':
         specifier: workspace:*
         version: link:../../packages/preview
-    devDependencies:
-      typescript:
-        specifier: 'catalog:'
-        version: 5.9.3
 
   apps/next-demo:
     dependencies:
@@ -315,6 +311,9 @@ importers:
       '@types/node':
         specifier: ^22.0.0
         version: 22.19.21
+      '@types/react':
+        specifier: 'catalog:'
+        version: 18.3.31
       typescript:
         specifier: 'catalog:'
         version: 5.9.3

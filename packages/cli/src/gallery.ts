@@ -14,6 +14,7 @@ import { normalizeTargetsPatterns } from "@loom-dev/preview/gallery";
 
 export {
 	DEFAULT_TARGETS_GLOB,
+	DEFAULT_TARGETS_GLOBS,
 	findLoomTargets,
 	type GalleryParams,
 	normalizeTargetsPatterns,

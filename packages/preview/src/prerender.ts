@@ -332,6 +332,9 @@ export async function prerenderImages(
 			)) as ReactLike;
 
 			for (const relPath of targets) {
+				// A Luau target runs in a WASM VM this Node pass does not boot; its
+				// `rbxassetid` images are left to the dev-server route.
+				if (relPath.endsWith(".luau")) continue;
 				try {
 					const module = (await server.ssrLoadModule(
 						join(options.root, relPath),

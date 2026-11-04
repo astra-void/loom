@@ -26,6 +26,15 @@ export { toViteFsUrl } from "./vite-fs-url.ts";
 export const DEFAULT_TARGETS_GLOB = "**/*.loom.tsx";
 
 /**
+ * Every default glob: TypeScript targets, and Luau ones (`./luau-plugin.ts`
+ * compiles a `*.loom.luau` file to the same `preview` export).
+ */
+export const DEFAULT_TARGETS_GLOBS: readonly string[] = [
+	DEFAULT_TARGETS_GLOB,
+	"**/*.loom.luau",
+];
+
+/**
  * Target discovery input: a glob, a directory, a list of either, or `true` for
  * the default `**\/*.loom.tsx`.
  */
@@ -51,22 +60,22 @@ export function globToRegExp(glob: string): RegExp {
 
 /**
  * Normalize the `targets` value into discovery globs. `true` → the default
- * glob; a plain directory (no `*`) → `<dir>/**\/*.loom.tsx`; anything with a
- * wildcard is used as-is.
+ * globs (`*.loom.tsx` and `*.loom.luau`, anywhere); a plain directory (no `*`)
+ * → the same under `<dir>/`; anything with a wildcard is used as-is.
  */
 export function normalizeTargetsPatterns(value: TargetsInput): string[] {
 	const raw =
-		value === true
-			? [DEFAULT_TARGETS_GLOB]
-			: typeof value === "string"
-				? [value]
-				: value;
+		value === true ? ["."] : typeof value === "string" ? [value] : value;
 	const patterns: string[] = [];
 	for (const entry of raw) {
 		const cleaned = entry.replace(/^\.\//, "").replace(/\/+$/, "");
-		if (cleaned === "" || cleaned === ".") patterns.push(DEFAULT_TARGETS_GLOB);
+		if (cleaned === "" || cleaned === ".")
+			patterns.push(...DEFAULT_TARGETS_GLOBS);
 		else if (cleaned.includes("*")) patterns.push(cleaned);
-		else patterns.push(`${cleaned}/${DEFAULT_TARGETS_GLOB}`);
+		else
+			patterns.push(
+				...DEFAULT_TARGETS_GLOBS.map((glob) => `${cleaned}/${glob}`),
+			);
 	}
 	return patterns;
 }
