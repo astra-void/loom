@@ -27,3 +27,6 @@ apps/.loom-base-path-fixture/
 
 # graft's local graph cache — regenerable, not committed (run `graft build`).
 /graft/
+
+# @loom-dev/luau: upstream Luau checkout + CMake build tree (native/build.sh)
+packages/luau/vendor/

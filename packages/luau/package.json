@@ -1,0 +1,39 @@
+{
+	"name": "@loom-dev/luau",
+	"version": "0.13.2",
+	"private": true,
+	"description": "Luau adapter for loom — upstream Luau compiled to WASM, running Luau UI scripts against the loom runtime.",
+	"keywords": [
+		"loom",
+		"roblox",
+		"luau",
+		"wasm",
+		"ui"
+	],
+	"license": "MIT",
+	"author": "astra-void",
+	"homepage": "https://github.com/astra-void/loom#readme",
+	"bugs": "https://github.com/astra-void/loom/issues",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/astra-void/loom.git",
+		"directory": "packages/luau"
+	},
+	"type": "module",
+	"sideEffects": false,
+	"files": [
+		"dist",
+		"src/wasm"
+	],
+	"exports": {
+		".": "./src/index.ts"
+	},
+	"types": "./src/index.ts",
+	"scripts": {
+		"build:vm": "bash native/build.sh",
+		"typecheck": "tsc -p tsconfig.json --noEmit"
+	},
+	"devDependencies": {
+		"typescript": "catalog:"
+	}
+}

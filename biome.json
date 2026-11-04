@@ -6,7 +6,11 @@
 		"useIgnoreFile": true
 	},
 	"files": {
-		"includes": ["**", "!apps/fumadocs-demo"]
+		"includes": [
+			"**",
+			"!apps/fumadocs-demo",
+			"!packages/luau/src/wasm/luau-vm.mjs"
+		]
 	},
 	"formatter": {
 		"enabled": true,

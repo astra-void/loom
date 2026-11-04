@@ -281,6 +281,12 @@ importers:
         specifier: 'catalog:'
         version: 5.9.3
 
+  packages/luau:
+    devDependencies:
+      typescript:
+        specifier: 'catalog:'
+        version: 5.9.3
+
   packages/preview:
     dependencies:
       '@loom-dev/react':
