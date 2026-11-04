@@ -394,7 +394,12 @@ export function createRobloxBindings(): RobloxBindings {
 	 * for it; requiring it again from inside its own first run is the recursion
 	 * Roblox reports.
 	 */
-	function requireModule(module: unknown): unknown {
+	function requireModule(module: unknown, from?: unknown): unknown {
+		if (typeof module === "string") {
+			const resolved = resolveRequirePath(module, from);
+			if (typeof resolved === "string") return tuple(false, resolved);
+			module = resolved;
+		}
 		if (!isLoomInstance(module) || !module.IsA("ModuleScript")) {
 			return tuple(
 				false,
@@ -535,6 +540,52 @@ export function createRobloxBindings(): RobloxBindings {
 	}
 
 	return { classify, install };
+}
+
+/**
+ * Require-by-string, the engine's way: `@self/x` starts at the requiring
+ * script itself, `./x` at its parent, `../x` one above that (each further
+ * `..` climbs one more), and `@game/x` at the DataModel. Returns the instance
+ * the path names, or the error message when it names none.
+ */
+function resolveRequirePath(
+	path: string,
+	from: unknown,
+): LoomInstance | string {
+	const parts = path.split("/");
+	const head = parts.shift();
+	if (head === "@game")
+		return walkPath(game as unknown as LoomInstance, parts, path, "game");
+	if (head !== "@self" && head !== "." && head !== "..")
+		return `require("${path}"): a path must start with "./", "../", "@self/" or "@game/"`;
+	if (!isLoomInstance(from))
+		return `require("${path}"): cannot resolve a path outside a script`;
+	const parent = from.Parent as LoomInstance | undefined;
+	const start =
+		head === "@self"
+			? from
+			: head === "."
+				? parent
+				: (parent?.Parent as LoomInstance | undefined);
+	return walkPath(start, parts, path, from.GetFullName());
+}
+
+/** Follow `parts` (child names, or `..` for a parent) down from `at`. */
+function walkPath(
+	at: LoomInstance | undefined,
+	parts: readonly string[],
+	path: string,
+	origin: string,
+): LoomInstance | string {
+	for (const part of parts) {
+		if (at === undefined) break;
+		if (part === "" || part === ".") continue;
+		at =
+			part === ".."
+				? (at.Parent as LoomInstance | undefined)
+				: (at.FindFirstChild(part) as LoomInstance | undefined);
+	}
+	return at ?? `require("${path}"): no module at that path from ${origin}`;
 }
 
 /** `task.wait`: yield until the first Heartbeat after `seconds`, return the time waited. */

@@ -323,11 +323,26 @@ describe("globals", () => {
 		spy.mockRestore();
 	});
 
-	it("rejects a require of anything but a ModuleScript, as Roblox does", async () => {
+	it("rejects a require of anything but a ModuleScript or a path, as Roblox does", async () => {
 		const vm = await roblox();
-		expect(done(vm.run("return pcall(require, 'x')"))).toEqual([
+		expect(done(vm.run("return pcall(require, 5)"))).toEqual([
 			false,
 			expect.stringMatching(/Attempted to call require with invalid argument/),
 		]);
+		expect(done(vm.run("return pcall(require, 'x')"))).toEqual([
+			false,
+			expect.stringMatching(/must start with/),
+		]);
+	});
+
+	it("gives debug the engine's profiler labels, as no-ops", async () => {
+		const vm = await roblox();
+		expect(
+			done(
+				vm.run(
+					"debug.profilebegin('step') debug.profileend() return debug.getmemorycategory()",
+				),
+			),
+		).toEqual([""]);
 	});
 });

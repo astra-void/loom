@@ -31,6 +31,8 @@ const KIND_THREAD = 7;
 
 const LUA_OK = 0;
 const LUA_YIELD = 1;
+/** `LUA_GLOBALSINDEX`: `-LUAI_MAXCSTACK - 2002`, with Luau's default 8000. */
+const LUA_GLOBALSINDEX = -10002;
 
 // `lua_costatus`: a thread that has not started, or is parked in a yield.
 const LUA_COSUS = 1;
@@ -117,6 +119,12 @@ export interface LuauVMOptions {
 	locateFile?: (path: string, prefix: string) => string;
 	/** The `.wasm` bytes themselves, skipping the fetch (tests, Node). */
 	wasmBinary?: ArrayBuffer | Uint8Array;
+	/**
+	 * Globals that stay writable tables after the freeze, one table each that
+	 * every script shares — Roblox's `_G` and `shared`. The sandbox freezes
+	 * every table it finds, so these are made fresh once it has run.
+	 */
+	sharedTables?: readonly string[];
 }
 
 /** How a resumed thread came back. */
@@ -240,6 +248,7 @@ export class LuauVM {
 	private readonly classify: Classifier;
 	private readonly onError: (error: LuauError) => void;
 	private readonly budgetMs: number;
+	private readonly sharedTables: readonly string[];
 
 	private readonly entries: HostEntry[] = [];
 	private readonly functionIds = new Map<
@@ -274,6 +283,7 @@ export class LuauVM {
 		this.classify = options.classify ?? (() => undefined);
 		this.onError = options.onError ?? ((error) => console.error(error.message));
 		this.budgetMs = options.budgetMs ?? 0;
+		this.sharedTables = options.sharedTables ?? [];
 		this.lenPtr = module._malloc(4);
 		for (const name of METAMETHODS) {
 			this.metamethodIds.set(name, this.register(this.metamethod(name)));
@@ -307,6 +317,14 @@ export class LuauVM {
 		if (this.frozen) return;
 		this.frozen = true;
 		this.M._lb_sandbox(this.L);
+		if (this.sharedTables.length === 0) return;
+		// The sandbox froze the globals table too: unlock it just long enough.
+		this.M._lb_setreadonly(this.L, LUA_GLOBALSINDEX, 0);
+		for (const name of this.sharedTables) {
+			this.M._lb_newtable(this.L, 0, 0);
+			this.M._lb_setglobal(this.L, this.cstr(name));
+		}
+		this.M._lb_setreadonly(this.L, LUA_GLOBALSINDEX, 1);
 	}
 
 	/** Compile `source` into a function, or throw the syntax error. */

@@ -241,4 +241,53 @@ describe("require", () => {
 		// A failed module is not run again.
 		expect(reported.filter((m) => m.includes("boom"))).toHaveLength(1);
 	});
+
+	it("resolves string paths from the requiring script, as Ripple's do", async () => {
+		const name = fresh("Paths");
+		instantiateProject(
+			place({
+				ReplicatedStorage: [
+					folder(
+						name,
+						{
+							name: "Lib",
+							className: "ModuleScript",
+							source:
+								'return { own = require("@self/Inner"), sibling = require("./Sibling"), up = require("../Top") }',
+							children: [module("Inner", "return 'inner'")],
+						},
+						module("Sibling", "return 'sibling'"),
+					),
+					module("Top", "return 'top'"),
+				],
+			}),
+		);
+		const { log, result } = await client(`
+			local lib = require(game.ReplicatedStorage.${name}.Lib)
+			log(lib.own, lib.sibling, lib.up)
+			log((select(2, pcall(require, "./Nope"))))
+		`);
+		expect(result.status).toBe("done");
+		expect(log[0]).toEqual(["inner", "sibling", "top"]);
+		// The LocalScript itself sits nowhere a path could start from.
+		expect(log[1]).toMatch(/require\("\.\/Nope"\)/);
+	});
+
+	it("shares one writable _G between scripts, as roblox-ts's RuntimeLib needs", async () => {
+		const name = fresh("Shared");
+		instantiateProject(
+			place({
+				ReplicatedStorage: [
+					module(name, "_G.seen = (_G.seen or 0) + 1 return _G"),
+				],
+			}),
+		);
+		const { log, result } = await client(`
+			local g = require(game.ReplicatedStorage.${name})
+			shared.flag = true
+			log(g == _G, _G.seen, shared.flag)
+		`);
+		expect(result.status).toBe("done");
+		expect(log).toEqual([[true, 1, true]]);
+	});
 });

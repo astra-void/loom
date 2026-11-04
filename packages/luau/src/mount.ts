@@ -48,6 +48,8 @@ export async function createLuauVM(setup: LuauVMSetup = {}): Promise<LuauVM> {
 	const vm = await LuauVM.create({
 		classify: bindings.classify,
 		budgetMs: setup.budgetMs ?? 5000,
+		// Roblox's script-shared tables (roblox-ts's RuntimeLib registers in `_G`).
+		sharedTables: ["_G", "shared"],
 		...(setup.wasmBinary ? { wasmBinary: setup.wasmBinary } : {}),
 		onError: setup.onError ?? printError,
 	});

@@ -47,6 +47,15 @@ function task.synchronize() end
 function task.desynchronize() end
 
 _G.task = task
+
+-- The engine's additions to \`debug\`: the MicroProfiler labels and the memory
+-- categories. loom has neither profiler, so they record nothing. Ripple wraps
+-- every Heartbeat step in a profile label.
+function debug.profilebegin(_label) end
+function debug.profileend() end
+function debug.setmemorycategory(_tag) return "" end
+function debug.resetmemorycategory() end
+function debug.getmemorycategory() return "" end
 wait = task.wait
 spawn = task.defer
 delay = task.delay
@@ -72,7 +81,10 @@ function warn(...)
 end
 
 function require(module)
-	local ok, value = host.require(module)
+	-- A string path resolves from the requiring script: the caller's own
+	-- environment holds it as \`script\`.
+	local from = if type(module) == "string" then getfenv(2).script else nil
+	local ok, value = host.require(module, from)
 	if not ok then
 		error(value, 2)
 	end
