@@ -30,6 +30,7 @@ import {
 	registerPropertyReader,
 	setRawProperty,
 } from "./instance";
+import { classParent, knownClasses } from "./registry";
 import { heartbeat, renderStepped } from "./scheduler";
 import { type LoomConnection, LoomSignal } from "./signal";
 
@@ -1284,6 +1285,22 @@ const CONTAINER_SERVICES = [
 for (const name of CONTAINER_SERVICES) {
 	registerService(name, () => createInstance(name, name));
 }
+
+// --- ReflectionService -------------------------------------------------------
+
+// `GetClasses` answers with the classes loom knows, as the engine's
+// `ReflectedClass` records (only `Name` and `Superclass` so far).
+// `@rbxts/react` builds its JSX tag table from it (`screengui` → `ScreenGui`).
+registerClassMethods("ReflectionService", {
+	GetClasses: () =>
+		knownClasses().map((name) => ({
+			Name: name,
+			Superclass: classParent(name) ?? "",
+		})),
+});
+registerService("ReflectionService", () =>
+	createInstance("ReflectionService", "ReflectionService"),
+);
 
 // --- eager construction ------------------------------------------------------
 

@@ -158,6 +158,7 @@ const CLASS_PARENTS: Record<string, string> = {
 	MemoryStoreService: "Instance",
 	PolicyService: "Instance",
 	AnalyticsService: "Instance",
+	ReflectionService: "Instance",
 	BadgeService: "Instance",
 	GroupService: "Instance",
 	InsertService: "Instance",
@@ -170,6 +171,11 @@ const CLASS_PARENTS: Record<string, string> = {
 	VoiceChatService: "Instance",
 	CoreGui: "BasePlayerGui",
 };
+
+/** Every class name the registry knows, `Instance` included. */
+export function knownClasses(): string[] {
+	return ["Instance", ...Object.keys(CLASS_PARENTS)];
+}
 
 const warnedUnknown = new Set<string>();
 

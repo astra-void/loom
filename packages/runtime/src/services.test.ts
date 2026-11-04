@@ -15,6 +15,20 @@ import {
 } from "./services";
 import type { LoomSignal } from "./signal";
 
+describe("ReflectionService", () => {
+	it("lists the known classes, which @rbxts/react builds its JSX tags from", () => {
+		const reflection = game.GetService("ReflectionService") as LoomInstance;
+		const classes = (reflection.GetClasses as () => unknown)() as Array<{
+			Name: string;
+			Superclass: string;
+		}>;
+		const byName = new Map(classes.map((c) => [c.Name, c]));
+		expect(byName.get("ScreenGui")).toBeDefined();
+		expect(byName.get("TextButton")?.Superclass).toBe("GuiButton");
+		expect(byName.get("Instance")?.Superclass).toBe("");
+	});
+});
+
 describe("game.GetService", () => {
 	it("returns stable singletons", () => {
 		const players = game.GetService("Players");
