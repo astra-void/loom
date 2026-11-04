@@ -29,6 +29,7 @@ import {
 	registerPropertyInterceptor,
 	registerPropertyReader,
 	setRawProperty,
+	setScreenSizeSource,
 } from "./instance";
 import { classParent, knownClasses } from "./registry";
 import { heartbeat, renderStepped } from "./scheduler";
@@ -635,6 +636,13 @@ registerService("Workspace", () => {
 	setRawProperty(workspace, "CurrentCamera", camera);
 	return workspace;
 });
+
+// No GUI inset in the preview, so a ScreenGui is exactly the viewport.
+setScreenSizeSource(
+	() =>
+		(getService("Workspace").CurrentCamera as LoomInstance)
+			.ViewportSize as Vector2,
+);
 
 /**
  * World hook: update `Workspace.CurrentCamera.ViewportSize`, firing its

@@ -1269,3 +1269,20 @@ describe("UserInputService.LastInputType", () => {
 		connection.Disconnect();
 	});
 });
+
+describe("ScreenGui.AbsoluteSize", () => {
+	it("is the screen's size as soon as the ScreenGui is under PlayerGui", () => {
+		setViewportSize(new Vector2(800, 600));
+		const gui = createInstance("ScreenGui", "Fresh");
+		expect(gui.AbsoluteSize).toEqual(Vector2.zero);
+		const folder = createInstance("Folder", "Holder");
+		gui.Parent = folder;
+		const localPlayer = game.GetService("Players").LocalPlayer as LoomInstance;
+		folder.Parent = localPlayer.WaitForChild("PlayerGui") as LoomInstance;
+		// No layout has run: the engine answers from the screen, not a flush.
+		expect(gui.AbsoluteSize).toEqual(new Vector2(800, 600));
+		setViewportSize(new Vector2(1280, 720));
+		expect(gui.AbsoluteSize).toEqual(new Vector2(1280, 720));
+		folder.Destroy();
+	});
+});

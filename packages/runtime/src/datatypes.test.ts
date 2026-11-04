@@ -51,6 +51,11 @@ describe("UDim2 constructor", () => {
 
 	it("static helpers stay consistent", () => {
 		expect(UDim2.new(1, 2, 3, 4).X.Offset).toBe(2);
+		// Luau's `UDim2.new(UDim, UDim)`, which Iris sizes its inputs with.
+		const fromUDims = UDim2.new(new UDim(0.65, -4), new UDim(0, 20));
+		expect(fromUDims.X.Scale).toBe(0.65);
+		expect(fromUDims.X.Offset).toBe(-4);
+		expect(fromUDims.Y.Offset).toBe(20);
 		expect(UDim2.fromOffset(10, 20).X.Offset).toBe(10);
 		expect(UDim2.fromScale(0.5, 1).Y.Scale).toBe(1);
 	});

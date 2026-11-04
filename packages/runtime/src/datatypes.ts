@@ -62,8 +62,17 @@ export class UDim2 {
 			this.Y = new UDim(c, d);
 		}
 	}
-	static new(xScale = 0, xOffset = 0, yScale = 0, yOffset = 0): UDim2 {
-		return new UDim2(new UDim(xScale, xOffset), new UDim(yScale, yOffset));
+	/**
+	 * Luau's `UDim2.new`, with the engine's two forms as above: Iris sizes its
+	 * input fields with `UDim2.new(widthUDim, heightUDim)`.
+	 */
+	static new(
+		a: UDim | number = 0,
+		b: UDim | number = 0,
+		yScale = 0,
+		yOffset = 0,
+	): UDim2 {
+		return new UDim2(a, b, yScale, yOffset);
 	}
 	static fromScale(x = 0, y = 0): UDim2 {
 		return new UDim2(new UDim(x, 0), new UDim(y, 0));

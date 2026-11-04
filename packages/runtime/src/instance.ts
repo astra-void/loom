@@ -1073,6 +1073,28 @@ function setParent(impl: InstanceImpl, value: unknown): void {
 
 // --- the proxy ---------------------------------------------------------------
 
+let screenSize: (() => Vector2) | undefined;
+
+/** Services hook: where a ScreenGui reads the screen's size from. */
+export function setScreenSizeSource(source: () => Vector2): void {
+	screenSize = source;
+}
+
+/**
+ * A ScreenGui under PlayerGui covers the screen, and the engine answers its
+ * `AbsoluteSize` with the screen's size from the moment it is parented. loom's
+ * own value only arrives with the first layout after that, and libraries size
+ * themselves off it straight away: Iris clamps a new window to its ScreenGui's
+ * `AbsoluteSize`, and a zero there shrank every window to its minimum.
+ */
+function screenGuiSize(impl: InstanceImpl): Vector2 | undefined {
+	if (!screenSize || impl.className !== "ScreenGui") return undefined;
+	for (let at = impl.parent; at; at = at.parent) {
+		if (at.className === "PlayerGui") return screenSize();
+	}
+	return undefined;
+}
+
 function getTrap(impl: InstanceImpl, key: string | symbol): unknown {
 	if (typeof key !== "string") return undefined;
 	switch (key) {
@@ -1083,7 +1105,7 @@ function getTrap(impl: InstanceImpl, key: string | symbol): unknown {
 		case "AbsolutePosition":
 			return impl.absolutePosition;
 		case "AbsoluteSize":
-			return impl.absoluteSize;
+			return screenGuiSize(impl) ?? impl.absoluteSize;
 		case "toString":
 			// Debug/`tostring` friendliness: `String(inst)` yields the Name.
 			return () => getName(impl);
