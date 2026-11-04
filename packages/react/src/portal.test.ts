@@ -119,6 +119,22 @@ describe("createPortal + PlayerGui world root", () => {
 		expect(capture.root?.name).toBe("LoomDefaultGui");
 	});
 
+	it("leaves instances Roblox never draws out of the scene", () => {
+		const root = mountWith(createElement("frame", { Name: "Panel" }));
+		const panel = root.world.defaultGui.FindFirstChild("Panel") as LoomInstance;
+		// What an imperative (Luau) tree puts beside GUI: its script, a value object.
+		for (const className of ["LocalScript", "StringValue", "BindableEvent"]) {
+			createInstance(className, className).Parent = panel;
+		}
+		createInstance("Frame", "Shown").Parent = panel;
+		root.world.flushSync();
+		const names = (capture.root?.children?.[0]?.children ?? []).map(
+			(n) => n.name,
+		);
+		expect(names).toEqual(["Shown"]);
+		expect(mount.querySelector('[data-loom-class="LocalScript"]')).toBeNull();
+	});
+
 	it("parents portal children into PlayerGui and removes them on unmount", () => {
 		let toggle: (() => void) | undefined;
 		mountWith(

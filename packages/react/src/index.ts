@@ -776,6 +776,21 @@ function measureSegments(
 	return { x: width, y: height };
 }
 
+/**
+ * An instance Roblox never draws, nor anything under it: scripts, value
+ * objects, bindables. React trees rarely hold one, but an imperative tree does —
+ * a Luau LocalScript sits inside the ScreenGui it drives — and left in the
+ * scene each would paint as an empty box and take a slot in its parent's
+ * `UIListLayout`.
+ */
+function isNonVisual(inst: LoomInstance): boolean {
+	return (
+		inst.IsA("LuaSourceContainer") ||
+		inst.IsA("ValueBase") ||
+		inst.IsA("BindableEvent")
+	);
+}
+
 function encodeInstance(
 	inst: LoomInstance,
 	byId: Map<string, LoomInstance>,
@@ -801,6 +816,7 @@ function encodeInstance(
 	if (Object.keys(properties).length > 0) node.properties = properties;
 	const children = inst
 		.GetChildren()
+		.filter((child) => !isNonVisual(child))
 		.map((child) => encodeInstance(child, byId));
 	if (children.length > 0) node.children = children;
 	return node;

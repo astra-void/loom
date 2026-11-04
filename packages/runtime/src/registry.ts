@@ -55,6 +55,13 @@ const CLASS_PARENTS: Record<string, string> = {
 	Folder: "Instance",
 	// App-owned signals: `Event` / `Fire` are answered in `./instance.ts`.
 	BindableEvent: "Instance",
+	// Scripts. `@loom-dev/luau` runs a LocalScript inside the ScreenGui it
+	// drives, the way a StarterGui UI ships, so the class has to answer `IsA`.
+	LuaSourceContainer: "Instance",
+	BaseScript: "LuaSourceContainer",
+	Script: "BaseScript",
+	LocalScript: "Script",
+	ModuleScript: "LuaSourceContainer",
 	Camera: "Instance",
 	Player: "Instance",
 	ServiceProvider: "Instance",
