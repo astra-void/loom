@@ -1,5 +1,5 @@
 /**
- * `enums.ts` — the Roblox `Enum` namespace (the subset loom needs).
+ * `enums.ts` — the Roblox `Enum` namespace.
  *
  * Layout enums (FillDirection, SortOrder, …) plus the input/interaction enums
  * the interactive runtime dispatches (UserInputType, KeyCode, UserInputState).
@@ -11,7 +11,11 @@
  * `UserInputType.Touch` is 7 with 5 and 6 skipped, `EasingStyle.Cubic` is 10
  * and `Font.Unknown` is 100. Every number below is the engine's, read off the
  * published enum reference rather than counted.
+ *
+ * Every other engine enum, and the items the engine has beyond these, comes
+ * from the generated `engine-enums.ts` (`scripts/gen-engine-api.mjs`).
  */
+import { ENGINE_ENUMS } from "./engine-enums";
 
 /**
  * A Roblox `Enum` — the namespace object itself (`Enum.KeyCode`), not one of
@@ -33,7 +37,7 @@
  */
 export class RobloxEnum<E extends string = string> {
 	readonly #typeName: E;
-	readonly #items: readonly EnumItem<E>[];
+	readonly #items: EnumItem<E>[];
 
 	constructor(typeName: E, values: Record<string, number>) {
 		this.#typeName = typeName;
@@ -55,6 +59,21 @@ export class RobloxEnum<E extends string = string> {
 	 */
 	static nameOf(target: RobloxEnum): string {
 		return target.#typeName;
+	}
+
+	/**
+	 * Adds the items `target` lacks, after the ones it has. Existing items keep
+	 * their identity, so a hand-written enum can take the engine's full list
+	 * without breaking anything that already holds one of its items.
+	 */
+	static extend(target: RobloxEnum, values: Record<string, number>): void {
+		const byName = target as unknown as Record<string, unknown>;
+		for (const [name, value] of Object.entries(values)) {
+			if (target.#items.some((item) => item.Name === name)) continue;
+			const item = new EnumItem(target, name, value);
+			target.#items.push(item);
+			byName[name] = item;
+		}
 	}
 
 	/**
@@ -703,18 +722,67 @@ const namespaces = {
 	}),
 };
 
-/** The Roblox `Enum` namespace (layout + input subset). */
+/**
+ * The Roblox `Enum` namespace: loom's own enums above, and every other engine
+ * enum from the generated table.
+ *
+ * Library code reads enums loom never acts on: Fusion, Iris and Vide all build
+ * default-property tables that name `Enum.Material` or `Enum.LeftRight` while
+ * they load, and a missing one stops the whole library. Those enums are built
+ * from `ENGINE_ENUMS` on first read, so the table costs a string per enum until
+ * something asks for it.
+ */
 export const Enum = {
 	...namespaces,
 	/**
 	 * Roblox's `Enum:GetEnums()` — reflection, which is how a devtools panel or
 	 * a property-grid finds out what an enum-valued property will accept.
 	 *
-	 * Declaration order, not the engine's alphabetical one; nothing should
-	 * depend on either. `AutomaticSize` appears once even though the namespace
-	 * answers to it under two names, because the two keys are one object.
+	 * Not the engine's alphabetical order; nothing should depend on any order.
+	 * `AutomaticSize` appears once even though the namespace answers to it under
+	 * two names, because the two keys are one object.
 	 */
 	GetEnums(): RobloxEnum[] {
-		return [...new Set<RobloxEnum>(Object.values(namespaces))];
+		return [
+			...new Set<RobloxEnum>(
+				Object.values(Enum as Record<string, unknown>).filter(
+					(value): value is RobloxEnum => value instanceof RobloxEnum,
+				),
+			),
+		];
 	},
 };
+
+/** `"A B=5 C"` → `{ A: 0, B: 5, C: 6 }`: see `engine-enums.ts`. */
+function decodeEngineEnum(spec: string): Record<string, number> {
+	const values: Record<string, number> = {};
+	let next = 0;
+	for (const word of spec.split(" ")) {
+		if (word === "") continue;
+		const eq = word.indexOf("=");
+		const name = eq < 0 ? word : word.slice(0, eq);
+		const value = eq < 0 ? next : Number(word.slice(eq + 1));
+		values[name] = value;
+		next = value + 1;
+	}
+	return values;
+}
+
+for (const [name, spec] of Object.entries(ENGINE_ENUMS)) {
+	const declared = (namespaces as Record<string, RobloxEnum | undefined>)[name];
+	if (declared) {
+		// The hand-written enums carry what loom acts on; the engine may have
+		// more (`KeyCode.World0`, `EasingStyle.Spring`) that scripts still name.
+		RobloxEnum.extend(declared, decodeEngineEnum(spec));
+		continue;
+	}
+	Object.defineProperty(Enum, name, {
+		configurable: true,
+		enumerable: true,
+		get() {
+			const built = new RobloxEnum(name, decodeEngineEnum(spec));
+			Object.defineProperty(Enum, name, { value: built, enumerable: true });
+			return built;
+		},
+	});
+}

@@ -612,6 +612,30 @@ describe("BindableEvent", () => {
 	});
 });
 
+describe("engine events loom does not raise", () => {
+	it("reads them as a signal that never fires, and says so once", () => {
+		const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+		const frame = createInstance("Frame");
+		const signal = frame.DescendantAdded as LoomSignal<unknown[]>;
+		expect(typeof signal.Connect).toBe("function");
+		expect(frame.DescendantAdded).toBe(signal);
+		createInstance("Frame").DescendantAdded;
+		expect(
+			warn.mock.calls.filter(([message]) =>
+				String(message).includes("Instance.DescendantAdded"),
+			),
+		).toHaveLength(1);
+		warn.mockRestore();
+	});
+
+	it("keeps them to the classes that have them", () => {
+		// `TouchTapInWorld` belongs to UserInputService, so a Frame stays nil
+		// and Luau falls through to its children by that name.
+		expect(createInstance("Frame").TouchTapInWorld).toBeUndefined();
+		expect(createInstance("Frame").NotAnything).toBeUndefined();
+	});
+});
+
 describe("GuiObject read defaults", () => {
 	// Roblox reflection always yields a typed value. The props store starts
 	// empty, so a property nobody wrote used to read `undefined` — and app code

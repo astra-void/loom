@@ -9,6 +9,7 @@
  */
 import { DEFAULTS, fontSizeToPx } from "@loom-dev/scene";
 import { Color3, Rect, robloxEquals, UDim, UDim2, Vector2 } from "./datatypes";
+import { ENGINE_EVENTS } from "./engine-events";
 import { Enum, enumName } from "./enums";
 import { classChain, isA } from "./registry";
 import { markDirty } from "./scheduler";
@@ -52,6 +53,38 @@ export const EVENT_NAMES: ReadonlySet<string> = new Set([
 	"PageLeave",
 	"Stopped",
 ]);
+
+/** `ENGINE_EVENTS`, split into sets on first use. */
+let engineEvents: Map<string, ReadonlySet<string>> | undefined;
+const warnedInertEvents = new Set<string>();
+
+/**
+ * Whether `key` is a real engine event of `className` or a superclass that
+ * loom does not raise (`UserInputService.TouchTapInWorld`,
+ * `Instance.DescendantAdded`). Reading one gives a signal that never fires, as
+ * the engine would on a page with no 3D world, instead of nil: libraries
+ * connect to such events while they load (Iris listens for taps in the world),
+ * and a nil there stops the library outright. The first read of each says so,
+ * because a handler that never runs is otherwise a silent difference.
+ */
+function isInertEngineEvent(className: string, key: string): boolean {
+	engineEvents ??= new Map(
+		Object.entries(ENGINE_EVENTS).map(([cls, names]) => [
+			cls,
+			new Set(names.split(" ")),
+		]),
+	);
+	for (const cls of classChain(className)) {
+		if (!engineEvents.get(cls)?.has(key)) continue;
+		const id = `${cls}.${key}`;
+		if (!warnedInertEvents.has(id)) {
+			warnedInertEvents.add(id);
+			console.warn(`[loom] ${id} never fires in the preview`);
+		}
+		return true;
+	}
+	return false;
+}
 
 /**
  * The public face of a live instance. Arbitrary Roblox properties fall through
@@ -1090,7 +1123,12 @@ function getTrap(impl: InstanceImpl, key: string | symbol): unknown {
 	if (reader) return reader(impl.proxy);
 	const value = impl.props.get(key);
 	if (value !== undefined) return value;
-	return classDefaultProperty(impl.className, key);
+	const fallback = classDefaultProperty(impl.className, key);
+	if (fallback !== undefined) return fallback;
+	if (isInertEngineEvent(impl.className, key)) {
+		return getOrCreateEventSignal(impl, key);
+	}
+	return undefined;
 }
 
 function setTrap(

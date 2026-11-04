@@ -316,6 +316,38 @@ describe("reflection", () => {
 	});
 });
 
+describe("engine enums beyond loom's own", () => {
+	const engine = Enum as unknown as Record<string, RobloxEnum>;
+
+	it("builds an enum loom never acts on, with the engine's values", () => {
+		const material = engine.Material as RobloxEnum;
+		const plastic = material.FromName("Plastic") as EnumItem;
+		expect(material).toBeInstanceOf(RobloxEnum);
+		expect(plastic.Value).toBe(256);
+		expect(String(plastic)).toBe("Enum.Material.Plastic");
+		expect(material.FromValue(256)).toBe(plastic);
+		// Built once: every read is the same object, so EnumType compares.
+		expect(engine.Material).toBe(material);
+		expect(plastic.EnumType).toBe(engine.Material);
+	});
+
+	it("adds the engine's extra items to loom's own enums, keeping identity", () => {
+		const keyCode = Enum.KeyCode as unknown as Record<string, EnumItem>;
+		const a = keyCode.A;
+		expect(keyCode.World0).toBeInstanceOf(EnumItem);
+		expect(Enum.KeyCode.FromName("World0")).toBe(keyCode.World0);
+		expect(Enum.KeyCode.A).toBe(a);
+		expect(Enum.KeyCode.A.Value).toBe(97);
+	});
+
+	it("lists engine enums through GetEnums and the namespace", () => {
+		const enums = Enum.GetEnums();
+		expect(enums.length).toBeGreaterThan(600);
+		expect(enums).toContain(engine.LeftRight);
+		expect(namespaceEntries().map(([key]) => key)).toContain("Material");
+	});
+});
+
 describe("enumName", () => {
 	it("reads the item name off either spelling, and nothing else", () => {
 		expect(enumName(Enum.AutomaticSize.XY)).toBe("XY");
