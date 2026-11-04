@@ -927,6 +927,16 @@ export interface LoomPreviewOptions {
 	/** `<title>` of the generated page. */
 	title?: string;
 	/**
+	 * How a roblox-ts project runs. `"js"` (the default) runs its TypeScript in
+	 * the browser against loom's adapters. `"luau"` compiles it with the
+	 * project's own roblox-ts, as `rbxtsc` would, and runs the Luau in
+	 * `@loom-dev/luau`'s VM, so Luau packages (React-Lua, Ripple, ...) run as
+	 * themselves. It needs a `default.project.json` and `@loom-dev/luau`, as a
+	 * game built with `rbxtsc` needs the project file. Gallery targets are not
+	 * supported in this mode yet.
+	 */
+	runtime?: "js" | "luau";
+	/**
 	 * Extra package redirects: `{ "<bare specifier>": "<module>" }`.
 	 *
 	 * The escape hatch for roblox-ts packages loom cannot run. A package whose
@@ -1353,8 +1363,13 @@ export function loomPreview(options: LoomPreviewOptions = {}): Plugin[] {
 		tsconfigBaseUrlLookup,
 		serveGlobals,
 		loomAssetProxy(),
-		loomLuau(),
+		loomLuau({ rbxts: options.runtime === "luau" }),
 	];
+
+	if (options.runtime === "luau" && options.targets !== undefined)
+		throw new Error(
+			'loom: runtime "luau" does not support gallery targets yet; preview the client entry instead',
+		);
 
 	// Gallery mode: the target import map (dev) + the generated gallery page.
 	const patterns =
@@ -1392,6 +1407,7 @@ export function loomPreview(options: LoomPreviewOptions = {}): Plugin[] {
 				entry: options.entry,
 				title: options.title,
 				...(patterns ? { patterns } : {}),
+				...(options.runtime ? { runtime: options.runtime } : {}),
 			}),
 		);
 	}

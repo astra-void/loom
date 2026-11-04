@@ -162,6 +162,8 @@ export interface LoomHtmlOptions {
 	title?: string;
 	/** Gallery discovery globs; set = gallery mode (no client entry needed). */
 	patterns?: string[];
+	/** `"luau"`: the page is the Luau client, whatever TypeScript entry exists. */
+	runtime?: "js" | "luau";
 }
 
 /**
@@ -172,6 +174,12 @@ export interface LoomHtmlOptions {
 export function loomIndexHtml(options: LoomHtmlOptions = {}): Plugin {
 	const gallery = options.patterns !== undefined;
 	const title = options.title ?? (gallery ? "loom gallery" : "loom preview");
+
+	/** The page's entry when none is configured. */
+	const detectEntry = (projectRoot: string): string | undefined =>
+		options.runtime === "luau"
+			? luauEntryUrl(projectRoot)
+			: findEntry(projectRoot);
 
 	let root = process.cwd();
 	let base = "/";
@@ -205,7 +213,7 @@ export function loomIndexHtml(options: LoomHtmlOptions = {}): Plugin {
 			? configured.startsWith("/")
 				? configured
 				: `/${configured.replace(/^\.\//, "")}`
-			: findEntry(root);
+			: detectEntry(root);
 		if (!entry) {
 			throw new Error(
 				`loom: no index.html and no client entry found in ${root}\n` +
@@ -236,7 +244,7 @@ export function loomIndexHtml(options: LoomHtmlOptions = {}): Plugin {
 		}
 		let entry: string | undefined;
 		try {
-			entry = options.entry ?? findEntry(projectRoot);
+			entry = options.entry ?? detectEntry(projectRoot);
 		} catch {
 			return [];
 		}

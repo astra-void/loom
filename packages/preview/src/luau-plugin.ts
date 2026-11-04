@@ -8,6 +8,11 @@
  *   gallery shell mounts — with the project beside it, so its `require`s
  *   resolve.
  *
+ * With `rbxts` (the preview's `runtime: "luau"`), the project is roblox-ts:
+ * `./rbxts-compiler.ts` compiles it into memory, the Rojo tree is read through
+ * the compiled `out/`, and an edit recompiles the file and its importers
+ * before the page reloads. Compile errors go to Vite's error overlay.
+ *
  * A Luau project's page loads `@loom-dev/luau/entry` (see `luauEntryUrl`),
  * which starts the client. The VM is reached through the project's own
  * dependency on `@loom-dev/luau`, the way a roblox-ts project depends on
@@ -16,13 +21,19 @@
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { basename, resolve } from "node:path";
-import type { Plugin } from "vite";
+import type { Plugin, ViteDevServer } from "vite";
 import {
 	generateLuauProjectModule,
 	LUAU_TARGET_SUFFIX,
+	nodeProjectFs,
 	projectFiles,
 	readLuauProject,
 } from "./luau-project.ts";
+import {
+	type CompileResult,
+	createRbxtsCompiler,
+	type RbxtsCompiler,
+} from "./rbxts-compiler.ts";
 import { toViteFsUrl } from "./vite-fs-url.ts";
 
 export const LUAU_PROJECT_ID = "virtual:loom-luau-project";
@@ -52,8 +63,39 @@ export function luauEntryUrl(root: string): string {
 
 const LUAU_FILE = /\.(luau|lua)$/;
 
-export function loomLuau(): Plugin {
+export interface LoomLuauOptions {
+	/** The project is roblox-ts: compile it to Luau and run that. */
+	rbxts?: boolean;
+}
+
+export function loomLuau(options: LoomLuauOptions = {}): Plugin {
 	let root = process.cwd();
+	let compiler: RbxtsCompiler | undefined;
+	let devServer: ViteDevServer | undefined;
+
+	function log(result: CompileResult, what: string): void {
+		const logger = devServer?.config.logger;
+		const summary = `loom: ${what} ${result.compiled} file${result.compiled === 1 ? "" : "s"} in ${Math.round(result.ms)}ms`;
+		if (result.errors.length === 0) logger?.info(summary, { timestamp: true });
+		else
+			logger?.error(`${summary}, with errors:\n${result.errors.join("\n\n")}`, {
+				timestamp: true,
+			});
+	}
+
+	/** The compiler, built once on first use; throws the first build's errors. */
+	function rbxts(): RbxtsCompiler | undefined {
+		if (!options.rbxts) return undefined;
+		if (compiler === undefined) {
+			const created = createRbxtsCompiler(root);
+			const result = created.build();
+			log(result, "compiled");
+			compiler = created;
+			if (result.errors.length > 0) throw new Error(result.errors.join("\n\n"));
+		}
+		return compiler;
+	}
+
 	return {
 		name: "loom-preview:luau",
 		enforce: "pre",
@@ -76,10 +118,13 @@ export function loomLuau(): Plugin {
 		},
 		load(id) {
 			if (id === RESOLVED_PROJECT) {
-				const tree = readLuauProject(root);
-				for (const file of tree ? projectFiles(tree) : [])
-					this.addWatchFile(file);
-				return generateLuauProjectModule(tree);
+				const fs = rbxts()?.fs ?? nodeProjectFs;
+				const tree = readLuauProject(root, fs);
+				// Compiled output lives in memory; its sources are watched instead.
+				if (!options.rbxts)
+					for (const file of tree ? projectFiles(tree) : [])
+						this.addWatchFile(file);
+				return generateLuauProjectModule(tree, fs);
 			}
 			const file = id.split("?")[0] ?? id;
 			if (!file.endsWith(LUAU_TARGET_SUFFIX)) return;
@@ -92,10 +137,29 @@ export function loomLuau(): Plugin {
 			);
 		},
 		configureServer(server) {
+			devServer = server;
 			// A script added, removed or edited changes the place, and a Luau VM has
 			// no module graph to hot-swap into: rebuild the tree and start over.
 			const changed = (file: string): void => {
-				if (!LUAU_FILE.test(file) && !file.endsWith("default.project.json"))
+				if (compiler?.owns(file)) {
+					const result = compiler.update([file]);
+					log(result, "recompiled");
+					if (result.errors.length > 0) {
+						// The page keeps running the last good output; say why it didn't change.
+						server.ws.send({
+							type: "error",
+							err: {
+								message: result.errors.join("\n\n"),
+								stack: "",
+								plugin: "loom-preview:luau",
+							},
+						});
+						return;
+					}
+				} else if (
+					!LUAU_FILE.test(file) &&
+					!file.endsWith("default.project.json")
+				)
 					return;
 				const project = server.moduleGraph.getModuleById(RESOLVED_PROJECT);
 				if (project) server.moduleGraph.invalidateModule(project);

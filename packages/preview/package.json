@@ -88,11 +88,14 @@
 		}
 	},
 	"devDependencies": {
+		"@rbxts/compiler-types": "3.0.0-types.0",
 		"@rbxts/react": "17.3.7-ts.2",
 		"@rbxts/react-roblox": "17.3.7-ts.2",
+		"@rbxts/types": "1.0.960",
 		"@types/node": "^22.0.0",
 		"@types/react": "catalog:",
 		"react": "catalog:",
+		"roblox-ts": "3.0.0",
 		"tsdown": "catalog:",
 		"typescript": "catalog:",
 		"vite": "catalog:"
