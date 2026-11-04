@@ -109,6 +109,22 @@
 				"5183"
 			],
 			"port": 5183
+		},
+		{
+			"name": "luau-example",
+			"runtimeExecutable": "pnpm",
+			"runtimeArgs": [
+				"--filter",
+				"loom-dev",
+				"exec",
+				"tsx",
+				"src/cli.ts",
+				"preview",
+				"/Users/returnf4lse/Desktop/Workspace/typescript/loom-rewrite/apps/luau-example",
+				"--port",
+				"5189"
+			],
+			"port": 5189
 		}
 	]
 }
