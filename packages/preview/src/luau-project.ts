@@ -18,6 +18,37 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 
+/** One directory entry, symlinks already followed. */
+export interface ProjectFsEntry {
+	name: string;
+	isDirectory: boolean;
+}
+
+/**
+ * The filesystem the reader sees. The disk by default; a roblox-ts project run
+ * on the Luau VM layers its compiled `out/` over it (see `./rbxts-compiler.ts`).
+ */
+export interface ProjectFs {
+	exists(path: string): boolean;
+	isDirectory(path: string): boolean;
+	readdir(dir: string): ProjectFsEntry[];
+	readFile(path: string): string;
+}
+
+export const nodeProjectFs: ProjectFs = {
+	exists: existsSync,
+	isDirectory: (path) => existsSync(path) && statSync(path).isDirectory(),
+	// pnpm links packages: a symlink counts as what it names.
+	readdir: (dir) =>
+		readdirSync(dir, { withFileTypes: true }).map((entry) => ({
+			name: entry.name,
+			isDirectory: entry.isSymbolicLink()
+				? statSync(join(dir, entry.name)).isDirectory()
+				: entry.isDirectory(),
+		})),
+	readFile: (path) => readFileSync(path, "utf8"),
+};
+
 /** One instance of the project tree. `file` is a script's source file. */
 export interface LuauFileNode {
 	name: string;
@@ -51,37 +82,31 @@ function scriptKind(file: string): readonly [string, string] | undefined {
 }
 
 /** A directory as Rojo syncs it: a Folder, or the script its `init` file makes it. */
-function directoryNode(name: string, dir: string): LuauFileNode {
+function directoryNode(name: string, dir: string, fs: ProjectFs): LuauFileNode {
 	// A directory holding its own project file is that project — how Rojo
 	// syncs a package (`@rbxts-js/react`: `{ "name": "React", "tree": { "$path":
 	// "src" } }`). The project's `name` names the instance, which is why
 	// `@rbxts/react` finds React-Lua at `@rbxts-js.React`.
 	const nested = resolve(dir, "default.project.json");
-	if (existsSync(nested)) {
-		const project = JSON.parse(readFileSync(nested, "utf8")) as {
+	if (fs.exists(nested)) {
+		const project = JSON.parse(fs.readFile(nested)) as {
 			name?: unknown;
 			tree?: ProjectSpec;
 		};
 		if (project.tree !== undefined) {
 			const projectName =
 				typeof project.name === "string" ? project.name : name;
-			return projectNode(projectName, project.tree, dir);
+			return projectNode(projectName, project.tree, dir, fs);
 		}
 	}
 	const node: LuauFileNode = { name, className: "Folder" };
 	const children: LuauFileNode[] = [];
-	const entries = readdirSync(dir, { withFileTypes: true }).sort((a, b) =>
-		a.name.localeCompare(b.name),
-	);
+	const entries = fs.readdir(dir).sort((a, b) => a.name.localeCompare(b.name));
 	for (const entry of entries) {
 		if (entry.name.startsWith(".") || entry.name === "node_modules") continue;
 		const path = join(dir, entry.name);
-		// pnpm links packages: follow a symlink to what it names.
-		const isDirectory = entry.isSymbolicLink()
-			? statSync(path).isDirectory()
-			: entry.isDirectory();
-		if (isDirectory) {
-			children.push(directoryNode(entry.name, path));
+		if (entry.isDirectory) {
+			children.push(directoryNode(entry.name, path, fs));
 			continue;
 		}
 		const kind = scriptKind(entry.name);
@@ -99,9 +124,13 @@ function directoryNode(name: string, dir: string): LuauFileNode {
 }
 
 /** What a `$path` names: a script file, or a directory. */
-function pathNode(name: string, path: string): LuauFileNode | undefined {
-	if (!existsSync(path)) return undefined;
-	if (statSync(path).isDirectory()) return directoryNode(name, path);
+function pathNode(
+	name: string,
+	path: string,
+	fs: ProjectFs,
+): LuauFileNode | undefined {
+	if (!fs.exists(path)) return undefined;
+	if (fs.isDirectory(path)) return directoryNode(name, path, fs);
 	const fileName = path.split(/[\\/]/).pop() ?? path;
 	const kind = scriptKind(fileName);
 	return kind ? { name, className: kind[1], file: path } : undefined;
@@ -118,10 +147,11 @@ function projectNode(
 	name: string,
 	spec: ProjectSpec,
 	base: string,
+	fs: ProjectFs,
 ): LuauFileNode {
 	const fromPath =
 		typeof spec.$path === "string"
-			? pathNode(name, resolve(base, spec.$path))
+			? pathNode(name, resolve(base, spec.$path), fs)
 			: undefined;
 	const node: LuauFileNode = fromPath ?? { name, className: name };
 	if (typeof spec.$className === "string") node.className = spec.$className;
@@ -129,7 +159,7 @@ function projectNode(
 	for (const [key, value] of Object.entries(spec)) {
 		if (key.startsWith("$") || typeof value !== "object" || value === null)
 			continue;
-		children.push(projectNode(key, value as ProjectSpec, base));
+		children.push(projectNode(key, value as ProjectSpec, base, fs));
 	}
 	if (children.length > 0) node.children = children;
 	return node;
@@ -144,14 +174,22 @@ function hasScripts(node: LuauFileNode): boolean {
  * not a Luau project at all (no project file, and no Luau scripts where the
  * Rojo layouts put them), so TypeScript projects are never mistaken for one.
  */
-export function readLuauProject(root: string): LuauFileNode | undefined {
+export function readLuauProject(
+	root: string,
+	fs: ProjectFs = nodeProjectFs,
+): LuauFileNode | undefined {
 	const projectFile = resolve(root, "default.project.json");
-	if (existsSync(projectFile)) {
-		const project = JSON.parse(readFileSync(projectFile, "utf8")) as {
+	if (fs.exists(projectFile)) {
+		const project = JSON.parse(fs.readFile(projectFile)) as {
 			tree?: ProjectSpec;
 		};
 		if (project.tree === undefined) return undefined;
-		const tree = projectNode("DataModel", project.tree, dirname(projectFile));
+		const tree = projectNode(
+			"DataModel",
+			project.tree,
+			dirname(projectFile),
+			fs,
+		);
 		// A model project (`$className` other than DataModel) has no client to run.
 		return tree.className === "DataModel" && hasScripts(tree)
 			? tree
@@ -159,10 +197,10 @@ export function readLuauProject(root: string): LuauFileNode | undefined {
 	}
 
 	const src = resolve(root, "src");
-	if (!existsSync(src) || !statSync(src).isDirectory()) return undefined;
+	if (!fs.isDirectory(src)) return undefined;
 	const at = (dir: string) => resolve(src, dir);
 	const template = ["client", "server", "shared"].some((dir) =>
-		existsSync(at(dir)),
+		fs.exists(at(dir)),
 	);
 	const tree = projectNode(
 		"DataModel",
@@ -180,6 +218,7 @@ export function readLuauProject(root: string): LuauFileNode | undefined {
 					StarterPlayer: { StarterPlayerScripts: { Client: { $path: src } } },
 				},
 		root,
+		fs,
 	);
 	return hasScripts(tree) ? prune(tree) : undefined;
 }
@@ -209,13 +248,12 @@ export function projectFiles(
  */
 export function generateLuauProjectModule(
 	tree: LuauFileNode | undefined,
+	fs: ProjectFs = nodeProjectFs,
 ): string {
 	const emit = (node: LuauFileNode): unknown => ({
 		name: node.name,
 		className: node.className,
-		...(node.file !== undefined
-			? { source: readFileSync(node.file, "utf8") }
-			: {}),
+		...(node.file !== undefined ? { source: fs.readFile(node.file) } : {}),
 		...(node.children ? { children: node.children.map(emit) } : {}),
 	});
 	const root = tree
