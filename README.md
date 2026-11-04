@@ -2,8 +2,8 @@
 
 Render Roblox UI as a live web DOM preview.
 
-Loom takes a Roblox GUI tree — produced from `@rbxts/react` or `vide` today, and
-from Luau later — and renders it in the browser with Roblox-accurate layout. The
+Loom takes a Roblox GUI tree — produced from `@rbxts/react`, `vide`, or plain
+Luau scripts — and renders it in the browser with Roblox-accurate layout. The
 pipeline is built around a single framework-agnostic contract, the **Scene IR**,
 so any frontend can plug into the same layout + rendering core.
 
@@ -64,7 +64,7 @@ loom build   [dir] --targets [glob] [--out <dir>] [--base <path>] [--no-assets]
 
 `preview` boots a Vite dev server with the plugin pre-applied — same generated
 page, same entry detection. `--targets` switches to **gallery mode**: every
-`**/*.loom.tsx` under the directory gets a sidebar entry with lazy mounts and
+`**/*.loom.tsx` (and `**/*.loom.luau`, see below) under the directory gets a sidebar entry with lazy mounts and
 per-target error containment. `build` bundles that same gallery into a static,
 client-only site (default `dist-preview/`) — which is exactly what `vite build`
 does with `loomPreview({ targets })`. `--no-assets` keeps that build off the
@@ -73,6 +73,62 @@ network by skipping the `rbxassetid://` bake.
 Only `preview` reads `<dir>/loom.config.ts` (an optional default export of
 `{ targets?, port? }`, used when the matching flag is absent). `build` does not
 load it at all — `--targets` is required on every invocation.
+
+### Luau projects
+
+A Rojo project previews the same way, with the Luau adapter installed beside
+the plugin or the CLI:
+
+```sh
+npm i -D @loom-dev/preview @loom-dev/luau vite
+```
+
+No TypeScript is involved. `@loom-dev/luau` runs your scripts in upstream Luau,
+compiled to WASM, against the same runtime, layout engine and renderer the React
+adapter uses. A project counts as Luau when it has a `default.project.json`, or
+Luau scripts in the `rojo init` layout (`src/client`, `src/server`,
+`src/shared`), or a bare `src/` of `*.client.luau` files. A TypeScript client
+entry still wins when a project has both.
+
+The page builds the place the way Rojo would, with Rojo's file rules:
+`X.client.luau` is a LocalScript, `X.server.luau` a Script, any other `X.luau`
+a ModuleScript, and a folder with an `init` file becomes that script. Then it
+starts a client the way a joining player does. It runs ReplicatedFirst's
+LocalScripts first, then StarterGui copied into PlayerGui, then
+StarterPlayerScripts copied into PlayerScripts. Server Scripts are part of the
+tree, so `require` and `FindFirstChild` see them, but they never run: a preview
+is one client. Editing, adding or removing a script reloads the page.
+
+Inside a script, Roblox is there as you know it:
+
+- `Instance.new`, properties, children by name (`script.Parent.Frame`), methods
+- the datatypes, with arithmetic, and `Enum`
+- `game:GetService(...)` (the services loom implements; see below)
+- signals: `Connect` / `Once` / `Wait`
+- `WaitForChild`, which really yields
+- `task` (`spawn` / `defer` / `delay` / `wait` / `cancel`)
+- `require` of ModuleScripts, with Roblox's caching and error messages
+- `print` / `warn`
+
+Every handler and every module runs in its own thread, so any of them may
+yield. `task.wait` resumes on the runtime's Heartbeat, which runs on animation
+frames, so a background tab pauses it. A script that runs past five seconds
+without yielding is stopped with an error instead of freezing the page.
+
+Gallery mode picks up `*.loom.luau` files beside `*.loom.tsx`. Each runs as a
+LocalScript inside its own ScreenGui, so whatever it builds under
+`script.Parent` is the preview, and its `require`s reach the project's modules:
+
+```luau
+-- src/shared/Card.loom.luau
+local Card = require(game:GetService("ReplicatedStorage").Shared.Card)
+Card.mount(script.Parent, "a gallery target")
+```
+
+`loom build --targets` and `vite build` work for Luau projects too. Not covered
+yet: `$properties` and the non-script file types Rojo maps (`.json`,
+`.model.json`, `.rbxm`/`.rbxmx`, `.meta.json`), which are left out of the tree;
+`require` by asset id; and running server Scripts.
 
 ### Working on loom itself
 
@@ -408,7 +464,7 @@ with `?debug=1`.
 - `invalid preview export in <target>` means the target module loaded, but it
   did not export `const preview = { render, title }`. Use the complete target
   example above; a default export alone is intentionally unsupported.
-- `no *.loom.tsx targets found` (and the matching terminal warning) means
+- `no *.loom.tsx or *.loom.luau targets found` (and the matching terminal warning) means
   `root` resolved successfully but no file matched `targets`. Check the root,
   filename suffix, and any configured target glob or directory.
 
@@ -1164,11 +1220,13 @@ Anywhere else, a host can install its own resolver with `setImageResolver` from
   - `@loom-dev/react` — `@rbxts/react` adapter (custom `react-reconciler` host
     config driving live loom instances)
   - `@loom-dev/vide` — `vide` signals adapter on the same Scene IR
+  - `@loom-dev/luau` — Luau adapter: upstream Luau compiled to WASM
+    (`native/`, built into `wasm/`), with Roblox bound over `@loom-dev/runtime`
   - `@loom-dev/preview` — zero-config Vite plugin (generated page, entry
     detection, gallery mode), browser roblox-ts resolver, globals, and client
   - `loom-dev` — the `loom` CLI (`preview` / `build`)
 - `apps/` — dev harnesses: `playground`, `example`, `interactive`,
-  `gallery-demo`, `vide-example`
+  `gallery-demo`, `vide-example`, `luau-example`
 
 ## Toolchain
 
@@ -1178,6 +1236,12 @@ Anywhere else, a host can install its own resolver with `setImageResolver` from
 > On macOS with Homebrew Rust installed, the rustup toolchain must be used for
 > WASM builds (Homebrew's `rustc` ships no `wasm32` std). WASM build scripts
 > prepend `~/.cargo/bin` to `PATH` for this reason.
+
+The Luau VM's WASM build is committed (`packages/luau/wasm/`), so working on
+loom needs no emscripten. Only rebuilding it does —
+`pnpm --filter @loom-dev/luau build:vm`, with `emcc` on `PATH`
+(`brew install emscripten`) — after changing `native/bridge.cpp` or bumping
+the pinned Luau version in `native/build.sh`.
 
 ## Commands
 
@@ -1267,5 +1331,5 @@ Requires pnpm 11.6+ (it performs the OIDC exchange itself) and Node 22.14+.
   scrolling frames, and images (every `ScaleType`, sprite windows, tints)
 - **M5** — dev loop ✅ (Vite plugin, HMR, `loom preview`, `loom build`);
   a standalone roblox-ts compiler transform is still open
-- **M6** — extensibility proof — `vide` adapter shipped on the same Scene IR;
-  a Luau adapter is still open
+- **M6** — extensibility proof ✅ — `vide` and Luau adapters on the same
+  Scene IR, neither touching the layout engine or the renderer

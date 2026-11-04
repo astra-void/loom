@@ -916,7 +916,8 @@ export interface LoomPreviewOptions {
 	entry?: string;
 	/**
 	 * Gallery mode: a glob, a directory, a list of either, or `true` for the
-	 * default `**\/*.loom.tsx`. Every match gets a sidebar entry with a lazy
+	 * defaults, `**\/*.loom.tsx` and `**\/*.loom.luau` (the latter needs
+	 * `@loom-dev/luau`). Every match gets a sidebar entry with a lazy
 	 * mount and per-target error containment — the same thing `loom preview
 	 * --targets` serves. Set, no client entry is needed.
 	 */

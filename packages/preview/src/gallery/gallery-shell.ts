@@ -231,7 +231,7 @@ export function startGallery(targets: TargetMap): void {
 		if (keys.length === 0) {
 			const empty = document.createElement("li");
 			empty.className = "loom-gallery-empty";
-			empty.textContent = "no *.loom.tsx targets found";
+			empty.textContent = "no *.loom.tsx or *.loom.luau targets found";
 			list.appendChild(empty);
 		}
 		sidebar.append(header, list);

@@ -31,9 +31,9 @@ const RESOLVED_PROJECT = "\0loom-luau-project";
 
 /**
  * The page script for a Luau project: `@loom-dev/luau/entry`, resolved from the
- * project the way its own imports are. A real module, not a generated one:
- * Vite's dependency scan cannot follow a virtual entry, and missing what it
- * imports means a re-optimize and a reload on every cold start.
+ * project the way its own imports are. A real module, not a generated one,
+ * so it is an entry Vite's dependency scan can follow like any app's — a
+ * virtual one it cannot.
  */
 export function luauEntryUrl(root: string): string {
 	try {
@@ -65,8 +65,14 @@ export function loomLuau(): Plugin {
 		configResolved(config) {
 			root = config.root;
 		},
-		resolveId(id) {
+		resolveId(id, importer) {
 			if (id === LUAU_PROJECT_ID) return RESOLVED_PROJECT;
+			// The emscripten glue reaches for `node:module` behind a Node-only
+			// check, so a browser never evaluates the import. Left to Vite, every
+			// build warns that it stubbed it out.
+			if (id === "node:module" && importer?.endsWith("luau-vm.mjs")) {
+				return { id, external: true };
+			}
 		},
 		load(id) {
 			if (id === RESOLVED_PROJECT) {

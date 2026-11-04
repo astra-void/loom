@@ -21,13 +21,15 @@
 			"@loom-dev/renderer",
 			"@loom-dev/react",
 			"@loom-dev/preview",
-			"@loom-dev/vide"
+			"@loom-dev/vide",
+			"@loom-dev/luau"
 		]
 	],
 	"ignore": [
 		"@loom-dev/example",
 		"@loom-dev/gallery-demo",
 		"@loom-dev/interactive",
+		"@loom-dev/luau-example",
 		"@loom-dev/playground",
 		"@loom-dev/vide-example"
 	]

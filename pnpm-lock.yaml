@@ -301,9 +301,6 @@ importers:
       '@loom-dev/runtime':
         specifier: workspace:*
         version: link:../runtime
-      react:
-        specifier: 'catalog:'
-        version: 18.3.1
     devDependencies:
       '@loom-dev/scene':
         specifier: workspace:*
@@ -314,6 +311,12 @@ importers:
       '@types/react':
         specifier: 'catalog:'
         version: 18.3.31
+      react:
+        specifier: 'catalog:'
+        version: 18.3.1
+      tsdown:
+        specifier: 'catalog:'
+        version: 0.22.12(tsx@4.22.4)(typescript@5.9.3)
       typescript:
         specifier: 'catalog:'
         version: 5.9.3

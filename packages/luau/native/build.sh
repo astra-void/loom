@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build the Luau VM + compiler and loom's bridge into src/wasm/.
+# Build the Luau VM + compiler and loom's bridge into wasm/ (shipped as-is).
 #
 # The output is committed, so working on @loom-dev/luau never needs emscripten:
 # only re-run this after changing bridge.cpp or bumping LUAU_VERSION.
@@ -14,7 +14,7 @@ here="$(cd "$(dirname "$0")" && pwd)"
 pkg="$(dirname "$here")"
 vendor="$pkg/vendor/luau"
 build="$pkg/vendor/build-$LUAU_VERSION"
-out="$pkg/src/wasm"
+out="$pkg/wasm"
 
 if [ ! -d "$vendor" ] || [ "$(git -C "$vendor" describe --tags 2>/dev/null)" != "$LUAU_VERSION" ]; then
 	rm -rf "$vendor"

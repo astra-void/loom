@@ -17,7 +17,7 @@
  * the calling thread, and the thread runs again when the `Suspend` resumes it —
  * whoever resumed the thread in the first place.
  */
-import createLuauModule, { type LuauModule } from "./wasm/luau-vm.mjs";
+import createLuauModule, { type LuauModule } from "../wasm/luau-vm.mjs";
 
 // Stable value kinds reported by `lb_kind` (bridge.cpp `Kind`).
 const KIND_NIL = 0;

@@ -12,7 +12,8 @@
  * vite.config gets exactly the same thing from the plugin alone. esbuild
  * transpiles the TSX; HMR is built in.
  *
- * `--targets` switches to gallery mode: every `**\/*.loom.tsx` under the dir
+ * `--targets` switches to gallery mode: every `**\/*.loom.tsx` and
+ * `**\/*.loom.luau` under the dir
  * (or the given glob/directory) is listed in a sidebar shell with lazy mounts
  * and per-target error containment. A minimal `<dir>/loom.config.ts` exporting
  * `{ targets?, port?, shims? }` is honored when the flags
@@ -93,7 +94,7 @@ async function preview(
 		console.error(
 			`loom: no index.html and no client entry found in ${root}\n` +
 				`      looked for: ${ENTRY_CANDIDATES.join(", ")}\n` +
-				`      (or pass --targets to browse *.loom.tsx files as a gallery)`,
+				`      (or pass --targets to browse *.loom.tsx and *.loom.luau files as a gallery)`,
 		);
 		process.exit(1);
 	}
@@ -134,7 +135,7 @@ const USAGE =
 	"  loom build [dir] --targets [glob] [--out <dir>] [--base <path>] [--no-assets]\n";
 
 /**
- * Read `--targets`: a boolean (default glob `**\/*.loom.tsx`) unless followed by
+ * Read `--targets`: a boolean (default globs `**\/*.loom.tsx` and `**\/*.loom.luau`) unless followed by
  * a glob or directory. Shared by `preview` and `build`.
  */
 function parseTargetsFlag(args: string[]): string | true | undefined {

@@ -210,4 +210,16 @@ describe("loomLuau", () => {
 		const root = project({ "src/App.tsx": "" });
 		expect(hooks(root).call("load", join(root, "src/App.tsx"))).toBeUndefined();
 	});
+
+	it("keeps the VM glue's Node-only import external, and nobody else's", () => {
+		const { call } = hooks(project({}));
+		expect(
+			call(
+				"resolveId",
+				"node:module",
+				"/x/node_modules/@loom-dev/luau/wasm/luau-vm.mjs",
+			),
+		).toEqual({ id: "node:module", external: true });
+		expect(call("resolveId", "node:module", "/x/src/app.ts")).toBeUndefined();
+	});
 });

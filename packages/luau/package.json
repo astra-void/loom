@@ -1,7 +1,6 @@
 {
 	"name": "@loom-dev/luau",
 	"version": "0.13.2",
-	"private": true,
 	"description": "Luau adapter for loom — upstream Luau compiled to WASM, running Luau UI scripts against the loom runtime.",
 	"keywords": [
 		"loom",
@@ -20,30 +19,52 @@
 		"directory": "packages/luau"
 	},
 	"type": "module",
-	"sideEffects": false,
+	"sideEffects": [
+		"./src/entry.ts",
+		"./dist/entry.js"
+	],
 	"files": [
 		"dist",
-		"src/wasm"
+		"wasm"
 	],
 	"exports": {
 		".": "./src/index.ts",
 		"./entry": "./src/entry.ts"
 	},
 	"types": "./src/index.ts",
+	"publishConfig": {
+		"access": "public",
+		"types": "./dist/index.d.ts",
+		"exports": {
+			".": {
+				"types": "./dist/index.d.ts",
+				"default": "./dist/index.js"
+			},
+			"./entry": {
+				"types": "./dist/entry.d.ts",
+				"default": "./dist/entry.js"
+			}
+		}
+	},
 	"scripts": {
+		"build": "tsdown",
 		"build:vm": "bash native/build.sh",
 		"typecheck": "tsc -p tsconfig.json --noEmit"
 	},
 	"dependencies": {
 		"@loom-dev/layout": "workspace:*",
 		"@loom-dev/react": "workspace:*",
-		"@loom-dev/runtime": "workspace:*",
-		"react": "catalog:"
+		"@loom-dev/runtime": "workspace:*"
+	},
+	"peerDependencies": {
+		"react": "^18.3.1"
 	},
 	"devDependencies": {
 		"@loom-dev/scene": "workspace:*",
 		"@types/node": "^22.0.0",
 		"@types/react": "catalog:",
+		"react": "catalog:",
+		"tsdown": "catalog:",
 		"typescript": "catalog:"
 	}
 }

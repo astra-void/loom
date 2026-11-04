@@ -23,7 +23,7 @@ import {
 let wasmBinary: Uint8Array;
 beforeAll(async () => {
 	wasmBinary = await readFile(
-		resolve(process.cwd(), "packages/luau/src/wasm/luau-vm.wasm"),
+		resolve(process.cwd(), "packages/luau/wasm/luau-vm.wasm"),
 	);
 });
 
