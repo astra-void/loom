@@ -58,12 +58,26 @@ static void hostDestructor(lua_State* L, void* data)
     lb_js_release(*static_cast<int*>(data));
 }
 
+// The budget is for Luau that never stops running, so it charges the time
+// between safepoints, which a running loop hits every few microseconds. A long
+// gap means Luau was not what ran: the tab was throttled or suspended, a host
+// call or a compile took long. Such a gap is charged at most this much, so a
+// hidden page that resumes a minute later doesn't fail a script that was
+// healthy. A loop of slow calls is still caught, at this much per call.
+static const double STALL_MS = 50;
+static double lastSafepoint = 0;
+
 static void interrupt(lua_State* L, int gc)
 {
     // Never error from a GC step: only at execution safepoints.
     if (gc >= 0 || deadline <= 0)
         return;
-    if (emscripten_get_now() > deadline)
+    double now = emscripten_get_now();
+    double gap = now - lastSafepoint;
+    if (gap > STALL_MS)
+        deadline += gap - STALL_MS;
+    lastSafepoint = now;
+    if (now > deadline)
     {
         deadline = 0;
         luaL_error(L, "script exceeded its time budget");
@@ -119,7 +133,8 @@ EMSCRIPTEN_KEEPALIVE void lb_sandboxthread(lua_State* L)
 // Milliseconds from now until running Luau errors; 0 lifts the budget.
 EMSCRIPTEN_KEEPALIVE void lb_budget(double ms)
 {
-    deadline = ms > 0 ? emscripten_get_now() + ms : 0;
+    lastSafepoint = emscripten_get_now();
+    deadline = ms > 0 ? lastSafepoint + ms : 0;
 }
 
 EMSCRIPTEN_KEEPALIVE void lb_gc(lua_State* L)

@@ -177,7 +177,36 @@ describe("LuauVM errors", () => {
 		// The VM is still usable afterwards.
 		expect(done(L.run("return 1"))).toEqual([1]);
 	});
+
+	it("doesn't charge a stall in which Luau wasn't running", async () => {
+		// A throttled or suspended page looks like this from the inside: one
+		// long gap between safepoints. Loading a module tree in a hidden tab used
+		// to fail here with a budget error and leave React's work loop broken.
+		// Each 400ms stall costs at most 50ms of the budget, so three fit in 200.
+		const L = await vm({ budgetMs: 200 });
+		L.setGlobal("stall", () => busyWait(400));
+		expect(
+			done(L.run("local n = 0 for i = 1, 3 do stall() n += i end return n")),
+		).toEqual([6]);
+	});
+
+	it("still stops a loop of slow calls", async () => {
+		const L = await vm({ budgetMs: 100 });
+		L.setGlobal("stall", () => busyWait(80));
+		const result = L.run("while true do stall() end");
+		expect(result.status === "error" && result.error.message).toMatch(
+			/time budget/,
+		);
+	});
 });
+
+/** Block the thread for `ms`, like a host call that takes long. */
+function busyWait(ms: number): void {
+	const end = performance.now() + ms;
+	while (performance.now() < end) {
+		// spin
+	}
+}
 
 describe("LuauVM host userdata", () => {
 	it("exposes a classified object as userdata with its class's metamethods", async () => {

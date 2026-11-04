@@ -875,8 +875,14 @@ export class LuauVM {
 			this.handleOf.set(value, handle);
 			this.handles.set(handle, { value, cls, count: 0 });
 		}
+		// Count the new userdata before it exists: allocating it can run a GC
+		// step that finalizes this object's previous userdata (already gone from
+		// the weak cache), and that release must not drop the handle to zero and
+		// delete it out from under this push.
+		const entry = this.handles.get(handle) as HostHandle;
+		entry.count++;
 		const created = this.M._lb_pushhost(L, handle, this.metatableFor(cls));
-		if (created !== 0) (this.handles.get(handle) as HostHandle).count++;
+		if (created === 0) entry.count--;
 	}
 
 	private functionId(fn: (...args: never[]) => unknown): number {
