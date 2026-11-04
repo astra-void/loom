@@ -2,7 +2,7 @@
 /**
  * `loom` CLI — preview a roblox-ts UI project in the browser with zero config.
  *
- *   loom preview [dir] [--port <n>] [--host] [--targets [glob]]
+ *   loom preview [dir] [--port <n>] [--host] [--targets [glob]] [--runtime luau]
  *   loom build [dir] --targets [glob] [--out <dir>] [--base <path>] [--no-assets]
  *
  * `preview` runs a Vite dev server with the loom plugin pre-applied, so no
@@ -18,6 +18,10 @@
  * and per-target error containment. A minimal `<dir>/loom.config.ts` exporting
  * `{ targets?, port?, shims? }` is honored when the flags
  * are absent.
+ *
+ * `--runtime luau` compiles a roblox-ts project with its own roblox-ts and runs
+ * the Luau in `@loom-dev/luau`'s VM instead of running the TypeScript as
+ * JavaScript (see `LoomPreviewOptions.runtime`).
  *
  * `build` bundles that same gallery into a static, client-only site under
  * `--out` (default `dist-preview/`) so it can be hosted anywhere or embedded in
@@ -65,6 +69,7 @@ async function preview(
 		port?: number;
 		host: boolean | string;
 		targets?: string | true;
+		runtime?: "js" | "luau";
 	},
 ): Promise<void> {
 	const root = resolve(process.cwd(), dir);
@@ -88,6 +93,7 @@ async function preview(
 	// instead of a server that 500s on the first request.
 	if (
 		!decision.patterns &&
+		options.runtime !== "luau" &&
 		!existsSync(resolve(root, "index.html")) &&
 		!findEntry(root)
 	) {
@@ -102,6 +108,7 @@ async function preview(
 		loomPreview({
 			targets: decision.patterns,
 			...(decision.shims ? { shims: decision.shims } : {}),
+			...(options.runtime ? { runtime: options.runtime } : {}),
 		}),
 	];
 
@@ -131,7 +138,7 @@ async function preview(
 const USAGE =
 	"loom — Roblox UI preview\n\n" +
 	"Usage:\n" +
-	"  loom preview [dir] [--port <n>] [--host] [--targets [glob]]\n" +
+	"  loom preview [dir] [--port <n>] [--host] [--targets [glob]] [--runtime luau]\n" +
 	"  loom build [dir] --targets [glob] [--out <dir>] [--base <path>] [--no-assets]\n";
 
 /**
@@ -180,10 +187,18 @@ function runPreviewCommand(args: string[]): void {
 		host = raw && !raw.startsWith("-") ? raw : true;
 	}
 
-	preview(dir, { port, host, targets: parseTargetsFlag(args) }).catch((err) => {
-		console.error(err);
+	const runtime = parseStringFlag(args, "--runtime");
+	if (runtime !== undefined && runtime !== "js" && runtime !== "luau") {
+		console.error('loom: --runtime must be "js" or "luau"');
 		process.exit(1);
-	});
+	}
+
+	preview(dir, { port, host, targets: parseTargetsFlag(args), runtime }).catch(
+		(err) => {
+			console.error(err);
+			process.exit(1);
+		},
+	);
 }
 
 function runBuildCommand(args: string[]): void {
