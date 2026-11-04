@@ -125,6 +125,43 @@ describe("readLuauProject", () => {
 		]);
 	});
 
+	it("syncs a package directory through its own project file, named by it", () => {
+		// How a roblox-ts game maps node_modules: `@rbxts-js/react` is a
+		// directory whose default.project.json names it `React` and points at
+		// `src`, and `@rbxts/react` requires it by that name.
+		const root = project({
+			"default.project.json": JSON.stringify({
+				name: "game",
+				tree: {
+					$className: "DataModel",
+					ReplicatedStorage: { Packages: { $path: "node_modules/@rbxts-js" } },
+				},
+			}),
+			"node_modules/@rbxts-js/react/default.project.json": JSON.stringify({
+				name: "React",
+				tree: { $path: "src" },
+			}),
+			"node_modules/@rbxts-js/react/src/init.lua": "return {}",
+			"node_modules/@rbxts-js/react/src/Children.lua": "return {}",
+			"node_modules/@rbxts-js/plain/src/init.luau": "return {}",
+		});
+		const tree = readLuauProject(root) as LuauFileNode;
+		expect(shape(tree)).toEqual({
+			"DataModel:DataModel": [
+				{
+					"ReplicatedStorage:ReplicatedStorage": [
+						{
+							"Packages:Folder": [
+								{ "plain:Folder": ["src:ModuleScript"] },
+								{ "React:ModuleScript": ["Children:ModuleScript"] },
+							],
+						},
+					],
+				},
+			],
+		});
+	});
+
 	it("runs a bare src/ of scripts from StarterPlayerScripts", () => {
 		const root = project({ "src/Card.client.luau": "" });
 		expect(

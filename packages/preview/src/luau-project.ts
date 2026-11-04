@@ -52,6 +52,22 @@ function scriptKind(file: string): readonly [string, string] | undefined {
 
 /** A directory as Rojo syncs it: a Folder, or the script its `init` file makes it. */
 function directoryNode(name: string, dir: string): LuauFileNode {
+	// A directory holding its own project file is that project — how Rojo
+	// syncs a package (`@rbxts-js/react`: `{ "name": "React", "tree": { "$path":
+	// "src" } }`). The project's `name` names the instance, which is why
+	// `@rbxts/react` finds React-Lua at `@rbxts-js.React`.
+	const nested = resolve(dir, "default.project.json");
+	if (existsSync(nested)) {
+		const project = JSON.parse(readFileSync(nested, "utf8")) as {
+			name?: unknown;
+			tree?: ProjectSpec;
+		};
+		if (project.tree !== undefined) {
+			const projectName =
+				typeof project.name === "string" ? project.name : name;
+			return projectNode(projectName, project.tree, dir);
+		}
+	}
 	const node: LuauFileNode = { name, className: "Folder" };
 	const children: LuauFileNode[] = [];
 	const entries = readdirSync(dir, { withFileTypes: true }).sort((a, b) =>
@@ -60,7 +76,11 @@ function directoryNode(name: string, dir: string): LuauFileNode {
 	for (const entry of entries) {
 		if (entry.name.startsWith(".") || entry.name === "node_modules") continue;
 		const path = join(dir, entry.name);
-		if (entry.isDirectory()) {
+		// pnpm links packages: follow a symlink to what it names.
+		const isDirectory = entry.isSymbolicLink()
+			? statSync(path).isDirectory()
+			: entry.isDirectory();
+		if (isDirectory) {
 			children.push(directoryNode(entry.name, path));
 			continue;
 		}
