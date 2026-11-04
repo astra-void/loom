@@ -44,7 +44,7 @@ import {
 	type Classifier,
 	type HostClass,
 	LuauError,
-	type LuauFunction,
+	LuauFunction,
 	type LuauThread,
 	type LuauVM,
 	Suspend,
@@ -367,7 +367,22 @@ export function createRobloxBindings(): RobloxBindings {
 					`${member} is not a valid member of ${self.ClassName} "${self.Name}"`,
 				);
 			}
-			const result = (fn as (...a: unknown[]) => unknown)(...args);
+			// A Luau function handed to an engine method (`BindToRenderStep`,
+			// `BindAction`, …) is a callback the engine calls later: give it one
+			// that runs in its own thread, as a signal handler does. What it
+			// returns without yielding goes back to the engine, which is how a
+			// `BindAction` handler sinks its input.
+			const hostArgs = args.map((arg) =>
+				arg instanceof LuauFunction
+					? (...values: unknown[]) => {
+							const vm = current();
+							if (vm.isClosed) return undefined;
+							const ended = vm.spawn(arg, values);
+							return ended.status === "done" ? ended.values[0] : undefined;
+						}
+					: arg,
+			);
+			const result = (fn as (...a: unknown[]) => unknown)(...hostArgs);
 			if (result instanceof Promise) {
 				return new Suspend((resume) => {
 					result.then((value) => resume(value));

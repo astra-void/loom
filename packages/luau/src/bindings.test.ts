@@ -1,5 +1,9 @@
 // @vitest-environment node
-import { type LoomInstance, UDim2 } from "@loom-dev/runtime";
+import {
+	type LoomInstance,
+	registerClassMethods,
+	UDim2,
+} from "@loom-dev/runtime";
 import { describe, expect, it, vi } from "vitest";
 import { createRobloxBindings } from "./bindings.ts";
 import { type LuauError, LuauVM, type ThreadResult } from "./vm.ts";
@@ -111,6 +115,18 @@ describe("Enum", () => {
 			2,
 			true,
 		]);
+	});
+
+	it("has every engine enum, not only the ones loom acts on", async () => {
+		const vm = await roblox();
+		expect(
+			done(
+				vm.run(`
+					return Enum.Material.Plastic.Value, tostring(Enum.LeftRight.Left),
+						Enum.KeyCode.World0 ~= nil, Enum.KeyCode.A.Value
+				`),
+			),
+		).toEqual([256, "Enum.LeftRight.Left", true, 97]);
 	});
 
 	it("errors on an item that does not exist", async () => {
@@ -238,6 +254,51 @@ describe("signals", () => {
 		expect(result.status).toBe("yielded");
 		expect(log).toEqual([]);
 		await vi.waitFor(() => expect(log).toEqual(["Arrived"]));
+	});
+});
+
+describe("engine callbacks", () => {
+	it("calls a Luau function handed to an engine method", async () => {
+		const { vm, log, result } = await logged(`
+			local RunService = game:GetService("RunService")
+			RunService:BindToRenderStep("sweep", Enum.RenderPriority.First.Value, function(dt)
+				log(typeof(dt))
+				RunService:UnbindFromRenderStep("sweep")
+			end)
+		`);
+		done(result);
+		await vi.waitFor(() => expect(log).toEqual(["number"]));
+		vm.close();
+	});
+
+	it("hands what the callback returns back to the engine", async () => {
+		registerClassMethods("Folder", {
+			LoomTestApply: (_self: LoomInstance, fn: (n: number) => unknown) =>
+				fn(21),
+		});
+		const vm = await roblox();
+		expect(
+			done(
+				vm.run(
+					`return Instance.new("Folder"):LoomTestApply(function(n) return n * 2 end)`,
+				),
+			),
+		).toEqual([42]);
+	});
+
+	it("gives a real but unraised engine event as a signal, not nil", async () => {
+		const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+		const vm = await roblox();
+		expect(
+			done(
+				vm.run(`
+					local tap = game:GetService("UserInputService").TouchTapInWorld
+					local connection = tap:Connect(function() end)
+					return typeof(tap), connection.Connected
+				`),
+			),
+		).toEqual(["RBXScriptSignal", true]);
+		warn.mockRestore();
 	});
 });
 
