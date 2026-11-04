@@ -32,6 +32,9 @@ const KIND_THREAD = 7;
 const LUA_OK = 0;
 const LUA_YIELD = 1;
 
+// `lua_costatus`: a thread that has not started, or is parked in a yield.
+const LUA_COSUS = 1;
+
 // Host-call sentinels (bridge.cpp `LB_ERROR` / `LB_YIELD`).
 const LB_ERROR = -1;
 const LB_YIELD = -2;
@@ -112,6 +115,8 @@ export interface LuauVMOptions {
 	budgetMs?: number;
 	/** Passed to emscripten — for loading the `.wasm` from somewhere unusual. */
 	locateFile?: (path: string, prefix: string) => string;
+	/** The `.wasm` bytes themselves, skipping the fetch (tests, Node). */
+	wasmBinary?: ArrayBuffer | Uint8Array;
 }
 
 /** How a resumed thread came back. */
@@ -224,6 +229,7 @@ export class LuauVM {
 			lbHostCall: (L, id) => (vm as LuauVM).hostCall(L, id),
 			lbHostRelease: (handle) => vm?.hostRelease(handle),
 			...(options.locateFile ? { locateFile: options.locateFile } : {}),
+			...(options.wasmBinary ? { wasmBinary: options.wasmBinary } : {}),
 		});
 		vm = new LuauVM(module, options);
 		return vm;
@@ -377,6 +383,27 @@ export class LuauVM {
 		}
 	}
 
+	/**
+	 * Resume a Luau thread (`task.defer`'s and `task.delay`'s, made with
+	 * `coroutine.create`). A thread that cannot be resumed — finished, running,
+	 * or closed by `task.cancel` — is left alone and gives `undefined`.
+	 */
+	resumeThread(
+		thread: LuauThread,
+		args: readonly unknown[] = [],
+	): ThreadResult | undefined {
+		const co = this.threadOf(thread);
+		if (this.M._lb_costatus(this.L, co) !== LUA_COSUS) return undefined;
+		this.ensureStack(co, args.length);
+		for (const arg of args) this.push(co, arg);
+		return this.resume(co, args.length);
+	}
+
+	/** Hand an error to `onError`, as if it had escaped a thread. */
+	report(error: LuauError): void {
+		this.onError(error);
+	}
+
 	/** Collect garbage now (tests use it to observe userdata release). */
 	collect(): void {
 		this.M._lb_gc(this.L);
@@ -475,6 +502,16 @@ export class LuauVM {
 	 * and hand `wait` its resume function once Luau has unwound — only then is
 	 * the thread really suspended, whoever resumed it.
 	 */
+	/** The `lua_State*` behind a thread reference. */
+	private threadOf(thread: LuauThread): number {
+		if (thread.vm !== this)
+			throw new TypeError("loom luau: a thread from another VM");
+		this.M._lb_getref(this.L, thread.ref);
+		const co = this.M._lb_tothread(this.L, -1);
+		this.M._lb_settop(this.L, -2);
+		return co;
+	}
+
 	private suspend(co: number, suspend: Suspend): void {
 		const ref = this.M._lb_refthread(co);
 		let resumed = false;
@@ -483,6 +520,8 @@ export class LuauVM {
 				if (resumed || this.closed) return;
 				resumed = true;
 				try {
+					// `task.cancel` may have closed it in the meantime.
+					if (this.M._lb_costatus(this.L, co) !== LUA_COSUS) return;
 					this.ensureStack(co, values.length);
 					for (const value of values) this.push(co, value);
 					this.resume(co, values.length);

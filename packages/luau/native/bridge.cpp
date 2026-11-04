@@ -443,6 +443,12 @@ EMSCRIPTEN_KEEPALIVE int lb_status(lua_State* L)
     return lua_status(L);
 }
 
+// `coroutine.status(co)` as seen from L: 1 (LUA_COSUS) when co can be resumed.
+EMSCRIPTEN_KEEPALIVE int lb_costatus(lua_State* L, lua_State* co)
+{
+    return lua_costatus(L, co);
+}
+
 EMSCRIPTEN_KEEPALIVE const char* lb_debugtrace(lua_State* L)
 {
     return lua_debugtrace(L);

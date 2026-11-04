@@ -66,6 +66,7 @@ export interface LuauModule {
 	_lb_refthread(L: number): number;
 	_lb_resume(co: number, from: number, nargs: number): number;
 	_lb_status(L: number): number;
+	_lb_costatus(L: number, co: number): number;
 	_lb_debugtrace(L: number): number;
 	_lb_namecall(L: number): number;
 }

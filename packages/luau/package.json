@@ -33,7 +33,15 @@
 		"build:vm": "bash native/build.sh",
 		"typecheck": "tsc -p tsconfig.json --noEmit"
 	},
+	"dependencies": {
+		"@loom-dev/layout": "workspace:*",
+		"@loom-dev/react": "workspace:*",
+		"@loom-dev/runtime": "workspace:*",
+		"react": "catalog:"
+	},
 	"devDependencies": {
+		"@loom-dev/scene": "workspace:*",
+		"@types/node": "^22.0.0",
 		"typescript": "catalog:"
 	}
 }

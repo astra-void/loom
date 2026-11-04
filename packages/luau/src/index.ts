@@ -6,9 +6,11 @@
  * browser. The VM layer (`./vm`) moves values between Luau and JavaScript and
  * runs threads Roblox's way; Roblox itself — Instance, the datatypes, Enum,
  * `game`, `task` — comes from `@loom-dev/runtime`, exposed to Luau as host
- * userdata, so a Luau script builds the same live instance tree the react
- * adapter renders.
+ * userdata (`./bindings`), so a Luau script builds the same live instance tree
+ * the react adapter renders, and `mountLuau` paints it through the same world.
  */
+export { createRobloxBindings, type RobloxBindings } from "./bindings.ts";
+export { type LuauMount, type MountLuauOptions, mountLuau } from "./mount.ts";
 export {
 	type Classifier,
 	type HostClass,
