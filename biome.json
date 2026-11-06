@@ -6,7 +6,12 @@
 		"useIgnoreFile": true
 	},
 	"files": {
-		"includes": ["**", "!apps/fumadocs-demo", "!packages/luau/wasm/luau-vm.mjs"]
+		"includes": [
+			"**",
+			"!apps/fumadocs-demo",
+			"!packages/luau/wasm/luau-vm.mjs",
+			"!.trail"
+		]
 	},
 	"formatter": {
 		"enabled": true,
