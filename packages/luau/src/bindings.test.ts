@@ -271,6 +271,20 @@ describe("engine callbacks", () => {
 		vm.close();
 	});
 
+	it("returns an engine method's several values as several values", async () => {
+		const vm = await roblox();
+		// Iris subtracts the first from the mouse position; a table there was NaN.
+		expect(
+			done(
+				vm.run(`
+					local a, b = game:GetService("GuiService"):GetGuiInset()
+					return typeof(a), typeof(b), #game:GetChildren() > 0
+				`),
+			),
+		).toEqual(["Vector2", "Vector2", true]);
+		vm.close();
+	});
+
 	it("hands what the callback returns back to the engine", async () => {
 		registerClassMethods("Folder", {
 			LoomTestApply: (_self: LoomInstance, fn: (n: number) => unknown) =>

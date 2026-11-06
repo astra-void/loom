@@ -838,6 +838,28 @@ type MethodTable = Record<
 
 // --- class extension hooks ---------------------------------------------------
 
+const LUA_TUPLE = Symbol.for("loom.luaTuple");
+
+/**
+ * Several return values, as an engine method gives them to Luau
+ * (`local topLeft, bottomRight = GuiService:GetGuiInset()`). To JavaScript it
+ * is the plain array roblox-ts destructures a `LuaTuple` from; the mark tells
+ * the Luau bindings to spread it, where an unmarked array (`GetChildren`,
+ * `GetTagged`) is one table.
+ */
+export function luaTuple<T extends unknown[]>(...values: T): T {
+	Object.defineProperty(values, LUA_TUPLE, { value: true });
+	return values;
+}
+
+/** Whether `value` came from {@link luaTuple}. */
+export function isLuaTuple(value: unknown): value is unknown[] {
+	return (
+		Array.isArray(value) &&
+		(value as unknown as Record<symbol, unknown>)[LUA_TUPLE] === true
+	);
+}
+
 /** A method registered for one class (and inherited by subclasses). */
 export type ClassMethod = (self: LoomInstance, ...args: never[]) => unknown;
 

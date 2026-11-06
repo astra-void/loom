@@ -25,6 +25,7 @@ import {
 	getEventSignal,
 	isLoomInstance,
 	type LoomInstance,
+	luaTuple,
 	registerClassMethods,
 	registerPropertyInterceptor,
 	registerPropertyReader,
@@ -67,8 +68,8 @@ registerPropertyInterceptor(
 );
 
 registerClassMethods("GuiService", {
-	/** Tuple destructuring shape: `const [topLeft, bottomRight] = ...`. */
-	GetGuiInset: () => [Vector2.zero, Vector2.zero],
+	/** Two values from Luau, `const [topLeft, bottomRight] = ...` from TypeScript. */
+	GetGuiInset: () => luaTuple(Vector2.zero, Vector2.zero),
 });
 
 registerService("GuiService", () => {

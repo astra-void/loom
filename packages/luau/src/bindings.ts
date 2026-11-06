@@ -22,6 +22,7 @@ import {
 	game,
 	heartbeat,
 	isLoomInstance,
+	isLuaTuple,
 	type LoomConnection,
 	type LoomInstance,
 	LoomSignal,
@@ -383,6 +384,9 @@ export function createRobloxBindings(): RobloxBindings {
 					: arg,
 			);
 			const result = (fn as (...a: unknown[]) => unknown)(...hostArgs);
+			// `GetGuiInset` and the like return several values; a plain array
+			// (`GetChildren`) is one table.
+			if (isLuaTuple(result)) return new Tuple(result);
 			if (result instanceof Promise) {
 				return new Suspend((resume) => {
 					result.then((value) => resume(value));
