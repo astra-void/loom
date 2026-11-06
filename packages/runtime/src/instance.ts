@@ -8,7 +8,21 @@
  * Property writes mark the instance dirty so the scheduler re-flushes the world.
  */
 import { DEFAULTS, fontSizeToPx } from "@loom-dev/scene";
-import { Color3, Rect, robloxEquals, UDim, UDim2, Vector2 } from "./datatypes";
+import {
+	Color3,
+	ColorSequence,
+	ColorSequenceKeypoint,
+	NumberRange,
+	NumberSequence,
+	NumberSequenceKeypoint,
+	Rect,
+	robloxEquals,
+	UDim,
+	UDim2,
+	Vector2,
+	Vector3,
+} from "./datatypes";
+import { ENGINE_DEFAULTS } from "./engine-defaults";
 import { ENGINE_EVENTS } from "./engine-events";
 import { Enum, enumName } from "./enums";
 import { classChain, isA } from "./registry";
@@ -338,10 +352,88 @@ const CLASS_DEFAULTS: Readonly<Record<string, DefaultTable>> = {
 	},
 };
 
+/** `"1 2 3"` → `[1, 2, 3]`. */
+function numbers(text: string): number[] {
+	return text === "" ? [] : text.split(" ").map(Number);
+}
+
+/** Every `size`-long run of `values`, in order. */
+function groups(values: number[], size: number): number[][] {
+	const out: number[][] = [];
+	for (let i = 0; i + size <= values.length; i += size)
+		out.push(values.slice(i, i + size));
+	return out;
+}
+
+/**
+ * Decode one `ENGINE_DEFAULTS` entry (the tags are listed there). Decoded on
+ * every read, like the hand-written thunks, so no caller shares a mutable value.
+ */
+function decodeEngineDefault(encoded: string): unknown {
+	const tag = encoded.charAt(0);
+	const body = encoded.slice(1);
+	const [a = 0, b = 0, c = 0, d = 0] = numbers(body);
+	switch (tag) {
+		case "b":
+			return body === "1";
+		case "n":
+			return Number(body);
+		case "s":
+			return body;
+		case "e": {
+			const dot = body.indexOf(".");
+			const items = (Enum as unknown as Record<string, unknown>)[
+				body.slice(0, dot)
+			] as Record<string, unknown> | undefined;
+			return items?.[body.slice(dot + 1)];
+		}
+		case "c":
+			return new Color3(a, b, c);
+		case "v":
+			return new Vector2(a, b);
+		case "w":
+			return new Vector3(a, b, c);
+		case "u":
+			return new UDim(a, b);
+		case "U":
+			return new UDim2(a, b, c, d);
+		case "r":
+			return new Rect(a, b, c, d);
+		case "R":
+			return new NumberRange(a, b);
+		case "N":
+			return new NumberSequence(
+				groups(numbers(body), 3).map(
+					([t = 0, v = 0, e = 0]) => new NumberSequenceKeypoint(t, v, e),
+				),
+			);
+		case "C":
+			return new ColorSequence(
+				groups(numbers(body), 5).map(
+					([t = 0, r = 0, g = 0, bl = 0]) =>
+						new ColorSequenceKeypoint(t, new Color3(r, g, bl)),
+				),
+			);
+		default:
+			return undefined;
+	}
+}
+
+/**
+ * The value a property reads before anything writes it. At each class up the
+ * chain, a hand-written `CLASS_DEFAULTS` entry wins over the generated
+ * `ENGINE_DEFAULTS` one. The hand-written values are the ones loom paints by.
+ */
 function classDefaultProperty(className: string, key: string): unknown {
+	// Own keys only, in both tables: `constructor` or `hasOwnProperty` would
+	// otherwise find the tables' own `Object.prototype` members.
 	for (const cls of classChain(className)) {
-		const fallback = CLASS_DEFAULTS[cls]?.[key];
-		if (fallback !== undefined) return fallback();
+		const hand = CLASS_DEFAULTS[cls];
+		if (hand && Object.hasOwn(hand, key)) return (hand[key] as () => unknown)();
+		const engine = ENGINE_DEFAULTS[cls];
+		if (engine && Object.hasOwn(engine, key)) {
+			return decodeEngineDefault(engine[key] as string);
+		}
 	}
 	return undefined;
 }

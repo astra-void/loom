@@ -1,5 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
-import { type Color3, type Rect, type UDim, UDim2, Vector2 } from "./datatypes";
+import {
+	type Color3,
+	type ColorSequence,
+	type NumberSequence,
+	type Rect,
+	type UDim,
+	UDim2,
+	Vector2,
+} from "./datatypes";
 import { Enum } from "./enums";
 import {
 	createInstance,
@@ -502,6 +510,62 @@ describe("class read defaults and feedback writes", () => {
 		// `Enabled`/`ZIndexBehavior` are LayerCollector's, so the siblings get them.
 		expect(createInstance("SurfaceGui").Enabled).toBe(true);
 		expect(createInstance("SurfaceGui").ResetOnSpawn).toBeUndefined();
+	});
+
+	describe("engine defaults (generated from the API dump)", () => {
+		it("answers a modifier's properties before anything writes them", () => {
+			const stroke = createInstance("UIStroke");
+			expect(stroke.Thickness).toBe(1);
+			expect(stroke.Enabled).toBe(true);
+			expect(stroke.ApplyStrokeMode).toBe(Enum.ApplyStrokeMode.Contextual);
+			const padding = createInstance("UIPadding").PaddingTop as UDim;
+			expect([padding.Scale, padding.Offset]).toEqual([0, 0]);
+			const corner = createInstance("UICorner").CornerRadius as UDim;
+			expect([corner.Scale, corner.Offset]).toEqual([0, 8]);
+		});
+
+		it("decodes sequence defaults into keypoints", () => {
+			const gradient = createInstance("UIGradient");
+			const color = gradient.Color as ColorSequence;
+			expect(color.Keypoints.map((k) => [k.Time, k.Value.R])).toEqual([
+				[0, 1],
+				[1, 1],
+			]);
+			const transparency = gradient.Transparency as NumberSequence;
+			expect(transparency.Keypoints.map((k) => k.Value)).toEqual([0, 0]);
+		});
+
+		it("fills the abstract classes' documented defaults", () => {
+			expect(createInstance("Frame").AutomaticSize).toBe(
+				Enum.AutomaticSize.None,
+			);
+			const button = createInstance("TextButton");
+			expect(button.AutoButtonColor).toBe(true);
+			expect(button.Modal).toBe(false);
+		});
+
+		it("lets hand-written defaults and readers win", () => {
+			const label = createInstance("TextLabel");
+			expect(label.Text).toBe("Label");
+			// The dump says 8; loom paints and measures at 14, so 14 is what reads.
+			expect(label.TextSize).toBe(14);
+			// Left absent so measuring and painting agree on the fallback face.
+			expect(label.Font).toBeUndefined();
+		});
+
+		it("returns a fresh value per read and never reaches the scene", () => {
+			const stroke = createInstance("UIStroke");
+			expect(stroke.Color).not.toBe(stroke.Color);
+			expect(getRawProperties(stroke).has("Thickness")).toBe(false);
+			stroke.Thickness = 3;
+			expect(stroke.Thickness).toBe(3);
+		});
+
+		it("does not mistake Object.prototype members for defaults", () => {
+			const frame = createInstance("Frame");
+			expect(() => frame.constructor).not.toThrow();
+			expect(() => frame.hasOwnProperty).not.toThrow();
+		});
 	});
 
 	it("answers the ScrollingFrame defaults", () => {
