@@ -18,9 +18,9 @@
  * dependency on `@loom-dev/luau`, the way a roblox-ts project depends on
  * `@rbxts/react`, so a TypeScript project never loads it.
  */
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { basename, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import type { Plugin, ViteDevServer } from "vite";
 import {
 	generateLuauProjectModule,
@@ -47,18 +47,27 @@ const RESOLVED_PROJECT = "\0loom-luau-project";
  * virtual one it cannot.
  */
 export function luauEntryUrl(root: string): string {
-	try {
-		return toViteFsUrl(
-			createRequire(resolve(root, "package.json")).resolve(
-				"@loom-dev/luau/entry",
-			),
-		);
-	} catch {
-		throw new Error(
-			`loom: ${root} is a Luau project, but @loom-dev/luau is not installed there\n` +
-				"      (add it as a dependency: it is the Luau VM the preview runs your scripts in)",
-		);
+	// Only an adapter the project itself installed: a node_modules at or above
+	// it. Plain resolution would also take one from NODE_PATH, which `pnpm exec`
+	// and pnpm's bin shims point at the store's hoisted packages.
+	for (let dir = resolve(root); ; dir = dirname(dir)) {
+		if (existsSync(join(dir, "node_modules", "@loom-dev", "luau"))) {
+			try {
+				return toViteFsUrl(
+					createRequire(resolve(root, "package.json")).resolve(
+						"@loom-dev/luau/entry",
+					),
+				);
+			} catch {
+				break;
+			}
+		}
+		if (dirname(dir) === dir) break;
 	}
+	throw new Error(
+		`loom: ${root} is a Luau project, but @loom-dev/luau is not installed there\n` +
+			"      (add it as a dependency: it is the Luau VM the preview runs your scripts in)",
+	);
 }
 
 const LUAU_FILE = /\.(luau|lua)$/;
