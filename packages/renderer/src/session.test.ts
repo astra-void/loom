@@ -593,6 +593,221 @@ describe("createDomSession", () => {
 		session.dispose();
 	});
 
+	// --- Overlapping objects (Studio-verified 2026-11-06) ----------------------
+
+	/**
+	 * `document.elementsFromPoint`, which happy-dom lacks, answering `els` for
+	 * every point: the browser's paint-order hit list, topmost first.
+	 */
+	function stubHits(els: () => Element[]): () => void {
+		Object.defineProperty(document, "elementsFromPoint", {
+			value: () => [...els(), mount, document.body],
+			configurable: true,
+		});
+		return () => {
+			delete (document as { elementsFromPoint?: unknown }).elementsFromPoint;
+		};
+	}
+
+	/**
+	 * Iris's window: a TextButton window holding a button, under a transparent
+	 * `Active` Frame (the resize border) that listens for the mouse.
+	 */
+	function mountOverlaidButton() {
+		const windowBtn = createInstance("TextButton", "Window");
+		const button = createInstance("TextButton", "Button");
+		const border = createInstance("Frame", "ResizeBorder");
+		const ids = [windowBtn, button, border].map(getInternalId);
+		const [windowId, buttonId, borderId] = ids as [string, string, string];
+		const borderSeen = record(border, ["MouseEnter", "InputBegan"]);
+		const scene: SceneNode = {
+			className: "TextButton",
+			name: "Window",
+			id: windowId,
+			children: [
+				{ className: "TextButton", name: "Button", id: buttonId },
+				{
+					className: "Frame",
+					name: "ResizeBorder",
+					id: borderId,
+					properties: {
+						Active: prop.bool(true),
+						BackgroundTransparency: prop.number(1),
+					},
+				},
+			],
+		};
+		const layout = layoutOf({
+			[windowId]: { x: 0, y: 0, width: 200, height: 100 },
+			[buttonId]: { x: 50, y: 30, width: 100, height: 40 },
+			[borderId]: { x: -6, y: -6, width: 212, height: 112 },
+		});
+		const session = makeSession(
+			new Map([
+				[windowId, windowBtn],
+				[buttonId, button],
+				[borderId, border],
+			]),
+		);
+		session.patch(scene, layout);
+		const el = (id: string) =>
+			mount.querySelector(`[data-loom-id="${id}"]`) as HTMLElement;
+		return {
+			windowBtn,
+			button,
+			borderSeen,
+			windowEl: el(windowId),
+			buttonEl: el(buttonId),
+			borderEl: el(borderId),
+			session,
+		};
+	}
+
+	it("hands a press through a listening Active frame to the button under it", () => {
+		const {
+			windowBtn,
+			button,
+			borderSeen,
+			windowEl,
+			buttonEl,
+			borderEl,
+			session,
+		} = mountOverlaidButton();
+		const restore = stubHits(() => [borderEl, buttonEl, windowEl]);
+		const onButton = record(button, ["InputBegan", "Activated"]);
+		const onWindow = record(windowBtn, ["InputBegan", "Activated"]);
+
+		firePointer(borderEl, "pointerdown", { clientX: 100, clientY: 50 });
+		firePointer(borderEl, "pointerup", { clientX: 100, clientY: 50 });
+
+		// Iris's buttons sit under such a frame and click in Roblox.
+		expect(borderSeen.map((entry) => entry[0])).toContain("InputBegan");
+		expect(onButton.map((entry) => entry[0])).toEqual([
+			"InputBegan",
+			"Activated",
+		]);
+		// The inner button takes the press: the window button under it hears none.
+		expect(onWindow).toEqual([]);
+		restore();
+		session.dispose();
+	});
+
+	it("enters every object under the pointer as it moves, not only the top one", () => {
+		const {
+			windowBtn,
+			button,
+			borderSeen,
+			windowEl,
+			buttonEl,
+			borderEl,
+			session,
+		} = mountOverlaidButton();
+		const onButton = record(button, ["MouseEnter"]);
+		const onWindow = record(windowBtn, ["MouseEnter"]);
+		// Over the border's padding only, then over the window's middle: the
+		// browser's target stays the border all along, so no pointerover comes.
+		let under: Element[] = [borderEl];
+		const restore = stubHits(() => under);
+		firePointer(borderEl, "pointermove", { clientX: -3, clientY: 50 });
+		under = [borderEl, buttonEl, windowEl];
+		firePointer(borderEl, "pointermove", { clientX: 100, clientY: 50 });
+
+		expect(
+			borderSeen.filter((entry) => entry[0] === "MouseEnter"),
+		).toHaveLength(1);
+		expect(onButton).toHaveLength(1);
+		expect(onWindow).toHaveLength(1);
+		restore();
+		session.dispose();
+	});
+
+	it("leaves an Active frame nothing listens to click-through", () => {
+		const { session } = mountButton();
+		// mountButton's frame is `Active = true` and has no listeners.
+		const frameEl = mount.querySelector(
+			'[data-loom-class="Frame"]',
+		) as HTMLElement;
+		expect(frameEl.style.pointerEvents).toBe("none");
+		session.dispose();
+	});
+
+	it("moves GetMouseLocation to a press that came with no move before it", () => {
+		const { buttonEl, session } = mountButton();
+		const uis = getService("UserInputService");
+		const seen: Vector2[] = [];
+		getEventSignal(uis, "InputBegan").Connect(() =>
+			seen.push((uis.GetMouseLocation as () => Vector2)()),
+		);
+
+		firePointer(buttonEl, "pointerdown", { clientX: 30, clientY: 12 });
+
+		expect(seen[0]?.X).toBe(30);
+		expect(seen[0]?.Y).toBe(12);
+		firePointer(buttonEl, "pointerup", { clientX: 30, clientY: 12 });
+		session.dispose();
+	});
+
+	it("stops a press at the button: the frame holding it hears no InputBegan", () => {
+		const { button, frame, buttonEl, session } = mountButton();
+		const onFrame = record(frame, ["InputBegan", "InputEnded"]);
+		const onButton = record(button, ["InputBegan"]);
+
+		firePointer(buttonEl, "pointerdown", { clientX: 2, clientY: 2 });
+		firePointer(buttonEl, "pointerup", { clientX: 2, clientY: 2 });
+
+		expect(onButton).toHaveLength(1);
+		expect(onFrame).toEqual([]);
+		session.dispose();
+	});
+
+	it("focuses a TextBox whose press landed on a listening frame over it", () => {
+		const box = createInstance("TextBox", "Field");
+		const overlay = createInstance("Frame", "Overlay");
+		const boxId = getInternalId(box);
+		const overlayId = getInternalId(overlay);
+		record(overlay, ["MouseEnter"]);
+		const session = makeSession(
+			new Map([
+				[boxId, box],
+				[overlayId, overlay],
+			]),
+		);
+		session.patch(
+			{
+				className: "Frame",
+				name: "Root",
+				id: "root",
+				children: [
+					{ className: "TextBox", name: "Field", id: boxId },
+					{ className: "Frame", name: "Overlay", id: overlayId },
+				],
+			},
+			layoutOf({
+				root: { x: 0, y: 0, width: 300, height: 100 },
+				[boxId]: { x: 0, y: 0, width: 200, height: 36 },
+				[overlayId]: { x: 0, y: 0, width: 300, height: 100 },
+			}),
+		);
+		const input = mount.querySelector("input") as HTMLInputElement;
+		const overlayEl = mount.querySelector(
+			`[data-loom-id="${overlayId}"]`,
+		) as HTMLElement;
+		const restore = stubHits(() => [
+			overlayEl,
+			input,
+			input.parentElement as Element,
+		]);
+
+		firePointer(overlayEl, "pointerdown", { clientX: 10, clientY: 10 });
+		overlayEl.dispatchEvent(
+			new MouseEvent("mousedown", { bubbles: true, cancelable: true }),
+		);
+
+		expect(document.activeElement).toBe(input);
+		restore();
+		session.dispose();
+	});
+
 	it("fires MouseWheelForward/Backward and a MouseWheel input", () => {
 		const { button, buttonEl, session } = mountButton();
 		const seen = record(button, ["MouseWheelForward", "MouseWheelBackward"]);

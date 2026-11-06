@@ -1202,15 +1202,19 @@ const POINTER_SINK_CLASSES = new Set([
 ]);
 
 /**
- * Whether a node should receive pointer input (CSS `pointer-events: auto`),
- * mirroring Roblox: GuiButtons, TextBoxes, and ScrollingFrames always sink,
- * plus any GuiObject with `Active = true`. Everything else (plain Frames,
- * labels, CanvasGroups, LayerCollectors, the root) is click-through so a
- * transparent container never blocks the interactive elements behind it.
+ * Whether a node should be hit-testable (CSS `pointer-events: auto`) for what
+ * it is rather than for what listens to it: GuiButtons and TextBoxes, which
+ * take the press, and ScrollingFrames, which take the wheel and the drag.
+ * Everything else (plain Frames, labels, CanvasGroups, LayerCollectors, the
+ * root) is click-through, so a transparent container never becomes the
+ * browser's target over the controls behind it.
+ *
+ * `Active` is deliberately not part of it. Studio (2026-11-06) delivers a
+ * click to a button under an `Active = true` Frame, as Iris's window
+ * `ResizeBorder` relies on; `Active` only keeps input from the 3D world.
  */
 function sinksPointerInput(node: SceneNode): boolean {
-	if (POINTER_SINK_CLASSES.has(node.className)) return true;
-	return asBool(node.properties?.Active) === true;
+	return POINTER_SINK_CLASSES.has(node.className);
 }
 
 /**
@@ -3176,6 +3180,83 @@ export function createDomSession(
 	}
 
 	/**
+	 * Every hit-testable object under the pointer, topmost first, through
+	 * overlaps: what Roblox hands GUI input to, where the DOM target's ancestor
+	 * chain would only reach the one object on top and what contains it.
+	 * Studio (2026-11-06) raises `MouseEnter`, `MouseMoved` and `InputBegan` on a
+	 * transparent listening Frame and on the button it covers alike. Falls back to
+	 * the ancestor chain where the DOM has no `elementsFromPoint` (happy-dom).
+	 */
+	function hitsAt(e: MouseEvent): { inst: LoomInstance; el: Element }[] {
+		const root = mount.getRootNode() as Document | ShadowRoot;
+		if (typeof root.elementsFromPoint !== "function") return [];
+		const hits: { inst: LoomInstance; el: Element }[] = [];
+		const seen = new Set<Element>();
+		for (const hit of root.elementsFromPoint(e.clientX, e.clientY)) {
+			const el = hit.closest("[data-loom-id]");
+			if (!el || seen.has(el) || !mount.contains(el)) continue;
+			seen.add(el);
+			const id = (el as HTMLElement).dataset.loomId;
+			const inst = id ? options.resolveInstance(id) : undefined;
+			if (inst) hits.push({ inst, el: hit });
+		}
+		return hits;
+	}
+
+	function stackAt(e: MouseEvent): LoomInstance[] {
+		const hits = hitsAt(e);
+		return hits.length > 0 ? hits.map((hit) => hit.inst) : chainFromEvent(e);
+	}
+
+	/**
+	 * The part of a stack a press, release or wheel step reaches: down to and
+	 * including the first GuiButton or TextBox, which takes it. Studio-verified
+	 * (2026-11-06): a Frame under a button, even the button's own parent, hears
+	 * no `InputBegan`, and neither does a window button under an inner button;
+	 * an `Active` Frame or a ScrollingFrame on top passes the press through.
+	 */
+	function untilSunk(stack: LoomInstance[]): LoomInstance[] {
+		const i = stack.findIndex(
+			(inst) => inst.IsA("GuiButton") || inst.IsA("TextBox"),
+		);
+		return i < 0 ? stack : stack.slice(0, i + 1);
+	}
+
+	/**
+	 * A TextBox's text input, when the press that reached it landed on something
+	 * the browser hit first (a transparent listening Frame over the box). The
+	 * browser would focus nothing; the mousedown that follows focuses the box.
+	 */
+	let focusOnMouseDown: HTMLElement | undefined;
+
+	function textInputToFocus(
+		e: PointerEvent,
+		chain: LoomInstance[],
+	): HTMLElement | undefined {
+		const box = chain[chain.length - 1];
+		if (!box?.IsA("TextBox")) return undefined;
+		const hit = hitsAt(e).find((h) => h.inst === box);
+		const input = hit?.el;
+		if (
+			!(
+				input instanceof HTMLInputElement ||
+				input instanceof HTMLTextAreaElement
+			)
+		) {
+			return undefined;
+		}
+		return e.target === input ? undefined : input;
+	}
+
+	function onMouseDown(e: MouseEvent): void {
+		const input = focusOnMouseDown;
+		focusOnMouseDown = undefined;
+		if (!input) return;
+		e.preventDefault();
+		input.focus();
+	}
+
+	/**
 	 * Roblox reports each mouse button as its own `UserInputType`, so the DOM
 	 * `button` index has to be mapped rather than collapsed onto MouseButton1 —
 	 * secondary-click consumers (ContextMenu) listen for MouseButton2 and would
@@ -3292,7 +3373,13 @@ export function createDomSession(
 	function onPointerDown(e: PointerEvent): void {
 		const input = pointerInput(e, Enum.UserInputState.Begin);
 		const { x, y } = relPoint(e);
-		const chain = chainFromEvent(e);
+		// A press can arrive with no move before it (a tap, a synthetic click), and
+		// handlers read `GetMouseLocation` while it lands: Iris unfocuses a window
+		// when that reads outside it.
+		setMouseLocation(Vector2.new(x, y));
+		const stack = stackAt(e);
+		const chain = untilSunk(stack);
+		focusOnMouseDown = textInputToFocus(e, chain);
 		for (const inst of chain) {
 			getEventSignal(inst, "InputBegan").fire(input);
 		}
@@ -3312,14 +3399,15 @@ export function createDomSession(
 		});
 		// A press that landed on a scroll bar thumb is that thumb's drag, never
 		// also the canvas's: the two would scroll the same frame opposite ways.
-		if (beginThumbDrag(e, chain)) return;
-		beginDragScroll(e, chain);
+		if (beginThumbDrag(e, stack)) return;
+		beginDragScroll(e, stack);
 	}
 
 	function onPointerUp(e: PointerEvent): void {
 		const input = pointerInput(e, Enum.UserInputState.End);
 		const { x, y } = relPoint(e);
-		const chain = chainFromEvent(e);
+		setMouseLocation(Vector2.new(x, y));
+		const chain = untilSunk(stackAt(e));
 		for (const inst of chain) {
 			getEventSignal(inst, "InputEnded").fire(input);
 		}
@@ -3385,7 +3473,11 @@ export function createDomSession(
 				0,
 			),
 		});
-		const chain = chainFromEvent(e);
+		// Movement is not taken by what it passes over: every object under the
+		// pointer hears it, and the hover set follows it, since one object can
+		// start or end under the pointer while the browser's target stays put.
+		const chain = stackAt(e);
+		updateHover(chain, x, y);
 		for (const inst of chain) {
 			getEventSignal(inst, "InputChanged").fire(input);
 			// `GuiObject.MouseMoved(x, y)` — every object the pointer is currently
@@ -3413,7 +3505,7 @@ export function createDomSession(
 
 	function onPointerOver(e: PointerEvent): void {
 		const { x, y } = relPoint(e);
-		updateHover(chainFromEvent(e), x, y);
+		updateHover(stackAt(e), x, y);
 	}
 
 	function onPointerOut(e: PointerEvent): void {
@@ -3475,14 +3567,14 @@ export function createDomSession(
 	 * "zoom on scroll" handler reads it from; there is no pixel delta to report,
 	 * so `Position.X/Y` carry the pointer as they do for mouse movement.
 	 *
-	 * The scroll itself goes to the nearest ScrollingFrame ancestor of the event
-	 * target, and `preventDefault` runs only when it actually consumed something.
+	 * The scroll itself goes to the topmost ScrollingFrame under the pointer, and
+	 * `preventDefault` runs only when it actually consumed something.
 	 * Wheel deltas are on-screen pixels, canvas positions are layout pixels —
 	 * hence the scale division, same as pointer coordinates.
 	 */
 	function onWheel(e: WheelEvent): void {
 		const { x, y } = relPoint(e);
-		const chain = chainFromEvent(e);
+		const chain = stackAt(e);
 		// A trackpad's horizontal-only flick has no wheel direction to report; the
 		// engine has no item for it either, so only the vertical axis speaks.
 		const direction = e.deltaY < 0 ? 1 : e.deltaY > 0 ? -1 : 0;
@@ -3759,6 +3851,7 @@ export function createDomSession(
 	mount.style.touchAction = "manipulation";
 	mount.addEventListener("contextmenu", onContextMenu);
 	mount.addEventListener("pointerdown", onPointerDown);
+	mount.addEventListener("mousedown", onMouseDown);
 	mount.addEventListener("pointercancel", onPointerCancel);
 	mount.addEventListener("pointerup", onPointerUp);
 	mount.addEventListener("pointermove", onPointerMove);
@@ -3801,6 +3894,7 @@ export function createDomSession(
 		dispose(): void {
 			mount.removeEventListener("contextmenu", onContextMenu);
 			mount.removeEventListener("pointerdown", onPointerDown);
+			mount.removeEventListener("mousedown", onMouseDown);
 			mount.removeEventListener("pointercancel", onPointerCancel);
 			mount.removeEventListener("pointerup", onPointerUp);
 			mount.removeEventListener("pointermove", onPointerMove);
