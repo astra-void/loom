@@ -1,5 +1,14 @@
 # @loom-dev/layout
 
+## 0.14.0
+
+### Patch Changes
+
+- [`253867b`](https://github.com/astra-void/loom/commit/253867b27cdfbda3fb67493479517731032d65d2) Thanks [@astra-void](https://github.com/astra-void)! - `AutomaticSize` measures a free child to its far edge again, matching Studio: a 14x14 child with `AnchorPoint = {0.5, 0.5}` at the origin grows its parent to 7x7, not 14x14. The near-edge clamp from 0.13.1 was a guess, and Studio measured it wrong. The `UIListLayout` flex shrink split (in proportion to size), `FlexMode = None` (never shrinks), and mixed grow under `Fill` are now Studio-verified, and their numbers are unchanged.
+
+- Updated dependencies []:
+  - @loom-dev/scene@0.14.0
+
 ## 0.13.2
 
 ### Patch Changes

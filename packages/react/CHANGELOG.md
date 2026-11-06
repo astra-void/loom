@@ -1,5 +1,21 @@
 # @loom-dev/react
 
+## 0.14.0
+
+### Patch Changes
+
+- [`6bb352c`](https://github.com/astra-void/loom/commit/6bb352cde16c84409ff1375bf6f1fa4ad5bbd04e) Thanks [@astra-void](https://github.com/astra-void)! - A component that sets state from an `AbsoluteSize` listener now keeps what that update painted. The listener runs during a layout flush, and with the adapter's synchronous root its state update commits and repaints right away. The flush that fired it then painted its own, older layout back over the new one, and nothing was left dirty to correct it. It also kept writing the older geometry to the instances it had not reached yet. A clean-ui `Table`, which sizes its columns from measured cells, stayed 0 wide on a cold page load because of this.
+
+- [`64b2802`](https://github.com/astra-void/loom/commit/64b280210556e1c87abc1587afcd8f452bd0171a) Thanks [@astra-void](https://github.com/astra-void)! - Instances Roblox never draws are no longer painted: a script, a value object or a `BindableEvent` parented among GUI objects used to render as an empty box and take a slot in its parent's `UIListLayout`. They now stay out of the scene, along with everything under them. `LuaSourceContainer`, `BaseScript`, `Script`, `LocalScript` and `ModuleScript` join the class registry, so `IsA` answers for them instead of warning about an unknown class.
+
+- [`00bf400`](https://github.com/astra-void/loom/commit/00bf400c998809d20c1d2490cbc9a8ad1aaf6cd9) Thanks [@astra-void](https://github.com/astra-void)! - A `ScreenGui` kept in a folder under `PlayerGui` now renders, as in Roblox, which draws a `LayerCollector` anywhere under `PlayerGui`. Iris keeps its window and popup ScreenGuis in such a folder. Only a `GuiObject` outside every `LayerCollector` is still warned about.
+
+- Updated dependencies [[`253867b`](https://github.com/astra-void/loom/commit/253867b27cdfbda3fb67493479517731032d65d2), [`bfb2fc7`](https://github.com/astra-void/loom/commit/bfb2fc750d22ab2d48a36f6001946801856340ce), [`9a31c96`](https://github.com/astra-void/loom/commit/9a31c96af64717a35ba87ed2d2e22ed78bdb601d), [`00bf400`](https://github.com/astra-void/loom/commit/00bf400c998809d20c1d2490cbc9a8ad1aaf6cd9), [`d863472`](https://github.com/astra-void/loom/commit/d863472f4bf139fb1abf58fc1831c9b3eea6887b), [`033e640`](https://github.com/astra-void/loom/commit/033e6400ea221e799f1a608e5c4ee02f6af4c335), [`161e437`](https://github.com/astra-void/loom/commit/161e437809a86f3fc62266051a5e85c7719dae3e), [`64b2802`](https://github.com/astra-void/loom/commit/64b280210556e1c87abc1587afcd8f452bd0171a), [`00bf400`](https://github.com/astra-void/loom/commit/00bf400c998809d20c1d2490cbc9a8ad1aaf6cd9), [`00bf400`](https://github.com/astra-void/loom/commit/00bf400c998809d20c1d2490cbc9a8ad1aaf6cd9)]:
+  - @loom-dev/layout@0.14.0
+  - @loom-dev/runtime@0.14.0
+  - @loom-dev/renderer@0.14.0
+  - @loom-dev/scene@0.14.0
+
 ## 0.13.2
 
 ### Patch Changes

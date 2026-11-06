@@ -1,5 +1,36 @@
 # @loom-dev/runtime
 
+## 0.14.0
+
+### Minor Changes
+
+- [`bfb2fc7`](https://github.com/astra-void/loom/commit/bfb2fc750d22ab2d48a36f6001946801856340ce) Thanks [@astra-void](https://github.com/astra-void)! - `CFrame` now carries a rotation. It gains the engine's constructors (`CFrame.new` with a look-at target, a quaternion or all twelve components, `Angles`, `fromEulerAnglesXYZ`/`YXZ`, `fromOrientation`, `fromAxisAngle`, `fromMatrix`, `lookAt`), its basis vectors (`XVector`/`YVector`/`ZVector`, `RightVector`/`UpVector`/`LookVector`, `Rotation`), composition and space conversion (`mul`, `add`, `sub`, `Inverse`, `ToWorldSpace`/`ToObjectSpace`, `Point…`/`Vector…` variants), `GetComponents`, Euler/orientation/axis-angle readback, `Orthonormalize`, and a `Lerp` that slerps the rotation. `new CFrame(x, y, z)` and `CFrame.new(x, y, z)` behave as before.
+
+  Ripple compatibility animates `CFrame` instead of throwing: springs and motions move the position and basis vectors and orthonormalize the result, and tweens slerp through `Lerp`, both as upstream does.
+
+- [`9a31c96`](https://github.com/astra-void/loom/commit/9a31c96af64717a35ba87ed2d2e22ed78bdb601d) Thanks [@astra-void](https://github.com/astra-void)! - A UI instance now reads the engine's default for a property nothing has written, where it used to read `nil`. `UIStroke.Thickness` is `1`, `UIPadding.PaddingTop` is `UDim(0, 0)`, `UICorner.CornerRadius` is `UDim(0, 8)`, `UIGradient.Color` is a white ramp, and `Frame.AutomaticSize` is `None`. Code that read a value before writing it (`stroke.Thickness + 2`) got `NaN` or threw. The defaults come from Roblox's API dump and cover the 2D GUI classes, the `UI*` modifiers, `Sound` and the `*Value` classes: 416 of 454 properties on the common UI classes now answer, up from 241. Defaults are only read back, never sent to the renderer, so nothing paints differently. `Font`, `FontFace` and `FontSize` stay unset, because the renderer's fallback face is what text is measured and painted in.
+
+  Reading `hasOwnProperty` or `constructor` on an instance no longer runs the default table's own `Object.prototype` members.
+
+- [`00bf400`](https://github.com/astra-void/loom/commit/00bf400c998809d20c1d2490cbc9a8ad1aaf6cd9) Thanks [@astra-void](https://github.com/astra-void)! - Every engine `Enum` and every engine event now exists, not only the ones loom acts on. Luau libraries read enums and connect to events while they load: Fusion, Iris and Vide all failed on a missing enum such as `SurfaceGuiSizingMode`, `LeftRight` or `Material`, and Iris connects `UserInputService.TouchTapInWorld`. Enums the runtime did not declare are built from the engine's API on first read, and the hand-written ones gain the items they lacked, with the engine's values. An event loom never raises is a signal that never fires, and the first read of each warns that it never fires in the preview.
+
+- [`00bf400`](https://github.com/astra-void/loom/commit/00bf400c998809d20c1d2490cbc9a8ad1aaf6cd9) Thanks [@astra-void](https://github.com/astra-void)! - `ReflectionService:GetClasses()` lists the engine classes the runtime knows. `@rbxts/react` builds its JSX tag table from it, so real React-Lua could not load without it.
+
+### Patch Changes
+
+- [`d863472`](https://github.com/astra-void/loom/commit/d863472f4bf139fb1abf58fc1831c9b3eea6887b) Thanks [@astra-void](https://github.com/astra-void)! - `ScreenGui.ScreenInsets` reads as `Enum.ScreenInsets.CoreUISafeInsets`, the engine default, and `GuiService.TopbarInset` is an empty `Rect`, because the preview has no top bar (this matches the zero `GetGuiInset`). Popups that clamp against `TopbarInset.Max.Y` used to throw on the missing value.
+
+- [`161e437`](https://github.com/astra-void/loom/commit/161e437809a86f3fc62266051a5e85c7719dae3e) Thanks [@astra-void](https://github.com/astra-void)! - `loomPreview()` previews Luau projects. A Rojo `default.project.json`, or Luau scripts in the `rojo init` layout (`src/client`, `src/server`, `src/shared`), now count as a client entry: the page builds the place and runs its LocalScripts the way a joining client does, with `require` across ModuleScripts, and reloads on any script edit. Gallery mode also picks up `*.loom.luau` targets by default, beside `*.loom.tsx`. Each target runs as a LocalScript inside its own ScreenGui. Both need the `@loom-dev/luau` adapter installed. A TypeScript entry still wins when a project has both. `StarterPlayerScripts`, `StarterCharacterScripts` and `PlayerScripts` join the runtime's class registry.
+
+  Package directories that carry their own `default.project.json` (such as `@rbxts-js/react` under `node_modules`) are synced through that file, as Rojo does, and pnpm's symlinks are followed.
+
+- [`64b2802`](https://github.com/astra-void/loom/commit/64b280210556e1c87abc1587afcd8f452bd0171a) Thanks [@astra-void](https://github.com/astra-void)! - Instances Roblox never draws are no longer painted: a script, a value object or a `BindableEvent` parented among GUI objects used to render as an empty box and take a slot in its parent's `UIListLayout`. They now stay out of the scene, along with everything under them. `LuaSourceContainer`, `BaseScript`, `Script`, `LocalScript` and `ModuleScript` join the class registry, so `IsA` answers for them instead of warning about an unknown class.
+
+- [`00bf400`](https://github.com/astra-void/loom/commit/00bf400c998809d20c1d2490cbc9a8ad1aaf6cd9) Thanks [@astra-void](https://github.com/astra-void)! - A `ScreenGui` under `PlayerGui` reports the viewport as its `AbsoluteSize` as soon as it is parented, as in Roblox, instead of zero until the first layout. Iris clamps new windows to it and used to shrink every window to its minimum. `UDim2.new` also accepts two `UDim`s, as the constructor already did.
+
+- Updated dependencies []:
+  - @loom-dev/scene@0.14.0
+
 ## 0.13.2
 
 ### Patch Changes

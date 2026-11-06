@@ -1,5 +1,16 @@
 # loom-dev
 
+## 0.14.0
+
+### Minor Changes
+
+- [`00bf400`](https://github.com/astra-void/loom/commit/00bf400c998809d20c1d2490cbc9a8ad1aaf6cd9) Thanks [@astra-void](https://github.com/astra-void)! - `loomPreview({ runtime: "luau" })` and `loom preview --runtime luau` run a roblox-ts project the way the game runs it: the project is compiled with its own roblox-ts, as `rbxtsc` would, into memory, and the Luau runs in `@loom-dev/luau`'s VM. Luau packages such as React-Lua and Ripple run as themselves instead of through loom's ports. One compiler stays alive for the session, so an edit recompiles only that file and its importers; a compile error shows in Vite's error overlay while the page keeps its last good output. It needs a `default.project.json` and `@loom-dev/luau` installed, and only uses a roblox-ts installed in or above the project. Gallery targets, hot swap, transformer plugins and `vite build` are not supported in this mode yet. The default, `"js"`, is unchanged.
+
+### Patch Changes
+
+- Updated dependencies [[`bfb2fc7`](https://github.com/astra-void/loom/commit/bfb2fc750d22ab2d48a36f6001946801856340ce), [`424558d`](https://github.com/astra-void/loom/commit/424558d4e941c1e4d45dc4a8aeba230f04941782), [`37ac073`](https://github.com/astra-void/loom/commit/37ac07313030ff3a0e4fb32f1565edc76e5d419b), [`c546de2`](https://github.com/astra-void/loom/commit/c546de2bd659d0dd3d3eb0991374d0bb70b7855e), [`abee0ab`](https://github.com/astra-void/loom/commit/abee0ab767a17b56136cfa65c711f3f8309b94a5), [`b0552b1`](https://github.com/astra-void/loom/commit/b0552b1f9c84f4541f76895f3d4b92e806546f61), [`161e437`](https://github.com/astra-void/loom/commit/161e437809a86f3fc62266051a5e85c7719dae3e), [`00bf400`](https://github.com/astra-void/loom/commit/00bf400c998809d20c1d2490cbc9a8ad1aaf6cd9)]:
+  - @loom-dev/preview@0.14.0
+
 ## 0.13.2
 
 ### Patch Changes
