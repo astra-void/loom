@@ -296,6 +296,51 @@ describe("mountSync world", () => {
 		expect(fires).toBe(1);
 	});
 
+	it("keeps what a state update from an AbsoluteSize listener painted", () => {
+		// A flush outside React (a frame, or the wait for a web font) fires the
+		// `AbsoluteSize` listeners. One that sets state commits on the spot (legacy
+		// root), and the commit's nested flush paints the new tree while the outer
+		// flush is still running. The outer flush must not patch its older scene
+		// back over it. A clean-ui Table, which sizes its columns from measured
+		// cells, stayed 0 wide on a cold load that way.
+		const size = { width: 100, height: 50 };
+		let measure: LoomInstance | undefined;
+		function App(): ReactElement {
+			const [width, setWidth] = useState(0);
+			return createElement(
+				"screengui",
+				{ Name: "Gui" },
+				createElement("frame", {
+					Name: "Measure",
+					ref: (inst: LoomInstance | null) => {
+						if (inst) measure = inst;
+					},
+					Change: {
+						AbsoluteSize: (rbx: LoomInstance) =>
+							setWidth((rbx.AbsoluteSize as { X: number }).X),
+					},
+				}),
+				createElement("frame", {
+					Name: "Column",
+					BackgroundColor3:
+						width >= 150
+							? Color3.fromRGB(0, 200, 0)
+							: Color3.fromRGB(200, 0, 0),
+				}),
+			);
+		}
+		mountWith(createElement(App), size);
+		const column = mount.querySelector(
+			'[data-loom-name="Column"]',
+		) as HTMLElement;
+		expect(column.getAttribute("style")).toContain("200, 0, 0");
+
+		size.width = 150;
+		(measure as LoomInstance).ZIndex = 2; // dirty, outside any React commit
+		flushDirtyNow();
+		expect(column.getAttribute("style")).toContain("0, 200, 0");
+	});
+
 	it("delivers Event handlers with (rbx, ...args) from pointer input", () => {
 		const calls: unknown[][] = [];
 		let instance: LoomInstance | undefined;

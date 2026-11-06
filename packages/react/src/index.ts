@@ -897,6 +897,11 @@ class WorldImpl implements World {
 	private readonly byId = new Map<string, LoomInstance>();
 	private readonly warnedNonLayer = new WeakSet<LoomInstance>();
 	private depth = 0;
+	/**
+	 * Counts DOM patches. A flush notes it when it encodes, and drops its patch
+	 * if a nested flush has patched since (see `flushSync`).
+	 */
+	private patches = 0;
 	private warnedDepth = false;
 	private disposed = false;
 
@@ -1112,6 +1117,7 @@ class WorldImpl implements World {
 			// frame is a fresh width — that stale pass is what stays on screen, as
 			// text running out of its card and under the next one.
 			let scene = this.encodeRoot();
+			let patchesAtEncode = this.patches;
 			if (!scene) {
 				this.session.clear();
 				return;
@@ -1139,12 +1145,21 @@ class WorldImpl implements World {
 					break;
 				}
 				scene = this.encodeRoot();
+				patchesAtEncode = this.patches;
 				if (!scene) {
 					this.session.clear();
 					return;
 				}
 				layout = this.computeLayout(scene, { width, height });
 			}
+			// `applyAbsoluteGeometry` fires `AbsoluteSize` listeners. One that sets
+			// React state commits on the spot, and that commit runs a nested flush
+			// which encodes and patches the newer tree. This flush's scene predates
+			// that, and patching it now would put the old layout back over the new
+			// one with nothing left dirty to correct it. A clean-ui Table that sizes
+			// its columns from measured cells stayed 0 wide that way on a cold load.
+			if (this.patches !== patchesAtEncode) return;
+			this.patches += 1;
 			this.session.patch(scene, layout);
 			// ScrollingFrame metrics feedback (AbsoluteWindowSize /
 			// AbsoluteCanvasSize) — change-gated writes, no dirty re-mark.
@@ -1207,7 +1222,12 @@ class WorldImpl implements World {
 	 * AbsolutePosition/AbsoluteSize signals only where it changed.
 	 */
 	private applyAbsoluteGeometry(layout: LayoutResult): void {
+		const patches = this.patches;
 		for (const [id, entry] of Object.entries(layout.rects)) {
+			// A listener fired by an earlier write can commit React state, and that
+			// commit's nested flush applies a newer layout to every instance. The
+			// rest of this one is stale, so writing it would undo that.
+			if (this.patches !== patches) return;
 			const inst = this.byId.get(id);
 			if (!inst) continue; // e.g. the synthetic "loom-root" wrapper
 			updateAbsoluteGeometry(
