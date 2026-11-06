@@ -305,6 +305,7 @@ const CLASS_DEFAULTS: Readonly<Record<string, DefaultTable>> = {
 		DisplayOrder: () => 0,
 		IgnoreGuiInset: () => false,
 		ResetOnSpawn: () => true,
+		ScreenInsets: () => Enum.ScreenInsets.CoreUISafeInsets,
 	},
 	// The three text classes differ only in the placeholder string the engine
 	// puts in `Text` — which is exactly the value `if label.Text ~= ""` trips on.

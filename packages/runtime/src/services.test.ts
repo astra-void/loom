@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Vector2 } from "./datatypes";
+import { Rect, Vector2 } from "./datatypes";
 import { Enum, type EnumItem, RobloxEnum } from "./enums";
 import { game } from "./game";
 import type { InputObject } from "./input";
@@ -307,6 +307,14 @@ describe("GuiService", () => {
 		const [topLeft, bottomRight] = getGuiInset();
 		expect(topLeft).toEqual(Vector2.zero);
 		expect(bottomRight).toEqual(Vector2.zero);
+	});
+
+	it("has an empty TopbarInset, since the preview has no top bar", () => {
+		const guiService = game.GetService("GuiService");
+		const inset = guiService.TopbarInset as Rect;
+		expect(inset).toBeInstanceOf(Rect);
+		expect(inset.Max.Y).toBe(0);
+		expect(inset.Height).toBe(0);
 	});
 
 	it("exposes ReducedMotionEnabled as a boolean", () => {

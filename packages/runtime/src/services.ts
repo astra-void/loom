@@ -16,7 +16,7 @@
  * is a real `LoomInstance` parented under `game`, so `GetFullName`,
  * `GetPropertyChangedSignal`, and `IsA` behave normally.
  */
-import { Vector2 } from "./datatypes";
+import { Rect, Vector2 } from "./datatypes";
 import { Enum, EnumItem, enumName, RobloxEnum } from "./enums";
 import { getService, registerService } from "./game";
 import { type InputObject, makeInputObject } from "./input";
@@ -87,6 +87,10 @@ registerService("GuiService", () => {
 		}
 	}
 	setRawProperty(service, "ReducedMotionEnabled", reduced);
+	// The preview has no top bar, so the space Roblox leaves free beside its
+	// core buttons is an empty strip at the top, matching the zero `GetGuiInset`.
+	// Popups clamp against `TopbarInset.Max.Y`; an absent value threw on read.
+	setRawProperty(service, "TopbarInset", new Rect(0, 0, 0, 0));
 	return service;
 });
 

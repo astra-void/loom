@@ -496,6 +496,7 @@ describe("class read defaults and feedback writes", () => {
 		expect(gui.Enabled).toBe(true);
 		expect(gui.DisplayOrder).toBe(0);
 		expect(gui.IgnoreGuiInset).toBe(false);
+		expect(gui.ScreenInsets).toBe(Enum.ScreenInsets.CoreUISafeInsets);
 		expect(gui.ResetOnSpawn).toBe(true);
 		expect(gui.ZIndexBehavior).toBe(Enum.ZIndexBehavior.Sibling);
 		// `Enabled`/`ZIndexBehavior` are LayerCollector's, so the siblings get them.
