@@ -544,6 +544,61 @@ describe("wrapped text against the real layout engine", () => {
 		expect(sweep(tree, "Body", BODY, range(600, 200))).toEqual([]);
 	});
 
+	it("wraps a label at its own UISizeConstraint MaxSize (DEV-159)", () => {
+		// The label is the auto-sized node and the constraint is its own: in
+		// Studio it is at most 140 wide and wraps there, however wide its
+		// container is. It used to run on as one line the width of its text.
+		const tree = inBox(
+			createElement(
+				"textlabel",
+				{
+					Name: "Body",
+					Size: UDim2.fromScale(0, 0),
+					AutomaticSize: Enum.AutomaticSize.XY,
+					Text: BODY,
+					TextSize: BODY_SIZE,
+					LineHeight: BODY_LINE_HEIGHT,
+					TextWrapped: true,
+				},
+				createElement("uisizeconstraint", {
+					MaxSize: new Vector2(140, Number.POSITIVE_INFINITY),
+				}),
+			),
+			[],
+			600,
+		);
+		expect(sweep(tree, "Body", BODY, range(600, 200))).toEqual([]);
+		const r = readLabel("Body", BODY);
+		expect(r.labelWidth).toBeLessThanOrEqual(140);
+		expect(r.painted).toBeGreaterThan(1);
+	});
+
+	it("wraps a label under a UIScale in its own unscaled pixels", () => {
+		// The text is measured at its own TextSize and the layout scales the
+		// bounds by the UIScale afterwards, so the wrap width has to be converted
+		// the same way: a half-scale label in a 120px box has 240 of its own
+		// pixels to fill. Wrapping it at 120 built a box for twice the lines.
+		const SCALE = 0.5;
+		const BOX = 120;
+		const tree = inBox(
+			label("Body", BODY, BODY_SIZE, BODY_LINE_HEIGHT),
+			[createElement("uiscale", { Scale: SCALE })],
+			BOX / SCALE,
+		);
+		setStage(800);
+		root = mountSync(tree, mount, { computeLayout: realLayout });
+		settle();
+		reflow(root);
+		const box = measure("Body");
+		const lines = wrapLines(BODY, BOX / SCALE);
+		expect(lines).toBeGreaterThan(1);
+		expect(box.width).toBeLessThanOrEqual(BOX);
+		expect(box.height).toBeCloseTo(
+			(BODY_SIZE + (lines - 1) * BODY_SIZE * BODY_LINE_HEIGHT) * SCALE,
+			5,
+		);
+	});
+
 	it("settles a label inside a shrinking flex item", () => {
 		// `UIFlexMode.Shrink` is the one modifier that takes an item *below* its
 		// natural width, which is the other way a label can be painted narrower

@@ -215,11 +215,53 @@ function wrapWidth(
 	live: LiveNode,
 	room: number | undefined,
 	own: number | undefined,
+	/** Real pixels per scene pixel inside `live` — every `UIScale` over it. */
+	scale: number,
 ): number | undefined {
 	const wrapped = live.props.get("TextWrapped") ?? live.props.get("TextWrap");
-	if (wrapped !== true) return undefined;
-	const width = autoOnX(live) ? room : own;
-	return width !== undefined && width > 0 ? width : undefined;
+	if (wrapped !== true || !(scale > 0)) return undefined;
+	// `room` and `own` are real, laid-out pixels; the text is measured at its
+	// unscaled `TextSize` and the layout multiplies the bounds by `scale`
+	// afterwards, so the width it wraps at has to be in those pixels too.
+	// A `UISizeConstraint.MaxSize` is a ceiling an auto-sized label never grows
+	// past, padding included (DEV-159).
+	const width = autoOnX(live)
+		? Math.min(
+				room ?? Number.POSITIVE_INFINITY,
+				maxWidth(live, scale) - horizontalPadding(live) * scale,
+			)
+		: own;
+	return width !== undefined && width > 0 && Number.isFinite(width)
+		? width / scale
+		: undefined;
+}
+
+/** The `UIScale` `live` carries itself — 1 with none, never negative. */
+function ownScale(live: LiveNode): number {
+	const ui = modifierOf(live, "UIScale");
+	const value = ui?.props.get("Scale");
+	return typeof value === "number" ? Math.max(0, value) : 1;
+}
+
+/**
+ * `live`'s own `UISizeConstraint.MaxSize.X` in real pixels — `Infinity` with no
+ * constraint or an unbounded one.
+ */
+function maxWidth(live: LiveNode, scale: number): number {
+	const constraint = modifierOf(live, "UISizeConstraint");
+	const max = (constraint?.props.get("MaxSize") as { X?: unknown } | undefined)
+		?.X;
+	return typeof max === "number" && Number.isFinite(max)
+		? Math.max(0, max) * scale
+		: Number.POSITIVE_INFINITY;
+}
+
+/** `live`'s first child of `className`. */
+function modifierOf(live: LiveNode, className: string): LiveNode | undefined {
+	for (const slot of live.children)
+		for (const child of slot.nodes)
+			if (child.className === className) return child;
+	return undefined;
 }
 
 /** Whether a row can shrink `item`. Mirrors the react adapter's `shrinksInRow`. */
@@ -432,6 +474,8 @@ function toScene(
 	live: LiveNode,
 	ctx: SnapshotContext,
 	room?: number,
+	/** The `UIScale` product of everything above `live`. */
+	unit = 1,
 ): SceneNode {
 	const node: SceneNode = {
 		className: live.className,
@@ -444,7 +488,8 @@ function toScene(
 		if (pv !== undefined) properties[key] = pv;
 	}
 	const own = ctx.rects[live.id]?.rect.width;
-	const wrapAt = wrapWidth(live, room, own);
+	const scale = unit * ownScale(live);
+	const wrapAt = wrapWidth(live, room, own, scale);
 	const textBounds = measureTextBounds(live, wrapAt);
 	if (textBounds) {
 		properties.TextBounds = textBounds;
@@ -456,9 +501,16 @@ function toScene(
 		// An auto-sized node was itself sized by what is inside it, so it passes
 		// its parent's room down untouched; a node with a width of its own becomes
 		// the constraint. Either way its own padding comes off.
-		const base = autoOnX(live) ? room : own;
+		// A `UISizeConstraint` caps an auto-sized node, so it is a ceiling for
+		// what it holds as well.
+		const cap = maxWidth(live, scale);
+		const base = autoOnX(live)
+			? Number.isFinite(cap)
+				? Math.min(room ?? cap, cap)
+				: room
+			: own;
 		const inner =
-			base === undefined ? undefined : base - horizontalPadding(live);
+			base === undefined ? undefined : base - horizontalPadding(live) * scale;
 		// An item a horizontal flex row can shrink is sized by the row, so it
 		// gets the room the row leaves it rather than the whole content box.
 		const canvas = shrinkableWidth(live, own);
@@ -467,7 +519,7 @@ function toScene(
 				? undefined
 				: flexRooms(children, canvas - horizontalPadding(live), ctx);
 		node.children = children.map((child) =>
-			toScene(child, ctx, rooms?.get(child.id) ?? inner),
+			toScene(child, ctx, rooms?.get(child.id) ?? inner, scale),
 		);
 	}
 	return node;

@@ -813,19 +813,32 @@ export function scaledTextSize(request: {
  * repaint fingerprint, the clip rect, and the TextBox `<input>` — so a scaled
  * label cannot end up measured at one size and painted at another.
  */
-function effectiveTextSize(node: SceneNode, rect: Rect): number {
-	if (!getTextScaled(node)) return getTextSize(node);
+function effectiveTextSize(
+	node: SceneNode,
+	rect: Rect,
+	/**
+	 * Every `UIScale` covering the node (the layout's `scale`). A `UIScale`
+	 * enlarges the glyphs along with the box — that is how a whole screen scales
+	 * to the viewport — so a `TextSize` 30 label under `Scale = 0.5` paints at
+	 * 15 (DEV-159). `TextScaled` already fits the scaled box; only the bounds a
+	 * `UITextSizeConstraint` puts on it are pixel sizes that need converting.
+	 */
+	scale = 1,
+): number {
+	if (!getTextScaled(node)) return getTextSize(node) * scale;
 	// `UITextSizeConstraint` is the engine's way of bounding the search, and the
 	// only reason a `TextScaled` label ever stops growing before it fills the box.
 	const constraint = findModifier(node, "UITextSizeConstraint");
+	const bound = (v: number | undefined): number | undefined =>
+		v === undefined ? undefined : v * scale;
 	return scaledTextSize({
 		text: getText(node) ?? "",
 		font: nodeFont(node),
 		width: rect.width,
 		height: rect.height,
 		lineHeight: getLineHeight(node),
-		minSize: asNumber(constraint?.properties?.MinTextSize),
-		maxSize: asNumber(constraint?.properties?.MaxTextSize),
+		minSize: bound(asNumber(constraint?.properties?.MinTextSize)),
+		maxSize: bound(asNumber(constraint?.properties?.MaxTextSize)),
 	});
 }
 const yAlignFlex = (a: string): string =>
@@ -888,7 +901,7 @@ const resolveUDim = (u: UDim | undefined, basis: number): number =>
  * each way.
  */
 function strokeShadow(node: SceneNode): string | undefined {
-	const stroke = findModifier(node, "UIStroke");
+	const stroke = strokeModifier(node, false);
 	if (!stroke) return undefined;
 	if (asBool(stroke.properties?.Enabled) === false) return undefined;
 	const color = asColor3(stroke.properties?.Color) ?? { r: 0, g: 0, b: 0 };
@@ -906,6 +919,88 @@ function strokeShadow(node: SceneNode): string | undefined {
 		default:
 			return `0 0 0 ${thickness}px ${paint}`;
 	}
+}
+
+/**
+ * Whether a `UIStroke` outlines its parent's text rather than its box.
+ *
+ * `ApplyStrokeMode` decides, and its default is `Contextual`: on a text object
+ * that means the glyphs, on anything else the border. Only `Border` puts the
+ * ring back on a label's box, which is why a stroked `TextButton` has to ask
+ * for it explicitly in the engine.
+ */
+function strokesText(node: SceneNode, stroke: SceneNode): boolean {
+	return (
+		TEXT_CLASSES.has(node.className) &&
+		asEnum(stroke.properties?.ApplyStrokeMode)?.name !== "Border"
+	);
+}
+
+/** The first `UIStroke` on `node` that paints its text (`onText`) or its box. */
+function strokeModifier(
+	node: SceneNode,
+	onText: boolean,
+): SceneNode | undefined {
+	return childrenOf(node).find(
+		(child) =>
+			child.className === "UIStroke" && strokesText(node, child) === onText,
+	);
+}
+
+/** An outline around a text object's glyphs: its width and its CSS paint. */
+interface TextStroke {
+	readonly thickness: number;
+	readonly paint: string;
+}
+
+/**
+ * The outline a text object draws around its glyphs, or `undefined` for none.
+ *
+ * A `Contextual` `UIStroke` comes first: `Thickness` pixels wide, outside the
+ * glyph, in its own `Color` and `Transparency`. Without one, the legacy
+ * `TextStrokeColor3` / `TextStrokeTransparency` pair still draws — a one-pixel
+ * outline, invisible at its default transparency of 1.
+ *
+ * Neither fades with `TextTransparency`: the engine keeps the two separate,
+ * which is how outline-only text is made (a transparent fill, an opaque
+ * stroke).
+ */
+function textStroke(node: SceneNode): TextStroke | undefined {
+	if (!TEXT_CLASSES.has(node.className)) return undefined;
+	const stroke = strokeModifier(node, true);
+	if (stroke && asBool(stroke.properties?.Enabled) !== false) {
+		const thickness = asNumber(stroke.properties?.Thickness) ?? 1;
+		const transparency = asNumber(stroke.properties?.Transparency) ?? 0;
+		if (!(thickness > 0) || transparency >= 1) return undefined;
+		const color = asColor3(stroke.properties?.Color) ?? { r: 0, g: 0, b: 0 };
+		return { thickness, paint: cssColor(color, transparency) };
+	}
+	const transparency = asNumber(node.properties?.TextStrokeTransparency) ?? 1;
+	if (transparency >= 1) return undefined;
+	const color = asColor3(node.properties?.TextStrokeColor3) ?? {
+		r: 0,
+		g: 0,
+		b: 0,
+	};
+	return { thickness: 1, paint: cssColor(color, transparency) };
+}
+
+/**
+ * Paint `stroke` around the glyphs under `s`. CSS centres a text stroke on the
+ * outline, so it is drawn twice as wide and *behind* the fill (`paint-order`),
+ * which leaves exactly `thickness` showing outside each glyph and none eating
+ * into it — the engine's outer stroke.
+ */
+function applyTextStroke(
+	s: CSSStyleDeclaration,
+	stroke: TextStroke | undefined,
+): void {
+	if (!stroke) return;
+	s.setProperty(
+		"-webkit-text-stroke",
+		`${stroke.thickness * 2}px ${stroke.paint}`,
+	);
+	s.setProperty("paint-order", "stroke fill");
 }
 
 /** Roblox's `GuiObject.BorderSizePixel` default — a 1px border, not none. */
@@ -1560,6 +1655,8 @@ function createTextLayer(
 	 * height too — it is fitting the string to the whole rect, not to a line.
 	 */
 	rect: Rect,
+	/** Every `UIScale` covering the node — see {@link effectiveTextSize}. */
+	scale = 1,
 ): HTMLDivElement | undefined {
 	if (!TEXT_CLASSES.has(node.className)) return undefined;
 	const text = getText(node);
@@ -1571,7 +1668,7 @@ function createTextLayer(
 	const layer = document.createElement("div");
 	const s = layer.style;
 	const font = nodeFont(node);
-	const textSize = effectiveTextSize(node, rect);
+	const textSize = effectiveTextSize(node, rect, scale);
 	s.position = "absolute";
 	s.inset = "0";
 	applyGradientMask(s, node);
@@ -1600,7 +1697,13 @@ function createTextLayer(
 	// straight back — so the flex alignment above places the text exactly where it
 	// did before, and the only thing that changed is what survives the clip.
 	// Horizontally nothing moves: a label still clips its own text at its edges.
-	const bleed = textBleed(font, textSize);
+	//
+	// An outline around the glyphs overhangs them by its thickness on every side,
+	// so it widens the clip the same way — horizontally too, or the first and
+	// last letters would lose the outer half of their stroke at the label's edge.
+	const stroke = textStroke(node);
+	const outline = stroke ? Math.ceil(stroke.thickness) : 0;
+	const bleed = textBleed(font, textSize) + outline;
 	if (bleed > 0) {
 		s.boxSizing = "border-box";
 		s.top = px(-bleed);
@@ -1608,6 +1711,13 @@ function createTextLayer(
 		s.paddingTop = px(bleed);
 		s.paddingBottom = px(bleed);
 	}
+	if (outline > 0) {
+		s.left = px(-outline);
+		s.right = px(-outline);
+		s.paddingLeft = px(outline);
+		s.paddingRight = px(outline);
+	}
+	applyTextStroke(s, stroke);
 
 	const inner = document.createElement("div");
 	inner.style.width = "100%";
@@ -1643,7 +1753,14 @@ function createTextLayer(
 	inner.style.whiteSpace = wrapped && !preBreak ? "pre-wrap" : "pre";
 	let painted: string[] | undefined;
 	if (getRichText(node)) {
-		painted = paintRichText(inner, text, node, preBreak ? width : 0, textSize);
+		painted = paintRichText(
+			inner,
+			text,
+			node,
+			preBreak ? width : 0,
+			textSize,
+			scale,
+		);
 	} else {
 		// `RichText = false` means the markup is not markup: `<b>` is two angle
 		// brackets and a letter, and `textContent` is what shows it as such.
@@ -1707,6 +1824,8 @@ function breakRichSegments(
 	width: number,
 	/** The size untagged runs paint at — `TextSize`, or what `TextScaled` chose. */
 	baseTextSize: number,
+	/** What a `<font size>` is multiplied by — every `UIScale` over the node. */
+	scale = 1,
 ): string[] {
 	const baseFont = nodeFont(node);
 	const out: string[] = [];
@@ -1719,7 +1838,9 @@ function breakRichSegments(
 		}
 		const widthOf = widthMeasurer(
 			runFont(segment.style, baseFont),
-			segment.style.size ?? baseTextSize,
+			segment.style.size !== undefined
+				? segment.style.size * scale
+				: baseTextSize,
 		);
 		let built = "";
 		const paragraphs = segment.text.split("\n");
@@ -1767,6 +1888,8 @@ function paintRichText(
 	width: number,
 	/** The size untagged runs paint at — `TextSize`, or what `TextScaled` chose. */
 	baseTextSize: number,
+	/** What a `<font size>` is multiplied by — every `UIScale` over the node. */
+	scale = 1,
 ): string[] | undefined {
 	const baseColor = getTextColor3(node);
 	const baseTransparency = getTextTransparency(node);
@@ -1774,7 +1897,7 @@ function paintRichText(
 	const segments = parseRichText(text);
 	const broken =
 		width > 0
-			? breakRichSegments(segments, node, width, baseTextSize)
+			? breakRichSegments(segments, node, width, baseTextSize, scale)
 			: undefined;
 	let index = -1;
 	for (const segment of segments) {
@@ -1805,7 +1928,10 @@ function paintRichText(
 		// face, which is the wrong number for a face with different metrics.
 		const run = runFont(style, baseFont);
 		if (style.size !== undefined || run.family !== baseFont.family) {
-			s.fontSize = `${cssFontSize(run, style.size ?? baseTextSize)}px`;
+			s.fontSize = `${cssFontSize(
+				run,
+				style.size !== undefined ? style.size * scale : baseTextSize,
+			)}px`;
 		}
 		// `family` (a font asset URI) wins over the legacy `face` name, matching
 		// how `FontFace` wins over `Font` on the instance itself.
@@ -1883,7 +2009,7 @@ function withAlpha(color: string, alpha: number): string {
  * Fingerprint of every input `createTextLayer` reads, so the session rebuilds
  * the overlay only when a text-affecting prop actually changed.
  */
-function textLayerKey(node: SceneNode, rect: Rect): string {
+function textLayerKey(node: SceneNode, rect: Rect, scale = 1): string {
 	if (!TEXT_CLASSES.has(node.className)) return "";
 	const text = getText(node);
 	if (text === undefined || text === "") return "";
@@ -1891,8 +2017,12 @@ function textLayerKey(node: SceneNode, rect: Rect): string {
 	// The one number the whole layer is built from, and under `TextScaled` a
 	// function of the box: a scaled label that only got shorter paints smaller
 	// glyphs with nothing else about it having changed.
-	const textSize = effectiveTextSize(node, rect);
+	const textSize = effectiveTextSize(node, rect, scale);
+	const stroke = textStroke(node);
 	return [
+		// Rich text's `<font size>` runs scale on their own, past `textSize`.
+		scale,
+		stroke ? `${stroke.thickness}:${stroke.paint}` : "",
 		text,
 		// Wrapped text carries its own line breaks now, so a label that only got
 		// wider has to be repainted to break in the new places.
@@ -2754,6 +2884,7 @@ function applyTextBoxStyle(
 	s: CSSStyleDeclaration,
 	node: SceneNode,
 	rect: Rect,
+	scale = 1,
 ): void {
 	const font = nodeFont(node);
 	s.position = "absolute";
@@ -2768,10 +2899,11 @@ function applyTextBoxStyle(
 	s.outline = "none";
 	s.resize = "none";
 	s.color = cssColor(getTextColor3(node), getTextTransparency(node));
-	s.fontSize = `${cssFontSize(font, effectiveTextSize(node, rect))}px`;
+	s.fontSize = `${cssFontSize(font, effectiveTextSize(node, rect, scale))}px`;
 	s.fontFamily = font.family;
 	s.fontWeight = font.weight;
 	if (font.italic) s.fontStyle = "italic";
+	applyTextStroke(s, textStroke(node));
 	s.textAlign = xAlignText(getTextXAlignment(node));
 	s.zIndex = String(OWN_PAINT_Z_INDEX);
 }
@@ -2789,6 +2921,7 @@ function renderNode(
 	const entry = layout.rects[resolvedId];
 	if (!entry) return undefined; // not laid out (shouldn't happen for layout nodes)
 	const rect = entry.rect;
+	const scale = entry.scale ?? 1;
 
 	const el = document.createElement("div");
 	el.dataset.loomClass = node.className;
@@ -2799,7 +2932,7 @@ function renderNode(
 	const imageLayer = createImageLayer(node, rect);
 	if (imageLayer) el.appendChild(imageLayer);
 
-	const textLayer = createTextLayer(node, rect);
+	const textLayer = createTextLayer(node, rect, scale);
 	if (textLayer) el.appendChild(textLayer);
 
 	// ScrollingFrame children live in the canvas wrapper (see makeCanvasWrapper)
@@ -2941,6 +3074,7 @@ export function createDomSession(
 		node: SceneNode,
 		id: string,
 		rect: Rect,
+		scale: number,
 	): void {
 		const inst = options.resolveInstance(id);
 		const multiLine = asBool(node.properties?.MultiLine) === true;
@@ -2980,7 +3114,7 @@ export function createDomSession(
 		if (el.readOnly !== readOnly) el.readOnly = readOnly;
 
 		scratch.style.cssText = "";
-		applyTextBoxStyle(scratch.style, node, rect);
+		applyTextBoxStyle(scratch.style, node, rect, scale);
 		const styleKey = scratch.style.cssText;
 		if (styleKey !== binding.styleKey) {
 			el.style.cssText = styleKey;
@@ -3000,6 +3134,7 @@ export function createDomSession(
 		const laidOut = layout.rects[id];
 		if (!laidOut) return undefined;
 		const rect = laidOut.rect;
+		const scale = laidOut.scale ?? 1;
 
 		let entry = entries.get(id);
 		if (!entry) {
@@ -3059,14 +3194,15 @@ export function createDomSession(
 
 		// TextBox paints its text in a persistent input element, not the overlay.
 		const isTextBox = node.className === "TextBox";
-		const textKey = isTextBox ? "" : textLayerKey(node, rect);
+		const textKey = isTextBox ? "" : textLayerKey(node, rect, scale);
 		if (textKey !== entry.textKey) {
 			entry.textEl?.remove();
-			entry.textEl = textKey === "" ? undefined : createTextLayer(node, rect);
+			entry.textEl =
+				textKey === "" ? undefined : createTextLayer(node, rect, scale);
 			entry.textKey = textKey;
 		}
 
-		if (isTextBox) patchTextBox(entry, node, id, rect);
+		if (isTextBox) patchTextBox(entry, node, id, rect, scale);
 		else if (entry.input) {
 			entry.input.dispose();
 			entry.input = undefined;

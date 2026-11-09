@@ -878,3 +878,202 @@ describe("UIGradient", () => {
 		expect(icon?.style.getPropertyValue("mask-image")).toBe("");
 	});
 });
+
+/**
+ * happy-dom drops `-webkit-text-stroke` in every spelling (browsers keep it),
+ * so the values the renderer writes are recorded on the way in. Each render
+ * below starts the record afresh; only text layers set the property.
+ */
+let textStrokes: string[] = [];
+const styleProto = Object.getPrototypeOf(
+	document.createElement("div").style,
+) as CSSStyleDeclaration;
+const realSetProperty = styleProto.setProperty;
+styleProto.setProperty = function (
+	this: CSSStyleDeclaration,
+	name: string,
+	value: string | null,
+	priority?: string,
+) {
+	if (name === "-webkit-text-stroke") textStrokes.push(value ?? "");
+	return realSetProperty.call(this, name, value, priority);
+};
+
+/** The card rect the DEV-159 cases below lay their label out in. */
+const CARD_RECT: Rect = { x: 0, y: 0, width: 200, height: 100 };
+
+describe("text stroke (DEV-159)", () => {
+	function label(
+		properties: SceneNode["properties"],
+		children: SceneNode[] = [],
+		scale?: number,
+	): { box: HTMLElement; layer: HTMLElement; stroke: string } {
+		textStrokes = [];
+		const mount = document.createElement("div");
+		const layout = layoutOf({
+			root: { x: 0, y: 0, width: 400, height: 300 },
+			card: { x: 0, y: 0, width: 200, height: 100 },
+		});
+		if (scale !== undefined) layout.rects.card = { rect: CARD_RECT, scale };
+		renderScene(
+			{
+				className: "Frame",
+				name: "Root",
+				id: "root",
+				children: [
+					{
+						className: "TextLabel",
+						name: "Label",
+						id: "card",
+						properties: {
+							Text: prop.string("Outlined label"),
+							TextSize: prop.number(30),
+							BorderSizePixel: prop.int(0),
+							...properties,
+						},
+						children,
+					},
+				],
+			},
+			layout,
+			mount,
+		);
+		const box = mount.querySelector<HTMLElement>('[data-loom-name="Label"]');
+		const layer = box?.querySelector<HTMLElement>("div");
+		if (!box || !layer) throw new Error("label not rendered");
+		return { box, layer, stroke: textStrokes.join(", ") };
+	}
+
+	const stroke = (properties: SceneNode["properties"] = {}): SceneNode => ({
+		className: "UIStroke",
+		name: "UIStroke",
+		properties: {
+			Color: prop.color3(color3FromRGB(0, 0, 0)),
+			Thickness: prop.number(2),
+			...properties,
+		},
+	});
+	const mode = (name: string) =>
+		prop.enum({ enumType: "ApplyStrokeMode", name, value: 0 });
+
+	it("outlines the glyphs, not the box, by default (Contextual)", () => {
+		const { box, layer, stroke: painted } = label({}, [stroke()]);
+		expect(box.style.boxShadow).toBe("");
+		// Twice the thickness, painted behind the fill: `Thickness` px outside.
+		expect(painted).toBe("4px rgba(0, 0, 0, 1)");
+		expect(layer.style.getPropertyValue("paint-order")).toBe("stroke fill");
+	});
+
+	it("outlines the glyphs when Contextual is set explicitly", () => {
+		const { box, stroke: painted } = label({}, [
+			stroke({ ApplyStrokeMode: mode("Contextual") }),
+		]);
+		expect(box.style.boxShadow).toBe("");
+		expect(painted).toBe("4px rgba(0, 0, 0, 1)");
+	});
+
+	it("rings the box when ApplyStrokeMode is Border", () => {
+		const { box, stroke: painted } = label({}, [
+			stroke({ ApplyStrokeMode: mode("Border") }),
+		]);
+		expect(box.style.boxShadow).toBe("0 0 0 2px rgba(0, 0, 0, 1)");
+		expect(painted).toBe("");
+	});
+
+	it("widens the text clip by the stroke so the outer letters keep it", () => {
+		const { layer } = label({}, [stroke({ Thickness: prop.number(3) })]);
+		expect(layer.style.left).toBe("-3px");
+		expect(layer.style.right).toBe("-3px");
+		expect(layer.style.paddingLeft).toBe("3px");
+	});
+
+	it("draws the legacy TextStroke when it is visible", () => {
+		const { stroke: painted } = label({
+			TextStrokeColor3: prop.color3(color3FromRGB(255, 0, 0)),
+			TextStrokeTransparency: prop.number(0),
+		});
+		expect(painted).toBe("2px rgba(255, 0, 0, 1)");
+	});
+
+	it("draws no legacy TextStroke at its default transparency", () => {
+		expect(label({}).stroke).toBe("");
+	});
+});
+
+describe("UIScale on text (DEV-159)", () => {
+	function fontSize(scale?: number, extra: SceneNode["properties"] = {}) {
+		const mount = document.createElement("div");
+		const layout = layoutOf({
+			root: { x: 0, y: 0, width: 400, height: 300 },
+			card: { x: 0, y: 0, width: 200, height: 100 },
+		});
+		if (scale !== undefined) layout.rects.card = { rect: CARD_RECT, scale };
+		renderScene(
+			{
+				className: "Frame",
+				name: "Root",
+				id: "root",
+				children: [
+					{
+						className: "TextLabel",
+						name: "Label",
+						id: "card",
+						properties: {
+							Text: prop.string("SCALED TEXT"),
+							TextSize: prop.number(30),
+							...extra,
+						},
+					},
+				],
+			},
+			layout,
+			mount,
+		);
+		const layer = mount
+			.querySelector<HTMLElement>('[data-loom-name="Label"]')
+			?.querySelector<HTMLElement>("div");
+		if (!layer) throw new Error("label not rendered");
+		return Number.parseFloat(layer.style.fontSize);
+	}
+
+	it("paints TextSize at the scale the layout recorded", () => {
+		expect(fontSize(0.5)).toBeCloseTo(fontSize() / 2, 5);
+	});
+
+	it("scales a rich-text <font size> run too", () => {
+		const mount = document.createElement("div");
+		const layout = layoutOf({
+			root: { x: 0, y: 0, width: 400, height: 300 },
+			card: { x: 0, y: 0, width: 200, height: 100 },
+		});
+		layout.rects.card = { rect: CARD_RECT, scale: 0.5 };
+		renderScene(
+			{
+				className: "Frame",
+				name: "Root",
+				id: "root",
+				children: [
+					{
+						className: "TextLabel",
+						name: "Label",
+						id: "card",
+						properties: {
+							Text: prop.string('<font size="40">big</font>'),
+							RichText: prop.bool(true),
+						},
+					},
+				],
+			},
+			layout,
+			mount,
+		);
+		const span = mount.querySelector<HTMLElement>(
+			'[data-loom-name="Label"] span',
+		);
+		const unscaled = fontSize(undefined, { TextSize: prop.number(40) });
+		expect(Number.parseFloat(span?.style.fontSize ?? "")).toBeCloseTo(
+			unscaled / 2,
+			5,
+		);
+	});
+});

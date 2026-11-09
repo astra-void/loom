@@ -165,6 +165,12 @@ export interface Rect {
 /** Open per-node output: later milestones add optional fields additively. */
 export interface LayoutNode {
 	rect: Rect;
+	/**
+	 * The product of every `UIScale` covering the node, its own included —
+	 * absent at 1. The rect already carries it; the renderer reads it for what
+	 * it sizes on its own, such as a label's `TextSize`.
+	 */
+	scale?: number;
 }
 export interface LayoutResult {
 	rects: Record<string, LayoutNode>;

@@ -340,6 +340,29 @@ fn apply_size_constraint(node: &SceneNode, w: f64, h: f64, unit: f64) -> (f64, f
     (w, h)
 }
 
+/// The `UISizeConstraint.MaxSize` ceiling on each axis, in the pixels the node
+/// resolves in — `inner`, its own `UIScale` included, because the cap applies to
+/// the grown size *after* that scale (see [`resolve_size`]). `None` with no
+/// constraint, or when the bound is not a finite number (the engine's default
+/// `MaxSize` is `math.huge` on both axes).
+fn max_size_limits(node: &SceneNode, inner: f64) -> Limits {
+    let max = find_modifier(node, "UISizeConstraint").and_then(|sc| vec2_prop(sc, "MaxSize"));
+    let axis = |v: Option<f64>| v.filter(|v| v.is_finite()).map(|v| (v * inner).max(0.0));
+    Limits {
+        x: axis(max.map(|m| m.x)),
+        y: axis(max.map(|m| m.y)),
+    }
+}
+
+/// The tighter of two ceilings on one axis.
+fn tighter(a: Option<f64>, b: Option<f64>) -> Option<f64> {
+    match (a, b) {
+        (Some(a), Some(b)) => Some(a.min(b)),
+        (a, None) => a,
+        (None, b) => b,
+    }
+}
+
 /// Size from the `Size` UDim2 plus aspect-ratio and min/max constraints (before
 /// AutomaticSize, and before the node's own `UIScale`).
 fn base_size(node: &SceneNode, parent: Rect, unit: f64) -> (f64, f64) {
@@ -387,11 +410,18 @@ fn resolve_size(node: &SceneNode, parent: Rect, limit: Limits, unit: f64) -> (f6
     }
     let (l, r, t, b) = padding_insets(node, w, h, inner);
     let (pad_x, pad_y) = (l + r, t + b);
+    // A `UISizeConstraint` bounds the size `AutomaticSize` grows to, not only the
+    // `Size` it starts from: a wrapped auto-sized label with `MaxSize.X = 260`
+    // wraps at 260 in the engine rather than running on as one long line. On an
+    // automatic axis the constraint is therefore a ceiling just like the room the
+    // parent leaves, and the tighter of the two wins.
+    let cap = max_size_limits(node, inner);
+    let grow_x = tighter(limit.x, cap.x);
     // What this node can offer its own children: its width when it has one of
     // its own, else the room it was given — less the padding in between.
     let child_limit = Limits {
         x: if ax {
-            Limits::inset(limit.x, pad_x)
+            Limits::inset(grow_x, pad_x)
         } else {
             Limits::room(w - pad_x)
         },
@@ -423,12 +453,19 @@ fn resolve_size(node: &SceneNode, parent: Rect, limit: Limits, unit: f64) -> (f6
     // `AbsoluteSize.Y`, and that only works if the content reports its full
     // height while the clip is still short. Capping it there reads the clip back
     // as the content's height and the tween settles wherever it happened to be.
+    //
+    // `MaxSize` is the exception: it caps the height too, because it is the
+    // object's own bound rather than its parent's room.
     let new_w = if ax {
-        w.max(Limits::cap(limit.x, measured_w))
+        w.max(Limits::cap(grow_x, measured_w))
     } else {
         w
     };
-    let new_h = if ay { h.max(measured_h) } else { h };
+    let new_h = if ay {
+        h.max(Limits::cap(cap.y, measured_h))
+    } else {
+        h
+    };
     (new_w, new_h)
 }
 
@@ -1476,7 +1513,13 @@ fn place_with_table(
             }
         };
         let line_path = format!("{parent_path}/{}", line.index);
-        record(line.node, line_rect, &line_path, out)?;
+        record(
+            line.node,
+            line_rect,
+            &line_path,
+            out,
+            inner * own_scale(line.node),
+        )?;
         for (cell, &(cell_idx, node)) in line.cells.iter().enumerate() {
             let (row, col) = m.track_of(index, cell);
             place_node(
@@ -1537,17 +1580,22 @@ fn child_rect(node: &SceneNode, parent_content: Rect, limit: Limits, unit: f64) 
 /// Split out of [`place_node`] because `UITableLayout` places its lines itself:
 /// a line's rect comes from the table's tracks, and its children are the table's
 /// cells rather than its own free-positioned content.
+///
+/// `scale` is the node's inner scale — the product of every `UIScale` above it
+/// and its own — recorded so the painter can size what the layout does not
+/// (the glyphs of a label) at the same multiplier as the box.
 fn record(
     node: &SceneNode,
     rect: Rect,
     path: &str,
     out: &mut BTreeMap<String, LayoutNode>,
+    scale: f64,
 ) -> Result<(), LayoutError> {
     let id = node.id.clone().unwrap_or_else(|| path.to_string());
     if out.contains_key(&id) {
         return Err(LayoutError::DuplicateId(id));
     }
-    out.insert(id, LayoutNode { rect });
+    out.insert(id, LayoutNode { rect, scale });
     Ok(())
 }
 
@@ -1564,9 +1612,9 @@ fn place_node(
     out: &mut BTreeMap<String, LayoutNode>,
     unit: f64,
 ) -> Result<(), LayoutError> {
-    record(node, rect, &path, out)?;
-
     let inner = unit * own_scale(node);
+    record(node, rect, &path, out, inner)?;
+
     let content = content_box(node, rect, inner);
     let children = layout_children(node);
     // Placement runs against the node's final rect, so its content box is a real
@@ -3491,6 +3539,131 @@ mod tests {
         assert_eq!(r.rects["0/0/0"].rect.width, 360.0);
         assert_eq!(r.rects["0/0/0/0"].rect.width, 360.0);
         assert_eq!(r.rects["0/0/0/0/0"].rect.width, 336.0);
+    }
+
+    /// A `UISizeConstraint` child with the given bounds.
+    fn size_constraint(min: (f64, f64), max: (f64, f64)) -> SceneNode {
+        with(
+            "UISizeConstraint",
+            "SC",
+            &[
+                ("MinSize", vector2(min.0, min.1)),
+                ("MaxSize", vector2(max.0, max.1)),
+            ],
+        )
+    }
+
+    #[test]
+    fn max_size_caps_what_automatic_size_grows_to() {
+        // DEV-159: a wrapped auto-sized label with `MaxSize.X = 260` is at most
+        // 260 wide in Studio. The constraint used to clamp only `Size`, so the
+        // label grew past it to its one-line text.
+        let mut label = with(
+            "TextLabel",
+            "Label",
+            &[
+                ("AutomaticSize", enum_item("AutomaticSize", "XY")),
+                ("TextBounds", vector2(500.0, 18.0)),
+            ],
+        );
+        label.children = vec![size_constraint((0.0, 0.0), (260.0, f64::INFINITY))];
+        let r = compute_layout(&screen(vec![label]), VP).unwrap();
+        assert_eq!(r.rects["0/0"].rect.width, 260.0);
+        assert_eq!(r.rects["0/0"].rect.height, 18.0);
+    }
+
+    #[test]
+    fn max_size_caps_automatic_height_too() {
+        // `MaxSize` is the object's own bound, so unlike the parent's room it
+        // caps the height an `AutomaticSize.Y` frame grows to as well.
+        let mut frame = with(
+            "Frame",
+            "Panel",
+            &[
+                ("Size", udim2(0.0, 100.0, 0.0, 0.0)),
+                ("AutomaticSize", enum_item("AutomaticSize", "Y")),
+            ],
+        );
+        frame.children = vec![
+            size_constraint((0.0, 0.0), (f64::INFINITY, 50.0)),
+            with("Frame", "Tall", &[("Size", udim2(0.0, 10.0, 0.0, 200.0))]),
+        ];
+        let r = compute_layout(&screen(vec![frame]), VP).unwrap();
+        assert_eq!(r.rects["0/0"].rect.height, 50.0);
+    }
+
+    #[test]
+    fn max_size_is_the_ceiling_an_auto_sized_frame_offers_its_children() {
+        // An auto-width card capped at 200 is where its auto-width content runs
+        // out of room, just as a card with a fixed 200 width would be.
+        let inner = with(
+            "Frame",
+            "Content",
+            &[
+                ("AutomaticSize", enum_item("AutomaticSize", "X")),
+                ("Size", udim2(0.0, 0.0, 0.0, 20.0)),
+            ],
+        );
+        let wide = with(
+            "TextLabel",
+            "Wide",
+            &[
+                ("AutomaticSize", enum_item("AutomaticSize", "XY")),
+                ("TextBounds", vector2(900.0, 18.0)),
+            ],
+        );
+        let mut card = with(
+            "Frame",
+            "Card",
+            &[("AutomaticSize", enum_item("AutomaticSize", "XY"))],
+        );
+        card.children = vec![
+            size_constraint((0.0, 0.0), (200.0, f64::INFINITY)),
+            inner,
+            wide,
+        ];
+        let r = compute_layout(&screen(vec![card]), VP).unwrap();
+        assert_eq!(r.rects["0/0"].rect.width, 200.0);
+        assert_eq!(r.rects["0/0/1"].rect.width, 200.0);
+    }
+
+    #[test]
+    fn max_size_under_a_ui_scale_caps_in_scaled_pixels() {
+        let mut label = with(
+            "TextLabel",
+            "Label",
+            &[
+                ("AutomaticSize", enum_item("AutomaticSize", "XY")),
+                ("TextBounds", vector2(500.0, 18.0)),
+            ],
+        );
+        label.children = vec![size_constraint((0.0, 0.0), (100.0, f64::INFINITY))];
+        let mut holder = with(
+            "Frame",
+            "Holder",
+            &[("Size", udim2(0.0, 400.0, 0.0, 400.0))],
+        );
+        holder.children = vec![ui_scale(0.5), label];
+        let r = compute_layout(&screen(vec![holder]), VP).unwrap();
+        assert_eq!(r.rects["0/0/0"].rect.width, 50.0);
+    }
+
+    #[test]
+    fn every_rect_records_the_ui_scale_it_is_painted_at() {
+        // The renderer sizes a label's glyphs off this, so it has to be the
+        // running product — the node's own `UIScale` included.
+        let mut label = with(
+            "TextLabel",
+            "Label",
+            &[("Size", udim2(0.0, 10.0, 0.0, 10.0))],
+        );
+        label.children = vec![ui_scale(3.0)];
+        let mut holder = with("Frame", "Holder", &[("Size", udim2(0.0, 300.0, 0.0, 60.0))]);
+        holder.children = vec![ui_scale(0.5), label];
+        let r = compute_layout(&screen(vec![holder]), VP).unwrap();
+        assert_eq!(r.rects["0"].scale, 1.0);
+        assert_eq!(r.rects["0/0"].scale, 0.5);
+        assert_eq!(r.rects["0/0/0"].scale, 1.5);
     }
 
     #[test]

@@ -521,14 +521,19 @@ function autoOnX(inst: LoomInstance): boolean {
  * not, and the label is then measured against a width it never gets and painted
  * with more lines than the box it was given.
  */
-function horizontalPadding(inst: LoomInstance, widthRef: number): number {
+function horizontalPadding(
+	inst: LoomInstance,
+	widthRef: number,
+	/** Real pixels per offset pixel inside `inst` — see {@link inheritedScale}. */
+	unit = 1,
+): number {
 	const pad = inst.FindFirstChildOfClass("UIPadding");
 	if (!pad) return 0;
 	const side = (name: string): number => {
 		const udim = pad[name] as { Offset?: unknown; Scale?: unknown } | undefined;
 		const offset = typeof udim?.Offset === "number" ? udim.Offset : 0;
 		const scale = typeof udim?.Scale === "number" ? udim.Scale : 0;
-		return offset + scale * widthRef;
+		return offset * unit + scale * widthRef;
 	};
 	return side("PaddingLeft") + side("PaddingRight");
 }
@@ -658,13 +663,27 @@ function flexRoom(item: LoomInstance): number | undefined {
  */
 function wrapWidth(inst: LoomInstance, autoName: string): number | undefined {
 	if ((inst.TextWrapped ?? inst.TextWrap) !== true) return undefined;
+	// Every width below is a real, laid-out pixel, but the text is measured at
+	// its own unscaled `TextSize` — the layout engine multiplies the bounds by
+	// the `UIScale` over the label afterwards. Wrapping a half-scale label at its
+	// real width would fit twice the text on each line the paint can hold, so
+	// the room is converted into the label's own pixels on the way out.
+	const scale = inheritedScale(inst);
+	if (!(scale > 0)) return undefined;
+	const toTextPixels = (real: number): number | undefined =>
+		real > 0 && Number.isFinite(real) ? real / scale : undefined;
 	if (autoName !== "X" && autoName !== "XY") {
-		const own = (inst.AbsoluteSize as { X?: number } | undefined)?.X ?? 0;
-		return own > 0 ? own : undefined;
+		return toTextPixels(
+			(inst.AbsoluteSize as { X?: number } | undefined)?.X ?? 0,
+		);
 	}
+	// A `UISizeConstraint.MaxSize` on the label is the width it can never grow
+	// past, whatever room its container has: in Studio a label capped at 260
+	// wraps at 260 (DEV-159). Its own padding sits inside that bound.
+	let best = maxWidth(inst, scale) - horizontalPadding(inst, 0, scale);
 	// The label can itself be the item a flex row shrinks (see `flexRoom`).
 	const ownRoom = flexRoom(inst);
-	if (ownRoom !== undefined) return ownRoom;
+	if (ownRoom !== undefined) return toTextPixels(Math.min(best, ownRoom));
 	// The immediate parent is not enough on its own: a parent that is itself
 	// `AutomaticSize` was sized *by this label*, so wrapping against it is the
 	// same circle as wrapping against the label's own width, and the text never
@@ -681,11 +700,15 @@ function wrapWidth(inst: LoomInstance, autoName: string): number | undefined {
 		const own = auto
 			? 0
 			: ((node.AbsoluteSize as { X?: number } | undefined)?.X ?? 0);
-		inset += horizontalPadding(node, own);
+		const unit = inheritedScale(node);
+		inset += horizontalPadding(node, own, unit);
 		if (!auto) {
 			available = own;
 			break;
 		}
+		// An automatic ancestor capped by a `UISizeConstraint` is a ceiling of
+		// its own, though a tighter one may still be further up.
+		best = Math.min(best, maxWidth(node, unit) - inset);
 		// An automatic ancestor a flex row can shrink is sized by the row, not
 		// the label, so its room is where the text runs out. `inset` already
 		// carries this node's own padding and every one below it.
@@ -695,8 +718,34 @@ function wrapWidth(inst: LoomInstance, autoName: string): number | undefined {
 			break;
 		}
 	}
-	const width = available - inset;
-	return width > 0 ? width : undefined;
+	return toTextPixels(available > 0 ? Math.min(best, available - inset) : best);
+}
+
+/**
+ * The product of every `UIScale` covering `inst`, its own included — how many
+ * real pixels one of its scene pixels is worth. Mirrors the layout engine's
+ * `own_scale` chain: a missing `Scale` is 1 and a negative one clamps to 0.
+ */
+function inheritedScale(inst: LoomInstance): number {
+	let product = 1;
+	for (let node: LoomInstance | undefined = inst; node; node = node.Parent) {
+		const ui = node.FindFirstChildOfClass("UIScale");
+		const value = ui?.Scale;
+		if (typeof value === "number") product *= Math.max(0, value);
+	}
+	return product;
+}
+
+/**
+ * `inst`'s own `UISizeConstraint.MaxSize.X` in real pixels — `Infinity` with no
+ * constraint or an unbounded one (`math.huge`, the engine default).
+ */
+function maxWidth(inst: LoomInstance, unit: number): number {
+	const constraint = inst.FindFirstChildOfClass("UISizeConstraint");
+	const max = (constraint?.MaxSize as { X?: unknown } | undefined)?.X;
+	return typeof max === "number" && Number.isFinite(max)
+		? Math.max(0, max) * unit
+		: Number.POSITIVE_INFINITY;
 }
 
 /** One rich-text run's font, its tags applied over the label's own. */

@@ -361,6 +361,21 @@ pub struct Rect {
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct LayoutNode {
     pub rect: Rect,
+    /// The product of every `UIScale` covering the node, its own included: how
+    /// many real pixels one of its own scene pixels is worth. The rect already
+    /// carries it; this is for what the painter sizes on its own — `TextSize`
+    /// above all, which a `UIScale` enlarges along with the box. Omitted at 1.
+    #[serde(default = "unit_scale", skip_serializing_if = "is_unit_scale")]
+    pub scale: f64,
+}
+
+fn unit_scale() -> f64 {
+    1.0
+}
+
+#[allow(clippy::trivially_copy_pass_by_ref, clippy::float_cmp)]
+fn is_unit_scale(scale: &f64) -> bool {
+    *scale == 1.0
 }
 
 /// Flat map from resolved node id -> [`LayoutNode`]. Wrapped in a struct to leave

@@ -7,7 +7,7 @@
  * `world.test.ts` — the two adapters feed the same Scene IR to the same engine,
  * so the same scene has to measure the same way through either.
  */
-import { Enum, UDim, UDim2 } from "@loom-dev/runtime";
+import { Enum, UDim, UDim2, Vector2 } from "@loom-dev/runtime";
 import type { LayoutResult, SceneNode, Viewport } from "@loom-dev/scene";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { type ComputeLayout, create, mount, source } from "./index";
@@ -160,6 +160,68 @@ describe("vide adapter text measurement", () => {
 		expect(last).toBeDefined();
 		// The card's 100, less the body's 10 + 10 of padding — not the body's own
 		// 500, and not the 133 the string measures on one line.
+		expect(last?.x).toBeLessThanOrEqual(80);
+		expect(last?.y).toBeGreaterThan(10);
+	});
+
+	it("wraps at the label's own UISizeConstraint MaxSize (DEV-159)", () => {
+		// The card has all the room in the world; the label's own constraint is
+		// what it can never grow past, so that is where it wraps.
+		const measured = mountCard(
+			{
+				TextWrapped: true,
+				1: create("UISizeConstraint")({
+					MaxSize: new Vector2(60, Number.POSITIVE_INFINITY),
+				}),
+			},
+			(node) => (node.name === "Card" ? 500 : undefined),
+		);
+		const last = measured.at(-1);
+		expect(last?.x).toBeLessThanOrEqual(60);
+		expect(last?.y).toBeGreaterThan(10);
+	});
+
+	it("wraps under a UIScale in the label's own, unscaled pixels", () => {
+		// A 50px card at Scale 0.5 holds 100 of the label's pixels, less the
+		// body's 20 of padding: 80. The layout scales the bounds afterwards, so
+		// wrapping at the real 30 would build a box for twice the lines.
+		const measured: Array<{ x: number; y: number }> = [];
+		unmounts.push(
+			mount(
+				() =>
+					create("ScreenGui")({
+						1: create("Frame")({
+							Name: "Card",
+							0: create("UIScale")({ Scale: 0.5 }),
+							1: create("Frame")({
+								Name: "Body",
+								AutomaticSize: Enum.AutomaticSize.XY,
+								1: create("UIPadding")({
+									PaddingLeft: new UDim(0, 10),
+									PaddingRight: new UDim(0, 10),
+								}),
+								2: create("TextLabel")({
+									Name: "Wrapped",
+									Text: TEXT,
+									AutomaticSize: Enum.AutomaticSize.XY,
+									TextSize: 10,
+									TextWrapped: true,
+								}),
+							}),
+						}),
+					}),
+				host,
+				{
+					computeLayout: makeLayout(
+						(node) => (node.name === "Card" ? 50 : undefined),
+						measured,
+					),
+				},
+			),
+		);
+		const last = measured.at(-1);
+		// "aaaa bbbb" fits the 80, "aaaa bbbb cccc" does not.
+		expect(last?.x).toBeGreaterThan(30);
 		expect(last?.x).toBeLessThanOrEqual(80);
 		expect(last?.y).toBeGreaterThan(10);
 	});
