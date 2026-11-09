@@ -1,5 +1,14 @@
 # @loom-dev/luau
 
+## 0.14.1
+
+### Patch Changes
+
+- Updated dependencies [[`1a9777f`](https://github.com/astra-void/loom/commit/1a9777f478df7540e2e57df9194b472f59b11ef3)]:
+  - @loom-dev/layout@0.14.1
+  - @loom-dev/react@0.14.1
+  - @loom-dev/runtime@0.14.1
+
 ## 0.14.0
 
 ### Minor Changes
