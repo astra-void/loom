@@ -1,6 +1,6 @@
 {
 	"name": "@loom-dev/luau",
-	"version": "0.14.1",
+	"version": "0.14.2",
 	"description": "Luau adapter for loom — upstream Luau compiled to WASM, running Luau UI scripts against the loom runtime.",
 	"keywords": [
 		"loom",

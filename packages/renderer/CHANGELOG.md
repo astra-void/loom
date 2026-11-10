@@ -1,5 +1,18 @@
 # @loom-dev/renderer
 
+## 0.14.2
+
+### Patch Changes
+
+- [`a0355df`](https://github.com/astra-void/loom/commit/a0355df0ad8ef4f6dfbb8e0157b93cc4db072d8c) Thanks [@astra-void](https://github.com/astra-void)! - Two corrections to 0.14.1's text fixes, checked against Roblox Studio.
+
+  - A `UISizeConstraint` no longer caps the automatic size of a frame. In Studio, an auto-sized frame with `MaxSize = (60, 40)` around a 200×200 child is 200×200. Only text objects (`TextLabel`, `TextButton`, `TextBox`) are capped. A frame's `MaxSize` still sets the width the text inside it wraps at.
+  - A `UIScale` now thickens `UIStroke` the way it does in the engine, for both a box ring and a text outline. A stroke with `Thickness = 2` under `Scale = 2` draws 4px wide.
+
+- Updated dependencies []:
+  - @loom-dev/scene@0.14.2
+  - @loom-dev/runtime@0.14.2
+
 ## 0.14.1
 
 ### Patch Changes
