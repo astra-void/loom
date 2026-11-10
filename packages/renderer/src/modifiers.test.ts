@@ -995,6 +995,16 @@ describe("text stroke (DEV-159)", () => {
 		expect(painted).toBe("2px rgba(255, 0, 0, 1)");
 	});
 
+	it("thickens a text stroke under a UIScale", () => {
+		// Studio: Thickness 2 under Scale 2 matches an unscaled Thickness 4.
+		expect(label({}, [stroke()], 2).stroke).toBe("8px rgba(0, 0, 0, 1)");
+	});
+
+	it("thickens a box ring under a UIScale", () => {
+		const { box } = label({}, [stroke({ ApplyStrokeMode: mode("Border") })], 2);
+		expect(box.style.boxShadow).toBe("0 0 0 4px rgba(0, 0, 0, 1)");
+	});
+
 	it("draws no legacy TextStroke at its default transparency", () => {
 		expect(label({}).stroke).toBe("");
 	});

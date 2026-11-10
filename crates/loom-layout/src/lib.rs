@@ -354,6 +354,15 @@ fn max_size_limits(node: &SceneNode, inner: f64) -> Limits {
     }
 }
 
+/// Whether `node` lays out text of its own — the classes whose automatic size a
+/// `UISizeConstraint` caps (see [`resolve_size`]).
+fn is_text_class(node: &SceneNode) -> bool {
+    matches!(
+        node.class_name.as_str(),
+        "TextLabel" | "TextButton" | "TextBox"
+    )
+}
+
 /// The tighter of two ceilings on one axis.
 fn tighter(a: Option<f64>, b: Option<f64>) -> Option<f64> {
     match (a, b) {
@@ -410,11 +419,11 @@ fn resolve_size(node: &SceneNode, parent: Rect, limit: Limits, unit: f64) -> (f6
     }
     let (l, r, t, b) = padding_insets(node, w, h, inner);
     let (pad_x, pad_y) = (l + r, t + b);
-    // A `UISizeConstraint` bounds the size `AutomaticSize` grows to, not only the
-    // `Size` it starts from: a wrapped auto-sized label with `MaxSize.X = 260`
-    // wraps at 260 in the engine rather than running on as one long line. On an
-    // automatic axis the constraint is therefore a ceiling just like the room the
-    // parent leaves, and the tighter of the two wins.
+    // A `UISizeConstraint` is also the ceiling for the text inside the node: a
+    // wrapped auto-sized label with `MaxSize.X = 260` wraps at 260 in the engine
+    // rather than running on as one long line, and a label inside an auto-sized
+    // frame capped at 200 wraps at 200. On an automatic axis the constraint
+    // joins the room the parent leaves, and the tighter of the two wins.
     let cap = max_size_limits(node, inner);
     let grow_x = tighter(limit.x, cap.x);
     // What this node can offer its own children: its width when it has one of
@@ -454,15 +463,24 @@ fn resolve_size(node: &SceneNode, parent: Rect, limit: Limits, unit: f64) -> (f6
     // height while the clip is still short. Capping it there reads the clip back
     // as the content's height and the tween settles wherever it happened to be.
     //
-    // `MaxSize` is the exception: it caps the height too, because it is the
-    // object's own bound rather than its parent's room.
+    // On a text object `MaxSize` caps the grown size itself, on both axes: in
+    // Studio an unwrapped auto-sized label capped at 100 is 100 wide with its
+    // text overflowing, and a wrapped one capped at `MaxSize.Y` stops growing
+    // there. A frame's own automatic size is *not* capped — an auto-sized frame
+    // with `MaxSize = (60, 40)` around a 200x200 child is 200x200 — so for
+    // anything else the constraint only bounds the content (above).
+    let text = is_text_class(node);
     let new_w = if ax {
-        w.max(Limits::cap(grow_x, measured_w))
+        w.max(Limits::cap(if text { grow_x } else { limit.x }, measured_w))
     } else {
         w
     };
     let new_h = if ay {
-        h.max(Limits::cap(cap.y, measured_h))
+        h.max(if text {
+            Limits::cap(cap.y, measured_h)
+        } else {
+            measured_h
+        })
     } else {
         h
     };
@@ -3573,9 +3591,10 @@ mod tests {
     }
 
     #[test]
-    fn max_size_caps_automatic_height_too() {
-        // `MaxSize` is the object's own bound, so unlike the parent's room it
-        // caps the height an `AutomaticSize.Y` frame grows to as well.
+    fn max_size_does_not_cap_a_frames_automatic_size() {
+        // Studio (2026-11-10): an auto-sized frame with `MaxSize = (inf, 50)`
+        // around a 200-tall child is 200 tall, and one capped at 50 wide around
+        // a 200-wide child is 200 wide. Only text objects are capped.
         let mut frame = with(
             "Frame",
             "Panel",
@@ -3588,8 +3607,40 @@ mod tests {
             size_constraint((0.0, 0.0), (f64::INFINITY, 50.0)),
             with("Frame", "Tall", &[("Size", udim2(0.0, 10.0, 0.0, 200.0))]),
         ];
-        let r = compute_layout(&screen(vec![frame]), VP).unwrap();
-        assert_eq!(r.rects["0/0"].rect.height, 50.0);
+        let mut wide = with(
+            "Frame",
+            "Row",
+            &[
+                ("Size", udim2(0.0, 0.0, 0.0, 20.0)),
+                ("AutomaticSize", enum_item("AutomaticSize", "X")),
+            ],
+        );
+        wide.children = vec![
+            size_constraint((0.0, 0.0), (50.0, f64::INFINITY)),
+            with("Frame", "Wide", &[("Size", udim2(0.0, 200.0, 0.0, 10.0))]),
+        ];
+        let r = compute_layout(&screen(vec![frame, wide]), VP).unwrap();
+        assert_eq!(r.rects["0/0"].rect.height, 200.0);
+        assert_eq!(r.rects["0/1"].rect.width, 200.0);
+    }
+
+    #[test]
+    fn max_size_caps_a_text_objects_automatic_height() {
+        // A wrapped label capped at `MaxSize.Y` stops growing there. (Studio
+        // also drops a line that would only partly fit, landing on 27 for a
+        // 30 cap with 27px lines; the cap itself is what is modelled here.)
+        let mut label = with(
+            "TextLabel",
+            "Label",
+            &[
+                ("Size", udim2(0.0, 100.0, 0.0, 0.0)),
+                ("AutomaticSize", enum_item("AutomaticSize", "Y")),
+                ("TextBounds", vector2(97.0, 135.0)),
+            ],
+        );
+        label.children = vec![size_constraint((0.0, 0.0), (f64::INFINITY, 30.0))];
+        let r = compute_layout(&screen(vec![label]), VP).unwrap();
+        assert_eq!(r.rects["0/0"].rect.height, 30.0);
     }
 
     #[test]

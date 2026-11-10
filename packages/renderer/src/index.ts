@@ -900,12 +900,14 @@ const resolveUDim = (u: UDim | undefined, basis: number): number =>
  * than overhanging it — and `Center` straddles the edge, half of the thickness
  * each way.
  */
-function strokeShadow(node: SceneNode): string | undefined {
+function strokeShadow(node: SceneNode, scale = 1): string | undefined {
 	const stroke = strokeModifier(node, false);
 	if (!stroke) return undefined;
 	if (asBool(stroke.properties?.Enabled) === false) return undefined;
 	const color = asColor3(stroke.properties?.Color) ?? { r: 0, g: 0, b: 0 };
-	const thickness = asNumber(stroke.properties?.Thickness) ?? 1;
+	// A `UIScale` thickens the ring with everything else it covers: in Studio a
+	// `Thickness = 2` stroke under `Scale = 2` matches an unscaled 4.
+	const thickness = (asNumber(stroke.properties?.Thickness) ?? 1) * scale;
 	const transparency = asNumber(stroke.properties?.Transparency) ?? 0;
 	if (thickness <= 0 || transparency >= 1) return undefined;
 	const paint = cssColor(color, transparency);
@@ -961,15 +963,16 @@ interface TextStroke {
  * `TextStrokeColor3` / `TextStrokeTransparency` pair still draws — a one-pixel
  * outline, invisible at its default transparency of 1.
  *
- * Neither fades with `TextTransparency`: the engine keeps the two separate,
- * which is how outline-only text is made (a transparent fill, an opaque
- * stroke).
+ * Neither fades with `TextTransparency` (Studio, 2026-11-10: a label at
+ * `TextTransparency = 1` still shows its full outline), which is how
+ * outline-only text is made. Both thicken under a `UIScale` with the glyphs.
  */
-function textStroke(node: SceneNode): TextStroke | undefined {
+function textStroke(node: SceneNode, scale = 1): TextStroke | undefined {
 	if (!TEXT_CLASSES.has(node.className)) return undefined;
 	const stroke = strokeModifier(node, true);
 	if (stroke && asBool(stroke.properties?.Enabled) !== false) {
-		const thickness = asNumber(stroke.properties?.Thickness) ?? 1;
+		// Scaled by a `UIScale` like the glyphs it outlines (Studio-checked).
+		const thickness = (asNumber(stroke.properties?.Thickness) ?? 1) * scale;
 		const transparency = asNumber(stroke.properties?.Transparency) ?? 0;
 		if (!(thickness > 0) || transparency >= 1) return undefined;
 		const color = asColor3(stroke.properties?.Color) ?? { r: 0, g: 0, b: 0 };
@@ -982,7 +985,7 @@ function textStroke(node: SceneNode): TextStroke | undefined {
 		g: 0,
 		b: 0,
 	};
-	return { thickness: 1, paint: cssColor(color, transparency) };
+	return { thickness: scale, paint: cssColor(color, transparency) };
 }
 
 /**
@@ -1098,9 +1101,10 @@ function applyShadows(
 	s: CSSStyleDeclaration,
 	node: SceneNode,
 	rect: Rect,
+	scale = 1,
 ): void {
 	const layers = [
-		strokeShadow(node),
+		strokeShadow(node, scale),
 		borderShadow(node),
 		dropShadow(node, rect),
 	].filter((layer): layer is string => layer !== undefined);
@@ -1323,6 +1327,8 @@ function applyBoxStyle(
 	rect: Rect,
 	parentRect: Rect,
 	isRoot: boolean,
+	/** Every `UIScale` covering the node — the layout's `scale`. */
+	scale = 1,
 ): void {
 	s.position = "absolute";
 	s.left = `${rect.x - parentRect.x}px`;
@@ -1364,7 +1370,7 @@ function applyBoxStyle(
 		s.background = cssColor(background, backgroundTransparency);
 		applyGradient(s, node, background, backgroundTransparency);
 		applyCorner(s, node, rect);
-		applyShadows(s, node, rect);
+		applyShadows(s, node, rect, scale);
 		// CanvasGroup.GroupTransparency fades the whole subtree as one — CSS
 		// opacity on the container div is exactly that compositing model.
 		const groupTransparency = asNumber(node.properties?.GroupTransparency);
@@ -1701,7 +1707,7 @@ function createTextLayer(
 	// An outline around the glyphs overhangs them by its thickness on every side,
 	// so it widens the clip the same way — horizontally too, or the first and
 	// last letters would lose the outer half of their stroke at the label's edge.
-	const stroke = textStroke(node);
+	const stroke = textStroke(node, scale);
 	const outline = stroke ? Math.ceil(stroke.thickness) : 0;
 	const bleed = textBleed(font, textSize) + outline;
 	if (bleed > 0) {
@@ -2018,7 +2024,7 @@ function textLayerKey(node: SceneNode, rect: Rect, scale = 1): string {
 	// function of the box: a scaled label that only got shorter paints smaller
 	// glyphs with nothing else about it having changed.
 	const textSize = effectiveTextSize(node, rect, scale);
-	const stroke = textStroke(node);
+	const stroke = textStroke(node, scale);
 	return [
 		// Rich text's `<font size>` runs scale on their own, past `textSize`.
 		scale,
@@ -2903,7 +2909,7 @@ function applyTextBoxStyle(
 	s.fontFamily = font.family;
 	s.fontWeight = font.weight;
 	if (font.italic) s.fontStyle = "italic";
-	applyTextStroke(s, textStroke(node));
+	applyTextStroke(s, textStroke(node, scale));
 	s.textAlign = xAlignText(getTextXAlignment(node));
 	s.zIndex = String(OWN_PAINT_Z_INDEX);
 }
@@ -2926,7 +2932,7 @@ function renderNode(
 	const el = document.createElement("div");
 	el.dataset.loomClass = node.className;
 	el.dataset.loomName = node.name;
-	applyBoxStyle(el.style, node, rect, parentRect, isRoot);
+	applyBoxStyle(el.style, node, rect, parentRect, isRoot, scale);
 
 	// Image first: Roblox paints the image behind the label's own text.
 	const imageLayer = createImageLayer(node, rect);
@@ -3062,9 +3068,10 @@ export function createDomSession(
 		rect: Rect,
 		parentRect: Rect,
 		isRoot: boolean,
+		scale: number,
 	): string {
 		scratch.style.cssText = "";
-		applyBoxStyle(scratch.style, node, rect, parentRect, isRoot);
+		applyBoxStyle(scratch.style, node, rect, parentRect, isRoot, scale);
 		return scratch.style.cssText;
 	}
 
@@ -3161,7 +3168,7 @@ export function createDomSession(
 		}
 		if (el.dataset.loomName !== node.name) el.dataset.loomName = node.name;
 
-		const styleKey = computeStyleKey(node, rect, parentRect, isRoot);
+		const styleKey = computeStyleKey(node, rect, parentRect, isRoot, scale);
 		if (styleKey !== entry.styleKey) {
 			el.style.cssText = styleKey;
 			entry.styleKey = styleKey;
